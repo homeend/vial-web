@@ -1,0 +1,128 @@
+<div style="max-width: 860px; margin: 0 auto">
+<h2>Tap dance, combos, macros: does this make them clear?</h2>
+<p class="subtitle">Each one is described in plain words, with its slots laid out and where it's used. Example data only. Reply in the terminal with what works and what doesn't.</p>
+
+<style>
+  .app { display: grid; grid-template-columns: 150px 1fr; gap: 14px; font-size: 13px; }
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav span { padding: 6px 10px; border-radius: 6px; color: var(--text-secondary); }
+  .nav span.on { background: var(--selected-bg); color: var(--accent); font-weight: 600; }
+  .nav span em { float: right; font-style: normal; font-size: 11px; opacity: .7; }
+  .card2 { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary); padding: 12px 14px; margin-bottom: 10px; }
+  .card2 .hd { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .card2 .hd b { font-size: 14px; }
+  .card2 .hd .id { font: 600 11px ui-monospace, monospace; padding: 2px 6px; border-radius: 4px; background: rgba(175, 82, 222, .18); }
+  .card2 .hd .used { margin-left: auto; font-size: 11px; color: var(--text-secondary); }
+  .plain { color: var(--text-secondary); margin-bottom: 10px; }
+  .plain strong { color: var(--text-primary); }
+  .slots { display: grid; grid-template-columns: repeat(4, minmax(0, 130px)); gap: 8px; }
+  .slot2 { border: 1px dashed var(--border); border-radius: 8px; padding: 8px; text-align: center; }
+  .slot2.set { border-style: solid; background: var(--bg-primary); }
+  .slot2 .how { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+  .slot2 .what { font-weight: 700; font-size: 14px; }
+  .slot2 .what.none { font-weight: 400; color: var(--text-tertiary); font-size: 12px; }
+  .term { margin-top: 8px; font-size: 11px; color: var(--text-secondary); }
+  .combo-row { display: grid; grid-template-columns: auto 24px auto auto; justify-content: start; align-items: center; gap: 10px; }
+  .arrow2 { font-size: 20px; text-align: center; color: var(--text-secondary); }
+  .out { font-weight: 700; padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); }
+  .kbm { display: flex; gap: 8px; }
+  .kbm .h { display: grid; grid-template-columns: repeat(6, 14px); grid-auto-rows: 14px; gap: 2px; }
+  .kbm .x { border-radius: 3px; border: 1px solid var(--border); background: var(--bg-primary); font: 600 8px/14px system-ui; text-align: center; color: transparent; }
+  .kbm .x.hit { background: #ff2d55; border-color: #ff2d55; color: #fff; }
+  .kbm .x.t { grid-row: 4; }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .step { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; background: var(--bg-primary); }
+  .step i { font-style: normal; font-size: 10px; color: var(--text-secondary); display: block; }
+  .step.k { background: rgba(255, 159, 10, .15); border-color: rgba(255, 159, 10, .5); }
+  .sep { color: var(--text-tertiary); }
+  .sec { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); margin: 14px 0 6px; }
+</style>
+
+<div class="mockup">
+  <div class="mockup-body">
+    <div class="app">
+      <div class="nav">
+        <span>Keymap</span>
+        <span class="on">Tap dance <em>2</em></span>
+        <span>Combos <em>2</em></span>
+        <span>Macros <em>1</em></span>
+        <span>Key overrides</span>
+        <span>Settings</span>
+        <span>Lighting</span>
+      </div>
+      <div>
+        <div class="sec">Tap dance</div>
+        <div class="card2">
+          <div class="hd"><span class="id">TD 0</span><b>Tab / Caps</b><span class="used">used on: base → left thumb 3 · click to jump</span></div>
+          <div class="plain"><strong>Tap</strong> for Tab, <strong>double-tap</strong> for Caps Lock.</div>
+          <div class="slots">
+            <div class="slot2 set"><div class="how">tap</div><div class="what">Tab</div></div>
+            <div class="slot2"><div class="how">hold</div><div class="what none">nothing</div></div>
+            <div class="slot2 set"><div class="how">double tap</div><div class="what">Caps</div></div>
+            <div class="slot2"><div class="how">tap, then hold</div><div class="what none">nothing</div></div>
+          </div>
+          <div class="term">Decides after 200 ms (tapping term)</div>
+        </div>
+        <div class="card2">
+          <div class="hd"><span class="id">TD 1</span><b>Esc / Ctrl / Save</b><span class="used" style="color: var(--warning)">not used on any key</span></div>
+          <div class="plain"><strong>Tap</strong> for Esc, <strong>hold</strong> for Ctrl, <strong>double-tap</strong> for Ctrl+S.</div>
+          <div class="slots">
+            <div class="slot2 set"><div class="how">tap</div><div class="what">Esc</div></div>
+            <div class="slot2 set"><div class="how">hold</div><div class="what">Ctrl</div></div>
+            <div class="slot2 set"><div class="how">double tap</div><div class="what">Ctrl+S</div></div>
+            <div class="slot2"><div class="how">tap, then hold</div><div class="what none">nothing</div></div>
+          </div>
+        </div>
+
+        <div class="sec">Combos</div>
+        <div class="card2">
+          <div class="combo-row">
+            <div class="kbm" data-hit="36,37"></div>
+            <div class="arrow2">→</div>
+            <div class="out">Esc</div>
+            <div class="plain" style="margin: 0">Press <strong>K + Y</strong> together for Esc</div>
+          </div>
+        </div>
+        <div class="card2">
+          <div class="combo-row">
+            <div class="kbm" data-hit="8,9"></div>
+            <div class="arrow2">→</div>
+            <div class="out">Enter</div>
+            <div class="plain" style="margin: 0">Press <strong>H + N</strong> together for Enter</div>
+          </div>
+        </div>
+
+        <div class="sec">Macros</div>
+        <div class="card2">
+          <div class="hd"><span class="id" style="background: rgba(255, 159, 10, .2)">M 0</span><b>git status</b><span class="used">used on: base → right thumb 1</span></div>
+          <div class="steps">
+            <div class="step"><i>type</i>git status</div><span class="sep">→</span>
+            <div class="step k"><i>tap</i>Enter</div><span class="sep">→</span>
+            <div class="step"><i>wait</i>50 ms</div><span class="sep">→</span>
+            <div class="step k"><i>press</i>Ctrl+L</div>
+          </div>
+          <div class="term">Uses 18 of 900 bytes of macro memory</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+<script>
+  document.querySelectorAll(".kbm").forEach(el => {
+    const hit = new Set(el.dataset.hit.split(",").map(Number));
+    const labels = { 36: "K", 37: "Y", 8: "H", 9: "N" };
+    for (const side of [0, 21]) {
+      const h = document.createElement("div"); h.className = "h";
+      for (let i = 0; i < 21; i++) {
+        const idx = side + i, d = document.createElement("div");
+        d.className = "x" + (hit.has(idx) ? " hit" : "") + (i >= 18 ? " t" : "");
+        if (i >= 18) d.style.gridColumn = side === 0 ? 4 + (i - 18) : 1 + (i - 18);
+        d.textContent = labels[idx] || "";
+        h.appendChild(d);
+      }
+      el.appendChild(h);
+    }
+  });
+</script>
