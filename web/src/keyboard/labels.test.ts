@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Described, KeyboardModel } from "../api/types";
 import {
-  actionSummary, holdSize, keyFace, keyTitle, legendScale, legendSizes, legendWords, MAIN_LINE, mainLines, namesOf,
-  toneOf, type Names,
+  actionSummary, holdSize, keyFace, keyLabel, keyTitle, legendScale, legendSizes, legendWords, MAIN_LINE, mainLines,
+  namesOf, toneOf, type Names,
 } from "./labels";
 
 type Fields = Partial<Described> & Pick<Described, "code" | "kind" | "tap">;
@@ -166,6 +166,37 @@ describe("keyTitle", () => {
       .toBe("Nothing — hold for Shift");
     expect(keyTitle(d({ code: "LT2(KC_NO)", kind: "layer-tap", tap: "", hold: "layer 2", layer: 2 }), names))
       .toBe("Nothing — hold for Layer 2");
+  });
+});
+
+describe("keyLabel", () => {
+  const td = d({ code: "TD(0)", kind: "tap-dance", tap: "TD 0", index: 0 });
+
+  it("starts with the title, and ends with where the key is", () => {
+    expect(keyLabel(layerTap, names, "key row 3, column 4")).toBe(
+      "Space — hold for Layer 1 · Symbols (key row 3, column 4)");
+    expect(keyLabel(undefined, names, "key row 0, column 0")).toBe("Empty (key row 0, column 0)");
+  });
+
+  it("has the text on the cap when the title doesn't (label in name)", () => {
+    expect(keyLabel(td, names, "key row 1, column 0")).toBe(
+      "Tap dance 0 · Tab / Caps Lock (TD 0, key row 1, column 0)");
+    expect(keyLabel(d({ code: "M0", kind: "macro", tap: "M 0", index: 0 }), names, "key row 0, column 1")).toBe(
+      "Macro 0 · git status (M 0, key row 0, column 1)");
+    expect(keyLabel(d({ code: "OSL(3)", kind: "layer", tap: "OSL 3", layer: 3, layerAction: "one-shot" }), names,
+      "key row 2, column 0")).toBe("One-shot Layer 3 (OSL 3, key row 2, column 0)");
+  });
+
+  it("doesn't repeat a cap text the title has, whatever its case", () => {
+    expect(keyLabel(d({ code: "KC_TAB", kind: "basic", tap: "Tab" }), names, "key row 1, column 0")).toBe(
+      "Tab (key row 1, column 0)");
+    expect(keyLabel(d({ code: "KC_ESC", kind: "basic", tap: "Escape", legend: { main: "esc", shifted: null, altGr: null } }),
+      names, "key row 0, column 0")).toBe("Escape (key row 0, column 0)");
+  });
+
+  it("leaves out a cap of symbols only, which isn't words to say", () => {
+    expect(keyLabel(d({ code: "KC_TRNS", kind: "transparent", tap: "▽" }), names, "key row 0, column 0")).toBe(
+      "Transparent (key row 0, column 0)");
   });
 });
 

@@ -34,8 +34,18 @@
   );
   const expression = $derived(holdExpression(tap, hold));
 
-  let preview = $state<Described | null>(null);
-  let problem = $state<string | null>(null);
+  /** the server's answer for an expression: what the key will do, or why it can't */
+  interface Checked {
+    expression: string;
+    preview: Described | null;
+    problem: string | null;
+  }
+
+  let checked = $state<Checked | null>(null);
+  // an answer for an earlier choice is never shown as this one's, nor applied
+  const answer = $derived(checked?.expression === expression ? checked : null);
+  const preview = $derived(answer?.preview ?? null);
+  const problem = $derived(answer?.problem ?? null);
 
   // the server parses the expression: it shows what the key will do, or why it can't
   $effect(() => {
@@ -43,18 +53,20 @@
     let stale = false;
     api.parse(asked).then(
       (result) => {
-        if (stale) return;
-        preview = result;
-        problem = null;
+        if (!stale) checked = { expression: asked, preview: result, problem: null };
       },
       (error: unknown) => {
         if (stale) return;
-        preview = null;
-        problem = error instanceof ApiError ? error.message : "Can't check this keycode.";
+        const problem = error instanceof ApiError ? error.message : "Can't check this keycode.";
+        checked = { expression: asked, preview: null, problem };
       },
     );
     return () => (stale = true);
   });
+
+  function apply() {
+    if (preview && !disabled) onapply(preview.code);
+  }
 
   function toggle(mod: Mod) {
     mods = mods.includes(mod) ? mods.filter((m) => m !== mod) : MODS.map((m) => m.mod).filter((m) => m === mod || mods.includes(m));
@@ -62,11 +74,12 @@
 </script>
 
 <form
+  id="hold-editor"
   class="hold-editor"
   aria-label="Change hold action"
   onsubmit={(e) => {
     e.preventDefault();
-    if (preview) onapply(preview.code);
+    apply();
   }}
 >
   <fieldset class="choice">
@@ -103,6 +116,8 @@
       <span class="problem">{problem}</span>
     {:else if preview}
       <span>→ tap {preview.tap}{preview.hold ? `, hold ${preview.hold}` : ""}</span>
+    {:else}
+      <span class="checking">checking…</span>
     {/if}
   </p>
 
@@ -197,6 +212,10 @@
 
   .problem {
     color: var(--danger);
+  }
+
+  .checking {
+    color: var(--text-3);
   }
 
   .buttons {

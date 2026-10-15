@@ -147,6 +147,18 @@ export function keyTitle(d: Described, names: Names): string {
   return actionSummary(d, names).tap;
 }
 
+/** What a key is called, for screen readers and its tooltip: its title first, then where it is. When the title
+ * doesn't contain the text on the key cap ("TD 0", "OSL 3"), that comes before where it is, so the cap's text works
+ * as a name for speech control (WCAG 2.5.3); a cap of symbols only ("▽") isn't words to say, and is left out.
+ * "Tap dance 0 · Tab / Caps Lock (TD 0, key row 1, column 0)". An undefined action is an empty key. */
+export function keyLabel(d: Described | undefined, names: Names, place: string): string {
+  if (!d) return `Empty (${place})`;
+  const title = keyTitle(d, names);
+  const cap = keyFace(d, names).main.trim();
+  const said = /[\p{L}\p{N}]/u.test(cap) && !title.toLowerCase().includes(cap.toLowerCase());
+  return `${title} (${said ? `${cap}, ` : ""}${place})`;
+}
+
 /** average width of a character, as a share of the font size */
 const CHAR_WIDTH = 0.55;
 /** width of a wide character (CJK, kana, Hangul, full-width forms, emoji): a full font size */

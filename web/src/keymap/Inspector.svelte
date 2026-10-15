@@ -23,6 +23,15 @@
   let { model, names, layer, selection, canEdit, onchangekey, onsetcode, ontapdance, onjump }: Props = $props();
 
   let editingHold = $state(false);
+  // the hold editor is for one key on one layer: another one closes it
+  let editedKey = "";
+  $effect.pre(() => {
+    const key = `${layer}:${selection.kind}:${selection.index}`;
+    if (key !== editedKey) {
+      editedKey = key;
+      editingHold = false;
+    }
+  });
 
   function actionOn(index: number): Described {
     return actionAt(model, index, selection) as Described;
@@ -33,6 +42,8 @@
   const summary = $derived(actionSummary(current, names));
   const tapCode = $derived(selection.kind === "key" ? tapCodeOf(current) : null);
   const freeSlot = $derived(freeTapDance(model));
+  // a key that does nothing, or falls through, has no action to put in a tap dance
+  const emptyKey = $derived(current.kind === "none" || current.kind === "transparent");
   const tapDance = $derived(
     current.kind === "tap-dance" && current.index != null ? model.tapDance[current.index] : undefined,
   );
@@ -98,7 +109,12 @@
   <div class="buttons">
     <Button variant="primary" disabled={!canEdit} onclick={onchangekey}>Change key</Button>
     {#if tapCode}
-      <Button disabled={!canEdit} aria-expanded={editingHold} onclick={() => (editingHold = !editingHold)}>
+      <Button
+        disabled={!canEdit}
+        aria-expanded={editingHold}
+        aria-controls="hold-editor"
+        onclick={() => (editingHold = !editingHold)}
+      >
         Change hold
       </Button>
     {/if}
@@ -110,8 +126,10 @@
     </Button>
     {#if selection.kind === "key" && current.kind !== "tap-dance"}
       <Button
-        disabled={!canEdit || freeSlot === null}
-        title={freeSlot === null ? "Every tap dance is already in use" : `Uses tap dance ${freeSlot}`}
+        disabled={!canEdit || freeSlot === null || emptyKey}
+        title={emptyKey
+          ? "An empty or transparent key has no action to put in a tap dance"
+          : freeSlot === null ? "Every tap dance is already in use" : `Uses tap dance ${freeSlot}`}
         onclick={ontapdance}
       >
         Turn into tap dance

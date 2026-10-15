@@ -3,7 +3,7 @@
   import type { KeyboardModel } from "../api/types";
   import { placeKeyboard } from "../keyboard/geometry";
   import Keyboard from "../keyboard/Keyboard.svelte";
-  import { keyFace, keyTitle, layerLabel, namesOf, type KeyFace } from "../keyboard/labels";
+  import { keyFace, keyLabel, layerLabel, namesOf, type KeyFace } from "../keyboard/labels";
   import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
   import { keyboard } from "../lib/keyboard.svelte";
   import Picker from "../picker/Picker.svelte";
@@ -34,9 +34,8 @@
   // what each key does, in words: what screen readers say, and the tooltip (with names a key cap may cut short)
   const labels = $derived(
     placement.items.map((item, i) => {
-      const action = actions[i];
       const { what, where } = whereIs(model, item);
-      return `${action ? keyTitle(action, names) : "Empty"} (${what.toLowerCase()} ${where})`;
+      return keyLabel(actions[i], names, `${what.toLowerCase()} ${where}`);
     }),
   );
   const selectedIndex = $derived(
@@ -66,6 +65,22 @@
     return selection ? keyboard.setCode(layer, selection, code, action) : Promise.resolve(false);
   }
 
+  /** Runs an action of the Inspector. Its buttons are disabled meanwhile, and the one pressed may go away: the
+   * focus would fall to the page. The selected key gets it back: when it fell, or when the action worked and the
+   * focus is still where it started (not somewhere the user moved it meanwhile). */
+  async function fromInspector(run: () => Promise<boolean>): Promise<boolean> {
+    const origin = document.activeElement;
+    const done = await run();
+    await tick();
+    const now = document.activeElement;
+    if (!now || now === document.body || (done && now === origin)) await focusSelected();
+    return done;
+  }
+
+  function turnIntoTapDance() {
+    return selection ? keyboard.turnIntoTapDance(layer, selection) : Promise.resolve(false);
+  }
+
   const ARROWS: Record<string, Direction> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
 
   function onkeydown(event: KeyboardEvent) {
@@ -74,17 +89,19 @@
       return;
     }
     const target = event.target as HTMLElement;
-    if (target.closest("input, select, textarea, dialog, [role=tab]")) return;
-    const onKey = target === document.body || target.hasAttribute("data-ref");
+    // Enter and Delete act on the key that has the focus, never on one the focus merely fell from (to <body>);
+    // the arrows also start from <body>, and leave every other control (buttons, tabs, fields) alone
+    const onKey = target instanceof HTMLElement && target.hasAttribute("data-ref");
     const direction = ARROWS[event.key];
-    if (direction && selectedIndex >= 0) {
+    if (direction && (onKey || target === document.body) && selectedIndex >= 0) {
       event.preventDefault();
       select(neighbour(placement.items, selectedIndex, direction));
       void focusSelected();
     } else if (event.key === "Enter" && onKey && selection && keyboard.canEdit) {
       event.preventDefault();
       pickerOpen = true;
-    } else if (event.key === "Delete" && onKey && selection) {
+    } else if ((event.key === "Delete" || event.key === "Backspace") && onKey && selection) {
+      // Backspace too: the Mac's "delete" key
       event.preventDefault();
       void setCode("KC_NO", "Clearing the key");
     }
@@ -103,7 +120,7 @@
 <section class="keymap" aria-labelledby="keymap-title">
   <header class="head">
     <h1 id="keymap-title">Keymap</h1>
-    <p>Click a key to see what it does. Arrow keys move, Enter changes it, Delete clears it.</p>
+    <p>Click a key to see what it does. Arrow keys move, Enter changes it, Delete or Backspace clears it.</p>
   </header>
 
   <LayerTabs
@@ -115,7 +132,7 @@
   />
 
   <div class="workspace">
-    <div class="board">
+    <div class="board" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
       <Keyboard {placement} {faces} {labels} selected={selectedIndex} onselect={select} />
       <KindLegend />
     </div>
@@ -129,9 +146,12 @@
           {selection}
           canEdit={keyboard.canEdit && keyboard.pending === 0}
           onchangekey={() => (pickerOpen = true)}
-          onsetcode={setCode}
-          ontapdance={() => selection && keyboard.turnIntoTapDance(layer, selection)}
-          onjump={(i) => (layer = i)}
+          onsetcode={(code, action) => fromInspector(() => setCode(code, action))}
+          ontapdance={() => fromInspector(turnIntoTapDance)}
+          onjump={(i) => {
+            layer = i;
+            void focusSelected();
+          }}
         />
       {/key}
     {/if}
@@ -155,6 +175,8 @@
   .keymap {
     display: grid;
     gap: 16px;
+    /* the Inspector goes beside the keyboard when the keymap itself is wide enough, whatever else is on the page */
+    container: keymap / inline-size;
   }
 
   .head h1 {
@@ -177,6 +199,8 @@
 
   .board {
     display: grid;
+    /* not "auto": the keyboard measures this column, which must narrow with the window as well as widen */
+    grid-template-columns: minmax(0, 1fr);
     gap: 14px;
     min-width: 0;
     padding: 16px 12px 12px;
@@ -186,7 +210,7 @@
     box-shadow: var(--shadow);
   }
 
-  @media (min-width: 1000px) {
+  @container keymap (min-width: 900px) {
     .workspace {
       grid-template-columns: minmax(0, 1fr) 290px;
     }
