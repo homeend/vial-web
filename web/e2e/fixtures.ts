@@ -1,4 +1,9 @@
 import { test as base, expect, type Page } from "@playwright/test";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** e2e/screenshots/, wherever the tests are run from */
+const SCREENSHOTS = fileURLToPath(new URL("./screenshots/", import.meta.url));
 
 async function open(page: Page, url: string | undefined): Promise<Page> {
   if (!url) throw new Error("the global setup did not start the server");
@@ -47,13 +52,41 @@ export async function encoderCodeAt(page: Page, layer: number, index: number): P
   return (await keyboardModel(page)).layers[layer].encoders[index].code;
 }
 
+async function put(page: Page, path: string, data: unknown): Promise<void> {
+  const response = await page.request.put(serverUrl(page, path), { data });
+  if (!response.ok()) throw new Error(`PUT ${path} failed: ${response.status()} ${await response.text()}`);
+}
+
+/** Sets a key on a layer through the API: tests put back what they changed, as the servers are shared */
+export async function setCodeAt(page: Page, layer: number, index: number, code: string): Promise<void> {
+  const { row, col } = (await keyboardModel(page)).keys[index];
+  await put(page, `/api/keymap/${layer}/${row}/${col}`, { code });
+}
+
+/** Sets an encoder direction on a layer through the API, `index` as in encoderCodeAt */
+export async function setEncoderCodeAt(page: Page, layer: number, index: number, code: string): Promise<void> {
+  const { encoder, direction } = (await keyboardModel(page)).encoders[index];
+  await put(page, `/api/encoders/${layer}/${encoder}/${direction}`, { code });
+}
+
+/** The custom name of a layer, or null when it has its default name */
+export async function layerNameOf(page: Page, layer: number): Promise<string | null> {
+  const names = await (await page.request.get(serverUrl(page, "/api/names"))).json();
+  return names.layers?.[String(layer)] ?? null;
+}
+
+/** Names a layer through the API; null gives it its default name back */
+export async function setLayerName(page: Page, layer: number, name: string | null): Promise<void> {
+  await put(page, `/api/names/layers/${layer}`, { name });
+}
+
 /** Screenshots of the page in the light and the dark theme (the app follows the system's): <name>-light.png and
  * <name>-dark.png in e2e/screenshots/ */
 export async function screenshots(page: Page, name: string, options: { fullPage?: boolean } = {}): Promise<void> {
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     // animations "disabled" finishes colour transitions, which the switch of theme just started
-    await page.screenshot({ path: `e2e/screenshots/${name}-${scheme}.png`, animations: "disabled", ...options });
+    await page.screenshot({ path: join(SCREENSHOTS, `${name}-${scheme}.png`), animations: "disabled", ...options });
   }
   await page.emulateMedia({ colorScheme: null });
 }

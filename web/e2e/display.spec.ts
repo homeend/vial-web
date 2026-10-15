@@ -1,4 +1,4 @@
-import { expect, labelsCutOff, screenshots, test } from "./fixtures";
+import { expect, keyIndex, labelsCutOff, screenshots, test } from "./fixtures";
 
 test.describe("width and fit", () => {
   test("1280 x 800: every label fits on its key", async ({ app }) => {
@@ -23,25 +23,30 @@ test.describe("width and fit", () => {
 
   test("800 wide: Inspector below the keyboard, no horizontal scroll", async ({ app }) => {
     await app.setViewportSize({ width: 800, height: 900 });
-    const board = await app.locator(".board").first().boundingBox();
-    const inspector = await app.getByRole("complementary", { name: "Selected key" }).boundingBox();
-    expect(board && inspector).toBeTruthy();
-    expect(inspector!.y).toBeGreaterThanOrEqual(board!.y + board!.height);
-    const overflow = await app.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(overflow).toBeLessThanOrEqual(0);
-    const keys = app.locator("button.key");
-    for (const box of await Promise.all((await keys.all()).map((k) => k.boundingBox()))) {
-      expect(box!.x).toBeGreaterThanOrEqual(0);
-      expect(box!.x + box!.width).toBeLessThanOrEqual(800);
-    }
-    expect(await labelsCutOff(app)).toEqual([]);
+    // the keyboard rescales a frame after the resize (a ResizeObserver): measure until it has
+    await expect(async () => {
+      const board = await app.locator(".board").first().boundingBox();
+      const inspector = await app.getByRole("complementary", { name: "Selected key" }).boundingBox();
+      expect(board && inspector).toBeTruthy();
+      expect(inspector!.y).toBeGreaterThanOrEqual(board!.y + board!.height);
+      const overflow = await app.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      expect(overflow).toBeLessThanOrEqual(0);
+      const keys = app.locator("button.key");
+      for (const box of await Promise.all((await keys.all()).map((k) => k.boundingBox()))) {
+        expect(box!.x).toBeGreaterThanOrEqual(0);
+        expect(box!.x + box!.width).toBeLessThanOrEqual(800);
+      }
+      expect(await labelsCutOff(app)).toEqual([]);
+    }).toPass();
     await screenshots(app, "keymap-800", { fullPage: true });
   });
 });
 
 test.describe("Inspector and picker", () => {
   test("a layer-tap key is titled in words; the picker", async ({ app }) => {
-    await app.getByRole("button", { name: /^Space — hold for Layer 1/ }).click();
+    const space = app.locator(`[data-ref="key:${await keyIndex(app, 3, 4)}"]`); // base layer: Space, Layer 1 on hold
+    await expect(space).toHaveAccessibleName(/^Space — hold for Layer 1/);
+    await space.click();
     await expect(app.getByRole("heading", { name: "Space — hold for Layer 1" })).toBeVisible();
     await expect(app.getByRole("complementary", { name: "Selected key" })).toContainText("row 3 · column 4 · Base layer");
     await screenshots(app, "inspector-layer-tap");
