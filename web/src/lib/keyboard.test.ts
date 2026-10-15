@@ -182,6 +182,37 @@ describe("an edit that overlaps a load", () => {
     expect(store.model?.layers[0].keys[0].code).toBe("KC_B");
   });
 
+  it("reads the keyboard again when the overlapping load finishes after the edit", async () => {
+    const { store, emit } = await loaded();
+    const write = deferred<Described>();
+    mocked.setKey.mockReturnValueOnce(write.promise);
+    const editing = store.setCode(0, { kind: "key", index: 0 }, "KC_B");
+
+    const before = deferred<KeyboardModel>(); // read before the edit reached the keyboard, but lands after it
+    mocked.keyboard.mockReturnValueOnce(before.promise);
+    emit("reloaded");
+
+    mocked.keyboard.mockResolvedValueOnce(model("KC_B"));
+    write.resolve(described("KC_B"));
+    expect(await editing).toBe(true);
+    before.resolve(model("KC_A"));
+    await settle();
+    expect(mocked.keyboard).toHaveBeenCalledTimes(3);
+    expect(store.model?.layers[0].keys[0].code).toBe("KC_B");
+  });
+
+  it("doesn't read the keyboard again once it is unplugged", async () => {
+    const { store, emit } = await loaded();
+    const write = deferred<Described>();
+    mocked.setKey.mockReturnValueOnce(write.promise);
+    const editing = store.setCode(0, { kind: "key", index: 0 }, "KC_B");
+    emit("disconnected");
+    write.resolve(described("KC_B"));
+    expect(await editing).toBe(true);
+    await settle();
+    expect(mocked.keyboard).toHaveBeenCalledTimes(1);
+  });
+
   it("isn't needed when the model wasn't replaced", async () => {
     const { store } = await loaded();
     mocked.setKey.mockResolvedValueOnce(described("KC_B"));

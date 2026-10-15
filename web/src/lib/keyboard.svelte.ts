@@ -196,10 +196,12 @@ export class KeyboardStore {
   /** Runs write, which puts the keyboard's reply into model */
   async #edit(action: string, model: KeyboardModel, write: () => Promise<void>): Promise<boolean> {
     this.pending++;
+    const loads = this.#loads;
     try {
       await write();
-      // a load replaced the model meanwhile and may have read the keyboard before this edit: read it again
-      if (this.model !== model) void this.load();
+      // a load started or landed meanwhile and may have read the keyboard before this edit (it can land after it,
+      // too): read it again, unless the keyboard is gone
+      if ((this.#loads !== loads || this.model !== model) && this.connected) void this.load();
       return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 503) this.connected = false;

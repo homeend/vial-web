@@ -14,6 +14,8 @@
 
   function focusOut(id: number, event: FocusEvent) {
     const to = event.relatedTarget;
+    // the window lost focus: the toast still has it when the reader comes back
+    if (to === null && !document.hasFocus()) return;
     if (!(to instanceof Node && (event.currentTarget as HTMLElement).contains(to))) toasts.hold(id, "focus", false);
   }
 
