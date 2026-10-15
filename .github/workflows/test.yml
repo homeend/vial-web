@@ -30,3 +30,61 @@ jobs:
       run: |
         source venv/bin/activate
         pytest -v src/main/python/test
+
+  web:
+    runs-on: ubuntu-24.04
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+        cache: npm
+        cache-dependency-path: web/package-lock.json
+
+    # the server code generates the API types and serves the UI in the end-to-end tests (simulated keyboard only)
+    - name: Python venv
+      working-directory: .
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libusb-1.0-0-dev libudev-dev
+        python -m venv .venv
+        .venv/bin/pip install -r requirements.txt
+
+    - name: Install
+      run: npm ci
+
+    - name: Check (svelte-check, tsc)
+      run: npm run check
+
+    - name: Unit tests
+      run: npm test
+
+    - name: Build
+      run: npm run build
+
+    - name: API types are up to date
+      run: npm run check:api
+
+    - name: End-to-end tests
+      run: |
+        npx playwright install --with-deps chromium
+        npx playwright test
+
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: e2e-screenshots
+        path: |
+          web/e2e/screenshots/
+          web/test-results/
+        if-no-files-found: ignore
