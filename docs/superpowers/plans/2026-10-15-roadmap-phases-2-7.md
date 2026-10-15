@@ -199,7 +199,11 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
   - bundles `web/dist`, `qmk_settings.json`, the keymaps and certifi;
   - `vial_web.py` is the entry point;
   - Windows icon and version info.
-- **Windows console:** keep the console window, which shows the URL and Ctrl+C stops the server. Add a "Quit Vial" button in the UI (`POST /api/shutdown`), so the app can also be closed from the browser.
+- **No console window.** `Vial.exe` runs in the background and opens only the browser tab.
+  - A "Quit Vial" button in the UI (`POST /api/shutdown`) stops it.
+  - Double-clicking `Vial.exe` again reopens the tab of the running copy; the existing second-instance detection does this.
+  - Vial quits by itself after 10 minutes with no browser tab open. The time is configurable with `--idle-exit MINUTES`, and `0` turns it off.
+  - The URL and messages still go to `vial.log`, and to the console when it's run from a terminal.
 - **Remove Qt and `fbs`:**
   - `main.py`, `main_window.py`, `editor/*`, `widgets/*`, `unlocker.py`, the Qt parts of `util.py`, `autorefresh/` (the device manager has its own hot-plug detection), `test_gui.py`, and the Qt-only tests;
   - except the flashing logic in `editor/firmware_flasher.py`, which moves to a Qt-free module (`protocol/flasher.py`) with its tests, so phase 7 can build on it;
@@ -213,8 +217,6 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
 - **Docs:** a README for the fork, covering how to run, `--fake`, the dev workflow and building.
 
 **Risk:** macOS and Linux builds can only be checked through CI runs; there's no local machine for them.
-
-**Open decision:** whether the Windows build hides the console and adds a tray icon instead. Default: console plus a Quit button, which is simpler and needs no extra dependency.
 
 **Owner checklist:** install the built `Vial.exe` on Windows and go through the phase 5 checklist again with it.
 
@@ -247,5 +249,5 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
 | 3 | Merge and push to `origin` at the end of each phase | Yes |
 | 4 | Macro "record from keyboard" | Yes, browser-only |
 | 5 | VIA-only keyboards / sideload | Not built unless asked |
-| 6 | Windows build | Console plus a "Quit Vial" button, no tray icon |
+| 6 | Windows build | No console window, a "Quit Vial" button, reopen by double-click, auto-quit after 10 minutes without a tab, no tray icon (chosen by the owner, 2026-10-15) |
 | 7 | Overview shows unreached layers | Yes, with a warning |
