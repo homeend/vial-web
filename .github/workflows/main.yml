@@ -69,9 +69,12 @@ jobs:
     - name: Setup venv
       run: |
         python -m venv venv
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
         . .\venv\Scripts\activate.ps1
         pip install -r requirements.txt
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
         pip install --no-deps -r requirements-fbs.txt
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
     - name: Install NSIS
       run: |
@@ -89,6 +92,7 @@ jobs:
       run: |
         . .\venv\Scripts\activate.ps1
         fbs freeze
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
         Compress-Archive -Path "target\Vial" -DestinationPath vial-win.zip
 
     - uses: actions/upload-artifact@v4
@@ -101,6 +105,7 @@ jobs:
         $env:Path += ";C:\Program Files (x86)\NSIS"
         . .\venv\Scripts\activate.ps1
         fbs installer
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
     - uses: actions/upload-artifact@v4
       with:
