@@ -7,14 +7,39 @@ from pydantic import BaseModel, ConfigDict, Field
 # ---------- responses ----------
 
 
+KeyKind = Literal["basic", "modifier", "mod-tap", "layer-tap", "layer", "one-shot-mod", "tap-dance", "macro",
+                  "transparent", "none", "mouse", "media", "lighting", "other"]
+
+
+LayerAction = Literal["while held", "toggle", "switch to", "hold, or tap to toggle", "one-shot", "default",
+                      "default (saved)"]
+
+
+class Legend(BaseModel):
+    """ What a key cap shows, each on one line """
+    main: str
+    shifted: Optional[str] = None
+    """ the character typed with Shift, when the key cap shows it (e.g. "!" on the 1 key) """
+    altGr: Optional[str] = None
+    """ the character typed with AltGr in the chosen keyboard language, e.g. "ą" on Polish A """
+
+
 class Described(BaseModel):
+    """ A keycode as the UI shows it """
     code: str
-    kind: str
+    kind: KeyKind
     tap: str
+    """ what a tap does, in a few words, e.g. "1", "Caps Lock", "Ctrl+C", "TD 0" """
+    legend: Legend
     hold: Optional[str] = None
+    """ what holding does, when it differs from a tap: "Shift" (mod-tap), "layer 2" (layer-tap) """
     layer: Optional[int] = None
+    layerAction: Optional[LayerAction] = None
+    """ for keys that use a layer: what they do with it """
     index: Optional[int] = None
-    tooltip: Optional[str] = None
+    """ the tap dance or macro a key runs """
+    description: Optional[str] = None
+    """ what the keycode does, when its name doesn't say it all """
 
 
 class KeyGeometry(BaseModel):
@@ -172,6 +197,11 @@ class Session(BaseModel):
     fake: bool
     device: Optional[str] = None
     error: Optional[str] = None
+
+
+class KeyboardLanguage(BaseModel):
+    id: str
+    name: str
 
 
 class Names(BaseModel):

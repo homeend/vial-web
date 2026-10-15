@@ -5,14 +5,15 @@ import contextlib
 import logging
 import os
 import secrets
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from protocol.qmk_settings_codec import QmkSettingsCodec
-from server import edits, model, schemas
-from server.describe import parse
+from server import edits, languages, model, schemas
+from server.describe import keyboard_language, parse
 from server.device import NotConnected, KeyboardLocked
 
 log = logging.getLogger(__name__)
@@ -45,6 +46,9 @@ NEED_TOKEN_PAGE = """<!doctype html>
 <h1>Open Vial from its link</h1>
 <p>For security, open the link Vial printed in its terminal window (it ends with <code>?token=...</code>).</p>
 </body></html>"""
+
+
+Lang = Annotated[str, Query(description="keyboard language the keys are labelled in, from /api/keyboard-languages")]
 
 
 def cookie_name(port):
@@ -216,8 +220,16 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         log.error("unexpected error in %s %s", request.method, request.url.path, exc_info=exc)
         return JSONResponse({"detail": "unexpected error, see vial.log"}, status_code=500, headers=SECURITY_HEADERS)
 
-    def run(fn):
-        return manager.run(fn)
+    def run(fn, lang=languages.DEFAULT):
+        """ fn(keyboard) under the device lock; keycodes it describes are labelled in the keyboard language lang """
+        with keyboard_language(languages.overrides(lang)):
+            return manager.run(fn)
+
+    def offline(fn, lang=languages.DEFAULT):
+        """ fn() for what needs no keyboard (the keycode tables are those of the last keyboard read, or the
+        defaults before the first): under the device lock, as a keyboard being read rebuilds those tables """
+        with manager.lock, keyboard_language(languages.overrides(lang)):
+            return fn()
 
     async def resync():
         """ After a write failed halfway: read the keyboard again and tell the UI to do the same """
@@ -245,60 +257,67 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         return schemas.Session(status="connected" if status.connected else "disconnected",
                                fake=manager.backend.fake, device=status.title, error=status.error)
 
+    @app.get("/api/keyboard-languages", response_model=list[schemas.KeyboardLanguage])
+    def keyboard_languages():
+        return languages.catalogue()
+
     @app.get("/api/keyboard", response_model=schemas.KeyboardModel)
-    def keyboard():
-        return run(lambda kb: model.build(kb, names_for(kb), manager.unlocked))
+    def keyboard(lang: Lang = languages.DEFAULT):
+        return run(lambda kb: model.build(kb, names_for(kb), manager.unlocked), lang)
 
     @app.post("/api/reload", response_model=schemas.KeyboardModel)
-    async def reload():
+    async def reload(lang: Lang = languages.DEFAULT):
+        languages.overrides(lang)  # an unknown language is refused before reading the keyboard
+
         def reload_and_build():
             with manager.lock:  # one hold of the lock: the reply shows exactly what was read
                 manager.reload()
-                return run(lambda kb: model.build(kb, names_for(kb), manager.unlocked))
+                return run(lambda kb: model.build(kb, names_for(kb), manager.unlocked), lang)
         # device access waits for the device lock: keep it off the event loop
         result = await asyncio.to_thread(reload_and_build)
         await hub.broadcast({"type": "reloaded"})
         return result
 
     @app.put("/api/keymap/{layer}/{row}/{col}", response_model=schemas.Described)
-    def set_key(layer: int, row: int, col: int, body: schemas.SetKeycode):
-        return run(lambda kb: edits.set_key(kb, layer, row, col, body.code))
+    def set_key(layer: int, row: int, col: int, body: schemas.SetKeycode, lang: Lang = languages.DEFAULT):
+        return run(lambda kb: edits.set_key(kb, layer, row, col, body.code), lang)
 
     @app.put("/api/encoders/{layer}/{index}/{direction}", response_model=schemas.Described)
-    def set_encoder(layer: int, index: int, direction: int, body: schemas.SetKeycode):
-        return run(lambda kb: edits.set_encoder(kb, layer, index, direction, body.code))
+    def set_encoder(layer: int, index: int, direction: int, body: schemas.SetKeycode,
+                    lang: Lang = languages.DEFAULT):
+        return run(lambda kb: edits.set_encoder(kb, layer, index, direction, body.code), lang)
 
     @app.put("/api/layout-options")
     def set_layout_options(body: schemas.SetLayoutOptions):
         return {"value": run(lambda kb: edits.set_layout_options(kb, body.value))}
 
     @app.get("/api/keycodes")
-    def keycodes():
-        return run(lambda kb: model.keycode_catalogue())
+    def keycodes(lang: Lang = languages.DEFAULT):
+        return offline(model.keycode_catalogue, lang)
 
     @app.post("/api/keycodes/parse", response_model=schemas.Described)
-    def parse_keycode(body: schemas.ParseRequest):
-        return run(lambda kb: schemas.Described(**parse(body.expression)))
+    def parse_keycode(body: schemas.ParseRequest, lang: Lang = languages.DEFAULT):
+        return offline(lambda: schemas.Described(**parse(body.expression)), lang)
 
     @app.put("/api/tap-dance/{index}", response_model=schemas.TapDance)
-    def set_tap_dance(index: int, body: schemas.TapDanceIn):
-        return run(lambda kb: edits.set_tap_dance(kb, index, body, names_for(kb)))
+    def set_tap_dance(index: int, body: schemas.TapDanceIn, lang: Lang = languages.DEFAULT):
+        return run(lambda kb: edits.set_tap_dance(kb, index, body, names_for(kb)), lang)
 
     @app.put("/api/combos/{index}", response_model=schemas.Combo)
-    def set_combo(index: int, body: schemas.ComboIn):
-        return run(lambda kb: edits.set_combo(kb, index, body))
+    def set_combo(index: int, body: schemas.ComboIn, lang: Lang = languages.DEFAULT):
+        return run(lambda kb: edits.set_combo(kb, index, body), lang)
 
     @app.put("/api/key-overrides/{index}", response_model=schemas.KeyOverride)
-    def set_key_override(index: int, body: schemas.KeyOverrideIn):
-        return run(lambda kb: edits.set_key_override(kb, index, body))
+    def set_key_override(index: int, body: schemas.KeyOverrideIn, lang: Lang = languages.DEFAULT):
+        return run(lambda kb: edits.set_key_override(kb, index, body), lang)
 
     @app.put("/api/alt-repeat/{index}", response_model=schemas.AltRepeatKey)
-    def set_alt_repeat_key(index: int, body: schemas.AltRepeatKeyIn):
-        return run(lambda kb: edits.set_alt_repeat_key(kb, index, body))
+    def set_alt_repeat_key(index: int, body: schemas.AltRepeatKeyIn, lang: Lang = languages.DEFAULT):
+        return run(lambda kb: edits.set_alt_repeat_key(kb, index, body), lang)
 
     @app.put("/api/macros", response_model=schemas.Macros)
-    def set_macros(body: schemas.MacrosIn):
-        return run(lambda kb: edits.set_macros(kb, body, names_for(kb)))
+    def set_macros(body: schemas.MacrosIn, lang: Lang = languages.DEFAULT):
+        return run(lambda kb: edits.set_macros(kb, body, names_for(kb)), lang)
 
     @app.get("/api/qmk-settings/definitions")
     def setting_definitions():
@@ -351,7 +370,8 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         return bytes(data)
 
     @app.post("/api/layout-file", response_model=schemas.KeyboardModel)
-    async def upload_layout(request: Request):
+    async def upload_layout(request: Request, lang: Lang = languages.DEFAULT):
+        languages.overrides(lang)  # an unknown language is refused before anything is written
         data = await read_limited(request, MAX_LAYOUT_FILE)
         writing = []
 
@@ -362,7 +382,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             return model.build(kb, names_for(kb), manager.unlocked)
 
         try:
-            result = await asyncio.to_thread(run, restore)
+            result = await asyncio.to_thread(run, restore, lang)
         except Exception:
             if writing:
                 # part of the file may have been written: re-read the keyboard and make the UI do the same

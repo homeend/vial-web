@@ -128,6 +128,33 @@ def test_keycodes_and_parse(client):
     assert client.post("/api/keycodes/parse", json={"expression": "NOPE"}).status_code == 422
 
 
+def test_keycode_catalogue_works_without_a_keyboard(setup):
+    client, virtual, app = setup
+    client.put("/api/simulator/connection", json={"connected": False})
+    app.state.manager.check()  # the hot-plug poll notices
+    assert client.get("/api/session").json()["status"] == "disconnected"
+    response = client.get("/api/keycodes")
+    assert response.status_code == 200 and response.json()[0]["name"] == "Basic"
+    assert client.post("/api/keycodes/parse", json={"expression": "LT(1, KC_A)"}).json()["code"] == "LT1(KC_A)"
+
+
+def test_keycode_catalogue_before_any_keyboard_was_connected(tmp_path):
+    app = create_app(DeviceManager(NoRealKeyboard()), NamesStore(str(tmp_path / "n.json")), TOKEN, PORT,
+                     poll_interval=0)
+    with TestClient(app, base_url=BASE) as c:
+        c.get("/?token=" + TOKEN, follow_redirects=False)
+        response = c.get("/api/keycodes")
+        assert response.status_code == 200
+        assert any(k["code"] == "KC_A" for k in response.json()[0]["keycodes"])
+
+
+def test_keycode_catalogue_has_descriptions(client):
+    modifiers = next(c for c in client.get("/api/keycodes").json() if c["name"] == "Modifiers")["keycodes"]
+    gesc = next(k for k in modifiers if k["code"] == "KC_GESC")
+    assert gesc["legend"] == {"main": "Esc", "shifted": "~", "altGr": None}
+    assert gesc["description"].startswith("Esc normally") and "tooltip" not in gesc
+
+
 def test_placeholder_page_when_ui_not_built(client):
     response = client.get("/")
     assert response.status_code == 200 and "Vial server is running" in response.text
@@ -312,3 +339,46 @@ def test_simulator_controls_do_not_exist_for_real_keyboards(tmp_path):
         c.get("/?token=" + TOKEN, follow_redirects=False)
         assert c.put("/api/simulator/connection", json={"connected": False}).status_code in (404, 405)
         assert "/api/simulator/connection" not in c.get("/openapi.json").text
+
+
+# ---------- keyboard languages ----------
+
+POLISH = "polish-qwerty"
+
+
+def key_at(model, layer, row, col):
+    index = next(i for i, k in enumerate(model["keys"]) if (k["row"], k["col"]) == (row, col))
+    return model["layers"][layer]["keys"][index]
+
+
+def test_keyboard_languages_are_listed(client):
+    listed = client.get("/api/keyboard-languages").json()
+    assert listed[0] == {"id": "en-us", "name": "English (US)"}
+    assert {"id": POLISH, "name": "Polish (QWERTY)"} in listed
+
+
+def test_keyboard_is_described_in_the_chosen_language(client):
+    # base layer, right home row: RALT_T(KC_E)
+    english = key_at(client.get("/api/keyboard").json(), 0, 5, 3)
+    polish = key_at(client.get("/api/keyboard", params={"lang": POLISH}).json(), 0, 5, 3)
+    assert (english["tap"], english["legend"]["altGr"]) == ("E", None)
+    assert (polish["code"], polish["tap"], polish["legend"]["altGr"]) == ("RALT_T(KC_E)", "E", "ę")
+
+
+def test_keycode_catalogue_in_the_chosen_language(client):
+    basic = client.get("/api/keycodes", params={"lang": POLISH}).json()[0]["keycodes"]
+    assert next(k for k in basic if k["code"] == "KC_A")["legend"]["altGr"] == "ą"
+
+
+def test_edits_and_parsing_answer_in_the_chosen_language(client):
+    set_key = client.put("/api/keymap/0/0/0", params={"lang": POLISH}, json={"code": "RALT(KC_A)"})
+    assert set_key.json()["tap"] == "ą"
+    parsed = client.post("/api/keycodes/parse", params={"lang": POLISH}, json={"expression": "KC_L"})
+    assert parsed.json()["legend"]["altGr"] == "ł"
+    assert client.post("/api/keycodes/parse", json={"expression": "KC_L"}).json()["legend"]["altGr"] is None
+
+
+def test_unknown_language_is_refused(client, virtual):
+    response = client.put("/api/keymap/0/0/0", params={"lang": "klingon"}, json={"code": "KC_A"})
+    assert response.status_code == 422 and "unknown keyboard language" in response.json()["detail"]
+    assert virtual.keymap[0][0][0] == encode("KC_TAB")
