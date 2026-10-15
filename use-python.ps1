@@ -6,16 +6,28 @@
 $pyHome = if ($env:VIAL_PYTHON_HOME) { $env:VIAL_PYTHON_HOME } else { Join-Path $env:USERPROFILE 'scoop\apps\python313\current' }
 $venv = Join-Path $PSScriptRoot '.venv'
 
-if (-not (Test-Path (Join-Path $venv 'Scripts\python.exe'))) {
+$venvPy = Join-Path $venv 'Scripts\python.exe'
+$marker = Join-Path $venv '.vial-installed'
+
+if (-not (Test-Path $venvPy)) {
     if (-not (Test-Path (Join-Path $pyHome 'python.exe'))) {
         Write-Error "python.exe not found in $pyHome (set `$env:VIAL_PYTHON_HOME)"
         return
     }
-    Write-Host "Creating .venv with $pyHome\python.exe and installing requirements ..."
+    Write-Host "Creating .venv with $pyHome\python.exe ..."
     & "$pyHome\python.exe" -m venv $venv
-    & "$venv\Scripts\python.exe" -m pip install --quiet --upgrade pip
-    & "$venv\Scripts\python.exe" -m pip install --quiet -r (Join-Path $PSScriptRoot 'test-requirements.txt')
-    & "$venv\Scripts\python.exe" -m pip install --quiet --no-deps -r (Join-Path $PSScriptRoot 'requirements-fbs.txt')
+    if ($LASTEXITCODE -ne 0) { Write-Error "venv creation failed"; return }
+}
+
+if (-not (Test-Path $marker)) {
+    Write-Host "Installing requirements ..."
+    & $venvPy -m pip install --quiet --upgrade pip
+    if ($LASTEXITCODE -ne 0) { Write-Error "pip upgrade failed; rerun to retry"; return }
+    & $venvPy -m pip install --quiet -r (Join-Path $PSScriptRoot 'test-requirements.txt')
+    if ($LASTEXITCODE -ne 0) { Write-Error "installing test-requirements.txt failed; rerun to retry"; return }
+    & $venvPy -m pip install --quiet --no-deps -r (Join-Path $PSScriptRoot 'requirements-fbs.txt')
+    if ($LASTEXITCODE -ne 0) { Write-Error "installing requirements-fbs.txt failed; rerun to retry"; return }
+    Set-Content -Path $marker -Value 'ok'
 }
 
 . (Join-Path $venv 'Scripts\Activate.ps1')
