@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Described } from "../api/types";
-import { actionSummary, holdSize, keyFace, keyTitle, legendScale, legendSizes, toneOf, type Names } from "./labels";
+import type { Described, KeyboardModel } from "../api/types";
+import {
+  actionSummary, holdSize, keyFace, keyTitle, legendScale, legendSizes, namesOf, toneOf, type Names,
+} from "./labels";
 
 type Fields = Partial<Described> & Pick<Described, "code" | "kind" | "tap">;
 
@@ -29,6 +31,32 @@ describe("toneOf", () => {
     ["transparent", "transparent"], ["none", "none"], ["media", "normal"], ["other", "normal"],
   ] as const)("%s keys are %s", (kind, tone) => {
     expect(toneOf(kind)).toBe(tone);
+  });
+});
+
+describe("namesOf", () => {
+  const model = {
+    layers: [{ name: "Layer 0", customName: false }, { name: "Symbols", customName: true }],
+    tapDance: [{ name: "Tab / Caps Lock", customName: false }, { name: "Esc dance", customName: true }],
+    macros: { items: [{ name: "Text", customName: false }, { name: "git status", customName: true }] },
+  } as unknown as KeyboardModel;
+  const n = namesOf(model);
+
+  it("names layers, and knows which ones the user named", () => {
+    expect([n.layer(0), n.layer(1)]).toEqual(["Layer 0", "Symbols"]);
+    expect([n.layerIsNamed(0), n.layerIsNamed(1)]).toEqual([false, true]);
+  });
+
+  it("uses the names of tap dances and macros, suggested or chosen", () => {
+    expect([n.tapDance(0), n.tapDance(1)]).toEqual(["Tab / Caps Lock", "Esc dance"]);
+    expect([n.macro(0), n.macro(1)]).toEqual(["Text", "git status"]);
+  });
+
+  it("has default names for what does not exist", () => {
+    expect(n.layer(7)).toBe("Layer 7");
+    expect(n.layerIsNamed(7)).toBe(false);
+    expect(n.tapDance(9)).toBe("");
+    expect(n.macro(9)).toBe("");
   });
 });
 
@@ -87,6 +115,18 @@ describe("actionSummary", () => {
     expect(actionSummary(key, names)).toEqual({ tap: sentence, hold: null });
   });
 
+  it("falls back to the tap text for a layer action it does not know", () => {
+    const key = d({ code: "X(2)", kind: "layer", tap: "X 2", layer: 2, layerAction: "sideways" as never });
+    expect(actionSummary(key, names)).toEqual({ tap: "X 2", hold: null });
+  });
+
+  it("says Nothing for a hold key that types nothing on tap", () => {
+    const shift = d({ code: "LSFT_T(KC_NO)", kind: "mod-tap", tap: "", hold: "Shift" });
+    expect(actionSummary(shift, names)).toEqual({ tap: "Nothing", hold: "Shift" });
+    const layer = d({ code: "LT1(KC_NO)", kind: "layer-tap", tap: "", hold: "layer 1", layer: 1 });
+    expect(actionSummary(layer, names).tap).toBe("Nothing");
+  });
+
   it("describes transparent and empty keys in words", () => {
     expect(actionSummary(d({ code: "KC_TRNS", kind: "transparent", tap: "▽" }), names).tap)
       .toBe("Falls through to the layer below");
@@ -119,6 +159,13 @@ describe("keyTitle", () => {
     expect(keyTitle(d({ code: "KC_TRNS", kind: "transparent", tap: "▽" }), names)).toBe("Transparent");
     expect(keyTitle(d({ code: "KC_NO", kind: "none", tap: "" }), names)).toBe("Empty");
   });
+
+  it("says Nothing for a hold key that types nothing on tap", () => {
+    expect(keyTitle(d({ code: "LSFT_T(KC_NO)", kind: "mod-tap", tap: "", hold: "Shift" }), names))
+      .toBe("Nothing — hold for Shift");
+    expect(keyTitle(d({ code: "LT2(KC_NO)", kind: "layer-tap", tap: "", hold: "layer 2", layer: 2 }), names))
+      .toBe("Nothing — hold for Layer 2");
+  });
 });
 
 describe("legendScale", () => {
@@ -130,6 +177,12 @@ describe("legendScale", () => {
 
   it("sizes multi-word labels by their longest word, as they wrap", () => {
     expect(legendScale("Caps Lock")).toBe(legendScale("Caps"));
+  });
+
+  it("counts a wide character (CJK, full-width) as nearly two", () => {
+    expect(legendScale("日本")).toBe(legendScale("Home"));
+    expect(legendScale("ＡＢ")).toBe(legendScale("Home"));
+    expect(legendScale("한")).toBe(legendScale("Up"));
   });
 });
 
@@ -147,6 +200,14 @@ describe("holdSize", () => {
 
   it("shrinks a long word so it fits on one line", () => {
     expect(holdSize("Ctrl+Shift", 40, 48) * 0.55 * 10).toBeLessThanOrEqual(40);
+  });
+
+  it("measures wide characters (CJK, kana, Hangul) at a full font size each", () => {
+    // a word of n wide characters fits on one line when n * size <= 40
+    expect(holdSize("ひらがな", 40, 48) * 4).toBeLessThanOrEqual(40);
+    expect(holdSize("한국어자판", 40, 48) * 5).toBeLessThanOrEqual(40);
+    // six wide characters and two spaces: smaller, to fit in two lines
+    expect(holdSize("数字 記号 入力", 40, 48)).toBeLessThan(holdSize("Num Sym Fn", 40, 48));
   });
 
   it("never goes below 7 px", () => {
@@ -169,6 +230,33 @@ describe("legendSizes", () => {
     expect(sizes.main).toBeLessThan(legendScale("M 0") * 48);
     const height = sizes.main * 1.05 + 2 * sizes.hold * 1.1 + 0.04 * 48;
     expect(height).toBeLessThanOrEqual(40);
+  });
+
+  it("makes a long word small enough to fit across the key", () => {
+    // a 1u key 48 px wide has about 40 px for its labels
+    expect(legendSizes(face("Bootloader", null), 40, 40, 48).main * 0.55 * 10).toBeLessThanOrEqual(40);
+    expect(legendSizes(face("Ctrl+Alt+Del", null), 40, 40, 48).main * 0.55 * 12).toBeLessThanOrEqual(40);
+    const long = "RCtrl+RShift+AltGr+RGui+A";
+    expect(legendSizes(face(long, null), 40, 40, 48).main * 0.55 * long.length).toBeLessThanOrEqual(40);
+  });
+
+  it("fits the longest word of a legend that wraps, and leaves short legends alone", () => {
+    expect(legendSizes(face("Print Screen", null), 40, 40, 48).main * 0.55 * 6).toBeLessThanOrEqual(40);
+    expect(legendSizes(face("Esc", null), 40, 40, 48).main).toBeCloseTo(legendScale("Esc") * 48, 5);
+    // a wider key has room for the usual size
+    expect(legendSizes(face("Bootloader", null), 100, 40, 48).main).toBeCloseTo(legendScale("Bootloader") * 48, 5);
+  });
+
+  it("fits a long word even when a name below it needs two lines", () => {
+    const sizes = legendSizes(face("Bootloader", "git status"), 40, 40, 48);
+    expect(sizes.main * 0.55 * 10).toBeLessThanOrEqual(40);
+  });
+
+  it("measures wide characters at a full font size", () => {
+    expect(legendSizes(face("日本語入力", null), 40, 40, 48).main * 5).toBeLessThanOrEqual(40);
+    // two words of two wide characters: too wide for one line at this size, so two lines under the legend
+    const sizes = legendSizes(face("A", "数字 記号"), 40, 40, 48);
+    expect(sizes.main * 1.05 + 2 * sizes.hold * 1.1 + 0.04 * 48).toBeLessThanOrEqual(40 + 1e-9);
   });
 
   it("keeps room for the shifted character", () => {
