@@ -21,7 +21,7 @@ from protocol.dynamic import ProtocolDynamic
 from protocol.key_override import ProtocolKeyOverride
 from protocol.macro import ProtocolMacro
 from protocol.tap_dance import ProtocolTapDance
-from unlocker import Unlocker
+from protocol.unlock_hook import request_unlock
 from transport import MSG_LEN, hid_send
 
 SUPPORTED_VIA_PROTOCOL = [-1, 9]
@@ -314,7 +314,7 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
         key = (layer, row, col)
         if self.layout[key] != code:
             if code == RESET_KEYCODE:
-                Unlocker.unlock(self)
+                request_unlock(self)
 
             self.usb_send(self.dev, struct.pack(">BBBBH", CMD_VIA_SET_KEYCODE, layer, row, col,
                                                 Keycode.deserialize(code)), retries=20)
@@ -324,7 +324,7 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
         key = (layer, index, direction)
         if self.encoder_layout[key] != code:
             if code == RESET_KEYCODE:
-                Unlocker.unlock(self)
+                request_unlock(self)
 
             self.usb_send(self.dev, struct.pack(">BBBBBH", CMD_VIA_VIAL_PREFIX, CMD_VIAL_SET_ENCODER,
                                                 layer, index, direction, Keycode.deserialize(code)), retries=20)

@@ -7,7 +7,7 @@ from macro.macro_action_ui import tag_to_action
 from protocol.base_protocol import BaseProtocol
 from protocol.constants import CMD_VIA_MACRO_GET_COUNT, CMD_VIA_MACRO_GET_BUFFER_SIZE, CMD_VIA_MACRO_GET_BUFFER, \
     CMD_VIA_MACRO_SET_BUFFER, BUFFER_FETCH_CHUNK, VIAL_PROTOCOL_ADVANCED_MACROS
-from unlocker import Unlocker
+from protocol.unlock_hook import request_unlock
 from transport import chunks
 
 
@@ -201,7 +201,7 @@ class ProtocolMacro(BaseProtocol):
         # TODO: log a warning if macro is cutoff
         data = self.macros_serialize(full_macro)[0:self.macro_memory]
         if data != self.macro:
-            Unlocker.unlock(self)
+            request_unlock(self)
             self.set_macro(data)
 
     def macro_serialize(self, macro):

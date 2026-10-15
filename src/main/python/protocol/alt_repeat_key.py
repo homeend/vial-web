@@ -5,7 +5,7 @@ from keycodes.keycodes import Keycode, RESET_KEYCODE
 from protocol.base_protocol import BaseProtocol
 from protocol.constants import DYNAMIC_VIAL_ALT_REPEAT_KEY_GET, CMD_VIA_VIAL_PREFIX, CMD_VIAL_DYNAMIC_ENTRY_OP, \
     DYNAMIC_VIAL_ALT_REPEAT_KEY_SET
-from unlocker import Unlocker
+from protocol.unlock_hook import request_unlock
 
 
 class AltRepeatKeyOptions:
@@ -83,7 +83,7 @@ class ProtocolAltRepeatKey(BaseProtocol):
     def alt_repeat_key_set(self, idx, entry):
         if entry != self.alt_repeat_key_entries[idx]:
             if entry.keycode == RESET_KEYCODE or entry.alt_keycode == RESET_KEYCODE:
-                Unlocker.unlock(self)
+                request_unlock(self)
 
             self.alt_repeat_key_entries[idx] = entry
             self.usb_send(self.dev, struct.pack("BBBB", CMD_VIA_VIAL_PREFIX, CMD_VIAL_DYNAMIC_ENTRY_OP,

@@ -5,7 +5,7 @@ from keycodes.keycodes import Keycode, RESET_KEYCODE
 from protocol.base_protocol import BaseProtocol
 from protocol.constants import DYNAMIC_VIAL_TAP_DANCE_GET, CMD_VIA_VIAL_PREFIX, DYNAMIC_VIAL_TAP_DANCE_SET, \
     CMD_VIAL_DYNAMIC_ENTRY_OP
-from unlocker import Unlocker
+from protocol.unlock_hook import request_unlock
 
 
 class ProtocolTapDance(BaseProtocol):
@@ -26,7 +26,7 @@ class ProtocolTapDance(BaseProtocol):
             return
         for x in range(4):
             if entry[x] == RESET_KEYCODE:
-                Unlocker.unlock(self)
+                request_unlock(self)
         self.tap_dance_entries[idx] = entry
         entry = [Keycode.deserialize(entry[0]), Keycode.deserialize(entry[1]), Keycode.deserialize(entry[2]),
                  Keycode.deserialize(entry[3]), entry[4]]

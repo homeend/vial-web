@@ -5,7 +5,7 @@ from keycodes.keycodes import Keycode, RESET_KEYCODE
 from protocol.base_protocol import BaseProtocol
 from protocol.constants import CMD_VIA_VIAL_PREFIX, CMD_VIAL_DYNAMIC_ENTRY_OP, DYNAMIC_VIAL_COMBO_GET, \
     DYNAMIC_VIAL_COMBO_SET
-from unlocker import Unlocker
+from protocol.unlock_hook import request_unlock
 
 
 class ProtocolCombo(BaseProtocol):
@@ -26,7 +26,7 @@ class ProtocolCombo(BaseProtocol):
             return
         # for the replacement key
         if entry[-1] == RESET_KEYCODE:
-            Unlocker.unlock(self)
+            request_unlock(self)
         self.combo_entries[idx] = entry
         entry = [Keycode.deserialize(entry[0]), Keycode.deserialize(entry[1]), Keycode.deserialize(entry[2]),
                  Keycode.deserialize(entry[3]), Keycode.deserialize(entry[4])]
