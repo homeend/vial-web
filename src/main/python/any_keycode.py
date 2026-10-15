@@ -30,17 +30,57 @@ def RCS(kc): return (r("QK_RCTL") | r("QK_RSFT") | (kc))
 def LCG(kc): return (r("QK_LCTL") | r("QK_LGUI") | (kc))
 def RCG(kc): return (r("QK_RCTL") | r("QK_RGUI") | (kc))
 
-def LT(layer, kc): return (r("QK_LAYER_TAP") | (((layer)&0xF) << 8) | ((kc)&0xFF))
-def TO(layer): return (r("QK_TO") | (r("ON_PRESS") << 0x4) | ((layer)&0xFF))
-def MO(layer): return (r("QK_MOMENTARY") | ((layer)&0xFF))
-def DF(layer): return (r("QK_DEF_LAYER") | ((layer)&0xFF))
-def TG(layer): return (r("QK_TOGGLE_LAYER") | ((layer)&0xFF))
-def OSL(layer): return (r("QK_ONE_SHOT_LAYER") | ((layer)&0xFF))
-def LM(layer, mod): return (r("QK_LAYER_MOD") | (((layer)&0xF) << r("QMK_LM_SHIFT")) | ((mod)&r("QMK_LM_MASK")))
-def OSM(mod): return (r("QK_ONE_SHOT_MOD") | ((mod)&0xFF))
-def TT(layer): return (r("QK_LAYER_TAP_TOGGLE") | ((layer)&0xFF))
-def MT(mod, kc): return (r("QK_MOD_TAP") | (((mod)&0x1F) << 8) | ((kc)&0xFF))
-def TD(n): return (r("QK_TAP_DANCE") | ((n)&0xFF))
+class OutOfRange(ValueError):
+    """ An argument that doesn't fit in its keycode: QMK's macros would quietly cut it short, making another keycode """
+
+
+def layer_count(name):
+    """ How many layers the layer keycode `name` can point at, in the keycode protocol in use. LT and LM keep the
+    layer in 4 bits; the others in 5 bits in protocol 6 and 8 in protocol 5, except protocol 5's TO, whose layer has
+    4 bits next to ON_PRESS. """
+    if name in ("LT", "LM"):
+        return 16
+    if Keycode.protocol == 6:
+        return 32
+    return 16 if name == "TO" else 256
+
+
+def check_layer(name, layer):
+    count = layer_count(name)
+    if not 0 <= layer < count:
+        raise OutOfRange("{} works with layers 0–{}".format(name, count - 1))
+    return layer
+
+
+def _basic(name, kc):
+    if not 0 <= kc <= 0xFF:
+        raise OutOfRange("{} taps a basic keycode, without modifiers".format(name))
+    return kc
+
+
+def _mods(name, mod, mask=0x1F):
+    if not 0 <= mod <= mask:
+        raise OutOfRange("{} holds modifiers, MOD_LCTL to MOD_RGUI".format(name))
+    return mod
+
+
+def LT(layer, kc): return (r("QK_LAYER_TAP") | (check_layer("LT", layer) << 8) | _basic("LT", kc))
+def TO(layer):
+    on_press = 0 if Keycode.protocol == 6 else r("ON_PRESS") << 0x4  # protocol 6's TO has no ON_PRESS bits
+    return (r("QK_TO") | on_press | check_layer("TO", layer))
+def MO(layer): return (r("QK_MOMENTARY") | check_layer("MO", layer))
+def DF(layer): return (r("QK_DEF_LAYER") | check_layer("DF", layer))
+def TG(layer): return (r("QK_TOGGLE_LAYER") | check_layer("TG", layer))
+def OSL(layer): return (r("QK_ONE_SHOT_LAYER") | check_layer("OSL", layer))
+def LM(layer, mod):
+    return (r("QK_LAYER_MOD") | (check_layer("LM", layer) << r("QMK_LM_SHIFT")) | _mods("LM", mod, r("QMK_LM_MASK")))
+def OSM(mod): return (r("QK_ONE_SHOT_MOD") | _mods("OSM", mod))
+def TT(layer): return (r("QK_LAYER_TAP_TOGGLE") | check_layer("TT", layer))
+def MT(mod, kc): return (r("QK_MOD_TAP") | (_mods("MT", mod) << 8) | _basic("MT", kc))
+def TD(n):
+    if not 0 <= n <= 0xFF:
+        raise OutOfRange("TD works with tap dances 0–255")
+    return (r("QK_TAP_DANCE") | n)
 
 
 def LCTL_T(kc): return MT(r("MOD_LCTL"), kc)
@@ -88,7 +128,7 @@ functions = {
 }
 
 for x in range(16):
-    functions["LT{}".format(x)] = lambda kc, layer=x: (r("QK_LAYER_TAP") | (((layer)&0xF) << 8) | ((kc)&0xFF))
+    functions["LT{}".format(x)] = lambda kc, layer=x: LT(layer, kc)
 
 
 class AnyKeycode:

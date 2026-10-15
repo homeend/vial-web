@@ -1,16 +1,29 @@
 // Tap dances as the keymap shows them: what a tap dance key does, and finding a free one.
 import type { Described, KeyboardModel, TapDance } from "../api/types";
 
-/** The first tap dance with nothing in it that no key or encoder uses, or null */
-export function freeTapDance(model: Pick<KeyboardModel, "tapDance" | "layers">): number | null {
+type Model = Pick<KeyboardModel, "tapDance" | "layers" | "combos" | "keyOverrides" | "altRepeatKeys">;
+
+/** Every keycode of the keyboard that can run a tap dance: keys and encoders on every layer, combos (keys and
+ * output), key overrides (trigger and replacement), alt repeat keys (both keycodes) and tap dances (every slot) */
+function everyAction(model: Model): Described[] {
+  return [
+    ...model.layers.flatMap((layer) => [...layer.keys, ...layer.encoders]),
+    ...model.combos.flatMap((combo) => [...combo.keys, combo.output]),
+    ...model.keyOverrides.flatMap((o) => [o.trigger, o.replacement]),
+    ...model.altRepeatKeys.flatMap((a) => [a.keycode, a.altKeycode]),
+    ...model.tapDance.flatMap((td) => tapDanceSlots(td).map((slot) => slot.action)),
+  ];
+}
+
+/** The first tap dance with nothing in it that nothing uses (no key, encoder, combo, key override, alt repeat key
+ * or tap dance), or null */
+export function freeTapDance(model: Model): number | null {
   const used = new Set<number>();
-  for (const layer of model.layers) {
-    for (const d of [...layer.keys, ...layer.encoders]) {
-      if (d.kind === "tap-dance" && d.index != null) used.add(d.index);
-    }
+  for (const d of everyAction(model)) {
+    if (d.kind === "tap-dance" && d.index != null) used.add(d.index);
   }
   const free = model.tapDance.find((td) =>
-    !used.has(td.index) && [td.tap, td.hold, td.doubleTap, td.tapHold].every((slot) => slot.kind === "none"));
+    !used.has(td.index) && tapDanceSlots(td).every((slot) => slot.action.kind === "none"));
   return free ? free.index : null;
 }
 

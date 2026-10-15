@@ -11,15 +11,20 @@ export const MODS: { mod: Mod; label: string }[] = [
 
 export type Hold = { type: "layer"; layer: number } | { type: "mods"; mods: Mod[]; right: boolean } | null;
 
-const LAYER_TAP = /^LT\d+\((KC_\w+)\)$/;
-const MOD_TAP = /^\w+_T\((KC_\w+)\)$/;
-const BASIC = /^KC_\w+$/;
-const NO_TAP = new Set(["KC_NO", "KC_TRNS"]);
+/** The layers a layer-tap (LT) can hold: the firmware keeps the layer in 4 bits */
+export const HOLD_LAYERS = 16;
 
-/** The keycode a key types when tapped, if it can have a hold action added or changed; else null */
-export function tapCodeOf(code: string): string | null {
-  const inner = LAYER_TAP.exec(code)?.[1] ?? MOD_TAP.exec(code)?.[1] ?? (BASIC.test(code) ? code : null);
-  return inner && !NO_TAP.has(inner) ? inner : null;
+/** How many of a keyboard's layers a hold action can switch to (layers 0 to the count - 1) */
+export function holdLayerCount(layers: number): number {
+  return Math.min(layers, HOLD_LAYERS);
+}
+
+/** The keycode a key types when tapped, if it can have a hold action added or changed; else null. The server works
+ * it out (Described.tapCode): the tapped key of a layer-tap or mod-tap, KC_NO included so a hold-only key's hold can
+ * change, or a basic keycode itself; never for KC_NO or KC_TRNS keys, nor keys such as KC_GESC that can't take a
+ * hold. */
+export function tapCodeOf(d: Pick<Described, "tapCode">): string | null {
+  return d.tapCode ?? null;
 }
 
 const MOD_WORDS: Record<string, Mod[]> = {
@@ -42,9 +47,15 @@ export function holdOf(d: Pick<Described, "kind" | "layer" | "hold">): Hold {
   return { type: "mods", mods: MODS.map((m) => m.mod).filter((m) => mods.has(m)), right };
 }
 
-/** The keycode expression for a tapped keycode with a hold action, for the server to parse */
+/** The keycode expression for a tapped keycode with a hold action, for the server to parse. Throws a RangeError for
+ * a layer a layer-tap can't hold (offer layers below holdLayerCount). */
 export function holdExpression(tap: string, hold: Hold): string {
-  if (hold?.type === "layer") return `LT(${hold.layer}, ${tap})`;
+  if (hold?.type === "layer") {
+    if (!Number.isInteger(hold.layer) || hold.layer < 0 || hold.layer >= HOLD_LAYERS) {
+      throw new RangeError(`a layer-tap can only hold layers 0 to ${HOLD_LAYERS - 1}, not ${hold.layer}`);
+    }
+    return `LT(${hold.layer}, ${tap})`;
+  }
   if (hold?.type === "mods" && hold.mods.length > 0) {
     const side = hold.right ? "R" : "L";
     return `MT(${hold.mods.map((m) => `MOD_${side}${m}`).join(" | ")}, ${tap})`;

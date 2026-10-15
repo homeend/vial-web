@@ -40,6 +40,9 @@ class Described(BaseModel):
     """ the tap dance or macro a key runs """
     description: Optional[str] = None
     """ what the keycode does, when its name doesn't say it all """
+    tapCode: Optional[str] = None
+    """ the keycode the key types when tapped, if a hold action can be added or changed: the tapped key of a
+    layer-tap or mod-tap (KC_NO for a hold-only one), or a named basic keycode itself, e.g. "KC_A" """
 
 
 class KeyGeometry(BaseModel):

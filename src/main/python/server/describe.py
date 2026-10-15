@@ -22,6 +22,7 @@ RE_MACRO = re.compile(r"^M(\d+)$")
 RE_LAYER = re.compile(r"^(MO|TG|TO|TT|OSL|DF|PDF)\((\d+)\)$")
 RE_LAYER_TAP = re.compile(r"^LT(\d+)\((.+)\)$")
 RE_NUMBERED = re.compile(r"^(M\d+|(TD|MO|TG|TO|TT|OSL|DF|PDF)\(\d+\))$")
+RE_NUMBERED_LAYER = re.compile(r"^(MO|TG|TO|TT|OSL|DF)\((\d+)\)$")
 RE_LEGEND_GAP = re.compile(r"\s{2,}")
 MEDIA_CODES = frozenset(k.qmk_id for k in KEYCODES_MEDIA)
 LIGHTING_CODES = frozenset(k.qmk_id for k in KEYCODES_BACKLIGHT)
@@ -35,6 +36,10 @@ QK_MOD_TAP = {6: (0x2000, 0x3FFF), 5: (0x6000, 0x7FFF)}
 """ mod-tap: modifiers on hold in bits 8-12, the tapped key in bits 0-7 """
 QK_ONE_SHOT_MOD = {6: (0x52A0, 0x52BF), 5: (0x5500, 0x55FF)}
 """ one-shot modifiers: modifiers in bits 0-4 """
+BASIC = (0x00, 0xFF)
+""" basic keycodes, the ones a layer-tap or mod-tap can tap (both protocols) """
+TAPPABLE_KINDS = {"basic", "modifier", "media", "mouse"}
+""" kinds of the named keycodes in the basic range; the others there are unnamed codes, KC_NO and KC_TRNS """
 
 _overrides = contextvars.ContextVar("keyboard_language_overrides", default={})
 """ The keyboard language's labels, {qmk_id: Vial label}, for describe() calls in this context """
@@ -145,6 +150,18 @@ def _result(code, kind, legend, tap=None, hold=None, layer=None, layer_action=No
             "description": _description(code)}
 
 
+def _tap_code(result, value):
+    """ The keycode a key types when tapped, if it can have a hold action added or changed: the tapped key of a
+    layer-tap or mod-tap (KC_NO too, so a hold-only key's hold can change; not KC_TRNS), or a named basic keycode
+    itself. None for anything else, e.g. KC_GESC or KC_LSPO, which the firmware can't give a hold action. """
+    if result["kind"] in ("layer-tap", "mod-tap"):
+        inner = value & 0xFF
+        return None if inner == 0x01 else Keycode.serialize(inner)  # KC_TRNS
+    if _in(value, BASIC) and result["kind"] in TAPPABLE_KINDS:
+        return result["code"]
+    return None
+
+
 def one_line(label):
     """ "!\\n1" (shifted over unshifted) -> "1"; "Caps\\nLock" -> "Caps Lock" """
     lines = [line.strip() for line in label.split("\n") if line.strip()]
@@ -177,7 +194,13 @@ def describe(code):
     """ Keycode string (as the protocol layer stores it) -> description dict for the UI """
     code = Keycode.normalize(code)
     value = Keycode.deserialize(code)
+    result = _describe(code, value)
+    result["tapCode"] = _tap_code(result, value)
+    return result
 
+
+def _describe(code, value):
+    """ describe() but the tapped keycode: normalized keycode string and its integer -> description dict """
     if code == "KC_NO":
         return _result(code, "none", _legend(""))
     if code == "KC_TRNS":
@@ -224,10 +247,15 @@ def describe(code):
 
 def parse_value(expression):
     """ Free-form keycode expression, e.g. "LCTL(KC_A)" or "0x7E05" -> firmware integer; raises ValueError """
+    from any_keycode import OutOfRange, check_layer  # here: keycodes.keycodes imports it while it loads
+
     expression = expression.strip()
+    m = RE_NUMBERED_LAYER.match(expression)
+    if m:
+        check_layer(m.group(1), int(m.group(2)))  # e.g. protocol 5's TO(20) would be TO(4)
     if RE_NUMBERED.match(expression):
         # numbered keycodes the keyboard doesn't have aren't in the keycode tables; the firmware's own tables give
-        # their real value (the generic parser gets some wrong, e.g. TO(n), or doesn't know them, e.g. M20, PDF(n))
+        # their real value (the generic parser doesn't know some, e.g. M20, PDF(n))
         try:
             value = Keycode.resolve(expression)
         except RuntimeError as e:
@@ -235,6 +263,8 @@ def parse_value(expression):
     else:
         try:
             value = Keycode.deserialize(expression, reraise=True)
+        except OutOfRange:
+            raise
         except Exception as e:
             raise ValueError("not a valid keycode: {}".format(e)) from e
     if isinstance(value, bool):  # an int to Python, but "True" isn't a keycode

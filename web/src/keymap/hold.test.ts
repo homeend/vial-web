@@ -1,20 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { holdExpression, holdOf, tapCodeOf } from "./hold";
+import { HOLD_LAYERS, holdExpression, holdLayerCount, holdOf, tapCodeOf } from "./hold";
 
 describe("tapCodeOf", () => {
-  it("finds the tapped keycode of keys that can get a hold action", () => {
-    expect(tapCodeOf("LT1(KC_SPACE)")).toBe("KC_SPACE");
-    expect(tapCodeOf("LSFT_T(KC_T)")).toBe("KC_T");
-    expect(tapCodeOf("C_S_T(KC_A)")).toBe("KC_A");
-    expect(tapCodeOf("KC_A")).toBe("KC_A");
+  it("is the keycode the server says the key types when tapped", () => {
+    expect(tapCodeOf({ tapCode: "KC_SPACE" })).toBe("KC_SPACE");
+    expect(tapCodeOf({ tapCode: "KC_NO" })).toBe("KC_NO"); // a hold-only key, e.g. LT1(KC_NO)
   });
 
-  it("is null for keys that can't", () => {
-    expect(tapCodeOf("TD(0)")).toBeNull();
-    expect(tapCodeOf("LCTL(KC_C)")).toBeNull();
-    expect(tapCodeOf("MO(1)")).toBeNull();
-    expect(tapCodeOf("KC_TRNS")).toBeNull();
-    expect(tapCodeOf("KC_NO")).toBeNull();
+  it("is null for keys that can't have a hold action", () => {
+    expect(tapCodeOf({ tapCode: null })).toBeNull();
+    expect(tapCodeOf({})).toBeNull();
   });
 });
 
@@ -43,6 +38,13 @@ describe("holdOf", () => {
 describe("holdExpression", () => {
   it("writes a layer-tap", () => {
     expect(holdExpression("KC_SPACE", { type: "layer", layer: 1 })).toBe("LT(1, KC_SPACE)");
+    expect(holdExpression("KC_NO", { type: "layer", layer: 15 })).toBe("LT(15, KC_NO)");
+  });
+
+  it("refuses a layer a layer-tap can't hold", () => {
+    expect(() => holdExpression("KC_A", { type: "layer", layer: 16 })).toThrow(RangeError);
+    expect(() => holdExpression("KC_A", { type: "layer", layer: -1 })).toThrow(RangeError);
+    expect(() => holdExpression("KC_A", { type: "layer", layer: 1.5 })).toThrow(RangeError);
   });
 
   it("writes a mod-tap with left or right modifiers", () => {
@@ -54,5 +56,14 @@ describe("holdExpression", () => {
   it("is just the tapped keycode without a hold action", () => {
     expect(holdExpression("KC_A", null)).toBe("KC_A");
     expect(holdExpression("KC_A", { type: "mods", mods: [], right: false })).toBe("KC_A");
+  });
+});
+
+describe("holdLayerCount", () => {
+  it("is the keyboard's layers, up to the 16 a layer-tap can hold", () => {
+    expect(HOLD_LAYERS).toBe(16);
+    expect(holdLayerCount(4)).toBe(4);
+    expect(holdLayerCount(16)).toBe(16);
+    expect(holdLayerCount(32)).toBe(16);
   });
 });

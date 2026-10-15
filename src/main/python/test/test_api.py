@@ -126,6 +126,8 @@ def test_keycodes_and_parse(client):
     names = [c["name"] for c in client.get("/api/keycodes").json()]
     assert names[:2] == ["Basic", "Shifted"]
     assert client.post("/api/keycodes/parse", json={"expression": "LCTL(KC_A)"}).json()["tap"] == "Ctrl+A"
+    mod_tap = client.post("/api/keycodes/parse", json={"expression": "MT(MOD_RCTL | MOD_RSFT, KC_A)"}).json()
+    assert (mod_tap["kind"], mod_tap["tapCode"]) == ("mod-tap", "KC_A")
     assert client.post("/api/keycodes/parse", json={"expression": "NOPE"}).status_code == 422
 
 

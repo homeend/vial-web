@@ -226,3 +226,114 @@ def test_parse_in_a_fresh_process_reads_mod_tap_and_one_shot_mod():
     mod_tap, one_shot = json.loads(result.stdout)
     assert (mod_tap["kind"], mod_tap["tap"], mod_tap["hold"]) == ("mod-tap", "A", "Ctrl")
     assert one_shot["kind"] == "one-shot-mod"
+
+
+# ---------- the tapped keycode: what a hold action can be added to ----------
+
+@pytest.mark.parametrize("code, tap_code", [
+    ("KC_A", "KC_A"),
+    ("KC_ENT", "KC_ENTER"),  # by its own name, normalized
+    ("KC_LCTRL", "KC_LCTRL"),
+    ("KC_MS_U", "KC_MS_U"),
+    ("KC_F13", "KC_F13"),
+    ("LT2(KC_S)", "KC_S"),
+    ("LSFT_T(KC_T)", "KC_T"),
+    ("ALL_T(KC_B)", "KC_B"),
+    ("MT(MOD_RCTL | MOD_RSFT, KC_A)", "KC_A"),  # a mod-tap Vial has no name for
+    ("LT1(KC_NO)", "KC_NO"),  # hold only: the hold can still be changed or removed
+    ("LSFT_T(KC_NO)", "KC_NO"),
+    ("LT1(KC_TRNS)", None),
+    ("KC_NO", None),
+    ("KC_TRNS", None),
+    ("LCTL(KC_C)", None),
+    ("LSFT(KC_1)", None),
+    ("MO(1)", None),
+    ("TD(0)", None),
+    ("M0", None),
+    ("OSM(MOD_LSFT)", None),
+    ("QK_BOOT", None),
+    ("RGB_TOG", None),
+    ("0x2004", None),  # a mod-tap without modifiers
+    # keys that hold and tap already, or do something other than type a key: the firmware can't add a hold
+    ("KC_GESC", None), ("KC_LSPO", None), ("KC_RSPC", None), ("KC_SFTENT", None), ("KC_ASTG", None),
+    ("KC_ASUP", None), ("KC_ASON", None),
+])
+def test_tap_code(code, tap_code):
+    assert parse(code)["tapCode"] == tap_code
+
+
+@pytest.mark.parametrize("bits", ALL_MODS)
+def test_every_mod_tap_combination_has_its_tapped_keycode(bits):
+    assert describe(Keycode.serialize(0x2000 | (bits << 8) | 0x04))["tapCode"] == "KC_A"
+
+
+def test_unnamed_basic_codes_have_no_tapped_keycode():
+    assert describe(Keycode.serialize(0x66))["tapCode"] is None
+
+
+@pytest.mark.parametrize("value, tap_code", [(0x7304, "KC_A"), (0x4204, "KC_A"), (0x5512, None)])
+def test_tap_code_in_protocol_5(monkeypatch, value, tap_code):
+    monkeypatch.setattr(Keycode, "protocol", 5)
+    assert describe(Keycode.serialize(value))["tapCode"] == tap_code
+
+
+# ---------- arguments that don't fit in the keycode are refused, not cut short ----------
+
+@pytest.mark.parametrize("expression, message", [
+    ("LT(16, KC_A)", "LT works with layers 0–15"),
+    ("LT(-1, KC_A)", "LT works with layers 0–15"),
+    ("LT(0x10, KC_A)", "LT works with layers 0–15"),
+    ("LM(16, MOD_LSFT)", "LM works with layers 0–15"),
+    ("MO(32)", "MO works with layers 0–31"),
+    ("MO( 32 )", "MO works with layers 0–31"),
+    ("MO(0x20)", "MO works with layers 0–31"),
+    ("TG(40)", "TG works with layers 0–31"),
+    ("TO(32)", "TO works with layers 0–31"),
+    ("DF(0x20)", "DF works with layers 0–31"),
+    ("OSL(0x20)", "OSL works with layers 0–31"),
+    ("TT(0x20)", "TT works with layers 0–31"),
+    ("TD(0x100)", "TD works with tap dances 0–255"),
+    ("LT(1, KC_EXLM)", "LT taps a basic keycode"),
+    ("LT(1, LCTL(KC_A))", "LT taps a basic keycode"),
+    ("LT1(LCTL(KC_A))", "LT taps a basic keycode"),
+    ("MT(MOD_LSFT, LCTL(KC_A))", "MT taps a basic keycode"),
+    ("LSFT_T(KC_EXLM)", "MT taps a basic keycode"),
+    ("MT(0x20, KC_A)", "MT holds modifiers"),
+    ("OSM(0x20)", "OSM holds modifiers"),
+    ("LM(1, 0x20)", "LM holds modifiers"),
+])
+def test_arguments_that_do_not_fit_are_refused(expression, message):
+    with pytest.raises(ValueError) as e:
+        parse_value(expression)
+    assert str(e.value) == message or str(e.value).startswith(message)
+
+
+@pytest.mark.parametrize("expression, value", [
+    ("LT(15, KC_A)", 0x4F04),
+    ("LT(0, KC_NO)", 0x4000),
+    ("MO( 31 )", 0x523F),
+    ("TO( 5 )", 0x5205),  # protocol 6's TO has no ON_PRESS bits
+    ("MT(MOD_RCTL | MOD_RSFT, KC_RGUI)", 0x33E7),
+    ("LM(15, MOD_LSFT | MOD_RCTL)", 0x51F3),
+    ("TD( 255 )", 0x57FF),
+])
+def test_arguments_at_the_limits_are_kept(expression, value):
+    assert parse_value(expression) == value
+
+
+@pytest.mark.parametrize("expression, message", [
+    ("TO(16)", "TO works with layers 0–15"),  # protocol 5's TO keeps 4 bits for the layer
+    ("TO( 16 )", "TO works with layers 0–15"),
+    ("LT(16, KC_A)", "LT works with layers 0–15"),
+    ("LM(1, 0x10)", "LM holds modifiers"),  # 4 bits in protocol 5
+])
+def test_protocol_5_limits(monkeypatch, expression, message):
+    monkeypatch.setattr(Keycode, "protocol", 5)
+    with pytest.raises(ValueError, match=message):
+        parse_value(expression)
+
+
+def test_protocol_5_keeps_its_wider_layer_numbers(monkeypatch):
+    monkeypatch.setattr(Keycode, "protocol", 5)
+    assert parse_value("TO( 15 )") == 0x501F
+    assert parse_value("MO( 40 )") == 0x5128

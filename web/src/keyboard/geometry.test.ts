@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { KeyGeometry, KeyboardModel } from "../api/types";
-import { encoderKnobs, layoutChoices, placeKeyboard } from "./geometry";
+import { boundsOf, encoderKnobs, layoutChoices, placeKeyboard } from "./geometry";
 
 function key(fields: Partial<KeyGeometry>): KeyGeometry {
   return {
@@ -170,5 +170,25 @@ describe("encoderKnobs", () => {
   it("gives an encoder with one direction a round knob", () => {
     const placed = placeKeyboard(board([], [enc(3, 1, { x: 0 })]));
     expect(encoderKnobs(placed)).toEqual([{ encoder: 3, cx: 0.5, cy: 0.5, length: 1, thickness: 1, angle: 0 }]);
+  });
+});
+
+describe("boundsOf", () => {
+  it("covers both rectangles of a key, such as an ISO Enter", () => {
+    const [enter] = placeKeyboard(board([key({ x: 1, w: 1.5, h: 2, x2: -0.25, w2: 1.25, h2: 1 })])).items;
+    const box = boundsOf(enter);
+    close(box.left, 0);
+    close(box.right, 1.75); // the board starts at the second rectangle, 0.25 left of the first
+    close(box.top, 0);
+    close(box.bottom, 2);
+  });
+
+  it("is the upright box around a rotated key", () => {
+    const [turned] = placeKeyboard(board([key({ x: 0, y: 0, w: 2, h: 1, r: 90, rx: 1, ry: 0.5 })])).items;
+    const box = boundsOf(turned);
+    close(box.right - box.left, 1);
+    close(box.bottom - box.top, 2);
+    close((box.left + box.right) / 2, turned.cx);
+    close((box.top + box.bottom) / 2, turned.cy);
   });
 });

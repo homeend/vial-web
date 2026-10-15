@@ -74,6 +74,26 @@ function corners(k: KeyGeometry, dx = 0, dy = 0): [number, number][] {
       rotate(px + dx, py + dy, k.r, k.rx + dx, k.ry + dy)));
 }
 
+export interface Bounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** The smallest upright box around a placed key as drawn: both of its rectangles, rotated */
+export function boundsOf(
+  key: Pick<PlacedKey, "x" | "y" | "w" | "h" | "x2" | "y2" | "w2" | "h2" | "hasSecond" | "r" | "rx" | "ry">,
+): Bounds {
+  const rects = [[key.x, key.y, key.w, key.h]];
+  if (key.hasSecond) rects.push([key.x + key.x2, key.y + key.y2, key.w2, key.h2]);
+  const points = rects.flatMap(([x, y, w, h]) =>
+    [[x, y], [x + w, y], [x + w, y + h], [x, y + h]].map(([px, py]) => rotate(px, py, key.r, key.rx, key.ry)));
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  return { left: Math.min(...xs), top: Math.min(...ys), right: Math.max(...xs), bottom: Math.max(...ys) };
+}
+
 function topLeft(points: [number, number][]): [number, number] {
   return [Math.min(...points.map((p) => p[0])), Math.min(...points.map((p) => p[1]))];
 }

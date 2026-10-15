@@ -46,6 +46,19 @@ def test_bools_are_not_keycodes(client, virtual, code):
 
 
 @pytest.mark.parametrize("code, problem", [
+    ("LT(16, KC_A)", "LT works with layers 0–15"), ("MO(0x20)", "MO works with layers 0–31"),
+    ("MT(MOD_LSFT, LCTL(KC_A))", "MT taps a basic keycode"),
+])
+def test_arguments_that_do_not_fit_in_the_keycode_are_refused(client, virtual, code, problem):
+    """ QMK's macros would cut them short into another keycode, e.g. LT(16, KC_A) into LT0(KC_A) """
+    assert client.post("/api/keycodes/parse", json={"expression": code}).json()["detail"].startswith(problem)
+    before = snapshot(virtual)
+    response = client.put("/api/keymap/0/0/0", json={"code": code})
+    assert response.status_code == 422 and response.json()["detail"].startswith(problem)
+    assert snapshot(virtual) == before
+
+
+@pytest.mark.parametrize("code, problem", [
     ("TD(8)", "tap dance"), ("TD(200)", "tap dance"), ("0x57C8", "tap dance"),
     ("M16", "macro"), ("0x7710", "macro"),
     ("MO(4)", "layer"), ("MO(15)", "layer"), ("TG(31)", "layer"), ("TO(4)", "layer"), ("TT(4)", "layer"),

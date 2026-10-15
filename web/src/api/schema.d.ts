@@ -440,6 +440,8 @@ export interface components {
             index?: number | null;
             /** Description */
             description?: string | null;
+            /** Tapcode */
+            tapCode?: string | null;
             /**
              * Aliases
              * @default []
@@ -486,6 +488,8 @@ export interface components {
             index?: number | null;
             /** Description */
             description?: string | null;
+            /** Tapcode */
+            tapCode?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
