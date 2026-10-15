@@ -20,6 +20,7 @@ from protocol.constants import CMD_VIA_GET_PROTOCOL_VERSION, CMD_VIA_GET_KEYBOAR
 from protocol.dynamic import ProtocolDynamic
 from protocol.key_override import ProtocolKeyOverride
 from protocol.macro import ProtocolMacro
+from protocol.qmk_settings_codec import QmkSettingsCodec
 from protocol.tap_dance import ProtocolTapDance
 from protocol.unlock_hook import request_unlock
 from transport import MSG_LEN, hid_send
@@ -300,15 +301,13 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
                     self.supported_settings.add(qsid)
 
         for qsid in self.supported_settings:
-            from editor.qmk_settings import QmkSettings
-
-            if not QmkSettings.is_qsid_supported(qsid):
+            if not QmkSettingsCodec.is_qsid_supported(qsid):
                 continue
 
             data = self.usb_send(self.dev, struct.pack("<BBH", CMD_VIA_VIAL_PREFIX, CMD_VIAL_QMK_SETTINGS_GET, qsid),
                                  retries=20)
             if data[0] == 0:
-                self.settings[qsid] = QmkSettings.qsid_deserialize(qsid, data[1:])
+                self.settings[qsid] = QmkSettingsCodec.qsid_deserialize(qsid, data[1:])
 
     def set_key(self, layer, row, col, code):
         key = (layer, row, col)
@@ -433,10 +432,8 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
         self.restore_alt_repeat_key(data.get("alt_repeat_key", []))
 
         for qsid, value in data.get("settings", dict()).items():
-            from editor.qmk_settings import QmkSettings
-
             qsid = int(qsid)
-            if QmkSettings.is_qsid_supported(qsid):
+            if QmkSettingsCodec.is_qsid_supported(qsid):
                 self.qmk_settings_set(qsid, value)
 
     def reset(self):
@@ -510,10 +507,9 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
         return data
 
     def qmk_settings_set(self, qsid, value):
-        from editor.qmk_settings import QmkSettings
         self.settings[qsid] = value
         data = self.usb_send(self.dev, struct.pack("<BBH", CMD_VIA_VIAL_PREFIX, CMD_VIAL_QMK_SETTINGS_SET, qsid)
-                             + QmkSettings.qsid_serialize(qsid, value),
+                             + QmkSettingsCodec.qsid_serialize(qsid, value),
                              retries=20)
         return data[0]
 

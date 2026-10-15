@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QVBoxLayout, QCheckBox, QGridLayout, QLabel, QWidget
 
 from editor.basic_editor import BasicEditor
 from protocol.constants import VIAL_PROTOCOL_QMK_SETTINGS
+from protocol.qmk_settings_codec import QmkSettingsCodec
 from util import tr
 from vial_device import VialKeyboard
 
@@ -234,38 +235,21 @@ class QmkSettings(BasicEditor):
 
     @classmethod
     def initialize(cls, appctx):
-        cls.qsid_fields = defaultdict(list)
-        with open(appctx.get_resource("qmk_settings.json"), "r") as inf:
-            cls.settings_defs = json.load(inf)
-        for tab in cls.settings_defs["tabs"]:
-            for field in tab["fields"]:
-                cls.qsid_fields[field["qsid"]].append(field)
+        QmkSettingsCodec.load(appctx.get_resource("qmk_settings.json"))
+        cls.settings_defs = QmkSettingsCodec.settings_defs
+        cls.qsid_fields = QmkSettingsCodec.qsid_fields
 
     @classmethod
     def is_qsid_supported(cls, qsid):
         """ Return whether this qsid is supported by the settings editor """
-        return qsid in cls.qsid_fields
+        return QmkSettingsCodec.is_qsid_supported(qsid)
 
     @classmethod
     def qsid_serialize(cls, qsid, data):
         """ Serialize from internal representation into binary that can be sent to the firmware """
-        fields = cls.qsid_fields[qsid]
-        if fields[0]["type"] == "boolean":
-            assert isinstance(data, int)
-            return data.to_bytes(fields[0].get("width", 1), byteorder="little")
-        elif fields[0]["type"] == "integer":
-            assert isinstance(data, int)
-            assert len(fields) == 1
-            return data.to_bytes(fields[0]["width"], byteorder="little")
+        return QmkSettingsCodec.qsid_serialize(qsid, data)
 
     @classmethod
     def qsid_deserialize(cls, qsid, data):
         """ Deserialize from binary received from firmware into internal representation """
-        fields = cls.qsid_fields[qsid]
-        if fields[0]["type"] == "boolean":
-            return int.from_bytes(data[0:fields[0].get("width", 1)], byteorder="little")
-        elif fields[0]["type"] == "integer":
-            assert len(fields) == 1
-            return int.from_bytes(data[0:fields[0]["width"]], byteorder="little")
-        else:
-            raise RuntimeError("unsupported field")
+        return QmkSettingsCodec.qsid_deserialize(qsid, data)
