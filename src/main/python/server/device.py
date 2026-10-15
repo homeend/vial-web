@@ -113,6 +113,12 @@ class FakeBackend:
     def present(self, candidate):
         return self.virtual is not None and self.virtual.connected
 
+    def set_connected(self, connected):
+        """ Simulate unplugging the keyboard (False) or plugging it back in (True); the hot-plug poll notices """
+        if self.virtual is None:
+            self.virtual = self.keyboard_factory()
+        self.virtual.connected = connected
+
 
 class HidBackend:
     """ Real keyboards through hidapi; imported lazily so fake mode never loads hidapi """

@@ -157,6 +157,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     app = FastAPI(title="Vial", lifespan=lifespan)
     app.state.hub = hub
+    app.state.manager = manager
 
     def token_ok(value):
         # as bytes: compare_digest refuses str with non-ASCII characters
@@ -386,6 +387,14 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             pass
         finally:
             await hub.remove(ws)
+
+    if manager.backend.fake:
+        # for UI tests: unplug and replug the simulated keyboard. Never exists for real keyboards.
+        @app.put("/api/simulator/connection", include_in_schema=False)
+        def set_simulator_connection(body: schemas.SimulatorConnection):
+            with manager.lock:
+                manager.backend.set_connected(body.connected)
+            return {"connected": body.connected}
 
     if static_dir and os.path.isdir(static_dir):
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="ui")

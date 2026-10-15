@@ -289,5 +289,10 @@ class LightingIn(Request):
     save: bool = True
 
 
+class SimulatorConnection(Request):
+    """ Fake mode only: whether the simulated keyboard is plugged in """
+    connected: bool
+
+
 class NameIn(Request):
     name: Optional[str] = Field(default=None, max_length=40)

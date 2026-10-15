@@ -271,3 +271,44 @@ def test_last_tab_closing_is_reported(setup):
     while not app.state.gone and time.time() < deadline:
         time.sleep(0.02)
     assert app.state.gone == [True]
+
+
+# ---------- simulator controls (fake mode only) ----------
+
+def test_simulated_keyboard_can_be_unplugged_and_plugged_back(setup):
+    client, virtual, app = setup
+    response = client.put("/api/simulator/connection", json={"connected": False})
+    assert response.status_code == 200 and response.json() == {"connected": False}
+    assert not virtual.connected
+    assert client.put("/api/keymap/0/0/0", json={"code": "KC_A"}).status_code == 503
+    assert client.put("/api/simulator/connection", json={"connected": True}).json() == {"connected": True}
+    assert virtual.connected
+
+
+def test_unplugging_the_simulator_is_reported_by_the_hot_plug_poll(tmp_path):
+    manager = DeviceManager(FakeBackend(make_corne))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "n.json")), TOKEN, PORT, poll_interval=0)
+    with TestClient(app, base_url=BASE) as c:
+        c.get("/?token=" + TOKEN, follow_redirects=False)
+        c.put("/api/simulator/connection", json={"connected": False})
+        assert manager.check() == ["disconnected"]
+        c.put("/api/simulator/connection", json={"connected": True})
+        assert manager.check() == ["connected"]
+        assert c.get("/api/keyboard").status_code == 200
+
+
+def test_simulator_controls_need_the_session(tmp_path):
+    app = create_app(DeviceManager(FakeBackend(make_corne)), NamesStore(str(tmp_path / "n.json")), TOKEN, PORT,
+                     poll_interval=0)
+    with TestClient(app, base_url=BASE) as c:
+        assert c.put("/api/simulator/connection", json={"connected": False}).status_code == 401
+
+
+def test_simulator_controls_do_not_exist_for_real_keyboards(tmp_path):
+    app = create_app(DeviceManager(NoRealKeyboard()), NamesStore(str(tmp_path / "n.json")), TOKEN, PORT,
+                     poll_interval=0)
+    with TestClient(app, base_url=BASE) as c:
+        c.get("/?token=" + TOKEN, follow_redirects=False)
+        assert c.put("/api/simulator/connection", json={"connected": False}).status_code in (404, 405)
+        assert "/api/simulator/connection" not in c.get("/openapi.json").text
