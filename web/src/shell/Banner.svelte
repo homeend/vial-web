@@ -1,11 +1,15 @@
 <script lang="ts">
+  import Button from "../ui/Button.svelte";
+
   interface Props {
     tone: "danger" | "warning";
     title: string;
     message: string;
+    actionLabel?: string;
+    onaction?: () => void;
   }
 
-  let { tone, title, message }: Props = $props();
+  let { tone, title, message, actionLabel, onaction }: Props = $props();
 </script>
 
 <!-- danger interrupts (the keyboard is unplugged, or couldn't be read); warning waits its turn -->
@@ -14,10 +18,13 @@
     <path d="M10 3l8 14H2z" />
     <path d="M10 8.5v3.5M10 14.5v.01" />
   </svg>
-  <div>
+  <div class="text">
     <strong>{title}</strong>
     <span>{message}</span>
   </div>
+  {#if actionLabel && onaction}
+    <Button size="sm" onclick={onaction}>{actionLabel}</Button>
+  {/if}
 </div>
 
 <style>
@@ -55,6 +62,10 @@
 
   .danger svg {
     color: var(--danger);
+  }
+
+  .text {
+    flex: 1;
   }
 
   strong {
