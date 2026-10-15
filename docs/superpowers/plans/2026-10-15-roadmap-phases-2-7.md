@@ -199,11 +199,7 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
   - bundles `web/dist`, `qmk_settings.json`, the keymaps and certifi;
   - `vial_web.py` is the entry point;
   - Windows icon and version info.
-- **No console window.** `Vial.exe` runs in the background and opens only the browser tab.
-  - A "Quit Vial" button in the UI (`POST /api/shutdown`) stops it.
-  - Double-clicking `Vial.exe` again reopens the tab of the running copy; the existing second-instance detection does this.
-  - Vial quits by itself after 10 minutes with no browser tab open. The time is configurable with `--idle-exit MINUTES`, and `0` turns it off.
-  - The URL and messages still go to `vial.log`, and to the console when it's run from a terminal.
+- **Windows console:** keep the console window. It shows the URL and the reopen message, and closing it or pressing Ctrl+C stops the server. Add a "Quit Vial" button in the UI (`POST /api/shutdown`), so Vial can also be closed from the browser. A windowless build (background process, reopen by double-click, auto-quit when no tab is open) can be decided after all phases are finished.
 - **Remove Qt and `fbs`:**
   - `main.py`, `main_window.py`, `editor/*`, `widgets/*`, `unlocker.py`, the Qt parts of `util.py`, `autorefresh/` (the device manager has its own hot-plug detection), `test_gui.py`, and the Qt-only tests;
   - except the flashing logic in `editor/firmware_flasher.py`, which moves to a Qt-free module (`protocol/flasher.py`) with its tests, so phase 7 can build on it;
@@ -249,5 +245,5 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
 | 3 | Merge and push to `origin` at the end of each phase | Yes |
 | 4 | Macro "record from keyboard" | Yes, browser-only |
 | 5 | VIA-only keyboards / sideload | Not built unless asked |
-| 6 | Windows build | No console window, a "Quit Vial" button, reopen by double-click, auto-quit after 10 minutes without a tab, no tray icon (chosen by the owner, 2026-10-15) |
+| 6 | Windows build | Console window plus a "Quit Vial" button. The owner's choice on 2026-10-15; revisit a windowless build after all phases |
 | 7 | Overview shows unreached layers | Yes, with a warning |
