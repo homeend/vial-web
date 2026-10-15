@@ -21,13 +21,19 @@ def schema():
     return app.openapi()
 
 
+USAGE = "usage: python -m server.dump_openapi OUT.json"
+
+
 def main(argv):
-    if len(argv) != 1:
-        print("usage: python -m server.dump_openapi OUT.json", file=sys.stderr)
+    if len(argv) == 1 and argv[0] in ("-h", "--help"):
+        print(USAGE)
+        return 0
+    if len(argv) != 1 or argv[0].startswith("-"):
+        print(USAGE, file=sys.stderr)
         return 2
+    text = json.dumps(schema(), indent=2, ensure_ascii=False) + "\n"  # complete before the file is touched
     with open(argv[0], "w", encoding="utf-8", newline="\n") as outf:
-        json.dump(schema(), outf, indent=2, ensure_ascii=False)
-        outf.write("\n")
+        outf.write(text)
     return 0
 
 

@@ -43,3 +43,12 @@ def test_dump_openapi_is_stable(tmp_path):
         assert result.returncode == 0, result.stderr
     assert first.read_bytes() == second.read_bytes()
     assert first.read_bytes().endswith(b"}\n") and b"\r\n" not in first.read_bytes()
+
+
+def test_dump_openapi_help_and_missing_argument_write_no_file(tmp_path):
+    for argv, code in (("['--help']", 0), ("['-h']", 0), ("[]", 2), ("['--bogus']", 2)):
+        result = run_isolated("import sys, server.dump_openapi\n"
+                              "sys.exit(server.dump_openapi.main({}))".format(argv))
+        assert result.returncode == code, (argv, result.stderr)
+        assert "usage:" in (result.stdout if code == 0 else result.stderr)
+    assert list(tmp_path.iterdir()) == []

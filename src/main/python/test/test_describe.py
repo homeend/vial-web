@@ -205,3 +205,9 @@ def test_reference(monkeypatch, protocol, value, expected):
 ])
 def test_one_line(label, expected):
     assert one_line(label) == expected
+
+
+def test_parse_works_before_any_keyboard_was_read(monkeypatch):
+    monkeypatch.setattr(Keycode, "protocol", 0)  # what a fresh process has until a keyboard is read
+    assert parse("KC_A")["code"] == "KC_A"
+    assert parse("LT(1, KC_A)")["code"] == "LT1(KC_A)"

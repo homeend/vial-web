@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import transport
+from keycodes.keycodes import Keycode
 from protocol.unlock_hook import set_unlock_handler
 from server.app import create_app
 from server.device import DeviceManager, FakeBackend, require_unlocked
@@ -138,7 +139,8 @@ def test_keycode_catalogue_works_without_a_keyboard(setup):
     assert client.post("/api/keycodes/parse", json={"expression": "LT(1, KC_A)"}).json()["code"] == "LT1(KC_A)"
 
 
-def test_keycode_catalogue_before_any_keyboard_was_connected(tmp_path):
+def test_keycode_catalogue_before_any_keyboard_was_connected(tmp_path, monkeypatch):
+    monkeypatch.setattr(Keycode, "protocol", 0)  # what a fresh process has until a keyboard is read
     app = create_app(DeviceManager(NoRealKeyboard()), NamesStore(str(tmp_path / "n.json")), TOKEN, PORT,
                      poll_interval=0)
     with TestClient(app, base_url=BASE) as c:
@@ -146,6 +148,8 @@ def test_keycode_catalogue_before_any_keyboard_was_connected(tmp_path):
         response = c.get("/api/keycodes")
         assert response.status_code == 200
         assert any(k["code"] == "KC_A" for k in response.json()[0]["keycodes"])
+        parsed = c.post("/api/keycodes/parse", json={"expression": "KC_A"})
+        assert parsed.status_code == 200 and parsed.json()["code"] == "KC_A"
 
 
 def test_keycode_catalogue_has_descriptions(client):

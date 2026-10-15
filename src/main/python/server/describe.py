@@ -123,8 +123,13 @@ def mods_name(bits):
     return "+".join(names)
 
 
+def _protocol():
+    """ The keycode protocol in use: 5 or 6. Keycode.protocol is 0 until a keyboard was read, and then the current one (6) applies """
+    return 5 if Keycode.protocol == 5 else 6
+
+
 def _in(value, ranges):
-    first, last = ranges[Keycode.protocol] if isinstance(ranges, dict) else ranges
+    first, last = ranges[_protocol()] if isinstance(ranges, dict) else ranges
     return first <= value <= last
 
 
@@ -267,7 +272,7 @@ _REFERENCES_V5 = [
 
 def reference(value):
     """ Firmware keycode -> ("layer" | "tap dance" | "macro", number) it points at, or None """
-    for first, last, what, number in (_REFERENCES_V6 if Keycode.protocol == 6 else _REFERENCES_V5):
+    for first, last, what, number in (_REFERENCES_V5 if _protocol() == 5 else _REFERENCES_V6):
         if first <= value <= last:
             return what, number(value)
     return None
