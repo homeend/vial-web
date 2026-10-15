@@ -860,9 +860,13 @@ def recreate_keyboard_keycodes(keyboard):
 
     layers = keyboard.layers
 
+    from any_keycode import layer_count
+
     def generate_keycodes_for_mask(label, description, requires_feature=None):
+        """ label(0) up to the keyboard's last layer, or the last one the keycode can hold: protocol 5's TO(16) would
+        be TO(0) again, and its name would replace TO(0)'s """
         keycodes = []
-        for layer in range(layers):
+        for layer in range(min(layers, layer_count(label))):
             lbl = "{}({})".format(label, layer)
             keycodes.append(Keycode(lbl, lbl, description, requires_feature=requires_feature))
         return keycodes

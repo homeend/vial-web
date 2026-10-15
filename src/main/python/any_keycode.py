@@ -59,8 +59,9 @@ def _basic(name, kc):
 
 
 def _mods(name, mod, mask=0x1F):
+    """ mask: 0x1F for all eight modifiers, 0xF for the left-hand ones only (protocol 5's LM) """
     if not 0 <= mod <= mask:
-        raise OutOfRange("{} holds modifiers, MOD_LCTL to MOD_RGUI".format(name))
+        raise OutOfRange("{} holds modifiers, MOD_LCTL to {}".format(name, "MOD_RGUI" if mask & 0x10 else "MOD_LGUI"))
     return mod
 
 

@@ -337,3 +337,70 @@ def test_protocol_5_keeps_its_wider_layer_numbers(monkeypatch):
     monkeypatch.setattr(Keycode, "protocol", 5)
     assert parse_value("TO( 15 )") == 0x501F
     assert parse_value("MO( 40 )") == 0x5128
+
+
+# ---------- every keycode name the tables give reads back as the same keycode ----------
+
+ROUND_TRIP_RANGES = {
+    # layer-tap, layer-mod, TO/MO/DF/TG/OSL/one-shot mod/TT/PDF, tap dance; mod-tap is sampled below
+    6: [range(0x4000, 0x5000), range(0x5000, 0x5300), range(0x5700, 0x5800)],
+    # layer-tap, TO, MO, DF, TG, OSL, one-shot mod, tap dance, TT, layer-mod
+    5: [range(0x4000, 0x5000), range(0x5000, 0x5A00)],
+}
+MOD_TAP_BASE = {6: 0x2000, 5: 0x6000}
+
+
+def keyboard_tables(protocol, layers):
+    """ Rebuilds the keycode tables for a keyboard of this protocol and layer count, as loading one does """
+    from types import SimpleNamespace
+    from keycodes.keycodes import recreate_keyboard_keycodes
+    recreate_keyboard_keycodes(SimpleNamespace(vial_protocol=protocol, layers=layers, macro_count=16,
+                                               tap_dance_count=16, custom_keycodes=None, midi="disabled",
+                                               supported_features=set()))
+
+
+@pytest.fixture
+def rebuilt_tables(monkeypatch, corne_keyboard):
+    """ The keycode tables can be rebuilt in the test; afterwards they are the Corne's again """
+    from keycodes.keycodes import recreate_keyboard_keycodes
+    monkeypatch.setattr(Keycode, "protocol", Keycode.protocol)
+    yield keyboard_tables
+    recreate_keyboard_keycodes(corne_keyboard[1])
+
+
+@pytest.mark.parametrize("layers", [4, 16, 32])
+@pytest.mark.parametrize("protocol", [5, 6])
+def test_keycode_names_round_trip(rebuilt_tables, protocol, layers):
+    """ What describe() and .vil export write for a keycode, the server reads back as that keycode, e.g. protocol 5's
+    TO(0) isn't written as TO(16), which shares its value """
+    rebuilt_tables(protocol, layers)
+    values = [v for r in ROUND_TRIP_RANGES[protocol] for v in r]
+    values += [MOD_TAP_BASE[protocol] | (bits << 8) | kc for bits in range(0x20) for kc in (0x00, 0x04, 0xE7)]
+    values += [(bits << 8) | kc for bits in range(1, 0x20) for kc in (0x00, 0x04)]  # keys with modifiers
+    wrong = {}
+    for value in values:
+        name = Keycode.serialize(value)
+        if name.startswith("0x"):
+            continue  # no name: written as the number
+        try:
+            back = parse_value(name)
+        except ValueError as e:
+            back = str(e)
+        if back != value:
+            wrong[hex(value)] = (name, back)
+    assert wrong == {}
+
+
+@pytest.mark.parametrize("protocol, message", [
+    (6, "LM holds modifiers, MOD_LCTL to MOD_RGUI"), (5, "LM holds modifiers, MOD_LCTL to MOD_LGUI"),
+])
+def test_layer_mod_names_the_modifiers_of_the_protocol(monkeypatch, protocol, message):
+    monkeypatch.setattr(Keycode, "protocol", protocol)
+    with pytest.raises(ValueError, match=message):
+        parse_value("LM(1, 0x20)")
+
+
+@pytest.mark.parametrize("bits", ALL_MODS)
+def test_every_mod_tap_combination_has_its_tapped_keycode_in_protocol_5(rebuilt_tables, bits):
+    rebuilt_tables(5, 4)  # protocol 5's own tables: some protocol 6 names have these values, e.g. M4 is 0x7704
+    assert describe(Keycode.serialize(0x6000 | (bits << 8) | 0x04))["tapCode"] == "KC_A"
