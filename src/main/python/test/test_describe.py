@@ -1,6 +1,9 @@
+import json
+
 import pytest
 
 from keycodes.keycodes import Keycode
+from test.test_core_isolation import run_isolated
 from server.describe import describe, parse, parse_value, one_line, reference
 
 
@@ -211,3 +214,15 @@ def test_parse_works_before_any_keyboard_was_read(monkeypatch):
     monkeypatch.setattr(Keycode, "protocol", 0)  # what a fresh process has until a keyboard is read
     assert parse("KC_A")["code"] == "KC_A"
     assert parse("LT(1, KC_A)")["code"] == "LT1(KC_A)"
+    assert parse("KC_A")["kind"] == "basic" and parse("KC_A")["tap"] == "A"
+
+
+def test_parse_in_a_fresh_process_reads_mod_tap_and_one_shot_mod():
+    """ Keycode.protocol is 0 there and the keycode tables are the protocol 5 ones: describe must read them that way """
+    result = run_isolated("import json\n"
+                          "from server.describe import parse\n"
+                          "print(json.dumps([parse('LCTL_T(KC_A)'), parse('OSM(MOD_LCTL)')]))")
+    assert result.returncode == 0, result.stderr
+    mod_tap, one_shot = json.loads(result.stdout)
+    assert (mod_tap["kind"], mod_tap["tap"], mod_tap["hold"]) == ("mod-tap", "A", "Ctrl")
+    assert one_shot["kind"] == "one-shot-mod"

@@ -124,8 +124,9 @@ def mods_name(bits):
 
 
 def _protocol():
-    """ The keycode protocol in use: 5 or 6. Keycode.protocol is 0 until a keyboard was read, and then the current one (6) applies """
-    return 5 if Keycode.protocol == 5 else 6
+    """ The keycode protocol in use: 6, or 5 for anything else. Keycode.protocol is 0 until a keyboard was read, and
+    keycodes.py then uses its protocol 5 tables, so the integers are protocol 5 ones """
+    return 6 if Keycode.protocol == 6 else 5
 
 
 def _in(value, ranges):

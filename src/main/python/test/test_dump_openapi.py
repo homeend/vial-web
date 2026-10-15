@@ -1,6 +1,7 @@
 import json
+import os
 
-from test.test_core_isolation import run_isolated
+from test.test_core_isolation import PYTHON_ROOT, run_isolated
 
 
 def test_dump_openapi_writes_the_schema_without_qt_hidapi_or_a_server(tmp_path):
@@ -45,10 +46,11 @@ def test_dump_openapi_is_stable(tmp_path):
     assert first.read_bytes().endswith(b"}\n") and b"\r\n" not in first.read_bytes()
 
 
-def test_dump_openapi_help_and_missing_argument_write_no_file(tmp_path):
+def test_dump_openapi_help_and_bad_arguments_write_no_file():
     for argv, code in (("['--help']", 0), ("['-h']", 0), ("[]", 2), ("['--bogus']", 2)):
         result = run_isolated("import sys, server.dump_openapi\n"
                               "sys.exit(server.dump_openapi.main({}))".format(argv))
         assert result.returncode == code, (argv, result.stderr)
         assert "usage:" in (result.stdout if code == 0 else result.stderr)
-    assert list(tmp_path.iterdir()) == []
+    for name in ("--help", "-h", "--bogus"):  # an option must never be taken as the output path
+        assert not os.path.exists(os.path.join(PYTHON_ROOT, name))
