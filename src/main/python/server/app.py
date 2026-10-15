@@ -216,7 +216,8 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.get("/api/health")
     def health():
-        return {"app": "vial", "instance": instance_id}
+        # fake: a second launch only attaches to an instance of its own mode (see vial_web.FAKE_SUBDIR)
+        return {"app": "vial", "instance": instance_id, "fake": manager.backend.fake}
 
     @app.get("/api/session", response_model=schemas.Session)
     def session():

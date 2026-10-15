@@ -70,6 +70,23 @@ def test_requests_without_session_are_refused(tmp_path):
         assert c.get("/api/health").status_code == 200
 
 
+class NoRealKeyboard:
+    """ A real-mode backend that finds nothing; never touches hidapi """
+    fake = False
+
+    def find(self):
+        return []
+
+
+@pytest.mark.parametrize("backend, fake", [(FakeBackend(make_corne), True), (NoRealKeyboard(), False)])
+def test_health_says_whether_the_keyboard_is_simulated(tmp_path, backend, fake):
+    """ A second launch only attaches to an instance of its own mode """
+    app = create_app(DeviceManager(backend), NamesStore(str(tmp_path / "n.json")), TOKEN, PORT, poll_interval=0,
+                     instance_id="abc")
+    with TestClient(app, base_url=BASE) as c:
+        assert c.get("/api/health").json() == {"app": "vial", "instance": "abc", "fake": fake}
+
+
 def test_foreign_host_and_origin_are_refused(client):
     assert client.get("/api/session", headers={"host": "evil.example"}).status_code == 403
     assert client.get("/api/session", headers={"host": "127.0.0.1:9999"}).status_code == 403

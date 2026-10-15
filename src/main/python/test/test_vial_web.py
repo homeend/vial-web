@@ -1,5 +1,6 @@
 import http.server
 import json
+import logging
 import os
 import socket
 import struct
@@ -29,11 +30,11 @@ def reset_unlock_handler():
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    """ Keeps the data dir (log, server.json) and the config dir in tmp_path, and the browser closed.
+    """ Keeps the data dirs (log, server.json) and the config dirs of both modes in tmp_path, and the browser closed.
     Returns the list of URLs main() asked the browser to open. """
-    monkeypatch.setattr(vial_web, "data_dir", lambda: str(tmp_path / "data"))
+    monkeypatch.setattr(vial_web.platformdirs, "user_data_dir", lambda *a, **k: str(tmp_path / "data"))
     monkeypatch.setattr(vial_web.platformdirs, "user_config_dir", lambda *a, **k: str(tmp_path / "config"))
-    monkeypatch.setattr(vial_web, "setup_logging", lambda: None)
+    monkeypatch.setattr(vial_web, "setup_logging", lambda fake: None)
     opened = []
     monkeypatch.setattr(vial_web.webbrowser, "open", lambda url, *a, **k: opened.append(url))
     return opened
@@ -98,52 +99,150 @@ def test_messages_include_the_url():
 
 # ---------- a second launch ----------
 
+def running_in_mode(fake):
+    """ A stand-in for running_session(): a Vial of the given mode is running at LIVE_URL """
+    return lambda asked: LIVE_URL if asked is fake else None
+
+
 @pytest.mark.parametrize("argv", [["--fake"], [], ["--fake", "--layout", "x.vil"]])
 def test_second_launch_opens_the_running_one_without_touching_the_keyboard(home, no_keyboard, monkeypatch,
                                                                             capsys, argv):
-    monkeypatch.setattr(vial_web, "running_session", lambda: LIVE_URL)
+    monkeypatch.setattr(vial_web, "running_session", running_in_mode("--fake" in argv))
     assert vial_web.main(argv) == 0
     assert home == [LIVE_URL]
     assert LIVE_URL in capsys.readouterr().out
 
 
 def test_second_launch_without_browser_prints_the_url(home, no_keyboard, monkeypatch, capsys):
-    monkeypatch.setattr(vial_web, "running_session", lambda: LIVE_URL)
+    monkeypatch.setattr(vial_web, "running_session", running_in_mode(False))
     assert vial_web.main(["--no-browser"]) == 0
     assert home == []
     assert LIVE_URL in capsys.readouterr().out
 
 
 def test_real_dry_run_refuses_while_vial_is_running(home, no_keyboard, monkeypatch, capsys):
-    monkeypatch.setattr(vial_web, "running_session", lambda: LIVE_URL)
+    monkeypatch.setattr(vial_web, "running_session", running_in_mode(False))
     assert vial_web.main(["--dry-run"]) != 0
     assert "already running" in capsys.readouterr().err
+
+
+# ---------- fake and real mode never share an instance ----------
+
+def test_fake_and_real_use_different_files():
+    """ Computed from the real platformdirs locations; nothing is created """
+    paths = [vial_web.lock_file, vial_web.session_file, vial_web.log_file, vial_web.names_file]
+    for path in paths:
+        assert os.path.dirname(path(True)) != os.path.dirname(path(False))
+    assert len({path(fake) for path in paths for fake in (True, False)}) == 8
+
+
+def test_each_mode_logs_to_its_own_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(vial_web.platformdirs, "user_data_dir", lambda *a, **k: str(tmp_path / "data"))
+    root = logging.getLogger()
+    level, before = root.level, list(root.handlers)
+    try:
+        for fake in (True, False):
+            vial_web.setup_logging(fake)
+            (added,) = [h for h in root.handlers if h not in before]
+            assert added.baseFilename == os.path.abspath(vial_web.log_file(fake))
+            root.removeHandler(added)
+            added.close()
+    finally:
+        root.setLevel(level)
+        for handler in [h for h in root.handlers if h not in before]:
+            root.removeHandler(handler)
+            handler.close()
+    assert vial_web.log_file(True) != vial_web.log_file(False)
+
+
+def start_vial(health, fake):
+    """ Another Vial of the given mode: its instance lock held, its session file written and answering.
+    Returns (its URL, its claim). """
+    server = health({"app": "vial", "instance": "other", "fake": fake})
+    session = session_for(server.port, "other", fake)
+    claim = vial_web.claim_instance(fake)
+    assert claim is not None
+    vial_web.write_session(session)
+    assert vial_web.running_session(fake) == session["url"]  # found by a launch of its own mode
+    return session["url"], claim
+
+
+def test_fake_launch_starts_its_own_while_a_real_vial_runs(home, health, fake_server, capsys):
+    real_url, claim = start_vial(health, fake=False)
+    try:
+        assert vial_web.main(["--fake", "--no-browser"]) == 0
+        with open(vial_web.session_file(False), encoding="utf-8") as inf:
+            assert json.load(inf)["url"] == real_url  # the real one's session is left alone
+    finally:
+        vial_web.release_instance(claim)
+    out, err = capsys.readouterr()
+    assert real_url not in out + err and "already running" not in out
+    assert fake_server.seen["session"]["fake"] is True
+    assert fake_server.seen["session"]["url"] in out and "with a simulated keyboard" in out
+
+
+@pytest.mark.parametrize("argv", [[], ["--no-browser"], ["--dry-run"]])
+def test_real_launch_never_attaches_to_a_fake_vial(home, health, no_keyboard, monkeypatch, capsys, argv):
+    fake_url, claim = start_vial(health, fake=True)
+    started = []
+    # past this point a real launch opens the keyboard: stop there
+    monkeypatch.setattr(vial_web, "run", lambda args, sock: started.append(args.fake) or 0)
+    try:
+        assert vial_web.main(argv) == 0
+    finally:
+        vial_web.release_instance(claim)
+    out, err = capsys.readouterr()
+    assert started == [False]
+    assert fake_url not in out + err and home == []
+
+
+@pytest.mark.parametrize("running, argv", [(False, ["--fake"]), (True, [])])
+def test_other_modes_instance_is_never_opened_even_with_shared_files(home, health, no_keyboard, monkeypatch,
+                                                                     capsys, running, argv):
+    """ Second guard: should both modes ever use the same files, the mode recorded in server.json and reported by
+    /api/health still keeps a launch away from the other mode's instance """
+    shared = vial_web.data_dir(False)
+    monkeypatch.setattr(vial_web, "data_dir", lambda fake: shared)
+    monkeypatch.setattr(vial_web, "STARTUP_WAIT", 0.3)
+    other_url, claim = start_vial(health, fake=running)
+    try:
+        assert vial_web.main(argv) == 1  # the shared lock is held: it waits for an answer of its own mode, then gives up
+    finally:
+        vial_web.release_instance(claim)
+    out, err = capsys.readouterr()
+    assert other_url not in out + err and home == []
+    assert "did not answer" in err
 
 
 # ---------- a launch while another one is starting up ----------
 
 @pytest.fixture
 def other_instance(home):
-    """ Another Vial that has claimed the instance and is still connecting to the keyboard """
-    claim = vial_web.claim_instance()
-    assert claim is not None
+    """ Other Vials, fake and real, that have claimed the instance and are still connecting to the keyboard """
+    claims = [vial_web.claim_instance(fake) for fake in (True, False)]
+    assert None not in claims
     yield
-    vial_web.release_instance(claim)
+    for claim in claims:
+        vial_web.release_instance(claim)
 
 
-def test_instance_claim_is_exclusive(home):
-    claim = vial_web.claim_instance()
+@pytest.mark.parametrize("fake", [True, False])
+def test_instance_claim_is_exclusive(home, fake):
+    claim = vial_web.claim_instance(fake)
     assert claim is not None
-    assert vial_web.claim_instance() is None
+    assert vial_web.claim_instance(fake) is None
+    other_mode = vial_web.claim_instance(not fake)  # the other mode has its own
+    assert other_mode is not None
+    vial_web.release_instance(other_mode)
     vial_web.release_instance(claim)
-    claim = vial_web.claim_instance()
+    claim = vial_web.claim_instance(fake)
     assert claim is not None
     vial_web.release_instance(claim)
 
 
 def test_launch_while_another_is_starting_waits_for_it(home, no_keyboard, other_instance, monkeypatch, capsys):
     answers = iter([None, None, None, LIVE_URL])
-    monkeypatch.setattr(vial_web, "running_session", lambda: next(answers))
+    monkeypatch.setattr(vial_web, "running_session", lambda fake: next(answers))
     waits = []
     monkeypatch.setattr(vial_web.time, "sleep", waits.append)
     assert vial_web.main(["--fake"]) == 0
@@ -153,7 +252,7 @@ def test_launch_while_another_is_starting_waits_for_it(home, no_keyboard, other_
 
 
 def test_launch_gives_up_on_one_that_never_answers(home, no_keyboard, other_instance, monkeypatch, capsys):
-    monkeypatch.setattr(vial_web, "running_session", lambda: None)
+    monkeypatch.setattr(vial_web, "running_session", lambda fake: None)
     monkeypatch.setattr(vial_web, "STARTUP_WAIT", 0.3)
     assert vial_web.main([]) == 1
     out, err = capsys.readouterr()
@@ -163,15 +262,15 @@ def test_launch_gives_up_on_one_that_never_answers(home, no_keyboard, other_inst
 
 
 def test_real_dry_run_refuses_while_another_is_starting(home, no_keyboard, other_instance, monkeypatch, capsys):
-    monkeypatch.setattr(vial_web, "running_session", lambda: None)
+    monkeypatch.setattr(vial_web, "running_session", lambda fake: None)
     assert vial_web.main(["--dry-run"]) != 0
     assert "already running" in capsys.readouterr().err
 
 
 HOLD_CLAIM = """
 import sys, time, vial_web
-vial_web.data_dir = lambda: sys.argv[1]
-assert vial_web.claim_instance() is not None
+vial_web.data_dir = lambda fake: sys.argv[1]
+assert vial_web.claim_instance(True) is not None
 print("claimed", flush=True)
 time.sleep(0.5)
 """
@@ -179,12 +278,12 @@ time.sleep(0.5)
 
 def test_launch_takes_over_when_the_starting_one_exits(home, fake_server, capsys):
     """ Another Vial holds the claim, then exits (or crashes) without ever answering: start normally """
-    other = subprocess.Popen([sys.executable, "-c", HOLD_CLAIM, vial_web.data_dir()],
+    other = subprocess.Popen([sys.executable, "-c", HOLD_CLAIM, vial_web.data_dir(True)],
                              cwd=os.path.dirname(os.path.abspath(vial_web.__file__)), stdout=subprocess.PIPE,
                              text=True)
     try:
         assert other.stdout.readline().strip() == "claimed"
-        assert vial_web.claim_instance() is None
+        assert vial_web.claim_instance(True) is None
         assert vial_web.main(["--fake", "--no-browser"]) == 0
         assert other.poll() == 0  # it had exited; this one claimed the instance after it
     finally:
@@ -196,8 +295,9 @@ def test_launch_takes_over_when_the_starting_one_exits(home, fake_server, capsys
 
 
 def test_lock_file_that_cannot_be_opened_is_a_clear_error(home, no_keyboard, monkeypatch, capsys):
-    monkeypatch.setattr(vial_web, "running_session", lambda: None)
-    os.makedirs(os.path.join(vial_web.data_dir(), "vial.lock"))  # a folder where the lock file should be
+    monkeypatch.setattr(vial_web, "running_session", lambda fake: None)
+    for fake in (True, False):
+        os.makedirs(vial_web.lock_file(fake))  # a folder where the lock file should be
     for argv in (["--fake"], ["--dry-run"]):
         assert vial_web.main(argv) == 1
         out, err = capsys.readouterr()
@@ -220,7 +320,7 @@ def test_release_unlocks_before_closing(home, monkeypatch):
         unlock = fcntl.LOCK_UN
     close = os.close
     monkeypatch.setattr(os, "close", lambda fd: (calls.append("close"), close(fd)))
-    claim = vial_web.claim_instance()
+    claim = vial_web.claim_instance(True)
     calls.clear()
     vial_web.release_instance(claim)
     assert calls == [unlock, "close"]
@@ -237,7 +337,7 @@ def test_bind_socket_listens_on_localhost_only():
 
 
 def test_busy_port_is_a_clear_error_before_anything_is_announced(home, no_keyboard, monkeypatch, capsys):
-    monkeypatch.setattr(vial_web, "running_session", lambda: None)
+    monkeypatch.setattr(vial_web, "running_session", lambda fake: None)
     with socket.socket() as taken:
         taken.bind(("127.0.0.1", 0))
         taken.listen()
@@ -248,7 +348,7 @@ def test_busy_port_is_a_clear_error_before_anything_is_announced(home, no_keyboa
     assert "Traceback" not in err
     assert "Open it at" not in out
     assert home == []
-    assert not os.path.exists(vial_web.session_file())
+    assert not os.path.exists(vial_web.session_file(True))
 
 
 class FakeServer:
@@ -263,7 +363,7 @@ class FakeServer:
     def run(self, sockets):
         (sock,) = sockets
         FakeServer.seen["address"] = sock.getsockname()
-        with open(vial_web.session_file(), encoding="utf-8") as inf:
+        with open(vial_web.session_file(True), encoding="utf-8") as inf:  # only fake launches get this far
             FakeServer.seen["session"] = json.load(inf)
         if FakeServer.while_serving:
             FakeServer.while_serving()
@@ -273,7 +373,6 @@ class FakeServer:
 def fake_server(monkeypatch):
     FakeServer.seen, FakeServer.while_serving = {}, None
     monkeypatch.setattr(uvicorn, "Server", FakeServer)
-    monkeypatch.setattr(vial_web, "running_session", lambda: None)
     return FakeServer
 
 
@@ -291,7 +390,7 @@ def test_serving_announces_the_bound_port_and_cleans_up(home, fake_server, capsy
             break
         threading.Event().wait(0.02)
     assert home == [url]
-    assert not os.path.exists(vial_web.session_file())
+    assert not os.path.exists(vial_web.session_file(True))
 
 
 def test_instance_is_claimed_before_connecting_and_released_at_exit(home, fake_server, monkeypatch):
@@ -299,25 +398,34 @@ def test_instance_is_claimed_before_connecting_and_released_at_exit(home, fake_s
     connect = DeviceManager.connect
 
     def check_claim(manager):
-        claim = vial_web.claim_instance()
+        claim = vial_web.claim_instance(True)
         claimed_while_connecting.append(claim is None)
         if claim is not None:
             vial_web.release_instance(claim)
         return connect(manager)
     monkeypatch.setattr(DeviceManager, "connect", check_claim)
-    fake_server.while_serving = lambda: claimed_while_connecting.append(vial_web.claim_instance() is None)
+    fake_server.while_serving = lambda: claimed_while_connecting.append(vial_web.claim_instance(True) is None)
     assert vial_web.main(["--fake", "--no-browser"]) == 0
     assert claimed_while_connecting == [True, True]
-    claim = vial_web.claim_instance()
+    claim = vial_web.claim_instance(True)
     assert claim is not None
     vial_web.release_instance(claim)
 
 
+def test_fake_mode_keeps_its_own_names(home, fake_server, monkeypatch):
+    from server import names
+    paths = []
+    store = names.NamesStore
+    monkeypatch.setattr(names, "NamesStore", lambda path: paths.append(path) or store(path))
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert paths == [vial_web.names_file(True)]
+
+
 def test_cleanup_keeps_another_instances_session_file(home, fake_server):
-    other = {"port": 1, "url": "http://127.0.0.1:1/", "instance": "another"}
+    other = {"port": 1, "url": "http://127.0.0.1:1/", "instance": "another", "fake": True}
     fake_server.while_serving = lambda: vial_web.write_session(other)
     assert vial_web.main(["--fake", "--no-browser"]) == 0
-    with open(vial_web.session_file(), encoding="utf-8") as inf:
+    with open(vial_web.session_file(True), encoding="utf-8") as inf:
         assert json.load(inf) == other
 
 
@@ -326,7 +434,7 @@ def test_ctrl_c_stops_cleanly(home, fake_server):
         raise KeyboardInterrupt  # uvicorn raises Ctrl+C again after shutting down
     fake_server.while_serving = interrupt
     assert vial_web.main(["--fake", "--no-browser"]) == 0
-    assert not os.path.exists(vial_web.session_file())
+    assert not os.path.exists(vial_web.session_file(True))
 
 
 def test_layout_file_failure_is_a_clear_error(tmp_path, capsys):
@@ -342,27 +450,29 @@ def test_layout_file_failure_is_a_clear_error(tmp_path, capsys):
 # ---------- the session file ----------
 
 def test_session_file_is_written_atomically(home, tmp_path):
-    vial_web.write_session({"port": 1, "url": "u", "instance": "a"})
-    vial_web.write_session({"port": 2, "url": "v", "instance": "b"})
+    vial_web.write_session({"port": 1, "url": "u", "instance": "a", "fake": False})
+    vial_web.write_session({"port": 2, "url": "v", "instance": "b", "fake": False})
     assert os.listdir(tmp_path / "data") == ["server.json"]
-    with open(vial_web.session_file(), encoding="utf-8") as inf:
+    with open(vial_web.session_file(False), encoding="utf-8") as inf:
         assert json.load(inf)["instance"] == "b"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
 def test_session_file_is_private(home, tmp_path):
-    vial_web.write_session({"port": 1, "url": "u", "instance": "a"})
+    vial_web.write_session({"port": 1, "url": "u", "instance": "a", "fake": False})
     assert os.stat(tmp_path / "data").st_mode & 0o777 == 0o700
-    assert os.stat(vial_web.session_file()).st_mode & 0o777 == 0o600
+    assert os.stat(vial_web.session_file(False)).st_mode & 0o777 == 0o600
 
 
-def test_cleanup_removes_only_our_session_file(home):
-    vial_web.write_session({"port": 1, "url": "u", "instance": "theirs"})
-    vial_web.remove_session("ours")
-    assert os.path.exists(vial_web.session_file())
-    vial_web.remove_session("theirs")
-    assert not os.path.exists(vial_web.session_file())
-    vial_web.remove_session("theirs")  # already gone: no error
+@pytest.mark.parametrize("fake", [True, False])
+def test_cleanup_removes_only_our_session_file(home, fake):
+    vial_web.write_session({"port": 1, "url": "u", "instance": "theirs", "fake": fake})
+    vial_web.remove_session("ours", fake)
+    vial_web.remove_session("theirs", not fake)  # the other mode's file is a different one
+    assert os.path.exists(vial_web.session_file(fake))
+    vial_web.remove_session("theirs", fake)
+    assert not os.path.exists(vial_web.session_file(fake))
+    vial_web.remove_session("theirs", fake)  # already gone: no error
 
 
 # ---------- finding a running instance ----------
@@ -404,25 +514,25 @@ def health():
 
 
 def write_session_file(content):
-    os.makedirs(vial_web.data_dir(), exist_ok=True)
-    with open(vial_web.session_file(), "w", encoding="utf-8") as outf:
+    os.makedirs(vial_web.data_dir(False), exist_ok=True)
+    with open(vial_web.session_file(False), "w", encoding="utf-8") as outf:
         outf.write(content if isinstance(content, str) else json.dumps(content))
 
 
-def session_for(port, instance="abc"):
-    return {"port": port, "url": "http://127.0.0.1:{}/?token=t".format(port), "instance": instance}
+def session_for(port, instance="abc", fake=False):
+    return {"port": port, "url": "http://127.0.0.1:{}/?token=t".format(port), "instance": instance, "fake": fake}
 
 
 def test_no_running_session(home):
-    assert vial_web.running_session() is None
+    assert vial_web.running_session(False) is None
     write_session_file(session_for(unused_port()))
-    assert vial_web.running_session() is None
+    assert vial_web.running_session(False) is None
 
 
 def test_running_session_is_found(home, health):
-    server = health({"app": "vial", "instance": "abc"})
+    server = health({"app": "vial", "instance": "abc", "fake": False})
     write_session_file(session_for(server.port))
-    assert vial_web.running_session() == session_for(server.port)["url"]
+    assert vial_web.running_session(False) == session_for(server.port)["url"]
 
 
 def test_running_session_ignores_http_proxies(home, health, monkeypatch):
@@ -430,15 +540,38 @@ def test_running_session_ignores_http_proxies(home, health, monkeypatch):
         monkeypatch.setenv(name, "http://127.0.0.1:{}".format(unused_port()))
     for name in ("no_proxy", "NO_PROXY"):
         monkeypatch.delenv(name, raising=False)
-    server = health({"app": "vial", "instance": "abc"})
+    server = health({"app": "vial", "instance": "abc", "fake": False})
     write_session_file(session_for(server.port))
-    assert vial_web.running_session() == session_for(server.port)["url"]
+    assert vial_web.running_session(False) == session_for(server.port)["url"]
+
+
+@pytest.mark.parametrize("recorded, reported", [(False, True), (True, False), (True, True), (None, False),
+                                                 (False, None), (0, False), (False, 0), ("false", False)])
+def test_running_session_needs_the_same_mode(home, health, monkeypatch, recorded, reported):
+    """ A real launch never attaches to a fake instance, nor the reverse, whatever server.json and the health check
+    say about each other (None: the field is missing) """
+    shared = vial_web.data_dir(False)
+    monkeypatch.setattr(vial_web, "data_dir", lambda fake: shared)  # both modes' files in one place
+    body = {"app": "vial", "instance": "abc"}
+    if reported is not None:
+        body["fake"] = reported
+    server = health(body)
+    session = session_for(server.port)
+    del session["fake"]
+    if recorded is not None:
+        session["fake"] = recorded
+    write_session_file(session)
+    for fake in (True, False):
+        if recorded is fake and reported is fake:
+            assert vial_web.running_session(fake) == session["url"]
+        else:
+            assert vial_web.running_session(fake) is None
 
 
 def test_running_session_needs_the_same_instance(home, health):
-    server = health({"app": "vial", "instance": "someone else"})
+    server = health({"app": "vial", "instance": "someone else", "fake": False})
     write_session_file(session_for(server.port))
-    assert vial_web.running_session() is None
+    assert vial_web.running_session(False) is None
 
 
 @pytest.mark.parametrize("content", [
@@ -454,20 +587,20 @@ def test_running_session_needs_the_same_instance(home, health):
 ])
 def test_odd_session_files_are_ignored(home, content):
     write_session_file(content)
-    assert vial_web.running_session() is None
+    assert vial_web.running_session(False) is None
 
 
 def test_url_must_point_at_the_recorded_port(home, health):
-    server = health({"app": "vial", "instance": "abc"})
+    server = health({"app": "vial", "instance": "abc", "fake": False})
     write_session_file(dict(session_for(server.port), url="http://example.com/"))
-    assert vial_web.running_session() is None
+    assert vial_web.running_session(False) is None
 
 
 @pytest.mark.parametrize("body", [["not", "a", "dict"], "vial", None, b"\xff\xfe garbage", b""])
 def test_odd_health_replies_are_ignored(home, health, body):
     server = health(body)
     write_session_file(session_for(server.port))
-    assert vial_web.running_session() is None
+    assert vial_web.running_session(False) is None
 
 
 def test_connection_reset_is_ignored(home):
@@ -483,7 +616,7 @@ def test_connection_reset_is_ignored(home):
     thread.start()
     try:
         write_session_file(session_for(listener.getsockname()[1]))
-        assert vial_web.running_session() is None
+        assert vial_web.running_session(False) is None
     finally:
         thread.join(2)
         listener.close()

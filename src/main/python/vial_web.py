@@ -21,6 +21,11 @@ from logging.handlers import RotatingFileHandler
 import platformdirs
 
 APP_NAME = "Vial"
+FAKE_SUBDIR = "fake"
+""" Fake mode keeps its own instance lock, server.json, vial.log and names.json in this subfolder of the data and
+config dirs. So a fake launch never finds, waits for or opens a real Vial (which uses the real keyboard), and a real
+launch never opens the simulator. server.json and /api/health also say which mode an instance runs in, and only an
+instance of the same mode is ever attached to, even if the files were somehow shared. """
 HEALTH_REPLY_LIMIT = 64 * 1024
 """ bytes read from whatever answers the health check """
 STARTUP_WAIT = 10.0
@@ -37,24 +42,52 @@ Press Ctrl+C to stop."""
 log = logging.getLogger(__name__)
 
 
-def data_dir():
-    return platformdirs.user_data_dir(APP_NAME, appauthor=False)
+def _mode_dir(path, fake):
+    return os.path.join(path, FAKE_SUBDIR) if fake else path
 
 
-def ensure_data_dir():
+def data_dir(fake):
+    """ Holds the instance lock, server.json and vial.log of real mode, or (fake=True) of fake mode """
+    return _mode_dir(platformdirs.user_data_dir(APP_NAME, appauthor=False), fake)
+
+
+def config_dir(fake):
+    """ Holds names.json of real mode, or (fake=True) of fake mode """
+    return _mode_dir(platformdirs.user_config_dir(APP_NAME, appauthor=False), fake)
+
+
+def lock_file(fake):
+    return os.path.join(data_dir(fake), "vial.lock")
+
+
+def session_file(fake):
+    return os.path.join(data_dir(fake), "server.json")
+
+
+def log_file(fake):
+    return os.path.join(data_dir(fake), "vial.log")
+
+
+def names_file(fake):
+    return os.path.join(config_dir(fake), "names.json")
+
+
+def ensure_data_dir(fake):
     """ The data dir, created if needed. It holds the session token (server.json), so only the user may open it. """
-    path = data_dir()
+    path = data_dir(fake)
     os.makedirs(path, mode=0o700, exist_ok=True)
     if os.name != "nt":  # on Windows the per-user %LOCALAPPDATA% already is private
         os.chmod(path, 0o700)
     return path
 
 
-def setup_logging():
-    handler = RotatingFileHandler(os.path.join(ensure_data_dir(), "vial.log"), maxBytes=5 * 1024 * 1024,
-                                  backupCount=5, delay=True)
+def setup_logging(fake):
+    ensure_data_dir(fake)
+    handler = RotatingFileHandler(log_file(fake), maxBytes=5 * 1024 * 1024, backupCount=5, delay=True)
     handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(module)s:%(lineno)d - %(message)s"))
-    logging.basicConfig(level=logging.INFO, handlers=[handler])
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
 
 
 def bind_socket(port):
@@ -75,18 +108,16 @@ def bind_socket(port):
     return sock
 
 
-def session_file():
-    return os.path.join(data_dir(), "server.json")
-
-
 def write_session(info):
-    """ Write server.json atomically, readable by the user only (it holds the session token) """
-    directory = ensure_data_dir()
+    """ Write server.json (of the mode info["fake"] names) atomically, readable by the user only (it holds the
+    session token) """
+    fake = info["fake"]
+    directory = ensure_data_dir(fake)
     fd, temp = tempfile.mkstemp(prefix="server.", suffix=".tmp", dir=directory)  # created with mode 0o600
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as outf:
             json.dump(info, outf)
-        os.replace(temp, session_file())
+        os.replace(temp, session_file(fake))
     except BaseException:
         try:
             os.remove(temp)
@@ -95,21 +126,22 @@ def write_session(info):
         raise
 
 
-def remove_session(instance):
+def remove_session(instance, fake):
     """ Delete server.json, unless another instance has written its own since """
     try:
-        with open(session_file(), "r", encoding="utf-8") as inf:
+        with open(session_file(fake), "r", encoding="utf-8") as inf:
             info = json.load(inf)
         if isinstance(info, dict) and info.get("instance") == instance:
-            os.remove(session_file())
+            os.remove(session_file(fake))
     except Exception as e:
         log.debug("could not remove the session file: %s", e)
 
 
-def running_session():
-    """ The URL of an already running Vial server, or None. Never raises. """
+def running_session(fake):
+    """ The URL of an already running Vial server of the same mode (fake or real), or None. Never raises. """
+    fake = bool(fake)
     try:
-        with open(session_file(), "r", encoding="utf-8") as inf:
+        with open(session_file(fake), "r", encoding="utf-8") as inf:
             info = json.load(inf)
         if not isinstance(info, dict):
             return None
@@ -117,11 +149,14 @@ def running_session():
         if type(port) is not int or not 0 < port <= 65535 or not isinstance(instance, str) \
                 or not isinstance(url, str) or not url.startswith("http://127.0.0.1:{}/".format(port)):
             return None
+        if info.get("fake") is not fake:
+            return None  # the other mode's: a fake launch must never open the real keyboard's Vial, nor the reverse
         # straight to this computer, never through an HTTP proxy
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open("http://127.0.0.1:{}/api/health".format(port), timeout=1) as resp:
             health = json.loads(resp.read(HEALTH_REPLY_LIMIT))
-        if isinstance(health, dict) and health.get("app") == "vial" and health.get("instance") == instance:
+        if isinstance(health, dict) and health.get("app") == "vial" and health.get("instance") == instance \
+                and health.get("fake") is fake:
             return url
     except Exception as e:
         # no file, a stale or garbled one, nothing (or something else) on that port
@@ -133,13 +168,13 @@ class InstanceLockError(Exception):
     """ The lock file can't be opened at all (as opposed to being held by another Vial) """
 
 
-def claim_instance():
-    """ Take the instance lock in the data dir, held until release_instance() or the end of the process.
-    Returns None if another Vial holds it: that one is starting up or running, and owns the keyboard.
+def claim_instance(fake):
+    """ Take the instance lock of this mode (fake or real), held until release_instance() or the end of the process.
+    Returns None if another Vial of this mode holds it: that one is starting up or running, and owns the keyboard.
     Raises InstanceLockError if the lock file can't be opened. """
-    path = os.path.join(data_dir(), "vial.lock")
+    path = lock_file(fake)
     try:
-        ensure_data_dir()
+        ensure_data_dir(fake)
         fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     except OSError as e:
         raise InstanceLockError("could not open {}: {}".format(path, e.strerror or e)) from e
@@ -171,15 +206,15 @@ def release_instance(claim):
         os.close(claim)  # closing the file would release the lock too
 
 
-def wait_for_other_instance(timeout):
-    """ While another Vial holds the claim: (its URL, None) once it answers; (None, claim) if it exits and this
-    process gets the claim; (None, None) after timeout seconds """
+def wait_for_other_instance(timeout, fake):
+    """ While another Vial of this mode holds the claim: (its URL, None) once it answers; (None, claim) if it exits
+    and this process gets the claim; (None, None) after timeout seconds """
     deadline = time.monotonic() + timeout
     while True:
-        url = running_session()
+        url = running_session(fake)
         if url:
             return url, None
-        claim = claim_instance()
+        claim = claim_instance(fake)
         if claim is not None:
             return None, claim
         if time.monotonic() >= deadline:
@@ -188,7 +223,8 @@ def wait_for_other_instance(timeout):
 
 
 def open_running(url, args):
-    print("Vial is already running. Open it at:\n  " + url, flush=True)
+    print("Vial is already running{}. Open it at:\n  {}".format(" with a simulated keyboard" if args.fake else "", url),
+          flush=True)
     if not args.no_browser:
         webbrowser.open(url)
     return 0
@@ -242,20 +278,21 @@ def main(argv=None):
     try:
         if args.dry_run:
             if not args.fake:
-                claim = claim_instance()
-                if claim is None or running_session():
+                claim = claim_instance(False)
+                if claim is None or running_session(False):
                     print("Vial is already running and using the keyboard; stop it before using --dry-run",
                           file=sys.stderr)
                     return 1
         else:
-            setup_logging()
-            existing = running_session()
+            # everything below looks only at instances of the same mode (fake or real): see FAKE_SUBDIR
+            setup_logging(args.fake)
+            existing = running_session(args.fake)
             if existing:
                 return open_running(existing, args)
-            claim = claim_instance()
+            claim = claim_instance(args.fake)
             if claim is None:
                 # another Vial is starting up: it answers once it has read the keyboard (or exits)
-                existing, claim = wait_for_other_instance(STARTUP_WAIT)
+                existing, claim = wait_for_other_instance(STARTUP_WAIT, args.fake)
                 if existing:
                     return open_running(existing, args)
             if claim is None:
@@ -325,7 +362,7 @@ def serve(args, manager, sock):
     instance = secrets.token_hex(8)
     url = "http://127.0.0.1:{}/?token={}".format(port, token)
     static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "web", "dist")
-    names = NamesStore(os.path.join(platformdirs.user_config_dir(APP_NAME, appauthor=False), "names.json"))
+    names = NamesStore(names_file(args.fake))
 
     def all_tabs_closed():
         print(REOPEN_MESSAGE.format(url=url), flush=True)
@@ -334,7 +371,7 @@ def serve(args, manager, sock):
     app = create_app(manager, names, token, port, static_dir=static_dir, on_all_clients_gone=all_tabs_closed,
                      instance_id=instance)
 
-    write_session({"port": port, "url": url, "instance": instance})
+    write_session({"port": port, "url": url, "instance": instance, "fake": bool(args.fake)})
     try:
         # the socket is already listening: the URL works from now on
         print(STARTED_MESSAGE.format(url=url, fake=" with a simulated keyboard" if args.fake else ""), flush=True)
@@ -345,7 +382,7 @@ def serve(args, manager, sock):
     except KeyboardInterrupt:
         pass  # uvicorn shuts down cleanly on Ctrl+C, then raises it again
     finally:
-        remove_session(instance)
+        remove_session(instance, bool(args.fake))
     return 0
 
 
