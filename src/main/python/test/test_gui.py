@@ -2,7 +2,8 @@ import lzma
 import os.path
 import struct
 
-from PyQt5.QtCore import QPoint
+import pytest
+from PyQt5.QtCore import QPoint, QSettings
 from PyQt5.QtWidgets import QPushButton
 from pytestqt.qt_compat import qt_api
 
@@ -190,8 +191,17 @@ class FakeAppctx:
 all_mw = []
 
 
+@pytest.fixture(autouse=True)
+def isolated_settings(tmp_path, monkeypatch):
+    """ Never read or write the Vial settings of the person running the tests """
+    import main_window
+
+    path = str(tmp_path / "vial-settings.ini")
+    monkeypatch.setattr(main_window, "QSettings", lambda *args: QSettings(path, QSettings.IniFormat))
+
+
 def prepare(qtbot, keyboard_json, combos=None, tap_dance=None):
-    import hidraw as hid
+    from hidproxy import hid
 
     vk = VirtualKeyboard(keyboard_json, combos=combos, tap_dance=tap_dance)
     MockDevice.vk = vk
@@ -480,7 +490,7 @@ def test_combos(qtbot):
     min_y = min(p.y() for p in bbox)
     max_y = max(p.y() for p in bbox)
     pos_mask = QPoint(int((min_x + max_x) / 2), int(min_y + (max_y - min_y) * 4/5))
-    pos = QPoint(bbox[0].x(), bbox[0].y())
+    pos = QPoint(int(bbox[0].x()), int(bbox[0].y()))
     qtbot.mouseClick(w[0], qt_api.QtCore.Qt.MouseButton.LeftButton, pos=pos)
     assert mw.tray_keycodes.isVisible()
 
@@ -570,7 +580,7 @@ def test_tap_dance(qtbot):
     min_y = min(p.y() for p in bbox)
     max_y = max(p.y() for p in bbox)
     pos_mask = QPoint(int((min_x + max_x) / 2), int(min_y + (max_y - min_y) * 4/5))
-    pos = QPoint(bbox[0].x(), bbox[0].y())
+    pos = QPoint(int(bbox[0].x()), int(bbox[0].y()))
     qtbot.mouseClick(w[0], qt_api.QtCore.Qt.MouseButton.LeftButton, pos=pos)
     assert mw.tray_keycodes.isVisible()
 
