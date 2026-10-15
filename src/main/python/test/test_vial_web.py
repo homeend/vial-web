@@ -3,6 +3,7 @@ import json
 import os
 import socket
 import struct
+import subprocess
 import sys
 import threading
 
@@ -165,6 +166,64 @@ def test_real_dry_run_refuses_while_another_is_starting(home, no_keyboard, other
     monkeypatch.setattr(vial_web, "running_session", lambda: None)
     assert vial_web.main(["--dry-run"]) != 0
     assert "already running" in capsys.readouterr().err
+
+
+HOLD_CLAIM = """
+import sys, time, vial_web
+vial_web.data_dir = lambda: sys.argv[1]
+assert vial_web.claim_instance() is not None
+print("claimed", flush=True)
+time.sleep(0.5)
+"""
+
+
+def test_launch_takes_over_when_the_starting_one_exits(home, fake_server, capsys):
+    """ Another Vial holds the claim, then exits (or crashes) without ever answering: start normally """
+    other = subprocess.Popen([sys.executable, "-c", HOLD_CLAIM, vial_web.data_dir()],
+                             cwd=os.path.dirname(os.path.abspath(vial_web.__file__)), stdout=subprocess.PIPE,
+                             text=True)
+    try:
+        assert other.stdout.readline().strip() == "claimed"
+        assert vial_web.claim_instance() is None
+        assert vial_web.main(["--fake", "--no-browser"]) == 0
+        assert other.poll() == 0  # it had exited; this one claimed the instance after it
+    finally:
+        other.kill()
+        other.wait()
+    out, err = capsys.readouterr()
+    assert fake_server.seen["session"]["url"] in out
+    assert err == ""
+
+
+def test_lock_file_that_cannot_be_opened_is_a_clear_error(home, no_keyboard, monkeypatch, capsys):
+    monkeypatch.setattr(vial_web, "running_session", lambda: None)
+    os.makedirs(os.path.join(vial_web.data_dir(), "vial.lock"))  # a folder where the lock file should be
+    for argv in (["--fake"], ["--dry-run"]):
+        assert vial_web.main(argv) == 1
+        out, err = capsys.readouterr()
+        assert "could not open" in err and "vial.lock" in err
+        assert "Traceback" not in err and len(err.strip().splitlines()) == 1
+    assert home == []
+
+
+def test_release_unlocks_before_closing(home, monkeypatch):
+    calls = []
+    if os.name == "nt":
+        import msvcrt
+        locking = msvcrt.locking
+        monkeypatch.setattr(msvcrt, "locking", lambda fd, mode, n: (calls.append(mode), locking(fd, mode, n)))
+        unlock = msvcrt.LK_UNLCK
+    else:
+        import fcntl
+        flock = fcntl.flock
+        monkeypatch.setattr(fcntl, "flock", lambda fd, op: (calls.append(op), flock(fd, op)))
+        unlock = fcntl.LOCK_UN
+    close = os.close
+    monkeypatch.setattr(os, "close", lambda fd: (calls.append("close"), close(fd)))
+    claim = vial_web.claim_instance()
+    calls.clear()
+    vial_web.release_instance(claim)
+    assert calls == [unlock, "close"]
 
 
 # ---------- binding the port ----------

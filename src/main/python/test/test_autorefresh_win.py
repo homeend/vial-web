@@ -17,6 +17,43 @@ def excepthook_calls(monkeypatch):
     return calls
 
 
+@pytest.fixture
+def no_hid(monkeypatch):
+    """ A thread rescans after a device change: it finds no keyboards, and nothing can reach hidapi.
+    Returns the list of rescans. """
+    import autorefresh.autorefresh_thread
+    from hidproxy import hid
+
+    rescans = []
+
+    def find_vial_devices(*args, **kwargs):
+        rescans.append(args)
+        return []
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("touched hidapi")
+    monkeypatch.setattr(autorefresh.autorefresh_thread, "find_vial_devices", find_vial_devices)
+    monkeypatch.setattr(hid, "enumerate", refuse)
+    monkeypatch.setattr(hid, "device", refuse)
+    return rescans
+
+
+@pytest.fixture
+def start_thread(qapp, no_hid):
+    """ Starts real autorefresh threads, and stops them before the HID stand-ins above are removed """
+    from autorefresh.autorefresh_thread_win import AutorefreshThreadWin
+
+    threads = []
+
+    def start():
+        threads.append(AutorefreshThreadWin())
+        threads[-1].start()
+        return threads[-1]
+    yield start
+    for thread in threads:
+        thread.stop()
+
+
 def notification_windows():
     """ This process's hidden device-notification windows """
     import win32con
@@ -89,14 +126,11 @@ def test_device_changes_are_tracked_per_window(excepthook_calls):
 
 
 @windows_only
-def test_thread_stops_and_removes_its_window(qapp):
+def test_thread_stops_and_removes_its_window(start_thread):
     """ Tests stop the thread of every MainWindow they create; a thread left running receives device changes
     during later tests """
-    from autorefresh.autorefresh_thread_win import AutorefreshThreadWin
-
     before = set(notification_windows())
-    thread = AutorefreshThreadWin()
-    thread.start()
+    thread = start_thread()
     deadline = time.monotonic() + 5
     while set(notification_windows()) == before and time.monotonic() < deadline:
         time.sleep(0.01)
@@ -104,3 +138,22 @@ def test_thread_stops_and_removes_its_window(qapp):
     thread.stop()
     assert thread.isFinished()
     assert set(notification_windows()) == before
+
+
+@windows_only
+def test_thread_rescans_after_a_device_change(start_thread, no_hid):
+    from autorefresh import autorefresh_thread_win as arw
+
+    before = set(notification_windows())
+    thread = start_thread()
+    deadline = time.monotonic() + 5
+    while not set(notification_windows()) - before and time.monotonic() < deadline:
+        time.sleep(0.01)
+    (hwnd,) = set(notification_windows()) - before
+    # what the window procedure records for a device arrival (Windows only sends a real one with a device behind it)
+    arw.g_changed_windows.add(hwnd)
+    deadline = time.monotonic() + 5
+    while not no_hid and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert len(no_hid) == 1  # through the stand-in, never hidapi
+    thread.stop()

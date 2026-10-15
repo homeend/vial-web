@@ -129,10 +129,20 @@ def running_session():
     return None
 
 
+class InstanceLockError(Exception):
+    """ The lock file can't be opened at all (as opposed to being held by another Vial) """
+
+
 def claim_instance():
     """ Take the instance lock in the data dir, held until release_instance() or the end of the process.
-    Returns None if another Vial holds it: that one is starting up or running, and owns the keyboard. """
-    fd = os.open(os.path.join(ensure_data_dir(), "vial.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    Returns None if another Vial holds it: that one is starting up or running, and owns the keyboard.
+    Raises InstanceLockError if the lock file can't be opened. """
+    path = os.path.join(data_dir(), "vial.lock")
+    try:
+        ensure_data_dir()
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as e:
+        raise InstanceLockError("could not open {}: {}".format(path, e.strerror or e)) from e
     try:
         if os.name == "nt":
             import msvcrt
@@ -150,16 +160,30 @@ def claim_instance():
 
 
 def release_instance(claim):
-    os.close(claim)  # closing the file releases the lock
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(claim, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(claim, fcntl.LOCK_UN)
+    finally:
+        os.close(claim)  # closing the file would release the lock too
 
 
-def wait_for_session(timeout):
-    """ The URL of the running Vial server once it answers, or None after timeout seconds """
+def wait_for_other_instance(timeout):
+    """ While another Vial holds the claim: (its URL, None) once it answers; (None, claim) if it exits and this
+    process gets the claim; (None, None) after timeout seconds """
     deadline = time.monotonic() + timeout
     while True:
         url = running_session()
-        if url or time.monotonic() >= deadline:
-            return url
+        if url:
+            return url, None
+        claim = claim_instance()
+        if claim is not None:
+            return None, claim
+        if time.monotonic() >= deadline:
+            return None, None
         time.sleep(0.25)
 
 
@@ -230,10 +254,11 @@ def main(argv=None):
                 return open_running(existing, args)
             claim = claim_instance()
             if claim is None:
-                # another Vial is starting up: it answers once it has read the keyboard
-                existing = wait_for_session(STARTUP_WAIT)
+                # another Vial is starting up: it answers once it has read the keyboard (or exits)
+                existing, claim = wait_for_other_instance(STARTUP_WAIT)
                 if existing:
                     return open_running(existing, args)
+            if claim is None:
                 print("Another Vial is starting up but did not answer within {:g} seconds. Try again in a moment, "
                       "or stop the other one first.".format(STARTUP_WAIT), file=sys.stderr)
                 return 1
@@ -244,6 +269,9 @@ def main(argv=None):
                     "port {}".format(args.port) if args.port else "a free port", e.strerror or e), file=sys.stderr)
                 return 1
         return run(args, sock)
+    except InstanceLockError as e:
+        print("Vial {}".format(e), file=sys.stderr)
+        return 1
     finally:
         if sock is not None:
             sock.close()
