@@ -30,6 +30,15 @@ HEALTH_REPLY_LIMIT = 64 * 1024
 """ bytes read from whatever answers the health check """
 STARTUP_WAIT = 10.0
 """ seconds a second launch waits for a Vial that is still starting up to answer """
+FILE_RETRIES = 6
+FILE_RETRY_WAIT = 0.1
+""" server.json in use by another process: tries, and seconds between them """
+UVICORN_LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    # no handlers of uvicorn's own: its messages, such as tracebacks of unhandled errors, go to vial.log
+    "loggers": {name: {"handlers": [], "propagate": True} for name in ("uvicorn", "uvicorn.error", "uvicorn.access")},
+}
 
 STARTED_MESSAGE = """Vial is running{fake}. Open it at:
   {url}
@@ -108,22 +117,40 @@ def bind_socket(port):
     return sock
 
 
+def retry_while_in_use(operation, *args):
+    """ operation(*args), tried again for about half a second while it fails with PermissionError: on Windows,
+    server.json can't be replaced or deleted while another launch has it open to look for this instance """
+    for attempt in range(FILE_RETRIES):
+        try:
+            return operation(*args)
+        except PermissionError:
+            if attempt == FILE_RETRIES - 1:
+                raise
+            time.sleep(FILE_RETRY_WAIT)
+
+
 def write_session(info):
     """ Write server.json (of the mode info["fake"] names) atomically, readable by the user only (it holds the
-    session token) """
+    session token). Returns whether that worked: if not, a later launch can't find this instance, which is logged
+    but doesn't stop this one. """
     fake = info["fake"]
-    directory = ensure_data_dir(fake)
-    fd, temp = tempfile.mkstemp(prefix="server.", suffix=".tmp", dir=directory)  # created with mode 0o600
+    temp = None
     try:
+        fd, temp = tempfile.mkstemp(prefix="server.", suffix=".tmp", dir=ensure_data_dir(fake))  # mode 0o600
         with os.fdopen(fd, "w", encoding="utf-8") as outf:
             json.dump(info, outf)
-        os.replace(temp, session_file(fake))
-    except BaseException:
-        try:
-            os.remove(temp)
-        except OSError:
-            pass
-        raise
+        retry_while_in_use(os.replace, temp, session_file(fake))
+        return True
+    except BaseException as e:
+        if temp is not None:
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
+        if not isinstance(e, OSError):
+            raise
+        log.warning("could not write the session file %s: %s", session_file(fake), e)
+        return False
 
 
 def remove_session(instance, fake):
@@ -132,9 +159,11 @@ def remove_session(instance, fake):
         with open(session_file(fake), "r", encoding="utf-8") as inf:
             info = json.load(inf)
         if isinstance(info, dict) and info.get("instance") == instance:
-            os.remove(session_file(fake))
+            retry_while_in_use(os.remove, session_file(fake))
+    except FileNotFoundError:
+        pass
     except Exception as e:
-        log.debug("could not remove the session file: %s", e)
+        log.warning("could not remove the session file %s: %s", session_file(fake), e)
 
 
 def running_session(fake):
@@ -328,27 +357,43 @@ def run(args, sock):
         print("could not load the keyboard definition {}: {}".format(args.definition, e), file=sys.stderr)
         return 1
     manager = DeviceManager(backend)
-    manager.connect()
-    if args.layout:
-        try:
-            with open(args.layout, "rb") as inf:
-                data = inf.read()
-            manager.run(lambda kb: kb.restore_layout(data))
-        except Exception as e:
-            print("could not load the layout file {}: {}".format(args.layout, str(e) or e.__class__.__name__),
-                  file=sys.stderr)
-            return 1
+    try:
+        manager.connect()
+        if args.layout:
+            error = load_layout_file(manager, args.layout)
+            if error:
+                print("could not load the layout file {}: {}".format(args.layout, error), file=sys.stderr)
+                return 1
 
-    if args.dry_run:
-        status = manager.status()
-        if not status.connected:
-            print("no keyboard found" + (": " + status.error if status.error else ""))
-            return 1
-        summary = manager.run(lambda kb: model.build(kb, {"layers": {}, "tapDance": {}, "macros": {}}, manager.unlocked))
-        print(json.dumps({"device": status.title, "name": summary.name, "layers": len(summary.layers),
-                          "keys": len(summary.keys), "fake": manager.backend.fake}))
-        return 0
-    return serve(args, manager, sock)
+        if args.dry_run:
+            status = manager.status()
+            if not status.connected:
+                print("no keyboard found" + (": " + status.error if status.error else ""))
+                return 1
+            summary = manager.run(lambda kb: model.build(kb, {"layers": {}, "tapDance": {}, "macros": {}},
+                                                         manager.unlocked))
+            print(json.dumps({"device": status.title, "name": summary.name, "layers": len(summary.layers),
+                              "keys": len(summary.keys), "fake": manager.backend.fake}))
+            return 0
+        return serve(args, manager, sock)
+    finally:
+        manager.close()  # stopped (Ctrl+C included): let go of the keyboard
+
+
+def load_layout_file(manager, path):
+    """ Write a .vil file to the keyboard, checked as a whole first like an upload through the API: nothing is written
+    if it doesn't fit the keyboard. Returns None, or why it failed. """
+    from server import edits
+    try:
+        with open(path, "rb") as inf:
+            data = inf.read()
+    except OSError as e:
+        return e.strerror or str(e)
+    try:
+        manager.run(lambda kb: edits.prepare_layout_file(kb, data)())
+    except Exception as e:
+        return str(e) or e.__class__.__name__
+    return None
 
 
 def serve(args, manager, sock):
@@ -378,7 +423,7 @@ def serve(args, manager, sock):
         logging.info("serving on port %d", port)
         if not args.no_browser:
             threading.Thread(target=webbrowser.open, args=[url], daemon=True).start()
-        uvicorn.Server(uvicorn.Config(app, log_level="warning")).run(sockets=[sock])
+        uvicorn.Server(uvicorn.Config(app, log_level="warning", log_config=UVICORN_LOGGING)).run(sockets=[sock])
     except KeyboardInterrupt:
         pass  # uvicorn shuts down cleanly on Ctrl+C, then raises it again
     finally:

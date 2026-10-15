@@ -297,6 +297,11 @@ class DeviceManager:
                 log.exception("could not check whether the keyboard is still connected; assuming it is")
             return None
 
+    def close(self):
+        """ Let go of the keyboard: the server is stopping """
+        with self.lock:
+            self._close()
+
     @staticmethod
     def _close_device(dev):
         try:

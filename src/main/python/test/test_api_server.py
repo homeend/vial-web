@@ -93,11 +93,11 @@ def test_non_ascii_token_or_cookie_is_refused_not_an_error(tmp_path):
     manager = DeviceManager(FakeBackend(make_corne))
     app = create_app(manager, NamesStore(str(tmp_path / "n.json")), TOKEN, PORT, poll_interval=0)
     with TestClient(app, base_url=BASE) as c:
-        assert c.get("/api/session", headers={"cookie": b"vial_session=\xc4\x85"}).status_code == 401
+        assert c.get("/api/session", headers={"cookie": b"vial_session_8765=\xc4\x85"}).status_code == 401
         assert c.get("/?token=%C4%85").status_code == 401
-        assert c.get("/?token=%C4%85", headers={"cookie": b"vial_session=\xc4\x85"}).status_code == 401
+        assert c.get("/?token=%C4%85", headers={"cookie": b"vial_session_8765=\xc4\x85"}).status_code == 401
         with pytest.raises(WebSocketDisconnect):
-            with c.websocket_connect(EVENTS, headers={"origin": BASE, "cookie": b"vial_session=\xc4\x85"}) as ws:
+            with c.websocket_connect(EVENTS, headers={"origin": BASE, "cookie": b"vial_session_8765=\xc4\x85"}) as ws:
                 ws.receive_json()
 
 
@@ -341,12 +341,36 @@ def test_oversized_layout_file_is_refused_while_reading(tmp_path):
         "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "http",
         "path": "/api/layout-file", "raw_path": b"/api/layout-file", "query_string": b"", "root_path": "",
         "headers": [(b"host", "127.0.0.1:{}".format(PORT).encode()),
-                    (b"cookie", "vial_session={}".format(TOKEN).encode())],
+                    (b"cookie", "{}={}".format(app_module.cookie_name(PORT), TOKEN).encode())],
         "client": ("127.0.0.1", 50000), "server": ("127.0.0.1", PORT),
     }
     asyncio.run(app(scope, receive, send))
     assert next(m["status"] for m in sent if m["type"] == "http.response.start") == 413
     assert len(received) <= app_module.MAX_LAYOUT_FILE // len(chunk) + 2
+
+
+# ---------- unexpected errors ----------
+
+def test_unexpected_error_is_logged_and_answered_briefly(tmp_path, monkeypatch, caplog):
+    manager = DeviceManager(FakeBackend(make_corne))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "n.json")), TOKEN, PORT, poll_interval=0)
+
+    def bug():
+        raise TypeError("a bug in the server")
+    monkeypatch.setattr(app_module.model, "keycode_catalogue", bug)
+    # like uvicorn: the error that Starlette raises again after answering is the server's to log, not the client's
+    with TestClient(app, base_url=BASE, raise_server_exceptions=False) as client:
+        assert client.get("/?token=" + TOKEN, follow_redirects=False).status_code == 303
+        with caplog.at_level(logging.ERROR, logger="server.app"):
+            response = client.get("/api/keycodes")
+    assert response.status_code == 500
+    assert response.json() == {"detail": "unexpected error, see vial.log"}
+    for name, value in SECURITY_HEADERS.items():
+        assert response.headers.get(name) == value, name
+    (record,) = [r for r in caplog.records if r.name == "server.app"]
+    assert "/api/keycodes" in record.getMessage()
+    assert record.exc_info[0] is TypeError and "a bug in the server" in caplog.text
 
 
 # ---------- security headers ----------

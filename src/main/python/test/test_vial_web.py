@@ -13,7 +13,10 @@ import uvicorn
 
 import vial_web
 from protocol.unlock_hook import set_unlock_handler
+from server import device as device_module
 from server.device import DeviceManager, HidBackend
+from simulator.corne import encode
+from simulator.device import SimulatedHidDevice
 from test.test_core_isolation import run_isolated
 
 LAYOUT_2x2 = {"name": "Tiny", "matrix": {"rows": 2, "cols": 2},
@@ -59,8 +62,10 @@ def unused_port():
 
 
 def test_fake_mode_never_loads_qt_or_hidapi():
-    """ The guarantee behind 'development never touches real hardware' """
-    result = run_isolated("import sys, vial_web\nsys.exit(vial_web.main(['--fake', '--dry-run']))")
+    """ The guarantee behind 'development never touches real hardware'. The server and uvicorn are imported too: they
+    must never pull in Qt or hidapi when imported. """
+    result = run_isolated("import sys, vial_web, server.app, uvicorn, uvicorn.main\n"
+                          "sys.exit(vial_web.main(['--fake', '--dry-run']))")
     assert result.returncode == 0, result.stderr
     summary = json.loads(result.stdout.strip().splitlines()[-1])
     assert summary == {"device": "Simulated: Simulated Corne", "name": "Simulated Corne", "layers": 4,
@@ -437,14 +442,78 @@ def test_ctrl_c_stops_cleanly(home, fake_server):
     assert not os.path.exists(vial_web.session_file(True))
 
 
+@pytest.mark.parametrize("ends", ["serving", "ctrl_c"])
+def test_keyboard_is_closed_when_the_server_stops(home, fake_server, monkeypatch, ends):
+    opened = []
+
+    class Device(SimulatedHidDevice):
+        def __init__(self, keyboard):
+            super().__init__(keyboard)
+            opened.append(self)
+
+    def stop():
+        assert [d.closed for d in opened] == [False]  # open while serving
+        if ends == "ctrl_c":
+            raise KeyboardInterrupt  # uvicorn raises Ctrl+C again after shutting down
+    monkeypatch.setattr(device_module, "SimulatedHidDevice", Device)
+    fake_server.while_serving = stop
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert len(opened) == 1 and opened[0].closed
+
+
+def test_server_errors_reach_the_log(home, fake_server, caplog):
+    """ uvicorn's default logging keeps its messages (tracebacks of unhandled errors among them) away from vial.log """
+    uvicorn.Config(None)  # uvicorn's default logging setup: console handlers of its own, not passed on to the root
+    assert not logging.getLogger("uvicorn").propagate
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    with caplog.at_level(logging.ERROR):
+        logging.getLogger("uvicorn.error").error("Exception in ASGI application")
+    assert "Exception in ASGI application" in caplog.text
+    assert logging.getLogger("uvicorn").handlers == [] and logging.getLogger("uvicorn.error").handlers == []
+
+
+@pytest.fixture
+def simulated(monkeypatch):
+    """ The simulated keyboards that fake launches create """
+    from simulator import corne
+    made = []
+    make = corne.make_corne
+    monkeypatch.setattr(corne, "make_corne", lambda: made.append(make()) or made[-1])
+    return made
+
+
+def test_layout_file_is_loaded_into_the_simulator(tmp_path, corne_keyboard, simulated):
+    data = json.loads(corne_keyboard[1].save_layout())
+    data["layout"][0][0][0] = "KC_Q"
+    path = tmp_path / "good.vil"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert vial_web.main(["--fake", "--layout", str(path), "--dry-run"]) == 0
+    assert simulated[0].keymap[0][0][0] == encode("KC_Q")
+
+
+def test_layout_file_is_checked_before_anything_is_written(tmp_path, corne_keyboard, simulated, capsys):
+    data = json.loads(corne_keyboard[1].save_layout())
+    data["layout"][0][0][0] = "KC_Q"
+    data["layout"][1][0][0] = "NOT_A_KEYCODE"
+    path = tmp_path / "bad.vil"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert vial_web.main(["--fake", "--layout", str(path), "--dry-run"]) == 1
+    err = capsys.readouterr().err
+    assert "could not load the layout file {}: not a valid Vial layout file: layer 1 row 0 column 0".format(path) in err
+    assert "Traceback" not in err
+    assert simulated[0].keymap[0][0][0] != encode("KC_Q")  # the first key, which was fine, wasn't written either
+
+
 def test_layout_file_failure_is_a_clear_error(tmp_path, capsys):
     bad = tmp_path / "bad.vil"
     bad.write_text("this is not json", encoding="utf-8")
     assert vial_web.main(["--fake", "--layout", str(bad), "--dry-run"]) == 1
     err = capsys.readouterr().err
-    assert "could not load the layout file" in err and "Traceback" not in err
+    assert "could not load the layout file {}: not a valid Vial layout file".format(bad) in err
+    assert "Traceback" not in err
     assert vial_web.main(["--fake", "--layout", str(tmp_path / "missing.vil"), "--dry-run"]) == 1
-    assert "could not load the layout file" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "could not load the layout file" in err and "No such file" in err and "Traceback" not in err
 
 
 # ---------- the session file ----------
@@ -462,6 +531,53 @@ def test_session_file_is_private(home, tmp_path):
     vial_web.write_session({"port": 1, "url": "u", "instance": "a", "fake": False})
     assert os.stat(tmp_path / "data").st_mode & 0o777 == 0o700
     assert os.stat(vial_web.session_file(False)).st_mode & 0o777 == 0o600
+
+
+def flaky(operation, failures):
+    """ operation, failing with PermissionError (a file in use, on Windows) the first failures times """
+    calls = []
+
+    def attempt(*args):
+        calls.append(args)
+        if len(calls) <= failures:
+            raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+        return operation(*args)
+    return attempt
+
+
+@pytest.fixture
+def waits(monkeypatch):
+    waited = []
+    monkeypatch.setattr(vial_web.time, "sleep", waited.append)
+    return waited
+
+
+def test_session_file_in_use_is_written_after_a_retry(home, monkeypatch, waits):
+    monkeypatch.setattr(os, "replace", flaky(os.replace, 2))
+    assert vial_web.write_session({"port": 1, "url": "u", "instance": "a", "fake": False})
+    with open(vial_web.session_file(False), encoding="utf-8") as inf:
+        assert json.load(inf)["instance"] == "a"
+    assert len(waits) == 2
+
+
+def test_session_file_in_use_for_long_is_logged_not_raised(home, monkeypatch, waits, caplog):
+    monkeypatch.setattr(os, "replace", flaky(os.replace, 100))
+    with caplog.at_level(logging.WARNING, logger="vial_web"):
+        assert not vial_web.write_session({"port": 1, "url": "u", "instance": "a", "fake": False})
+    assert "could not write the session file" in caplog.text
+    assert os.listdir(vial_web.data_dir(False)) == []  # the temporary file isn't left behind either
+    assert 0.4 <= sum(waits) <= 0.6
+
+
+@pytest.mark.parametrize("failures", [2, 100])
+def test_session_file_in_use_is_removed_after_a_retry(home, monkeypatch, waits, caplog, failures):
+    vial_web.write_session({"port": 1, "url": "u", "instance": "a", "fake": False})
+    monkeypatch.setattr(os, "remove", flaky(os.remove, failures))
+    with caplog.at_level(logging.WARNING, logger="vial_web"):
+        vial_web.remove_session("a", False)  # never raises
+    gave_up = failures == 100
+    assert os.path.exists(vial_web.session_file(False)) == gave_up
+    assert ("could not remove the session file" in caplog.text) == gave_up
 
 
 @pytest.mark.parametrize("fake", [True, False])

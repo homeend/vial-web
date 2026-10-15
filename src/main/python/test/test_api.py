@@ -57,7 +57,8 @@ def test_token_handshake_sets_http_only_cookie(tmp_path):
         response = c.get("/?token=" + TOKEN, follow_redirects=False)
         assert response.headers["location"] == "/"
         cookie = response.headers["set-cookie"]
-        assert "vial_session=" + TOKEN in cookie and "HttpOnly" in cookie and "SameSite=strict" in cookie
+        assert "vial_session_{}={}".format(PORT, TOKEN) in cookie
+        assert "HttpOnly" in cookie and "SameSite=strict" in cookie
 
 
 def test_requests_without_session_are_refused(tmp_path):
@@ -87,6 +88,22 @@ def test_health_says_whether_the_keyboard_is_simulated(tmp_path, backend, fake):
         assert c.get("/api/health").json() == {"app": "vial", "instance": "abc", "fake": fake}
 
 
+def test_session_cookie_is_per_port(tmp_path):
+    """ Two servers on 127.0.0.1 share cookies: each has its own cookie name, for HTTP and WebSocket requests alike """
+    app = create_app(DeviceManager(FakeBackend(make_corne)), NamesStore(str(tmp_path / "n.json")), TOKEN, PORT,
+                     poll_interval=0)
+    ours = {"origin": BASE, "cookie": "vial_session_{}={}".format(PORT, TOKEN)}
+    other_ports = {"origin": BASE, "cookie": "vial_session_{}={}; vial_session={}".format(PORT + 1, TOKEN, TOKEN)}
+    with TestClient(app, base_url=BASE) as c:
+        assert c.get("/api/session", headers=other_ports).status_code == 401
+        with pytest.raises(WebSocketDisconnect):
+            with c.websocket_connect(EVENTS, headers=other_ports) as ws:
+                ws.receive_json()
+        assert c.get("/api/session", headers=ours).status_code == 200
+        with c.websocket_connect(EVENTS, headers=ours) as ws:
+            assert ws.receive_json() == {"type": "disconnected"}
+
+
 def test_foreign_host_and_origin_are_refused(client):
     assert client.get("/api/session", headers={"host": "evil.example"}).status_code == 403
     assert client.get("/api/session", headers={"host": "127.0.0.1:9999"}).status_code == 403
@@ -114,6 +131,14 @@ def test_keycodes_and_parse(client):
 def test_placeholder_page_when_ui_not_built(client):
     response = client.get("/")
     assert response.status_code == 200 and "Vial server is running" in response.text
+
+
+def test_placeholder_page_keeps_an_events_connection_open(client):
+    """ Without one, Vial would never print the reopen message once the tab is closed """
+    response = client.get("/")
+    assert '<script>' in response.text and '"ws://" + location.host + "/api/events"' in response.text
+    csp = response.headers["content-security-policy"]
+    assert "script-src" not in csp and "default-src" not in csp  # the inline script may run
 
 
 # ---------- writing ----------

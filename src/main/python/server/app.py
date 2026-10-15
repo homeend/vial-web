@@ -17,7 +17,6 @@ from server.device import NotConnected, KeyboardLocked
 
 log = logging.getLogger(__name__)
 
-COOKIE = "vial_session"
 MAX_LAYOUT_FILE = 1024 * 1024
 """ largest .vil upload, in bytes """
 SECURITY_HEADERS = {
@@ -32,6 +31,12 @@ PLACEHOLDER_PAGE = """<!doctype html>
 <body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem">
 <h1>Vial server is running</h1>
 <p>The web interface isn't built yet. The API is available under <code>/api</code>.</p>
+<script>
+// an open events connection is how Vial knows this tab is open, and tells in its terminal once all are closed
+(function connect() {
+  new WebSocket("ws://" + location.host + "/api/events").onclose = function () { setTimeout(connect, 2000); };
+})();
+</script>
 </body></html>"""
 
 NEED_TOKEN_PAGE = """<!doctype html>
@@ -40,6 +45,12 @@ NEED_TOKEN_PAGE = """<!doctype html>
 <h1>Open Vial from its link</h1>
 <p>For security, open the link Vial printed in its terminal window (it ends with <code>?token=...</code>).</p>
 </body></html>"""
+
+
+def cookie_name(port):
+    """ The session cookie's name. Cookies don't keep ports apart, so two servers on 127.0.0.1 would overwrite each
+    other's cookie under one name. """
+    return "vial_session_{}".format(port)
 
 
 class EventHub:
@@ -120,6 +131,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     allowed_origins = {"http://" + h for h in allowed_hosts}
     hub = EventHub(on_all_clients_gone, close_grace)
     instance_id = instance_id or secrets.token_hex(8)
+    cookie = cookie_name(port)
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
@@ -167,9 +179,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             return await call_next(request)
         if path == "/" and token_ok(request.query_params.get("token")):
             response = RedirectResponse("/", status_code=303)
-            response.set_cookie(COOKIE, token, httponly=True, samesite="strict", path="/")
+            response.set_cookie(cookie, token, httponly=True, samesite="strict", path="/")
             return response
-        if not token_ok(request.cookies.get(COOKIE)):
+        if not token_ok(request.cookies.get(cookie)):
             if path.startswith("/api/"):
                 return JSONResponse({"detail": "missing or wrong session token"}, status_code=401)
             return HTMLResponse(NEED_TOKEN_PAGE, status_code=401)
@@ -195,6 +207,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     async def device_error(request, exc):
         log.exception("keyboard error")
         return JSONResponse({"detail": "the keyboard didn't respond: {}".format(exc)}, status_code=502)
+
+    @app.exception_handler(Exception)
+    async def unexpected_error(request, exc):
+        # Starlette answers this one outside every middleware (and raises exc again afterwards, for the server to
+        # log): the security headers are added here
+        log.error("unexpected error in %s %s", request.method, request.url.path, exc_info=exc)
+        return JSONResponse({"detail": "unexpected error, see vial.log"}, status_code=500, headers=SECURITY_HEADERS)
 
     def run(fn):
         return manager.run(fn)
@@ -354,7 +373,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     @app.websocket("/api/events")
     async def events(ws: WebSocket):
         if ws.headers.get("host") not in allowed_hosts or \
-                ws.headers.get("origin") not in allowed_origins or not token_ok(ws.cookies.get(COOKIE)):
+                ws.headers.get("origin") not in allowed_origins or not token_ok(ws.cookies.get(cookie)):
             await ws.close(code=1008)
             return
         await ws.accept()
