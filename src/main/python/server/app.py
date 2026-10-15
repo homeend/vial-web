@@ -6,7 +6,7 @@ import logging
 import os
 import secrets
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -18,6 +18,14 @@ from server.device import NotConnected, KeyboardLocked
 log = logging.getLogger(__name__)
 
 COOKIE = "vial_session"
+MAX_LAYOUT_FILE = 1024 * 1024
+""" largest .vil upload, in bytes """
+SECURITY_HEADERS = {
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
 
 PLACEHOLDER_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><title>Vial</title></head>
@@ -37,32 +45,46 @@ NEED_TOKEN_PAGE = """<!doctype html>
 class EventHub:
     """ Tracks open UI tabs (WebSocket connections) and broadcasts events to them """
 
-    def __init__(self, on_all_clients_gone=None, grace_seconds=3.0):
+    def __init__(self, on_all_clients_gone=None, grace_seconds=3.0, send_timeout=1.0):
         self.clients = set()
         self.on_all_clients_gone = on_all_clients_gone
         self.grace_seconds = grace_seconds
-        self.ever_connected = False
+        self.send_timeout = send_timeout
+        self._gone_timer = None
 
     async def add(self, ws):
         self.clients.add(ws)
-        self.ever_connected = True
+        self.stop()
 
     async def remove(self, ws):
         self.clients.discard(ws)
         if not self.clients and self.on_all_clients_gone is not None:
-            asyncio.get_running_loop().create_task(self._notify_if_still_empty())
+            # one timer at a time: a tab closed, reopened and closed again counts from the last close
+            self.stop()
+            self._gone_timer = asyncio.get_running_loop().create_task(self._notify_if_still_empty())
+
+    def stop(self):
+        """ Cancel a pending "all tabs closed" notification """
+        if self._gone_timer is not None:
+            self._gone_timer.cancel()
+            self._gone_timer = None
 
     async def _notify_if_still_empty(self):
         await asyncio.sleep(self.grace_seconds)
+        self._gone_timer = None
         if not self.clients:
             self.on_all_clients_gone()
 
+    async def _send(self, ws, event):
+        try:
+            await asyncio.wait_for(ws.send_json(event), self.send_timeout)
+        except Exception as e:
+            # a tab that stopped reading (or whose connection broke) must not hold up the others
+            log.info("dropping a UI tab from events: %s", e.__class__.__name__)
+            self.clients.discard(ws)
+
     async def broadcast(self, event):
-        for ws in list(self.clients):
-            try:
-                await ws.send_json(event)
-            except Exception:
-                self.clients.discard(ws)
+        await asyncio.gather(*(self._send(ws, event) for ws in list(self.clients)))
 
 
 def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone=None,
@@ -82,21 +104,37 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         async def poll():
             while True:
                 await asyncio.sleep(poll_interval)
-                for event in await asyncio.to_thread(manager.check):
+                try:
+                    events = await asyncio.to_thread(manager.check)
+                except Exception:
+                    log.exception("checking for the keyboard failed")
+                    continue
+                for event in events:
                     await hub.broadcast({"type": event})
-        task = asyncio.create_task(poll()) if poll_interval else None
-        yield
-        if task:
-            task.cancel()
+        task = app.state.poll_task = asyncio.create_task(poll()) if poll_interval else None
+        try:
+            yield
+        finally:
+            hub.stop()
+            if task:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     app = FastAPI(title="Vial", lifespan=lifespan)
     app.state.hub = hub
 
     def token_ok(value):
-        return value is not None and secrets.compare_digest(value, token)
+        # as bytes: compare_digest refuses str with non-ASCII characters
+        return value is not None and secrets.compare_digest(value.encode("utf-8", "replace"), token.encode("utf-8"))
 
     @app.middleware("http")
     async def security(request: Request, call_next):
+        response = await check_request(request, call_next)
+        response.headers.update(SECURITY_HEADERS)
+        return response
+
+    async def check_request(request, call_next):
         if request.headers.get("host") not in allowed_hosts:
             return JSONResponse({"detail": "forbidden host"}, status_code=403)
         origin = request.headers.get("origin")
@@ -126,6 +164,10 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     @app.exception_handler(ValueError)
     async def bad_value(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=422)
+
+    @app.exception_handler(RecursionError)
+    async def too_deep(request, exc):
+        return JSONResponse({"detail": "the request is nested too deeply"}, status_code=422)
 
     @app.exception_handler(RuntimeError)
     async def device_error(request, exc):
@@ -162,9 +204,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.post("/api/reload", response_model=schemas.KeyboardModel)
     async def reload():
+        # device access waits for the device lock: keep it off the event loop
         await asyncio.to_thread(manager.reload)
+        result = await asyncio.to_thread(run, lambda kb: model.build(kb, names_for(kb), manager.unlocked))
         await hub.broadcast({"type": "reloaded"})
-        return run(lambda kb: model.build(kb, names_for(kb), manager.unlocked))
+        return result
 
     @app.put("/api/keymap/{layer}/{row}/{col}", response_model=schemas.Described)
     def set_key(layer: int, row: int, col: int, body: schemas.SetKeycode):
@@ -243,11 +287,22 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         return Response(data, media_type="application/json",
                         headers={"Content-Disposition": 'attachment; filename="keyboard.vil"'})
 
+    async def read_limited(request, limit):
+        """ The request body, refused with 413 as soon as it is known to be larger than limit """
+        too_large = HTTPException(413, "the file is too large (at most {} KiB)".format(limit // 1024))
+        length = request.headers.get("content-length")
+        if length is not None and length.isdigit() and int(length) > limit:
+            raise too_large
+        data = bytearray()
+        async for chunk in request.stream():
+            data += chunk
+            if len(data) > limit:
+                raise too_large
+        return bytes(data)
+
     @app.post("/api/layout-file", response_model=schemas.KeyboardModel)
     async def upload_layout(request: Request):
-        data = await request.body()
-        if len(data) > 1024 * 1024:
-            raise ValueError("layout file is too large")
+        data = await read_limited(request, MAX_LAYOUT_FILE)
         writing = []
 
         def restore(kb):
