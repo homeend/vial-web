@@ -1,4 +1,5 @@
 import time
+import pywintypes
 import win32gui, win32con, win32api
 import win32gui_struct
 
@@ -7,6 +8,8 @@ from autorefresh.autorefresh_thread import AutorefreshThread
 
 GUID_DEVINTERFACE_USB_DEVICE = "{A5DCBF10-6530-11D2-901F-00C04FB951ED}"
 DEVICE_NOTIFY_ALL_INTERFACE_CLASSES = 4
+ERROR_CLASS_ALREADY_EXISTS = 1410
+WINDOW_CLASS_NAME = "VIAL_DEVICE_DETECTION"
 
 g_device_changes = 0
 
@@ -17,6 +20,19 @@ def device_changed(hwnd, msg, wp, lp):
         g_device_changes += 1
 
 
+def register_window_class():
+    """ Registers the hidden window class used for device notifications; safe to call more than once """
+    wc = win32gui.WNDCLASS()
+    wc.hInstance = win32api.GetModuleHandle(None)
+    wc.lpszClassName = WINDOW_CLASS_NAME
+    wc.lpfnWndProc = {win32con.WM_DEVICECHANGE: device_changed}
+    try:
+        win32gui.RegisterClass(wc)
+    except pywintypes.error as e:
+        if e.winerror != ERROR_CLASS_ALREADY_EXISTS:
+            raise
+
+
 class AutorefreshThreadWin(AutorefreshThread):
 
     def run(self):
@@ -25,12 +41,8 @@ class AutorefreshThreadWin(AutorefreshThread):
         # code based on:
         # - https://github.com/libsdl-org/SDL/blob/7b3449b89f0625e4603f5d8681e2bac1f51a9386/src/hidapi/SDL_hidapi.c
         # - https://github.com/vmware-archive/salt-windows-install/blob/master/deps/salt/python/App/Lib/site-packages/win32/Demos/win32gui_devicenotify.py
-        wc = win32gui.WNDCLASS()
-        wc.hInstance = win32api.GetModuleHandle(None)
-        wc.lpszClassName = "VIAL_DEVICE_DETECTION"
-        wc.lpfnWndProc = { win32con.WM_DEVICECHANGE: device_changed }
-        class_atom = win32gui.RegisterClass(wc)
-        hwnd = win32gui.CreateWindowEx(0, "VIAL_DEVICE_DETECTION", None, 0, 0, 0, 0, 0, win32con.HWND_MESSAGE, None, None, None)
+        register_window_class()
+        hwnd = win32gui.CreateWindowEx(0, WINDOW_CLASS_NAME, None, 0, 0, 0, 0, 0, win32con.HWND_MESSAGE, None, None, None)
 
         hdev = win32gui.RegisterDeviceNotification(
             hwnd,
