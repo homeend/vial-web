@@ -146,6 +146,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* room for the scrollbar, always: the keyboard doesn't change size when a page starts to scroll */
+html {
+  scrollbar-gutter: stable;
+}
+
 button,
 input,
 select {

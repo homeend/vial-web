@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PlacedKey } from "./geometry";
-  import { legendSizes, type KeyFace } from "./labels";
+  import { legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
 
   interface Props {
     item: PlacedKey;
@@ -67,6 +67,7 @@
   type="button"
   class="key tone-{face.tone}" data-tone={face.tone}
   class:selected
+  class:notched={item.hasSecond}
   {style}
   aria-label={label}
   title={label}
@@ -87,7 +88,8 @@
   <span class="legend" style={legendStyle}>
     {#if face.altGr}<span class="alt-gr">{face.altGr}</span>{/if}
     {#if face.shifted}<span class="shifted">{face.shifted}</span>{/if}
-    <span class="tap">{face.main}</span>
+    <!-- may break after each "+" of a combination; on one line, so no space gets into the text -->
+    <span class="tap">{#each face.main.split(PLUS_BREAK) as part, i (i)}{#if i > 0}<wbr />{/if}{part}{/each}</span>
     {#if face.hold}<span class="hold">{face.hold}</span>{/if}
   </span>
 </button>
@@ -153,13 +155,22 @@
     stroke-dasharray: none;
   }
 
+  /* a thin ring outside the key, apart from the thick outline of the selection; it turns with the key, and sits
+     above its neighbours */
   .key:focus-visible {
-    outline: none;
+    z-index: 1;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
-  .key:focus-visible .edge {
-    stroke: var(--accent);
-    stroke-width: 5;
+  /* a key of two rectangles (ISO Enter) answers the pointer only where it is drawn, not in its notch */
+  .notched {
+    pointer-events: none;
+  }
+
+  .notched .cap rect {
+    cursor: pointer;
+    pointer-events: visiblePainted;
   }
 
   .legend {
@@ -173,13 +184,17 @@
     overflow: hidden;
   }
 
+  /* breaks at spaces and after each "+"; a part still too wide ends in an ellipsis rather than spilling over */
   .tap {
+    flex: none;
     max-width: 100%;
+    overflow: hidden;
     font-size: var(--tap-size);
     font-weight: 600;
-    line-height: 1.05;
+    line-height: 1.15;
     letter-spacing: -0.01em;
     text-align: center;
+    text-overflow: ellipsis;
     overflow-wrap: normal;
   }
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Described, KeyboardModel } from "../api/types";
 import {
-  actionSummary, holdSize, keyFace, keyTitle, legendScale, legendSizes, namesOf, toneOf, type Names,
+  actionSummary, holdSize, keyFace, keyTitle, legendScale, legendSizes, legendWords, MAIN_LINE, mainLines, namesOf,
+  toneOf, type Names,
 } from "./labels";
 
 type Fields = Partial<Described> & Pick<Described, "code" | "kind" | "tap">;
@@ -168,6 +169,34 @@ describe("keyTitle", () => {
   });
 });
 
+describe("legendWords", () => {
+  it("splits at spaces, and after a + that joins two keys", () => {
+    expect(legendWords("Vol +")).toEqual(["Vol", "+"]);
+    expect(legendWords("+")).toEqual(["+"]);
+    expect(legendWords("RCtrl++")).toEqual(["RCtrl+", "+"]);
+    expect(legendWords("Ctrl+Shift+Esc")).toEqual(["Ctrl+", "Shift+", "Esc"]);
+    expect(legendWords(" Caps  Lock ")).toEqual(["Caps", "Lock"]);
+    expect(legendWords("")).toEqual([]);
+  });
+});
+
+describe("mainLines", () => {
+  it("counts the lines of a legend broken at spaces and after each +", () => {
+    // 0.55 of the font size per character: 10 px a character at 18.18 px
+    expect(mainLines("Esc", 18.18, 40)).toBe(1);
+    expect(mainLines("Ctrl+Shift+Esc", 18.18, 40)).toBe(3);
+    expect(mainLines("Ctrl+Shift+Esc", 18.18, 110)).toBe(2);
+    expect(mainLines("Ctrl+Shift+Esc", 18.18, 140)).toBe(1);
+    // the space counts between words, not between the parts of a combination
+    expect(mainLines("Caps Lock", 18.18, 80)).toBe(2);
+    expect(mainLines("Caps Lock", 18.18, 90)).toBe(1);
+  });
+
+  it("is one line for an empty legend", () => {
+    expect(mainLines("", 10, 0)).toBe(1);
+  });
+});
+
 describe("legendScale", () => {
   it("shrinks longer labels", () => {
     expect(legendScale("A")).toBeGreaterThan(legendScale("Esc"));
@@ -177,6 +206,11 @@ describe("legendScale", () => {
 
   it("sizes multi-word labels by their longest word, as they wrap", () => {
     expect(legendScale("Caps Lock")).toBe(legendScale("Caps"));
+  });
+
+  it("sizes a combination by its longest part, as it breaks after each +", () => {
+    expect(legendScale("Ctrl+Shift+Esc")).toBe(legendScale("Shift+"));
+    expect(legendScale("Ctrl+Shift+Esc")).toBeGreaterThan(legendScale("CtrlShiftEsc"));
   });
 
   it("counts a wide character (CJK, full-width) as nearly two", () => {
@@ -225,19 +259,51 @@ describe("legendSizes", () => {
     expect(sizes.hold).toBe(0);
   });
 
+  /** the width of the longest part of a legend that breaks at spaces and after each + (narrow characters only) */
+  const longestPart = (main: string, px: number) => Math.max(...legendWords(main).map((w) => w.length)) * 0.55 * px;
+  /** the height of the main legend on as many lines as it takes, at the line height the key draws it with */
+  const mainHeight = (main: string, px: number, width: number) => mainLines(main, px, width) * MAIN_LINE * px;
+
   it("makes the main legend smaller when a long name needs two lines below it", () => {
     const sizes = legendSizes(face("M 0", "git status"), 40, 40, 48);
     expect(sizes.main).toBeLessThan(legendScale("M 0") * 48);
-    const height = sizes.main * 1.05 + 2 * sizes.hold * 1.1 + 0.04 * 48;
-    expect(height).toBeLessThanOrEqual(40);
+    const height = mainHeight("M 0", sizes.main, 40) + 2 * sizes.hold * 1.1 + 0.04 * 48;
+    expect(height).toBeLessThanOrEqual(40 + 1e-9);
   });
 
   it("makes a long word small enough to fit across the key", () => {
     // a 1u key 48 px wide has about 40 px for its labels
     expect(legendSizes(face("Bootloader", null), 40, 40, 48).main * 0.55 * 10).toBeLessThanOrEqual(40);
-    expect(legendSizes(face("Ctrl+Alt+Del", null), 40, 40, 48).main * 0.55 * 12).toBeLessThanOrEqual(40);
-    const long = "RCtrl+RShift+AltGr+RGui+A";
-    expect(legendSizes(face(long, null), 40, 40, 48).main * 0.55 * long.length).toBeLessThanOrEqual(40);
+  });
+
+  it.each(["Ctrl+Alt+Del", "Ctrl+Shift+Esc", "RCtrl+RShift+AltGr+RGui+A"])(
+    "breaks %s after each +: every part fits across the key, and the lines fit in its height",
+    (main) => {
+      for (const u of [48, 72]) {
+        const room = 0.83 * u;
+        const { main: px } = legendSizes(face(main, null), room, room, u);
+        expect(longestPart(main, px)).toBeLessThanOrEqual(room + 1e-9);
+        expect(mainHeight(main, px, room)).toBeLessThanOrEqual(room + 1e-9);
+      }
+    },
+  );
+
+  it("keeps a combination readable on a 1u key", () => {
+    // on one line it would be about 5 px at 48 px a key, and 8 px at 72
+    expect(legendSizes(face("Ctrl+Shift+Esc", null), 0.83 * 72, 0.83 * 72, 72).main).toBeGreaterThanOrEqual(12);
+    expect(legendSizes(face("Ctrl+Shift+Esc", null), 0.83 * 48, 0.83 * 48, 48).main).toBeGreaterThanOrEqual(9);
+  });
+
+  it("never goes below 7 px, even for a combination too long for the key", () => {
+    const extreme = "RCtrl+RShift+RAlt+RGui+LCtrl+LShift+LAlt+LGui+Esc";
+    expect(legendSizes(face(extreme, null), 0.83 * 36, 0.83 * 36, 36).main).toBe(7);
+    expect(legendSizes(face("Bootloader", "Tab / Caps Lock"), 10, 10, 12).main).toBe(7);
+  });
+
+  it("has a finite size for an empty legend, even with no room", () => {
+    const sizes = legendSizes(face("", null), 0, 0, 48);
+    expect(Number.isFinite(sizes.main)).toBe(true);
+    expect(Number.isFinite(legendSizes(face("A", null), 0, 0, 48).main)).toBe(true);
   });
 
   it("fits the longest word of a legend that wraps, and leaves short legends alone", () => {
@@ -256,11 +322,18 @@ describe("legendSizes", () => {
     expect(legendSizes(face("日本語入力", null), 40, 40, 48).main * 5).toBeLessThanOrEqual(40);
     // two words of two wide characters: too wide for one line at this size, so two lines under the legend
     const sizes = legendSizes(face("A", "数字 記号"), 40, 40, 48);
-    expect(sizes.main * 1.05 + 2 * sizes.hold * 1.1 + 0.04 * 48).toBeLessThanOrEqual(40 + 1e-9);
+    expect(mainHeight("A", sizes.main, 40) + 2 * sizes.hold * 1.1 + 0.04 * 48).toBeLessThanOrEqual(40 + 1e-9);
   });
 
   it("keeps room for the shifted character", () => {
     const sizes = legendSizes(face("1", "Layer 2", "!"), 40, 30, 36);
-    expect(sizes.main * 1.05 + sizes.shifted + sizes.hold * 1.1 + 0.08 * 36).toBeLessThanOrEqual(30);
+    expect(mainHeight("1", sizes.main, 40) + sizes.shifted + sizes.hold * 1.1 + 0.08 * 36).toBeLessThanOrEqual(30);
+  });
+
+  it("keeps room for a hold label under a combination on several lines", () => {
+    const sizes = legendSizes(face("Ctrl+Shift+Esc", "Layer 2"), 0.83 * 48, 0.83 * 48, 48);
+    const holdLines = sizes.hold * 0.55 * "Layer 2".length > 0.83 * 48 ? 2 : 1;
+    expect(mainHeight("Ctrl+Shift+Esc", sizes.main, 0.83 * 48) + holdLines * sizes.hold * 1.1 + 0.04 * 48)
+      .toBeLessThanOrEqual(0.83 * 48 + 1e-9);
   });
 });

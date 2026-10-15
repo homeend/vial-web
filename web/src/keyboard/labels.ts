@@ -193,16 +193,51 @@ function longestWord(text: string): number {
   return Math.max(0, ...text.split(/\s+/).map(textWidth));
 }
 
+/** Where a main legend may break besides spaces: after a "+" that joins two keys ("Ctrl+|Shift+|Esc"), not inside
+ * "Vol +" or after the first "+" of "RCtrl++" */
+export const PLUS_BREAK = /(?<=[^\s+]\+)(?=\S)/;
+
+/** The parts of a main legend that never break: its words, and the keys of a combination ("Ctrl+", "Shift+", "Esc") */
+export function legendWords(t: string): string[] {
+  return t.split(/\s+/).flatMap((w) => w.split(PLUS_BREAK)).filter(Boolean);
+}
+
+/** How many lines a main legend takes at px pixels in widthPx, breaking greedily at spaces and after each "+" as the
+ * browser does; a part wider than the line still takes one line (it is the width check's job to prevent that). */
+export function mainLines(text: string, px: number, widthPx: number): number {
+  const max = px > 0 ? widthPx / px : Infinity;
+  let lines = 1;
+  let line = 0;
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    word.split(PLUS_BREAK).forEach((part, i) => {
+      const width = textWidth(part);
+      // a space before a word, nothing between the keys of a combination
+      const gap = i === 0 && line > 0 ? CHAR_WIDTH : 0;
+      if (line > 0 && line + gap + width > max + 1e-9) {
+        lines += 1;
+        line = width;
+      } else {
+        line += gap + width;
+      }
+    });
+  }
+  return lines;
+}
+
 /** Font sizes of a tap label, in key units, from one character down to long words */
 const LEGEND_SCALES = [0.4, 0.32, 0.27, 0.22, 0.18];
 const LEGEND_LENGTHS = [1, 2, 4, 6];
+/** the smallest main legend, in pixels */
+const MAIN_MIN_PX = 7;
+/** line height of the main legend, as a share of its font size: room for descenders, as the legend clips */
+export const MAIN_LINE = 1.15;
 
-/** Font size of a key's main legend, in key units. Labels wrap at spaces, so the longest word counts; a wide
- * character counts as almost two. */
+/** Font size of a key's main legend, in key units. Labels wrap at spaces and after the "+" of a combination, so the
+ * longest part counts; a wide character counts as almost two. */
 export function legendScale(main: string): number {
   const longest = Math.max(
     0,
-    ...main.split(/\s+/).map((w) => {
+    ...legendWords(main).map((w) => {
       const { narrow, wide } = countChars(w);
       return narrow + (wide * WIDE_WIDTH) / CHAR_WIDTH;
     }),
@@ -221,25 +256,41 @@ export function holdSize(hold: string, widthPx: number, u: number): number {
 }
 
 /** Font sizes, in pixels, of a key's legends: the main one, the shifted character (0 if none) and the hold label
- * (0 if none), so that all of them fit in widthPx by heightPx on a key of u pixels. The main legend's longest word
- * always fits across the key. When a long name needs two lines, the main legend gets smaller first, then the name,
- * down to its smallest size. */
+ * (0 if none), so that all of them fit in widthPx by heightPx on a key of u pixels. The main legend breaks at spaces
+ * and after each "+", and its longest part always fits across the key. When it takes several lines, or a long name
+ * needs two lines, the main legend gets smaller first, then the name, down to its smallest size; then the main legend
+ * again, down to 7 px. */
 export function legendSizes(face: KeyFace, widthPx: number, heightPx: number, u: number): {
   main: number;
   shifted: number;
   hold: number;
 } {
-  // its longest word on one line: a key cap doesn't break words
-  let main = Math.min(legendScale(face.main) * u, Math.max(0, widthPx) / longestWord(face.main));
+  const width = Math.max(0, widthPx);
+  // its longest part on one line: a key cap doesn't break inside a word or a key name
+  const longest = Math.max(0, ...legendWords(face.main).map(textWidth));
+  const scale = legendScale(face.main);
+  let main = longest > 0 ? Math.min(scale * u, width / longest) : scale * u;
   const shifted = face.shifted ? 0.2 * u : 0;
   let hold = face.hold ? holdSize(face.hold, widthPx, u) : 0;
   const holdLines = !face.hold ? 0 : textWidth(face.hold) * hold > widthPx ? 2 : 1;
   const gaps = (face.shifted ? 0.04 * u : 0) + (face.hold ? 0.04 * u : 0);
   const free = () => heightPx - gaps - shifted - holdLines * hold * 1.1;
+  const height = (px: number) => px * MAIN_LINE * mainLines(face.main, px, width);
+  /** the largest size, at most main, at which the main legend fits in the free height; fewer lines first */
+  const fitting = () => {
+    const most = mainLines(face.main, main, width);
+    for (let lines = 1; lines <= most; lines++) {
+      const px = Math.min(main, free() / (MAIN_LINE * lines));
+      if (mainLines(face.main, px, width) <= lines) return px;
+    }
+    return Math.min(main, free() / (MAIN_LINE * most));
+  };
   // smaller to make room for the labels around it, down to the smallest usual size (or less, if the width asks)
-  if (main * 1.05 > free()) main = Math.min(main, Math.max(0.18 * u, free() / 1.05));
-  if (main * 1.05 > free() && holdLines) {
-    hold = Math.max(HOLD_MIN_PX, (heightPx - gaps - shifted - main * 1.05) / (holdLines * 1.1));
+  if (height(main) > free()) main = Math.min(main, Math.max(0.18 * u, fitting()));
+  if (height(main) > free() && holdLines) {
+    hold = Math.max(HOLD_MIN_PX, (heightPx - gaps - shifted - height(main)) / (holdLines * 1.1));
   }
-  return { main, shifted, hold };
+  // still too tall (a long combination): smaller still
+  if (height(main) > free()) main = fitting();
+  return { main: Math.max(MAIN_MIN_PX, main), shifted, hold };
 }

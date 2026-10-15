@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PlacedKey } from "./geometry";
-  import { legendScale, type KeyFace } from "./labels";
+  import { legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
 
   interface Props {
     /** one direction of an encoder: 0 counter-clockwise, 1 clockwise */
@@ -17,6 +17,9 @@
 
   const clockwise = $derived(item.geometry.direction === 1);
   const size = $derived(Math.min(item.w, item.h) * u * 0.91);
+  // the labels fit in the box inscribed in the knob, inside its border (2 px): 80 % of its width by 60 % of its height
+  const inner = $derived(Math.max(0, size - 4));
+  const sizes = $derived(legendSizes({ ...face, shifted: null }, inner * 0.8, inner * 0.6, u * 0.9));
 
   // a round knob needs no rotation: it sits on the (rotated) centre of its key
   const style = $derived(
@@ -26,7 +29,8 @@
       `width: ${size}px`,
       `height: ${size}px`,
       `--u: ${u}px`,
-      `--tap-size: ${legendScale(face.main) * u * 0.9}px`,
+      `--tap-size: ${sizes.main}px`,
+      `--hold-size: ${sizes.hold}px`,
     ].join("; "),
   );
 </script>
@@ -47,8 +51,11 @@
     <path d="M19 12a7 7 0 1 1-2.05-4.95" />
     <path d="M17.5 3.5v4h-4" />
   </svg>
-  <span class="tap">{face.main}</span>
-  {#if face.hold}<span class="hold">{face.hold}</span>{/if}
+  <span class="legend">
+    <!-- may break after each "+" of a combination; on one line, so no space gets into the text -->
+    <span class="tap">{#each face.main.split(PLUS_BREAK) as part, i (i)}{#if i > 0}<wbr />{/if}{part}{/each}</span>
+    {#if face.hold}<span class="hold">{face.hold}</span>{/if}
+  </span>
 </button>
 
 <style>
@@ -78,11 +85,16 @@
     color: var(--text-3);
   }
 
-  .selected,
-  .encoder:focus-visible {
+  .selected {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--accent);
-    outline: none;
+  }
+
+  /* a thin ring outside the knob, apart from the selection's */
+  .encoder:focus-visible {
+    z-index: 1;
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
   }
 
   .arrow {
@@ -102,20 +114,42 @@
     transform: scaleX(-1);
   }
 
+  /* the box inscribed in the knob: what does not fit is cut there, not outside the knob */
+  .legend {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 80%;
+    height: 60%;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
   .tap {
-    max-width: 84%;
-    font-size: max(9px, var(--tap-size));
+    flex: none;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: var(--tap-size);
     font-weight: 600;
-    line-height: 1.05;
+    line-height: 1.15;
     text-align: center;
+    text-overflow: ellipsis;
   }
 
   .hold {
-    max-width: 80%;
+    display: -webkit-box;
+    max-width: 100%;
+    margin-top: calc(var(--u) * 0.036);
     overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     color: color-mix(in srgb, var(--tone) var(--tone-text), var(--key-text));
-    font-size: max(8px, calc(var(--u) * 0.16));
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: var(--hold-size);
+    line-height: 1.1;
+    text-align: center;
+    overflow-wrap: anywhere;
   }
 </style>

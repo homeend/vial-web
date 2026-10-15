@@ -25,19 +25,25 @@
 
   const knobs = $derived(encoderKnobs(placement));
 
-  const focusIndex = $derived(selected >= 0 ? selected : 0);
+  // reached with Tab: the selected key, or the first one when none is (or the selection is not on this board)
+  const focusIndex = $derived(selected >= 0 && selected < placement.items.length ? selected : 0);
 </script>
 
 <div class="keyboard" bind:clientWidth={width}>
-  <div class="plate" style="width: {placement.width * u}px; height: {placement.height * u}px">
-    {#each knobs as knob (knob.encoder)}
-      <div
-        class="knob"
-        style="left: {(knob.cx - knob.length / 2) * u}px; top: {(knob.cy - knob.thickness / 2) * u}px;
-          width: {knob.length * u}px; height: {knob.thickness * u}px; transform: rotate({knob.angle}deg)"
-      ></div>
-    {/each}
+  <div
+    class="plate"
+    role="group"
+    aria-label="Keyboard"
+    style="width: {placement.width * u}px; height: {placement.height * u}px"
+  >
     {#if u > 0}
+      {#each knobs as knob (knob.encoder)}
+        <div
+          class="knob"
+          style="left: {(knob.cx - knob.length / 2) * u}px; top: {(knob.cy - knob.thickness / 2) * u}px;
+            width: {knob.length * u}px; height: {knob.thickness * u}px; transform: rotate({knob.angle}deg)"
+        ></div>
+      {/each}
       {#each placement.items as item, i (`${item.kind}:${item.index}`)}
         {#if item.kind === "key"}
           <Key {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
