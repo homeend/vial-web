@@ -13,7 +13,13 @@ class SimulatedHidDevice:
     def open_path(self, path):
         self.closed = False
 
+    def _check_open(self):
+        # what hidapi raises for a closed handle; transport.hid_send only retries OSError, so this reaches the caller
+        if self.closed:
+            raise ValueError("not opened")
+
     def write(self, data):
+        self._check_open()
         data = bytes(data)
         # hidapi writes are prefixed with a 0 report id
         if len(data) != MSG_LEN + 1 or data[0] != 0:
@@ -25,6 +31,7 @@ class SimulatedHidDevice:
         return len(data)
 
     def read(self, length, timeout_ms=0):
+        self._check_open()
         reply, self.reply = self.reply, None
         if reply is None:
             return []
@@ -32,3 +39,4 @@ class SimulatedHidDevice:
 
     def close(self):
         self.closed = True
+        self.reply = None

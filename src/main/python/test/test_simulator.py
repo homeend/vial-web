@@ -1,10 +1,26 @@
+import struct
+
 import pytest
 
 import transport
+from protocol.constants import CMD_VIA_SET_KEYCODE, CMD_VIA_MACRO_SET_BUFFER, CMD_VIA_MACRO_GET_BUFFER, \
+    CMD_VIA_KEYMAP_GET_BUFFER, CMD_VIA_GET_KEYBOARD_VALUE, VIA_SWITCH_MATRIX_STATE, CMD_VIA_VIAL_PREFIX, \
+    CMD_VIAL_SET_ENCODER, CMD_VIAL_GET_ENCODER, CMD_VIAL_QMK_SETTINGS_GET, CMD_VIAL_QMK_SETTINGS_SET, \
+    CMD_VIAL_DYNAMIC_ENTRY_OP, DYNAMIC_VIAL_TAP_DANCE_SET, DYNAMIC_VIAL_COMBO_SET, DYNAMIC_VIAL_KEY_OVERRIDE_SET, \
+    DYNAMIC_VIAL_ALT_REPEAT_KEY_SET
 from protocol.key_override import KeyOverrideEntry
 from protocol.keyboard_comm import Keyboard
+from protocol.qmk_settings_codec import QmkSettingsCodec
 from simulator.corne import make_corne, encode
 from simulator.device import SimulatedHidDevice
+from simulator.virtual_keyboard import VirtualKeyboard, SimulatorError, CMD_VIA_BOOTLOADER_JUMP
+from transport import MSG_LEN
+
+QK_BOOT = 0x7C00  # protocol 6
+
+# 1 row x 2 columns plus one encoder
+TINY = {"name": "Tiny", "matrix": {"rows": 1, "cols": 2},
+        "layouts": {"keymap": [["0,0", "0,1", "0,0\n\n\n\n\n\n\n\n\ne", "0,1\n\n\n\n\n\n\n\n\ne"]]}}
 
 
 @pytest.fixture
@@ -15,6 +31,31 @@ def corne():
     kb.reload()
     return vk, kb
 
+
+@pytest.fixture
+def locked(corne):
+    """ The Corne, locked through the protocol """
+    vk, kb = corne
+    kb.lock()
+    assert kb.get_unlock_status() == 0
+    return vk, kb
+
+
+def send(vk, data):
+    """ One raw request straight to the simulated keyboard """
+    return vk.process(data + b"\x00" * (MSG_LEN - len(data)))
+
+
+def send_through_device(vk, data):
+    """ One raw request through the hidapi stand-in, which checks the reply fits into a report """
+    return transport.hid_send(SimulatedHidDevice(vk), data)
+
+
+def dynamic_set(op, idx, fmt, *values):
+    return struct.pack("BBBB", CMD_VIA_VIAL_PREFIX, CMD_VIAL_DYNAMIC_ENTRY_OP, op, idx) + struct.pack(fmt, *values)
+
+
+# ---------- loading through the real protocol code ----------
 
 def test_reload_reads_geometry_and_identity(corne):
     vk, kb = corne
@@ -40,6 +81,11 @@ def test_reload_reads_dynamic_entries(corne):
     assert kb.combo_entries[0] == ("KC_K", "KC_Y", "KC_NO", "KC_NO", "KC_ESCAPE")
     assert kb.key_override_entries[0].save()["replacement"] == "KC_DELETE"
     assert kb.alt_repeat_key_count == 4
+    ark = kb.alt_repeat_key_entries[0]
+    assert (ark.keycode, ark.alt_keycode, ark.allowed_mods) == ("KC_LEFT", "KC_RIGHT", 0x02)
+    assert (ark.options.enabled, ark.options.bidirectional, ark.options.ignore_mod_handedness,
+            ark.options.default_to_this_alt_key) == (True, True, True, False)
+    assert not kb.alt_repeat_key_entries[1].options.enabled
     assert {"caps_word", "layer_lock"} <= kb.supported_features
 
 
@@ -51,6 +97,12 @@ def test_reload_reads_macros_settings_and_lighting(corne):
     assert kb.settings[7] == 200
     assert kb.lighting_vialrgb and kb.rgb_mode == 2
     assert kb.rgb_supported_effects == set(range(9))
+
+
+def test_sample_settings_have_no_legacy_bitfield(corne):
+    vk, kb = corne
+    # qsid 8 is the legacy bitfield for Permissive Hold / Retro Tapping, which 22-24 replace
+    assert kb.supported_settings == {2, 7, 22, 23, 24, 25}
 
 
 def test_writes_reach_the_simulator(corne):
@@ -72,6 +124,15 @@ def test_writes_reach_the_simulator(corne):
 
     kb.set_vialrgb_mode(5)
     assert vk.vialrgb["mode"] == 5
+
+    # and they come back through the protocol
+    kb.reload()
+    assert kb.layout[(0, 0, 0)] == "KC_A"
+    assert kb.tap_dance_entries[1] == ("KC_A", "KC_B", "KC_C", "KC_D", 250)
+    assert kb.combo_entries[1] == ("KC_Q", "KC_W", "KC_NO", "KC_NO", "KC_TAB")
+    assert kb.key_override_entries[1].save() == KeyOverrideEntry(("KC_A", "KC_B", 1, 0, 0, 0, 0x80)).save()
+    assert kb.settings[7] == 175
+    assert kb.rgb_mode == 5
 
 
 def test_macro_write_round_trips(corne):
@@ -108,3 +169,184 @@ def test_encode_matches_protocol_6_values():
     assert encode("KC_A") == 0x04
     assert encode("LT2(KC_S)") == 0x4216
     assert encode("TD(0)") == 0x5700
+    assert encode("QK_BOOT") == QK_BOOT
+
+
+# ---------- the lock, as Vial firmware enforces it ----------
+
+def test_locked_keyboard_ignores_macro_writes(locked):
+    vk, kb = locked
+    before = bytes(vk.macro_buffer)
+    kb.set_macro(b"oops\x00")
+    assert bytes(vk.macro_buffer) == before
+    assert not [w for w in vk.writes if w[0] == "macro"]
+
+
+def test_locked_keyboard_hides_the_matrix(locked):
+    vk, kb = locked
+    vk.press(1, 2)
+    data = kb.matrix_poll()
+    assert data[2:] == b"\x00" * (MSG_LEN - 2)
+
+
+def test_locked_keyboard_stores_kc_no_instead_of_qk_boot(locked):
+    vk, kb = locked
+    send(vk, struct.pack(">BBBBH", CMD_VIA_SET_KEYCODE, 0, 0, 0, QK_BOOT))
+    assert vk.keymap[0][0][0] == 0
+
+    send(vk, dynamic_set(DYNAMIC_VIAL_TAP_DANCE_SET, 0, "<HHHHH", QK_BOOT, QK_BOOT, QK_BOOT, QK_BOOT, 150))
+    assert vk.tap_dance[0] == (0, 0, 0, 0, 150)
+
+    a, b = encode("KC_A"), encode("KC_B")
+    send(vk, dynamic_set(DYNAMIC_VIAL_COMBO_SET, 0, "<HHHHH", a, b, 0, 0, QK_BOOT))
+    assert vk.combos[0] == (a, b, 0, 0, 0)
+
+    send(vk, dynamic_set(DYNAMIC_VIAL_KEY_OVERRIDE_SET, 0, "<HHHBBBB", a, QK_BOOT, 1, 0, 0, 0, 0x80))
+    assert vk.key_overrides[0] == (a, 0, 1, 0, 0, 0, 0x80)
+
+    send(vk, dynamic_set(DYNAMIC_VIAL_ALT_REPEAT_KEY_SET, 0, "<HHBB", QK_BOOT, QK_BOOT, 0, 8))
+    assert vk.alt_repeat_keys[0] == (0, 0, 0, 8)
+
+
+def test_locked_keyboard_stores_kc_no_instead_of_qk_boot_on_encoders():
+    vk = VirtualKeyboard(TINY, unlocked=False)
+    send(vk, struct.pack(">BBBBBH", CMD_VIA_VIAL_PREFIX, CMD_VIAL_SET_ENCODER, 0, 0, 0, QK_BOOT))
+    send(vk, struct.pack(">BBBBBH", CMD_VIA_VIAL_PREFIX, CMD_VIAL_SET_ENCODER, 0, 0, 1, encode("KC_A")))
+    assert send(vk, struct.pack("BBBB", CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_ENCODER, 0, 0))[:4] == \
+        struct.pack(">HH", 0, encode("KC_A"))
+
+
+def test_unlocked_keyboard_accepts_qk_boot(corne):
+    vk, kb = corne
+    send(vk, struct.pack(">BBBBH", CMD_VIA_SET_KEYCODE, 0, 0, 0, QK_BOOT))
+    assert vk.keymap[0][0][0] == QK_BOOT
+    send(vk, dynamic_set(DYNAMIC_VIAL_COMBO_SET, 0, "<HHHHH", 4, 5, 0, 0, QK_BOOT))
+    assert vk.combos[0][4] == QK_BOOT
+
+
+def test_locked_keyboard_ignores_bootloader_jump(locked):
+    vk, kb = locked
+    send(vk, bytes([CMD_VIA_BOOTLOADER_JUMP]))
+    assert vk.connected and not vk.bootloader_requested
+
+
+def test_unlocked_bootloader_jump_disconnects(corne):
+    vk, kb = corne
+    kb.reset()
+    assert vk.bootloader_requested
+    assert not vk.connected
+
+
+def test_unlock_poll_needs_unlock_start(locked):
+    vk, kb = locked
+    assert kb.unlock_poll()[0] == 0
+    assert kb.get_unlock_status() == 0
+    kb.unlock_start()
+    assert kb.get_unlock_in_progress() == 1
+    assert kb.unlock_poll()[0:2] == b"\x01\x00"
+    assert kb.get_unlock_status() == 1
+
+
+def test_unlock_needs_the_unlock_keys_held():
+    vk = VirtualKeyboard(TINY, unlocked=False, unlock_keys=[(0, 0), (0, 1)])
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    assert kb.get_unlock_keys() == [(0, 0), (0, 1)]
+    kb.unlock_start()
+    vk.press(0, 0)
+    assert kb.unlock_poll()[0:3] == bytes([0, 1, 50])
+    vk.press(0, 1)
+    assert kb.unlock_poll()[0:3] == bytes([1, 0, 0])
+    assert kb.get_unlock_status() == 1
+
+
+def test_unlock_in_progress_only_answers_unlock_and_identity_commands(locked):
+    vk, kb = locked
+    kb.unlock_start()
+    request = struct.pack(">BBBBH", CMD_VIA_SET_KEYCODE, 0, 0, 0, encode("KC_A"))
+    assert send(vk, request) == request + b"\x00" * (MSG_LEN - len(request))
+    assert vk.keymap[0][0][0] == encode("KC_TAB")
+    assert kb.get_uid() == struct.pack("<Q", 0x5EEDC0DE00420042)
+    kb.unlock_poll()
+    kb.set_key(0, 0, 0, "KC_A")
+    assert vk.keymap[0][0][0] == encode("KC_A")
+
+
+# ---------- malformed packets ----------
+
+def test_oversized_macro_write_is_rejected(corne):
+    vk, kb = corne
+    with pytest.raises(SimulatorError):
+        send(vk, struct.pack(">BHB", CMD_VIA_MACRO_SET_BUFFER, 0, MSG_LEN - 3))
+    assert len(vk.macro_buffer) == 900
+
+
+@pytest.mark.parametrize("cmd", [CMD_VIA_MACRO_GET_BUFFER, CMD_VIA_KEYMAP_GET_BUFFER])
+def test_oversized_buffer_read_returns_no_data(corne, cmd):
+    vk, kb = corne
+    request = struct.pack(">BHB", cmd, 0, 29)
+    reply = send_through_device(vk, request)
+    assert reply == request + b"\x00" * (MSG_LEN - len(request))
+
+
+def test_matrix_too_big_for_a_report_is_left_out():
+    vk = VirtualKeyboard({"matrix": {"rows": 20, "cols": 10}, "layouts": {"keymap": [["0,0"]]}})
+    vk.press(0, 0)
+    reply = send_through_device(vk, struct.pack("BB", CMD_VIA_GET_KEYBOARD_VALUE, VIA_SWITCH_MATRIX_STATE))
+    assert reply[2:] == b"\x00" * (MSG_LEN - 2)
+
+
+@pytest.mark.parametrize("layer, row, col", [(4, 0, 0), (0, 8, 0), (0, 0, 6), (255, 255, 255)])
+def test_out_of_range_keycode_write_is_ignored(corne, layer, row, col):
+    vk, kb = corne
+    before = [[row[:] for row in layer] for layer in vk.keymap]
+    send_through_device(vk, struct.pack(">BBBBH", CMD_VIA_SET_KEYCODE, layer, row, col, 4))
+    assert vk.keymap == before
+    assert not [w for w in vk.writes if w[0] == "keycode"]
+
+
+@pytest.mark.parametrize("layer, idx", [(4, 0), (0, 1), (0, 255)])
+def test_out_of_range_encoder_write_is_ignored(layer, idx):
+    vk = VirtualKeyboard(TINY)
+    send_through_device(vk, struct.pack(">BBBBBH", CMD_VIA_VIAL_PREFIX, CMD_VIAL_SET_ENCODER, layer, idx, 0, 4))
+    assert vk.encoders == {}
+    assert send(vk, struct.pack("BBBB", CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_ENCODER, layer, idx))[:4] == b"\x00" * 4
+
+
+def test_encoder_write_in_range_works():
+    vk = VirtualKeyboard(TINY)
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    assert kb.encoder_count == 1
+    kb.set_encoder(3, 0, 1, "KC_B")
+    kb.reload()
+    assert kb.encoder_layout[(3, 0, 1)] == "KC_B"
+
+
+def test_unknown_setting_does_not_touch_the_codec():
+    unknown = 0xF00
+    assert unknown not in QmkSettingsCodec.fields()
+    vk = VirtualKeyboard(TINY, settings={7: 200, unknown: 3})
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    assert unknown in kb.supported_settings and unknown not in kb.settings
+    assert send(vk, struct.pack("<BBH", CMD_VIA_VIAL_PREFIX, CMD_VIAL_QMK_SETTINGS_GET, unknown))[0] == 0
+    send(vk, struct.pack("<BBHB", CMD_VIA_VIAL_PREFIX, CMD_VIAL_QMK_SETTINGS_SET, unknown, 5))
+    assert vk.settings[unknown] == 5
+    assert unknown not in QmkSettingsCodec.fields()
+
+
+# ---------- the hidapi stand-in ----------
+
+def test_closed_device_raises_like_hidapi():
+    dev = SimulatedHidDevice(make_corne())
+    dev.close()
+    with pytest.raises(ValueError):
+        dev.write(b"\x00" * (MSG_LEN + 1))
+    with pytest.raises(ValueError):
+        dev.read(MSG_LEN)
+    # hid_send only retries OSError, so like real hidapi the error reaches the caller
+    with pytest.raises(ValueError):
+        transport.hid_send(dev, b"\x01")
+    dev.open_path(b"simulated")
+    assert transport.hid_send(dev, b"\x01")[0] == 1

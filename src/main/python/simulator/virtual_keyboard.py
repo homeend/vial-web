@@ -4,6 +4,7 @@
 It answers the same 32-byte requests real firmware does, so the real protocol code runs against it unchanged.
 All state is kept in memory as raw integers (keycodes as the firmware stores them).
 """
+import copy
 import json
 import lzma
 import math
@@ -21,10 +22,22 @@ from protocol.constants import CMD_VIA_GET_PROTOCOL_VERSION, CMD_VIA_GET_KEYBOAR
     CMD_VIAL_QMK_SETTINGS_SET, CMD_VIAL_QMK_SETTINGS_RESET, CMD_VIAL_DYNAMIC_ENTRY_OP, \
     DYNAMIC_VIAL_GET_NUMBER_OF_ENTRIES, DYNAMIC_VIAL_TAP_DANCE_GET, DYNAMIC_VIAL_TAP_DANCE_SET, \
     DYNAMIC_VIAL_COMBO_GET, DYNAMIC_VIAL_COMBO_SET, DYNAMIC_VIAL_KEY_OVERRIDE_GET, DYNAMIC_VIAL_KEY_OVERRIDE_SET, \
-    DYNAMIC_VIAL_ALT_REPEAT_KEY_GET, DYNAMIC_VIAL_ALT_REPEAT_KEY_SET
+    DYNAMIC_VIAL_ALT_REPEAT_KEY_GET, DYNAMIC_VIAL_ALT_REPEAT_KEY_SET, BUFFER_FETCH_CHUNK
+from keycodes.keycodes_v5 import keycodes_v5
+from keycodes.keycodes_v6 import keycodes_v6
+from kle_serial import Serial as KleSerial
 from protocol.qmk_settings_codec import QmkSettingsCodec
 
 CMD_VIA_BOOTLOADER_JUMP = 0x0B
+# polls the firmware wants the unlock keys held for (VIAL_UNLOCK_COUNTER_MAX)
+UNLOCK_COUNTER_MAX = 50
+# the firmware has room for this many unlock keys in the unlock status reply
+MAX_UNLOCK_KEYS = 15
+# while an unlock is in progress the firmware answers only these Vial commands and echoes everything else
+ALLOWED_DURING_UNLOCK = {CMD_VIAL_GET_KEYBOARD_ID, CMD_VIAL_GET_SIZE, CMD_VIAL_GET_DEFINITION,
+                         CMD_VIAL_GET_UNLOCK_STATUS, CMD_VIAL_UNLOCK_START, CMD_VIAL_UNLOCK_POLL}
+# QMK settings the protocol code has no definition for are answered with the widest QMK setting width
+UNKNOWN_SETTING_WIDTH = 4
 # bits of the last byte of the dynamic entry count reply
 FEATURE_CAPS_WORD = 1 << 0
 FEATURE_LAYER_LOCK = 1 << 1
@@ -39,7 +52,7 @@ class VirtualKeyboard:
 
     def __init__(self, definition, layers=4, keymap=None, uid=0xF00DFACEDEADBEEF, vial_protocol=6,
                  via_protocol=9, macro_count=8, macro_memory=512, macros=b"", tap_dance=None, combos=None,
-                 key_overrides=None, alt_repeat_keys=None, settings=None, unlocked=True,
+                 key_overrides=None, alt_repeat_keys=None, settings=None, unlocked=True, unlock_keys=(),
                  features=FEATURE_CAPS_WORD | FEATURE_LAYER_LOCK):
         """
         definition: vial.json as a dict or JSON string
@@ -50,6 +63,9 @@ class VirtualKeyboard:
                        suppressed_mods, options)
         alt_repeat_keys: list of 4-int tuples (keycode, alt_keycode, allowed_mods, options)
         settings: {qsid: int} of supported QMK settings; None means the firmware has no QMK settings
+        unlocked: start unlocked; a locked keyboard refuses security-sensitive writes like Vial firmware does
+        unlock_keys: [(row, col)] the user must press() for UNLOCK_POLL to unlock; none means any poll after
+                     UNLOCK_START unlocks
         """
         if isinstance(definition, str):
             definition = json.loads(definition)
@@ -64,12 +80,14 @@ class VirtualKeyboard:
             self.keymap[layer][row][col] = code
 
         self.encoders = {}
+        self.encoder_count = self._count_encoders(definition)
         self.layout_options = 0
 
         self.uid = uid
         self.vial_protocol = vial_protocol
         self.via_protocol = via_protocol
         self.features = features
+        self.qk_boot = (keycodes_v6 if vial_protocol >= 6 else keycodes_v5).kc["QK_BOOT"]
 
         self.macro_count = macro_count
         if len(macros) > macro_memory:
@@ -84,8 +102,12 @@ class VirtualKeyboard:
         self.settings = None if settings is None else dict(settings)
         self.default_settings = None if settings is None else dict(settings)
 
+        if len(unlock_keys) > MAX_UNLOCK_KEYS:
+            raise SimulatorError("at most {} unlock keys fit into the unlock status".format(MAX_UNLOCK_KEYS))
+        self.unlock_keys = list(unlock_keys)
         self.unlocked = unlocked
         self.unlock_in_progress = False
+        self.unlock_counter = 0
 
         lighting = definition.get("lighting", "none")
         self.rgblight = {"brightness": 128, "effect": 1, "speed": 2, "color": (0, 255)} \
@@ -113,6 +135,16 @@ class VirtualKeyboard:
         """ Macro buffer split into macro_count byte strings """
         return bytes(self.macro_buffer).split(b"\x00")[:self.macro_count]
 
+    @staticmethod
+    def _count_encoders(definition):
+        """ Number of encoders the layout declares, found the same way the protocol code finds them """
+        keys = KleSerial().deserialize(copy.deepcopy(definition["layouts"]["keymap"])).keys
+        return max((int(key.labels[0].split(",")[0]) + 1 for key in keys if key.labels[4] == "e"), default=0)
+
+    def _firewall(self, code):
+        """ vial_keycode_firewall: a locked keyboard stores KC_NO instead of QK_BOOT """
+        return 0 if code == self.qk_boot and not self.unlocked else code
+
     # --- packet handling ---
 
     def process(self, msg):
@@ -121,6 +153,8 @@ class VirtualKeyboard:
             raise OSError("simulated keyboard is unplugged")
         msg = bytes(msg)
         cmd = msg[0]
+        if self.unlock_in_progress and not (cmd == CMD_VIA_VIAL_PREFIX and msg[1] in ALLOWED_DURING_UNLOCK):
+            return msg
         if cmd == CMD_VIA_VIAL_PREFIX:
             return self._vial(msg)
         handler = {
@@ -137,7 +171,7 @@ class VirtualKeyboard:
             CMD_VIA_MACRO_SET_BUFFER: lambda: self._write_macro_buffer(msg),
             CMD_VIA_GET_LAYER_COUNT: lambda: struct.pack(">BB", cmd, self.layers),
             CMD_VIA_KEYMAP_GET_BUFFER: lambda: self._read_buffer(msg, self._keymap_buffer()),
-            CMD_VIA_BOOTLOADER_JUMP: self._bootloader,
+            CMD_VIA_BOOTLOADER_JUMP: lambda: self._bootloader(msg),
         }.get(cmd)
         if handler is None:
             raise SimulatorError("unknown VIA command 0x{:02X}".format(cmd))
@@ -154,11 +188,19 @@ class VirtualKeyboard:
     @staticmethod
     def _read_buffer(msg, buffer):
         offset, size = struct.unpack_from(">HB", msg, 1)
+        if size > BUFFER_FETCH_CHUNK:
+            # the data would not fit into the reply: the firmware sends the request back without data
+            return msg[0:4]
         # the reply echoes the 4-byte request header, then the data
         return msg[0:4] + buffer[offset:offset + size]
 
     def _write_macro_buffer(self, msg):
+        if not self.unlocked:
+            # Vial firmware refuses macro changes until the keyboard is unlocked
+            return msg
         offset, size = struct.unpack_from(">HB", msg, 1)
+        if size > BUFFER_FETCH_CHUNK:
+            raise SimulatorError("macro write of {} bytes does not fit into one packet".format(size))
         if offset + size > len(self.macro_buffer):
             raise SimulatorError("macro write past the end of macro memory")
         self.macro_buffer[offset:offset + size] = msg[4:4 + size]
@@ -167,6 +209,9 @@ class VirtualKeyboard:
 
     def _set_keycode(self, msg):
         layer, row, col, code = struct.unpack_from(">BBBH", msg, 1)
+        if layer >= self.layers or row >= self.rows or col >= self.cols:
+            return msg[0:6]
+        code = self._firewall(code)
         self.keymap[layer][row][col] = code
         self.writes.append(("keycode", layer, row, col, code))
         return msg[0:6]
@@ -176,6 +221,10 @@ class VirtualKeyboard:
         if sub == VIA_LAYOUT_OPTIONS:
             return struct.pack(">BBI", msg[0], sub, self.layout_options)
         if sub == VIA_SWITCH_MATRIX_STATE:
+            # Vial hides the matrix (a would-be keylogger) until unlocked; QMK leaves it out when it might not
+            # fit into the reply, using this conservative estimate of the row size
+            if not self.unlocked or (self.cols // 8 + 1) * self.rows > 28:
+                return msg[0:2]
             row_size = math.ceil(self.cols / 8)
             out = msg[0:2]
             for row in range(self.rows):
@@ -245,9 +294,13 @@ class VirtualKeyboard:
         self.lighting_saved = True
         return msg[0:1]
 
-    def _bootloader(self):
+    def _bootloader(self, msg):
+        if not self.unlocked:
+            return msg
+        # the firmware answers first, then jumps to the bootloader: the keyboard drops off the bus
         self.bootloader_requested = True
-        return b""
+        self.connected = False
+        return msg
 
     # --- Vial commands ---
 
@@ -265,19 +318,29 @@ class VirtualKeyboard:
             return struct.pack(">HH", self.encoders.get((layer, idx, 0), 0), self.encoders.get((layer, idx, 1), 0))
         if sub == CMD_VIAL_SET_ENCODER:
             layer, idx, direction, code = struct.unpack_from(">BBBH", msg, 2)
+            if layer >= self.layers or idx >= self.encoder_count:
+                return b""
+            direction = 1 if direction else 0
+            code = self._firewall(code)
             self.encoders[(layer, idx, direction)] = code
             self.writes.append(("encoder", layer, idx, direction, code))
             return b""
         if sub == CMD_VIAL_GET_UNLOCK_STATUS:
-            # unlock keys: none (255, 255) in all 15 slots
-            return bytes([int(self.unlocked), int(self.unlock_in_progress)]) + b"\xFF" * 30
+            # unlock keys as (row, col) pairs; unused slots are (255, 255)
+            keys = b"".join(bytes(rc) for rc in self.unlock_keys)
+            return bytes([int(self.unlocked), int(self.unlock_in_progress)]) + keys + b"\xFF" * (30 - len(keys))
         if sub == CMD_VIAL_UNLOCK_START:
             self.unlock_in_progress = True
+            self.unlock_counter = UNLOCK_COUNTER_MAX
             return b""
         if sub == CMD_VIAL_UNLOCK_POLL:
-            # the simulated user holds the unlock keys instantly
-            self.unlocked, self.unlock_in_progress = True, False
-            return bytes([1, 0, 0])
+            if self.unlock_in_progress:
+                if all(rc in self.pressed for rc in self.unlock_keys):
+                    # the firmware counts down while the keys stay held; the simulated user holds them long enough
+                    self.unlocked, self.unlock_in_progress, self.unlock_counter = True, False, 0
+                else:
+                    self.unlock_counter = UNLOCK_COUNTER_MAX
+            return bytes([int(self.unlocked), int(self.unlock_in_progress), self.unlock_counter])
         if sub == CMD_VIAL_LOCK:
             self.unlocked = False
             return b""
@@ -309,14 +372,16 @@ class VirtualKeyboard:
 
     @staticmethod
     def _setting_width(qsid):
-        return QmkSettingsCodec.fields()[qsid][0].get("width", 1)
+        # .get: indexing the codec's defaultdict would add an empty entry for an unknown qsid
+        fields = QmkSettingsCodec.fields().get(qsid)
+        return fields[0].get("width", 1) if fields else UNKNOWN_SETTING_WIDTH
 
     DYNAMIC = {
-        # get command: (attribute, struct format, set command)
-        DYNAMIC_VIAL_TAP_DANCE_GET: ("tap_dance", "<HHHHH", DYNAMIC_VIAL_TAP_DANCE_SET),
-        DYNAMIC_VIAL_COMBO_GET: ("combos", "<HHHHH", DYNAMIC_VIAL_COMBO_SET),
-        DYNAMIC_VIAL_KEY_OVERRIDE_GET: ("key_overrides", "<HHHBBBB", DYNAMIC_VIAL_KEY_OVERRIDE_SET),
-        DYNAMIC_VIAL_ALT_REPEAT_KEY_GET: ("alt_repeat_keys", "<HHBB", DYNAMIC_VIAL_ALT_REPEAT_KEY_SET),
+        # get command: (attribute, struct format, set command, fields the firmware passes through the firewall)
+        DYNAMIC_VIAL_TAP_DANCE_GET: ("tap_dance", "<HHHHH", DYNAMIC_VIAL_TAP_DANCE_SET, (0, 1, 2, 3)),
+        DYNAMIC_VIAL_COMBO_GET: ("combos", "<HHHHH", DYNAMIC_VIAL_COMBO_SET, (4,)),
+        DYNAMIC_VIAL_KEY_OVERRIDE_GET: ("key_overrides", "<HHHBBBB", DYNAMIC_VIAL_KEY_OVERRIDE_SET, (1,)),
+        DYNAMIC_VIAL_ALT_REPEAT_KEY_GET: ("alt_repeat_keys", "<HHBB", DYNAMIC_VIAL_ALT_REPEAT_KEY_SET, (0, 1)),
     }
 
     def _dynamic(self, msg):
@@ -325,7 +390,7 @@ class VirtualKeyboard:
             counts = struct.pack("BBBB", len(self.tap_dance), len(self.combos), len(self.key_overrides),
                                  len(self.alt_repeat_keys))
             return counts + b"\x00" * (31 - len(counts)) + bytes([self.features])
-        for get_op, (attr, fmt, set_op) in self.DYNAMIC.items():
+        for get_op, (attr, fmt, set_op, guarded) in self.DYNAMIC.items():
             entries = getattr(self, attr)
             if op == get_op:
                 idx = msg[3]
@@ -336,7 +401,10 @@ class VirtualKeyboard:
                 idx = msg[3]
                 if idx >= len(entries):
                     return b"\x01"
-                entries[idx] = struct.unpack_from(fmt, msg, 4)
+                entry = list(struct.unpack_from(fmt, msg, 4))
+                for field in guarded:
+                    entry[field] = self._firewall(entry[field])
+                entries[idx] = tuple(entry)
                 self.writes.append((attr, idx, entries[idx]))
                 return b"\x00"
         raise SimulatorError("unknown dynamic entry op 0x{:02X}".format(op))

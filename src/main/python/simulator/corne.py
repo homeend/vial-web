@@ -45,8 +45,9 @@ def encode(qmk_id):
         Keycode.protocol = saved
 
 
-# Each layer: 3 rows of 6 keys per half (outside to inside on the left, inside to outside on the right),
-# then 3 thumb keys per half (inside to outside on the left... as listed in LEFT_THUMBS / RIGHT_THUMBS).
+# Each layer: 3 rows of 6 keys per half, then 3 thumb keys per half. Everything is listed left to right as it
+# appears on the board: outside to inside on the left half, inside to outside on the right half. So the left
+# thumbs are (3,3) -> (3,5) and the right thumbs (7,5) -> (7,3), as in LEFT_THUMBS / RIGHT_THUMBS.
 LAYERS = [
     {   # 0: base, with home-row mods
         "left": [["KC_TAB", "LGUI_T(KC_W)", "KC_L", "KC_R", "LT2(KC_B)", "KC_Z"],
@@ -122,6 +123,7 @@ def macros():
 def make_corne():
     """ A fresh simulated Corne; nothing is shared between calls """
     ko_options_enabled = 0b1000_0111  # enabled, activates on trigger down / required mod down / negative mod up
+    ark_options = 0b1110  # enabled, ignore mod handedness, bidirectional
     return VirtualKeyboard(
         definition(),
         layers=len(LAYERS),
@@ -139,7 +141,10 @@ def make_corne():
                [(0, 0, 0, 0, 0)] * 6,
         key_overrides=[(encode("KC_BSPC"), encode("KC_DEL"), 0xFFFF, 0x02, 0, 0x02, ko_options_enabled)] +
                       [(0, 0, 0, 0, 0, 0, 0)] * 3,
-        alt_repeat_keys=[(0, 0, 0, 0)] * 4,
-        settings={2: 50, 7: 200, 8: 0, 22: 0, 23: 0, 24: 0, 25: 100},
+        # Shift+Left then Alt Repeat gives Shift+Right, and the other way round
+        alt_repeat_keys=[(encode("KC_LEFT"), encode("KC_RGHT"), 0x02, ark_options)] + [(0, 0, 0, 0)] * 3,
+        # 22-24 are the separate Permissive Hold / Hold On Other Key Press / Retro Tapping settings. The legacy
+        # bitfield (8) also has Permissive Hold and Retro Tapping bits, so it is left out to avoid showing them twice
+        settings={2: 50, 7: 200, 22: 0, 23: 0, 24: 0, 25: 100},
         unlocked=True,
     )
