@@ -66,23 +66,36 @@ def _join_words(lines):
     return text
 
 
-def legend_of(label):
+def _columns(line, language):
+    """ One line of a Vial label -> (left column, right column) """
+    if line.startswith("  "):
+        return "", line.strip()
+    parts = RE_LEGEND_GAP.split(line.strip(), maxsplit=1)
+    if len(parts) > 1:
+        return parts[0], parts[1]
+    tokens = line.split()
+    if language and len(tokens) == 2 and all(len(token) <= 2 for token in tokens):
+        return tokens[0], tokens[1]  # "1 |": many keyboard languages put the columns one space apart
+    return parts[0], ""
+
+
+def legend_of(label, language=False):
     """ A Vial label -> legend {main, shifted, altGr}, all on one line.
 
     Vial's labels are laid out for its Qt key widgets, in two columns. The left column holds the key's characters:
     a single character over another line is shifted over unshifted ("!" over "1", "~" over "Esc"); anything else is
-    one label broken into lines ("Caps" over "Lock"). A keyboard language's label may have a right column, after two or more spaces (or alone on
-    an indented line): the AltGr characters, the lower one typed with AltGr alone. """
+    one label broken into lines ("Caps" over "Lock"). A keyboard language's label may have a right column, after two
+    or more spaces (or alone on an indented line): the AltGr characters, the lower one typed with AltGr alone. If the
+    right column has several characters (Swiss: the French layout's, then AltGr's), the last one is AltGr's.
+
+    language: the label is a keyboard language's (server.languages.overrides()), whose columns may also be one space
+    apart ("1 |"); English labels are not split there ("BL On"). """
     left, right = [], []
     for line in label.split("\n"):
-        if line.startswith("  "):
-            first, second = "", line.strip()
-        else:
-            parts = RE_LEGEND_GAP.split(line.strip(), maxsplit=1)
-            first, second = parts[0], parts[1] if len(parts) > 1 else ""
+        first, second = _columns(line, language)
         left.append(first)
         right.append(second)
-    alt_gr = right[-1] or None
+    alt_gr = right[-1].split()[-1] if right[-1] else None
     chars = [c for c in left if c]
     if len(left) == 2 and len(chars) == 2 and len(chars[0]) == 1:
         return _legend(chars[1], chars[0], alt_gr)
@@ -94,7 +107,7 @@ def _keycode_legend(code):
     keycode = Keycode.find_outer_keycode(code)
     overrides = _overrides.get()
     if keycode is not None and keycode.qmk_id in overrides:
-        return legend_of(overrides[keycode.qmk_id])
+        return legend_of(overrides[keycode.qmk_id], language=True)
     return legend_of(Keycode.label(code))
 
 
@@ -137,8 +150,8 @@ def one_line(label):
 def _with_mods(code, bits, inner_code):
     """ A key with modifiers held, e.g. LCTL(KC_C) """
     inner = _keycode_legend(inner_code)
-    if Keycode.find_outer_keycode(inner_code) is not None and Keycode.find_outer_keycode(inner_code).qmk_id \
-            in _overrides.get():
+    inner_keycode = Keycode.find_outer_keycode(inner_code)
+    if inner_keycode is not None and inner_keycode.qmk_id in _overrides.get():
         # what the keyboard language types: Shift+7 is "/" in German, AltGr+A is "ą" in Polish
         if bits & ~MOD_RIGHT == MOD_SHIFT and inner["shifted"]:
             return _result(code, "basic", _legend(inner["shifted"]))
@@ -181,12 +194,13 @@ def describe(code):
         return _result(code, "layer-tap", _keycode_legend(m.group(2)), hold="layer {}".format(layer), layer=layer,
                        layer_action=LAYER_ACTIONS["MO"])
 
-    if _in(value, QK_MOD_TAP):
+    # modifier bits naming no modifier (none, or only the right-hand bit) fall through and read as a raw code
+    if _in(value, QK_MOD_TAP) and mods_name((value >> 8) & 0x1F):
         return _result(code, "mod-tap", _keycode_legend(Keycode.serialize(value & 0xFF)),
                        hold=mods_name((value >> 8) & 0x1F))
-    if _in(value, QK_ONE_SHOT_MOD):
+    if _in(value, QK_ONE_SHOT_MOD) and mods_name(value & 0x1F):
         return _result(code, "one-shot-mod", _legend(mods_name(value & 0x1F)))
-    if _in(value, QK_MODS):
+    if _in(value, QK_MODS) and mods_name((value >> 8) & 0x1F):
         return _with_mods(code, (value >> 8) & 0x1F, Keycode.serialize(value & 0xFF))
 
     if code in MODIFIER_KEYS:

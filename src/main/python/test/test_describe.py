@@ -149,6 +149,26 @@ def test_mods_in_protocol_5(monkeypatch, protocol, value, kind, hold):
     assert (result["kind"], result["hold"]) == (kind, hold)
 
 
+@pytest.mark.parametrize("protocol, value", [
+    (6, 0x1004),  # QK_MODS with only the right-hand bit: no modifier, KC_A
+    (6, 0x1000),
+    (6, 0x2004),  # QK_MOD_TAP with no modifier bits
+    (6, 0x3004),  # ... with only the right-hand bit
+    (6, 0x52A0),  # QK_ONE_SHOT_MOD with no modifier bits
+    (6, 0x52B0),  # ... with only the right-hand bit
+    (5, 0x6004),
+    (5, 0x5500),
+    (5, 0x5510),
+])
+def test_modifier_bits_naming_no_modifier_read_as_raw_codes(monkeypatch, protocol, value):
+    monkeypatch.setattr(Keycode, "protocol", protocol)
+    result = describe(Keycode.serialize(value))
+    assert (result["kind"], result["hold"], result["legend"]["shifted"], result["legend"]["altGr"]) \
+        == ("other", None, None, None)
+    assert result["tap"] == result["legend"]["main"] == result["code"]
+    assert int(result["tap"], 16) == value
+
+
 def test_parse_accepts_expressions_and_numbers():
     assert parse("LCTL(KC_A)")["code"] == "LCTL(KC_A)"
     assert parse(" 0x7E05 ")["code"] == "USER05"
