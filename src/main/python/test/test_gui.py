@@ -1,6 +1,4 @@
-import lzma
 import os.path
-import struct
 
 import pytest
 from PyQt5.QtCore import QPoint, QSettings
@@ -8,13 +6,9 @@ from PyQt5.QtWidgets import QPushButton
 from pytestqt.qt_compat import qt_api
 
 from main_window import MainWindow
+from simulator.device import SimulatedHidDevice
+from simulator.virtual_keyboard import VirtualKeyboard
 
-from protocol.constants import CMD_VIA_GET_PROTOCOL_VERSION, CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_KEYBOARD_ID, \
-    CMD_VIAL_GET_SIZE, CMD_VIAL_GET_DEFINITION, CMD_VIA_GET_LAYER_COUNT, CMD_VIA_MACRO_GET_COUNT, \
-    CMD_VIA_MACRO_GET_BUFFER_SIZE, CMD_VIAL_QMK_SETTINGS_QUERY, CMD_VIAL_DYNAMIC_ENTRY_OP, \
-    DYNAMIC_VIAL_GET_NUMBER_OF_ENTRIES, CMD_VIA_KEYMAP_GET_BUFFER, CMD_VIA_MACRO_GET_BUFFER, CMD_VIAL_GET_UNLOCK_STATUS, \
-    CMD_VIA_SET_KEYCODE, DYNAMIC_VIAL_COMBO_GET, DYNAMIC_VIAL_COMBO_SET, DYNAMIC_VIAL_TAP_DANCE_GET, \
-    DYNAMIC_VIAL_TAP_DANCE_SET
 from widgets.square_button import SquareButton
 
 FAKE_KEYBOARD = """
@@ -52,134 +46,17 @@ def mock_enumerate():
     }]
 
 
-class VirtualKeyboard:
+class MockDevice(SimulatedHidDevice):
+    """ hid.device() replacement for the Qt app, answered by the simulated keyboard in MockDevice.vk """
 
-    def __init__(self, kbjson, combos=None, tap_dance=None):
-        if combos is None:
-            combos = []
-        if tap_dance is None:
-            tap_dance = []
+    vk = None
 
-        self.keyboard_definition = lzma.compress(kbjson.encode("utf-8"))
-
-        self.rows = 2
-        self.cols = 2
-        self.layers = 4
-        self.keymap = []
-        for layer in range(self.layers):
-            self.keymap.append([])
-            for row in range(self.rows):
-                self.keymap[-1].append([0 for x in range(self.cols)])
-
-        self.macro_count = 8
-        self.macro_buffer = b"\x00" * 512
-
-        self.combos = combos
-        self.tap_dance = tap_dance
-
-        self.key_override_entries = 0
-        self.alt_repeat_key_entries = 0
-
-    def get_keymap_buffer(self):
-        output = b""
-        for layer in range(self.layers):
-            for row in range(self.rows):
-                for col in range(self.cols):
-                    output += struct.pack(">H", self.keymap[layer][row][col])
-        return output
-
-    def vial_cmd_dynamic(self, msg):
-        if msg[2] == DYNAMIC_VIAL_GET_NUMBER_OF_ENTRIES:
-            response = struct.pack("BBBB", len(self.tap_dance), len(self.combos),
-                                   self.key_override_entries, self.alt_repeat_key_entries)
-            # Zero pad to 31 bytes.
-            response += (31 - len(response)) * b'\0'
-            # Set last two bits, indicating Caps Word and Layer Lock.
-            response += (0b00000011).to_bytes(1, "little")
-            return response
-        elif msg[2] == DYNAMIC_VIAL_COMBO_GET:
-            idx = msg[3]
-            assert idx < len(self.combos)
-            return struct.pack("<BHHHHH", 0, *self.combos[idx])
-        elif msg[2] == DYNAMIC_VIAL_COMBO_SET:
-            idx = msg[3]
-            keys = struct.unpack_from("<HHHHH", msg[4:])
-            assert idx < len(self.combos)
-            self.combos[idx] = keys
-            return b""
-        elif msg[2] == DYNAMIC_VIAL_TAP_DANCE_GET:
-            idx = msg[3]
-            assert idx < len(self.tap_dance)
-            return struct.pack("<BHHHHH", 0, *self.tap_dance[idx])
-        elif msg[2] == DYNAMIC_VIAL_TAP_DANCE_SET:
-            idx = msg[3]
-            values = struct.unpack_from("<HHHHH", msg[4:])
-            assert idx < len(self.tap_dance)
-            self.tap_dance[idx] = values
-            return b""
-        raise RuntimeError("unsupported dynamic submsg 0x{:02X}".format(msg[2]))
-
-    def vial_cmd(self, msg):
-        if msg[1] == CMD_VIAL_GET_KEYBOARD_ID:
-            return struct.pack("<IQ", 6, 0xF00DFACEDEADBEEF)
-        elif msg[1] == CMD_VIAL_GET_SIZE:
-            return struct.pack("<I", len(self.keyboard_definition))
-        elif msg[1] == CMD_VIAL_GET_DEFINITION:
-            page = struct.unpack_from("<H", msg[2:])[0]
-            return self.keyboard_definition[page*32:(page+1)*32]
-        elif msg[1] == CMD_VIAL_GET_UNLOCK_STATUS:
-            return struct.pack("<BB", 0, 0)  # TODO we want to test unlocking as well
-        elif msg[1] == CMD_VIAL_QMK_SETTINGS_QUERY:
-            return b"\xFF" * 32
-        elif msg[1] == CMD_VIAL_DYNAMIC_ENTRY_OP:
-            return self.vial_cmd_dynamic(msg)
-        raise RuntimeError("unknown command for Vial protocol 0x{:02X}".format(msg[1]))
-
-    def process(self, msg):
-        if msg[0] == CMD_VIA_VIAL_PREFIX:
-            return self.vial_cmd(msg)
-        elif msg[0] == CMD_VIA_GET_PROTOCOL_VERSION:
-            return struct.pack(">BH", msg[0], 9)
-        elif msg[0] == CMD_VIA_SET_KEYCODE:
-            layer, row, col, kc = struct.unpack_from(">BBBH", msg[1:])
-            self.keymap[layer][row][col] = kc
-            return b""
-        elif msg[0] == CMD_VIA_MACRO_GET_COUNT:
-            return struct.pack(">BB", msg[0], self.macro_count)
-        elif msg[0] == CMD_VIA_MACRO_GET_BUFFER_SIZE:
-            return struct.pack(">BH", msg[0], len(self.macro_buffer))
-        elif msg[0] == CMD_VIA_MACRO_GET_BUFFER:
-            offset, size = struct.unpack_from(">HB", msg[1:])
-            return msg[0:1] + self.macro_buffer[offset:offset+size]
-        elif msg[0] == CMD_VIA_GET_LAYER_COUNT:
-            return struct.pack(">BB", msg[0], self.layers)
-        elif msg[0] == CMD_VIA_KEYMAP_GET_BUFFER:
-            offset, size = struct.unpack_from(">HB", msg[1:])
-            return msg[0:1] + self.get_keymap_buffer()[offset:offset+size]
-        raise RuntimeError("unknown command for VIA protocol 0x{:02X}".format(msg[0]))
-
-
-class MockDevice:
+    def __init__(self):
+        super().__init__(MockDevice.vk)
 
     def open_path(self, path):
         assert path == "/magic/path/for/tests"
-
-    def close(self):
-        pass
-
-    def write(self, data):
-        assert len(data) == 33
-        assert data[0] == 0
-        self.msg = data[1:]
-
-        return len(data)
-
-    def read(self, sz, timeout_ms=None):
-        assert sz == 32
-        resp = self.vk.process(self.msg)
-        assert len(resp) <= 32
-        resp += b"\x00" * (32 - len(resp))
-        return resp
+        super().open_path(path)
 
 
 class FakeAppctx:
@@ -203,7 +80,7 @@ def isolated_settings(tmp_path, monkeypatch):
 def prepare(qtbot, keyboard_json, combos=None, tap_dance=None):
     from hidproxy import hid
 
-    vk = VirtualKeyboard(keyboard_json, combos=combos, tap_dance=tap_dance)
+    vk = VirtualKeyboard(keyboard_json, combos=combos, tap_dance=tap_dance, unlocked=False)
     MockDevice.vk = vk
 
     hid.enumerate = mock_enumerate
