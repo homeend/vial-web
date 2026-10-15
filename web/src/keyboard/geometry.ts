@@ -35,14 +35,15 @@ export interface Placement {
 type Board = Pick<KeyboardModel, "keys" | "encoders" | "layoutOptions">;
 
 /** The chosen choice of each layout option. Vial packs them into one number, the first option in the highest bits:
- * an on/off option takes one bit, a list of choices as many bits as its highest choice needs. */
+ * an on/off option takes one bit, a list of choices as many bits as its highest choice needs, and at least one. */
 export function layoutChoices(options: LayoutOptions | null | undefined): number[] {
   if (!options) return [];
   let value = options.value;
   const choices: number[] = [];
   for (const label of [...options.labels].reverse()) {
     const count = typeof label === "string" ? 2 : label.length - 1;
-    const bits = count > 1 ? (count - 1).toString(2).length : 0; // Python: (count - 1).bit_length()
+    // Vial pads to (count - 1).bit_length() but never below one bit, so a lone or missing choice still takes one
+    const bits = count <= 2 ? 1 : (count - 1).toString(2).length;
     const size = 2 ** bits;
     choices.unshift(value % size);
     value = Math.floor(value / size);

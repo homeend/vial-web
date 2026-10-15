@@ -30,8 +30,11 @@ describe("layoutChoices", () => {
     expect(layoutChoices({ value: 3, labels })).toEqual([0, 3]);
   });
 
-  it("gives a list with one choice no bits", () => {
-    expect(layoutChoices({ value: 1, labels: [["Only", "one"], "Flag"] })).toEqual([0, 1]);
+  it("gives every option at least one bit, even a list with one choice or none, as Vial does", () => {
+    const labels = [["Only", "one"], "Flag"];
+    expect(layoutChoices({ value: 1, labels })).toEqual([0, 1]);
+    expect(layoutChoices({ value: 2, labels })).toEqual([1, 0]);
+    expect(layoutChoices({ value: 2, labels: [["Name"], "Flag"] })).toEqual([1, 0]);
   });
 
   it("handles 32-bit values", () => {
@@ -58,11 +61,52 @@ describe("placeKeyboard", () => {
     const placed = placeKeyboard(board([key({ r: 90, rx: 0, ry: 0 })]));
     const [item] = placed.items;
     // the key swings to the left of the origin: everything moves right by one unit
-    expect([item.x, item.y, item.rx, item.ry, item.r]).toEqual([1, 0, 1, 0, 90]);
+    close(item.x, 1);
+    close(item.y, 0);
+    close(item.rx, 1);
+    close(item.ry, 0);
+    expect(item.r).toBe(90);
     close(placed.width, 1);
     close(placed.height, 1);
     close(item.cx, 0.5);
     close(item.cy, 0.5);
+  });
+
+  it("measures rotation from the rotation origin, not from the key", () => {
+    // corners (2,0)..(3,1) swing to (-1,2)..(0,3) around (0,0)
+    const placed = placeKeyboard(board([key({ x: 2, r: 90, rx: 0, ry: 0 })]));
+    const [item] = placed.items;
+    close(item.x, 3);
+    close(item.y, -2);
+    close(item.rx, 1);
+    close(item.ry, -2);
+    close(item.cx, 0.5);
+    close(item.cy, 0.5);
+    close(placed.width, 1);
+    close(placed.height, 1);
+  });
+
+  it("sizes a board of rotated and unrotated keys together", () => {
+    const placed = placeKeyboard(board([key({ r: 90 }), key({ x: 3, col: 1 })]));
+    const [turned, flat] = placed.items;
+    close(turned.x, 1);
+    close(turned.cx, 0.5);
+    close(flat.x, 4);
+    close(flat.y, 0);
+    close(placed.width, 5);
+    close(placed.height, 1);
+  });
+
+  it("counts decals when finding where a layout option starts, as Vial does", () => {
+    const keys = [
+      key({ x: 0 }),
+      key({ x: 0, decal: true, row: 1, layoutIndex: 0, layoutOption: 0 }),
+      key({ x: 1, row: 2, layoutIndex: 0, layoutOption: 0 }),
+      key({ x: 5, row: 3, layoutIndex: 0, layoutOption: 1 }),
+    ];
+    const placed = placeKeyboard(board(keys, [], { value: 1, labels: ["Split"] }));
+    // the decal at x 0 is the option's top-left, so the key at 5 moves to 0 and not to 1
+    expect(placed.items.map((k) => [k.index, k.x])).toEqual([[0, 0], [3, 0]]);
   });
 
   it("includes the second rectangle of an ISO Enter in the size", () => {
