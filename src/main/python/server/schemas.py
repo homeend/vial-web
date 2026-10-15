@@ -183,14 +183,23 @@ class Names(BaseModel):
 # ---------- requests ----------
 
 KEYCODE_MAX_LENGTH = 200
+
+# Limits for new values. A value equal to what the keyboard already holds is accepted even beyond them (firmware
+# defaults and other tools can leave such values), so these are checked in edits.py, not by the request models.
 MACRO_TEXT_MAX = 255
 """ characters in one macro text step """
 MACRO_DELAY_MAX = 64000
 MACRO_KEYS_MAX = 32
 """ keys in one macro tap / down / up step """
 MACRO_STEPS_MAX = 256
-MACROS_MAX = 256
 TAPPING_TERM_MAX = 10000
+
+# What the request models accept: bounded by what the keyboard can store at all
+MACRO_BUFFER_MAX = 0xFFFF
+""" the macro buffer size is a 16-bit number """
+MACRO_DELAY_LIMIT = 254 + 254 * 255
+""" the longest delay the macro format can encode """
+MACROS_MAX = 256
 
 KeycodeStr = Annotated[str, Field(max_length=KEYCODE_MAX_LENGTH)]
 Byte = Annotated[int, Field(ge=0, le=255)]
@@ -218,7 +227,7 @@ class TapDanceIn(Request):
     hold: KeycodeStr
     doubleTap: KeycodeStr
     tapHold: KeycodeStr
-    tappingTerm: int = Field(ge=0, le=TAPPING_TERM_MAX)
+    tappingTerm: int = Field(ge=0, le=0xFFFF)
 
 
 class ComboIn(Request):
@@ -245,13 +254,13 @@ class AltRepeatKeyIn(Request):
 
 class MacroActionIn(Request):
     type: Literal["text", "tap", "down", "up", "delay"]
-    text: Optional[str] = Field(default=None, max_length=MACRO_TEXT_MAX)
-    keys: list[KeycodeStr] = Field(default=[], max_length=MACRO_KEYS_MAX)
-    delay: Optional[int] = Field(default=None, ge=0, le=MACRO_DELAY_MAX)
+    text: Optional[str] = Field(default=None, max_length=MACRO_BUFFER_MAX)
+    keys: list[KeycodeStr] = Field(default=[], max_length=MACRO_BUFFER_MAX // 2)
+    delay: Optional[int] = Field(default=None, ge=0, le=MACRO_DELAY_LIMIT)
 
 
 class MacrosIn(Request):
-    items: list[Annotated[list[MacroActionIn], Field(max_length=MACRO_STEPS_MAX)]] = Field(max_length=MACROS_MAX)
+    items: list[Annotated[list[MacroActionIn], Field(max_length=MACRO_BUFFER_MAX)]] = Field(max_length=MACROS_MAX)
 
 
 class SettingIn(Request):

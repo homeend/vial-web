@@ -180,12 +180,17 @@ def test_names(client):
 
 
 def test_layout_file_round_trip(client, virtual):
-    data = json.loads(client.get("/api/layout-file").content)
+    original = client.get("/api/layout-file").content
+    assert client.post("/api/layout-file", content=original).status_code == 200
+    assert json.loads(client.get("/api/layout-file").content) == json.loads(original)
+
+    data = json.loads(original)
     assert data["layout"][0][0][0] == "KC_TAB"
     data["layout"][0][0][0] = "KC_Q"
     response = client.post("/api/layout-file", content=json.dumps(data))
     assert response.status_code == 200
     assert virtual.keymap[0][0][0] == encode("KC_Q")
+    assert json.loads(client.get("/api/layout-file").content) == data
     assert client.post("/api/layout-file", content=b"not json").status_code == 422
 
 

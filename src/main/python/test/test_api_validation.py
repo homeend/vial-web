@@ -7,10 +7,11 @@ from fastapi.testclient import TestClient
 
 import transport
 from protocol.unlock_hook import set_unlock_handler
+from server import edits
 from server.app import create_app
 from server.device import DeviceManager, FakeBackend, require_unlocked
 from server.names import NamesStore
-from simulator.corne import encode
+from simulator.corne import encode, make_corne
 from simulator.virtual_keyboard import VirtualKeyboard
 from test.test_api import BASE, PORT, TOKEN, setup, client, virtual  # noqa: F401 (fixtures)
 
@@ -260,10 +261,36 @@ def break_macro_size(d):
     d["macro"] = [[["text", "x" * 200]] for _ in range(16)]
 
 
+def break_key_override_shape(d):
+    d["key_override"][0] = ["KC_A", "KC_B"]
+
+
+def break_key_override_field(d):
+    del d["key_override"][0]["options"]
+
+
+def break_tap_dance_shape(d):
+    d["tap_dance"][0] = d["tap_dance"][0][:4]
+
+
+def break_combo_shape(d):
+    d["combo"][0] = "KC_A"
+
+
+def break_macro_step_shape(d):
+    d["macro"][2] = ["text"]
+
+
+def break_settings_shape(d):
+    d["settings"] = [7, 200]
+
+
 @pytest.mark.parametrize("breaker", [
     break_encoders, break_setting, break_tapping_term, break_keycode, break_tap_dance_reference,
     break_layer_reference, break_macro_text, break_macro_key, break_macro_tag, break_key_override,
     break_alt_repeat_key, break_bool_keycode, break_layout_options, break_macro_size,
+    break_key_override_shape, break_key_override_field, break_tap_dance_shape, break_combo_shape,
+    break_macro_step_shape, break_settings_shape,
 ])
 def test_invalid_layout_file_writes_nothing(client, virtual, vil, breaker):
     breaker(vil)
@@ -362,3 +389,202 @@ def test_layout_file_success_makes_the_ui_reload(setup, vil):
     app.state.hub.clients.add(tab)
     assert upload(client, vil).status_code == 200
     assert tab.events == [{"type": "reloaded"}]
+
+
+# ---------- older .vil files and values the keyboard already holds ----------
+
+def as_ints(data):
+    """ A .vil as Vial saved it before 2023: firmware integers for keycodes """
+    data = copy.deepcopy(data)
+    e = lambda c: c if isinstance(c, int) else encode(c)  # noqa: E731
+    data["layout"] = [[[e(c) for c in row] for row in layer] for layer in data["layout"]]
+    data["encoder_layout"] = [[[e(c) for c in enc] for enc in layer] for layer in data["encoder_layout"]]
+    data["tap_dance"] = [[e(k) for k in t[:4]] + [t[4]] for t in data["tap_dance"]]
+    data["combo"] = [[e(k) for k in t] for t in data["combo"]]
+    for ko in data["key_override"]:
+        ko["trigger"], ko["replacement"] = e(ko["trigger"]), e(ko["replacement"])
+    for ark in data["alt_repeat_key"]:
+        ark["keycode"], ark["alt_keycode"] = e(ark["keycode"]), e(ark["alt_keycode"])
+    for macro in data["macro"]:
+        for act in macro:
+            if act[0] in ("tap", "down", "up"):
+                act[1:] = [e(k) for k in act[1:]]
+    return data
+
+
+def test_layout_file_with_integer_keycodes(client, virtual):
+    data = json.loads(client.get("/api/layout-file").content)
+    old = as_ints(data)
+    assert isinstance(old["tap_dance"][0][0], int) and isinstance(old["key_override"][0]["trigger"], int)
+    virtual.writes.clear()
+    assert upload(client, old).status_code == 200, upload(client, old).text
+    assert virtual.writes == []  # the same content, so nothing to write
+
+    old["layout"][0][0][0] = encode("KC_Z")
+    old["tap_dance"][3] = [encode("KC_A"), encode("TD(1)"), 0, 0, 150]
+    old["combo"][3] = [encode("KC_A"), encode("KC_B"), 0, 0, encode("M1")]
+    old["key_override"][2] = {"trigger": encode("KC_A"), "replacement": encode("KC_B"), "layers": 3,
+                              "trigger_mods": 2, "negative_mod_mask": 0, "suppressed_mods": 2, "options": 0x81}
+    old["alt_repeat_key"][1] = {"keycode": encode("KC_UP"), "alt_keycode": encode("KC_DOWN"), "allowed_mods": 0,
+                                "options": 8}
+    old["macro"][2] = [["tap", encode("KC_A"), encode("LCTL(KC_C)")]]
+    response = upload(client, old)
+    assert response.status_code == 200, response.text
+    assert virtual.keymap[0][0][0] == encode("KC_Z")
+    assert virtual.tap_dance[3] == (encode("KC_A"), encode("TD(1)"), 0, 0, 150)
+    assert virtual.combos[3] == (encode("KC_A"), encode("KC_B"), 0, 0, encode("M1"))
+    assert virtual.key_overrides[2] == (encode("KC_A"), encode("KC_B"), 3, 2, 0, 2, 0x81)
+    assert virtual.alt_repeat_keys[1] == (encode("KC_UP"), encode("KC_DOWN"), 0, 8)
+    assert [a["keys"] for a in response.json()["macros"]["items"][2]["actions"]][0][1]["code"] == "LCTL(KC_C)"
+
+
+@pytest.mark.parametrize("section, change", [
+    ("tap_dance", lambda d: d["tap_dance"][0].__setitem__(1, encode("TD(200)"))),
+    ("combo", lambda d: d["combo"][0].__setitem__(4, encode("MO(9)"))),
+    ("key_override", lambda d: d["key_override"][0].__setitem__("replacement", 0x10000)),
+    ("alt_repeat_key", lambda d: d["alt_repeat_key"][0].__setitem__("keycode", True)),
+    ("tap_dance term", lambda d: d["tap_dance"][0].__setitem__(4, "200")),
+    ("key_override number", lambda d: d["key_override"][0].__setitem__("layers", 1.5)),
+])
+def test_layout_file_with_bad_integer_keycodes(client, virtual, section, change):
+    data = as_ints(json.loads(client.get("/api/layout-file").content))
+    data["layout"][0][0][0] = encode("KC_Z")
+    change(data)
+    before = snapshot(virtual)
+    assert upload(client, data).status_code == 422
+    assert snapshot(virtual) == before
+
+
+def macro_bytes(*parts):
+    return b"\x00".join(parts) + b"\x00"
+
+
+DELAY_65000 = b"\x01\x04\xe7\xff"  # beyond the 64000 ms the API accepts for new delays
+ODD_MACRO = b"caf\xe9" + DELAY_65000  # not ASCII
+
+
+def odd_corne():
+    """ A Corne holding values the API would refuse as new input, as firmware defaults or other tools can leave """
+    virtual = make_corne()
+    virtual.keymap[0][0][1] = encode("MO(5)")  # 4 layers
+    virtual.tap_dance[2] = (encode("TD(30)"), encode("KC_NO"), encode("KC_NO"), encode("KC_NO"), 20000)
+    virtual.combos[2] = (encode("KC_A"), encode("KC_B"), 0, 0, encode("M40"))
+    virtual.key_overrides[1] = (encode("KC_A"), encode("OSL(7)"), 1, 0, 0, 0, 0x80)
+    virtual.alt_repeat_keys[1] = (encode("TG(9)"), encode("KC_B"), 0, 8)
+    data = macro_bytes(*virtual.macros()[:2], ODD_MACRO)
+    virtual.macro_buffer = bytearray(data + b"\x00" * (len(virtual.macro_buffer) - len(data)))
+    return virtual
+
+
+@pytest.fixture
+def odd(tmp_path, monkeypatch):
+    """ (client, simulated keyboard holding odd values) """
+    monkeypatch.setattr(transport.time, "sleep", lambda s: None)
+    set_unlock_handler(require_unlocked)
+    manager = DeviceManager(FakeBackend(odd_corne))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "n.json")), TOKEN, PORT, poll_interval=0)
+    with TestClient(app, base_url=BASE) as c:
+        c.get("/?token=" + TOKEN, follow_redirects=False)
+        yield c, manager.backend.virtual
+    set_unlock_handler(None)
+
+
+def test_keyboards_own_layout_file_is_accepted_back(odd):
+    client, virtual = odd
+    data = json.loads(client.get("/api/layout-file").content)
+    virtual.writes.clear()
+    response = upload(client, data)
+    assert response.status_code == 200, response.text
+    assert virtual.writes == []
+    assert json.loads(client.get("/api/layout-file").content) == data
+
+    # other changes in the same file are written; the odd values stay as they are
+    data["layout"][0][0][0] = "KC_Z"
+    data["tap_dance"][2][1] = "KC_A"
+    data["macro"][3] = [["text", "new"]]
+    assert upload(client, data).status_code == 200
+    assert virtual.keymap[0][0][0] == encode("KC_Z")
+    assert virtual.keymap[0][0][1] == encode("MO(5)")
+    assert virtual.tap_dance[2] == (encode("TD(30)"), encode("KC_A"), 0, 0, 20000)
+    assert virtual.macros()[2:4] == [ODD_MACRO, b"new"]
+
+
+@pytest.mark.parametrize("change", [
+    lambda d: d["layout"][0][0].__setitem__(0, "MO(5)"),
+    lambda d: d["tap_dance"][2].__setitem__(4, 20001),
+    lambda d: d["tap_dance"][3].__setitem__(0, "TD(30)"),
+    lambda d: d["combo"][3].__setitem__(4, "M40"),
+    lambda d: d["macro"].__setitem__(3, [["text", "caf\u00e9"]]),
+    lambda d: d["macro"].__setitem__(3, [["delay", 65000]]),
+    lambda d: d["macro"][2].append(["text", "!"]),
+])
+def test_new_bad_values_are_still_refused(odd, change):
+    client, virtual = odd
+    data = json.loads(client.get("/api/layout-file").content)
+    change(data)
+    before = snapshot(virtual)
+    assert upload(client, data).status_code == 422
+    assert snapshot(virtual) == before
+
+
+def current_macros(client):
+    """ The macros as the API reports them, in the shape PUT /api/macros takes """
+    items = client.get("/api/keyboard").json()["macros"]["items"]
+    return [[{"type": a["type"], "text": a["text"], "keys": [k["code"] for k in a["keys"]], "delay": a["delay"]}
+             for a in item["actions"]] for item in items]
+
+
+def test_macros_edit_keeps_unchanged_odd_macros(odd):
+    client, virtual = odd
+    items = current_macros(client)
+    assert items[2] == [{"type": "text", "text": "caf\u00e9", "keys": [], "delay": None},
+                        {"type": "delay", "text": None, "keys": [], "delay": 65000}]
+    items[5] = [{"type": "text", "text": "hello"}]
+    response = client.put("/api/macros", json={"items": items})
+    assert response.status_code == 200, response.text
+    assert virtual.macros()[2] == ODD_MACRO
+    assert virtual.macros()[5] == b"hello"
+
+    # a changed macro must follow the rules
+    before = snapshot(virtual)
+    items[2] = items[2][:1]
+    assert client.put("/api/macros", json={"items": items}).status_code == 422
+    items = current_macros(client)
+    items[6] = [{"type": "delay", "delay": 65000}]
+    assert client.put("/api/macros", json={"items": items}).status_code == 422
+    assert snapshot(virtual) == before
+
+
+def test_entry_edits_keep_unchanged_odd_slots(odd):
+    client, virtual = odd
+    kb = client.get("/api/keyboard").json()
+    td = kb["tapDance"][2]
+    body = {"tap": td["tap"]["code"], "hold": "KC_A", "doubleTap": "KC_NO", "tapHold": "KC_NO",
+            "tappingTerm": td["tappingTerm"]}
+    assert client.put("/api/tap-dance/2", json=body).status_code == 200
+    assert virtual.tap_dance[2] == (encode("TD(30)"), encode("KC_A"), 0, 0, 20000)
+    combo = kb["combos"][2]
+    assert client.put("/api/combos/2", json={"keys": ["KC_C", "KC_B", "KC_NO", "KC_NO"],
+                                             "output": combo["output"]["code"]}).status_code == 200
+    ko = kb["keyOverrides"][1]
+    assert client.put("/api/key-overrides/1", json={
+        "trigger": "KC_C", "replacement": ko["replacement"]["code"], "layers": 1, "triggerMods": 0,
+        "negativeModMask": 0, "suppressedMods": 0, "options": 0x80}).status_code == 200
+    ark = kb["altRepeatKeys"][1]
+    assert client.put("/api/alt-repeat/1", json={"keycode": ark["keycode"]["code"], "altKeycode": "KC_C",
+                                                 "allowedMods": 0, "options": 8}).status_code == 200
+    # the same odd value in another slot, or a new term beyond the limit, is still refused
+    assert client.put("/api/tap-dance/2", json=dict(body, doubleTap=td["tap"]["code"])).status_code == 422
+    assert client.put("/api/tap-dance/2", json=dict(body, tappingTerm=20001)).status_code == 422
+    assert client.put("/api/keymap/0/0/0", json={"code": kb["layers"][0]["keys"][1]["code"]}).status_code == 422
+
+
+# ---------- programming errors are not "invalid file" ----------
+
+def test_server_bug_while_reading_layout_file_is_not_a_bad_request(client, vil, monkeypatch):
+    def bug(*args):
+        raise TypeError("a bug in the server")
+    monkeypatch.setattr(edits, "_tap_dance_entry", bug)
+    with pytest.raises(TypeError):
+        upload(client, vil)

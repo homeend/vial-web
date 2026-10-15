@@ -106,10 +106,12 @@ def test_non_ascii_token_or_cookie_is_refused_not_an_error(tmp_path):
 class Tab:
     """ Stands in for a UI tab's WebSocket """
 
-    def __init__(self, stalls=False, fails=False):
+    def __init__(self, stalls=False, fails=False, close_stalls=False):
         self.events = []
         self.stalls = stalls
         self.fails = fails
+        self.close_stalls = close_stalls
+        self.closed = None
 
     async def send_json(self, event):
         if self.fails:
@@ -117,6 +119,11 @@ class Tab:
         if self.stalls:
             await asyncio.Event().wait()
         self.events.append(event)
+
+    async def close(self, code=1000, reason=None):
+        self.closed = code
+        if self.close_stalls:
+            await asyncio.Event().wait()
 
 
 def test_reopening_a_tab_restarts_the_closed_timer():
@@ -179,6 +186,42 @@ def test_broadcast_drops_tabs_that_stop_reading_or_fail():
     assert elapsed < 0.5
     assert hub.clients == {good}
     assert good.events == [{"type": "reloaded"}, {"type": "connected"}]
+
+
+def test_dropped_tabs_are_closed_without_holding_up_the_broadcast():
+    """ A dropped tab's socket is closed, so the tab notices and reconnects instead of silently missing events """
+    async def scenario():
+        hub = EventHub(send_timeout=0.1)
+        good, stalled, broken = Tab(), Tab(stalls=True, close_stalls=True), Tab(fails=True)
+        for tab in (good, stalled, broken):
+            await hub.add(tab)
+        start = time.monotonic()
+        await hub.broadcast({"type": "reloaded"})
+        elapsed = time.monotonic() - start
+        await asyncio.sleep(0.3)  # the stalled close gives up after the send timeout
+        return good, stalled, broken, elapsed, hub
+
+    good, stalled, broken, elapsed, hub = asyncio.run(scenario())
+    assert elapsed < 0.5
+    assert good.closed is None
+    assert stalled.closed is not None and broken.closed is not None
+    assert not hub._closing
+
+
+def test_dropped_websocket_tab_gets_closed(server):
+    client, manager, app = server
+    hub = app.state.hub
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        assert ws.receive_json() == {"type": "connected"}
+        tab = next(iter(hub.clients))
+
+        async def failing_send(event):
+            raise RuntimeError("stalled")
+        tab.send_json = failing_send
+        assert client.post("/api/reload").status_code == 200
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
+    assert hub.clients == set()
 
 
 # ---------- hot-plug poll loop ----------
@@ -309,9 +352,32 @@ def test_security_headers_on_every_response(server):
             assert response.headers.get(name) == value, (response.request.url, name)
 
 
-def test_upload_still_round_trips(server):
+def test_reload_reads_and_builds_in_one_worker_call(server, monkeypatch):
+    """ Reading the keyboard and building the reply happen under one hold of the device lock """
     client, manager, app = server
+    calls = []
+    real = asyncio.to_thread
+
+    async def counting(fn, *args, **kwargs):
+        calls.append(fn)
+        return await real(fn, *args, **kwargs)
+    monkeypatch.setattr(app_module.asyncio, "to_thread", counting)
+    assert client.post("/api/reload").status_code == 200
+    assert len(calls) == 1
+
+
+def test_disconnect_during_upload_is_logged_without_traceback(server, caplog):
+    client, manager, app = server
+    virtual = manager.backend.virtual
     data = json.loads(client.get("/api/layout-file").content)
     data["layout"][0][0][0] = "KC_Q"
-    assert client.post("/api/layout-file", content=json.dumps(data), headers=ORIGIN).status_code == 200
-    assert manager.backend.virtual.keymap[0][0][0] == encode("KC_Q")
+    data["macro"][3] = [["text", "unplugged"]]
+
+    def unplug(msg):
+        virtual.connected = False
+        raise OSError("device unplugged")
+    virtual._write_macro_buffer = unplug
+    with caplog.at_level(logging.INFO, logger="server.app"):
+        assert client.post("/api/layout-file", content=json.dumps(data)).status_code == 503
+    resync = [r for r in caplog.records if r.name == "server.app" and "re-read" in r.getMessage()]
+    assert resync and all(r.exc_info is None for r in resync)

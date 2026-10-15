@@ -51,6 +51,7 @@ class EventHub:
         self.grace_seconds = grace_seconds
         self.send_timeout = send_timeout
         self._gone_timer = None
+        self._closing = set()
 
     async def add(self, ws):
         self.clients.add(ws)
@@ -82,6 +83,17 @@ class EventHub:
             # a tab that stopped reading (or whose connection broke) must not hold up the others
             log.info("dropping a UI tab from events: %s", e.__class__.__name__)
             self.clients.discard(ws)
+            # close it, so the tab notices and reconnects instead of silently missing events; in the background,
+            # as a stalled connection may not close quickly either
+            task = asyncio.get_running_loop().create_task(self._close(ws))
+            self._closing.add(task)
+            task.add_done_callback(self._closing.discard)
+
+    async def _close(self, ws):
+        try:
+            await asyncio.wait_for(ws.close(code=1011), self.send_timeout)
+        except Exception as e:
+            log.info("closing a dropped UI tab failed: %s", e.__class__.__name__)
 
     async def broadcast(self, event):
         await asyncio.gather(*(self._send(ws, event) for ws in list(self.clients)))
@@ -181,8 +193,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         """ After a write failed halfway: read the keyboard again and tell the UI to do the same """
         try:
             await asyncio.to_thread(manager.reload)
-        except Exception:
-            log.exception("could not re-read the keyboard after a failed write")
+        except NotConnected:
+            log.info("could not re-read the keyboard after a failed write: it is disconnected")
+        except Exception as e:
+            # DeviceManager.reload has logged the failure already
+            log.warning("could not re-read the keyboard after a failed write: %s", e)
         if manager.connected:
             await hub.broadcast({"type": "reloaded"})
 
@@ -205,9 +220,12 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.post("/api/reload", response_model=schemas.KeyboardModel)
     async def reload():
+        def reload_and_build():
+            with manager.lock:  # one hold of the lock: the reply shows exactly what was read
+                manager.reload()
+                return run(lambda kb: model.build(kb, names_for(kb), manager.unlocked))
         # device access waits for the device lock: keep it off the event loop
-        await asyncio.to_thread(manager.reload)
-        result = await asyncio.to_thread(run, lambda kb: model.build(kb, names_for(kb), manager.unlocked))
+        result = await asyncio.to_thread(reload_and_build)
         await hub.broadcast({"type": "reloaded"})
         return result
 
