@@ -187,7 +187,7 @@ Each phase ends with something working and gets its own implementation plan.
 
 | # | Phase | Result |
 |---|---|---|
-| 0 | Core to Python 3.13: update `requirements.txt` (PyQt5 5.15.11, PyInstaller 6.x, PyPI `hidapi`, simpleeval 1.x, pywin32 31x; drop `future`, `sip`, the `altgraph`/`macholib`/`pefile` pins), fix the invalid escape in `keymap/polish.py:21`, wrap float `QPoint` arguments in `test_gui.py` (`:483`, `:573`) in `int()`, make the Windows autorefresh window-class registration safe to repeat | The current Qt app and the tests run on 3.13 |
+| 0 | Core to Python 3.13: update `requirements.txt` (PyQt5 5.15.11, PyInstaller 6.x, PyPI `hidapi`, simpleeval 1.x, pywin32 31x; drop `future`, `sip`, the `altgraph`/`macholib`/`pefile` pins), fix the invalid escape in `keymap/polish.py:21`, wrap float `QPoint` arguments in `test_gui.py` (`:483`, `:573`) in `int()`, make the Windows autorefresh window-class registration safe to repeat, make the GUI tests use throwaway Qt settings (they read the developer's real Vial settings) and patch `hidproxy.hid` so they run on every OS | The current Qt app and the tests run on 3.13 |
 | 1 | Simulator + backend + API, with tests | `vial --fake` serves the keyboard as JSON |
 | 2 | UI shell, keyboard drawing, Edit view, Inspector, keycode picker | First usable version: edit keymaps |
 | 3 | Overview view + analysis | See every layer at once |
