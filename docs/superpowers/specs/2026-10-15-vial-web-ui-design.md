@@ -58,7 +58,8 @@ All development, tests and screenshots run against the simulated keyboard (§7).
 ### Startup and lifecycle
 
 1. `vial` (or `Vial.exe`) starts the server on a free port on `127.0.0.1`, generates a random session token, prints the URL with the token to stdout and `vial.log`, and opens the default browser at it.
-2. `vial --fake [--definition FILE] [--layout FILE.vil]` does the same against the simulator. In this mode `hidapi` is never imported.
+   *Note (implementation):* the token is deliberately kept out of `vial.log`; only stdout shows the URL with it.
+2. `vial --fake [--definition FILE] [--layout FILE.vil]` does the same against the simulator. In this mode `hidapi` is never imported, and it keeps its own lock, session file, log and names (a `fake` subfolder), so it never attaches to a real instance, nor a real launch to a fake one.
 3. **Browser tab closed:** the server keeps running. When the last UI WebSocket disconnects and no tab reconnects within about 3 seconds, it prints:
    ```
    Browser window closed. Vial is still running. Reopen it at:

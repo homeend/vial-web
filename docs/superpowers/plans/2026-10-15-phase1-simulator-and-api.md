@@ -3617,7 +3617,7 @@ git commit -m "feat: vial_web entry point (local server, --fake simulator mode)"
 
 Unit tests use Starlette's test client, which doesn't exercise uvicorn's WebSocket support. This check runs the real server and a real (headless) browser.
 
-- [ ] **Step 1: Start the server** (always with `--fake`):
+- [ ] **Step 1: Start the server** (always with `--fake`). Since the fake/real separation, `--fake` keeps its own lock and session file and never attaches to a real instance: it starts its own simulator even while the owner's real Vial runs.
 
 ```bash
 cd src/main/python && PYTHONUNBUFFERED=1 ../../../.venv/Scripts/python.exe vial_web.py --fake --no-browser --port 51999
@@ -3665,7 +3665,7 @@ Expected:
 ```
 landed on: http://127.0.0.1:51999/
 {"name":"Simulated Corne","firstKey":"Tab","put":200,"newKey":"Esc","ws":"{\"type\":\"connected\"}"}
-cookies: [ 'vial_session httpOnly=true sameSite=Strict' ]
+cookies: [ 'vial_session_51999 httpOnly=true sameSite=Strict' ]
 without token: 401
 ```
 
@@ -3680,6 +3680,7 @@ Press Ctrl+C to stop.
 - [ ] **Step 3: Stop the server** with Ctrl+C. Check that nothing is still listening on the port: `netstat -ano | grep 51999` should print nothing.
 
 - [ ] **Step 4: Owner checklist (the owner runs this, not you).** With the owner's keyboard plugged in: `python src/main/python/vial_web.py`.
+  - Close the Qt Vial app first (both can open the keyboard).
   - The browser opens on the placeholder page.
   - `http://127.0.0.1:<port>/api/keyboard` shows the keyboard's real name and layers.
   - Unplug the keyboard: `/api/session` reports `disconnected`. Plug it back in: `connected` within about a second.
