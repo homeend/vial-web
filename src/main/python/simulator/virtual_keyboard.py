@@ -211,6 +211,8 @@ class VirtualKeyboard:
         layer, row, col, code = struct.unpack_from(">BBBH", msg, 1)
         if layer >= self.layers or row >= self.rows or col >= self.cols:
             return msg[0:6]
+        # stricter than the real firmware, which only filters QK_BOOT in set_buffer, not in single-key writes:
+        # server code must not rely on this check
         code = self._firewall(code)
         self.keymap[layer][row][col] = code
         self.writes.append(("keycode", layer, row, col, code))

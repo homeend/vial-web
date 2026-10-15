@@ -2,13 +2,13 @@ import time
 import pywintypes
 import win32gui, win32con, win32api
 import win32gui_struct
+import winerror
 
 from autorefresh.autorefresh_thread import AutorefreshThread
 
 
 GUID_DEVINTERFACE_USB_DEVICE = "{A5DCBF10-6530-11D2-901F-00C04FB951ED}"
 DEVICE_NOTIFY_ALL_INTERFACE_CLASSES = 4
-ERROR_CLASS_ALREADY_EXISTS = 1410
 WINDOW_CLASS_NAME = "VIAL_DEVICE_DETECTION"
 
 g_changed_windows = set()
@@ -39,7 +39,7 @@ def register_window_class():
     try:
         win32gui.RegisterClass(wc)
     except pywintypes.error as e:
-        if e.winerror != ERROR_CLASS_ALREADY_EXISTS:
+        if e.winerror != winerror.ERROR_CLASS_ALREADY_EXISTS:
             raise
 
 

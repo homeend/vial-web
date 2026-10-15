@@ -21,7 +21,8 @@ class NamesStore:
         file as empty; reading for write only treats a missing file as empty, moves an unparsable one aside to
         <path>.corrupt and lets other I/O errors propagate, so a failed read never leads to wiping the names. """
         try:
-            with open(self.path, "r", encoding="utf-8") as inf:
+            # utf-8-sig: a file saved by Windows Notepad may start with a byte order mark
+            with open(self.path, "r", encoding="utf-8-sig") as inf:
                 data = json.load(inf)
         except FileNotFoundError:
             return {}

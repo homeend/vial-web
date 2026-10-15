@@ -7,7 +7,7 @@ MSG_LEN = 32
 
 def hid_send(dev, msg, retries=1):
     if len(msg) > MSG_LEN:
-        raise RuntimeError("message must be less than 32 bytes")
+        raise RuntimeError("message must be at most {} bytes".format(MSG_LEN))
     msg += b"\x00" * (MSG_LEN - len(msg))
 
     data = b""

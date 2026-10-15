@@ -26,6 +26,8 @@ RE_MACRO = re.compile(r"^M(\d+)$")
 RE_LAYER = re.compile(r"^(MO|TG|TO|TT|OSL|DF|PDF)\((\d+)\)$")
 RE_LAYER_TAP = re.compile(r"^LT(\d+)\((.+)\)$")
 RE_NUMBERED = re.compile(r"^(M\d+|(TD|MO|TG|TO|TT|OSL|DF|PDF)\(\d+\))$")
+MEDIA_CODES = frozenset(k.qmk_id for k in KEYCODES_MEDIA)
+LIGHTING_CODES = frozenset(k.qmk_id for k in KEYCODES_BACKLIGHT)
 
 
 def _result(code, kind, tap, hold=None, layer=None, index=None):
@@ -86,7 +88,10 @@ def describe(code):
         direct = RAWCODES_MAP.get(Keycode.deserialize(code))
         if direct is not None and not direct.masked:
             return _result(code, "basic", direct.label)
-        return _result(code, "basic", "{}+{}".format(_mods(outer), _short_label(inner)))
+        key = _short_label(inner)
+        if not key:  # e.g. LCTL(KC_NO): just the modifier
+            return _result(code, "modifier", _mods(outer))
+        return _result(code, "basic", "{}+{}".format(_mods(outer), key))
 
     if code.startswith("OSM("):
         return _result(code, "one-shot-mod", "OSM", Keycode.label(code).split("\n", 1)[-1].replace("\n", " "))
@@ -94,9 +99,9 @@ def describe(code):
         return _result(code, "modifier", Keycode.label(code))
     if code.startswith(MOUSE_PREFIXES):
         return _result(code, "mouse", Keycode.label(code))
-    if code in {k.qmk_id for k in KEYCODES_MEDIA}:
+    if code in MEDIA_CODES:
         return _result(code, "media", Keycode.label(code))
-    if code in {k.qmk_id for k in KEYCODES_BACKLIGHT}:
+    if code in LIGHTING_CODES:
         return _result(code, "lighting", Keycode.label(code))
     if Keycode.find(code) is not None and Keycode.is_basic(code):
         return _result(code, "basic", Keycode.label(code))
@@ -111,13 +116,13 @@ def parse_value(expression):
         # their real value (the generic parser gets some wrong, e.g. TO(n), or doesn't know them, e.g. M20, PDF(n))
         try:
             value = Keycode.resolve(expression)
-        except RuntimeError:
-            raise ValueError("not a valid keycode: {}".format(expression))
+        except RuntimeError as e:
+            raise ValueError("not a valid keycode: {}".format(expression)) from e
     else:
         try:
             value = Keycode.deserialize(expression, reraise=True)
         except Exception as e:
-            raise ValueError("not a valid keycode: {}".format(e))
+            raise ValueError("not a valid keycode: {}".format(e)) from e
     if isinstance(value, bool):  # an int to Python, but "True" isn't a keycode
         raise ValueError("not a valid keycode: {}".format(expression))
     if not isinstance(value, int) or not 0 <= value <= 0xFFFF:

@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-import json
 from collections import defaultdict
 
 from PyQt5 import QtCore

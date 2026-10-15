@@ -1,3 +1,4 @@
+import codecs
 import json
 
 import pytest
@@ -111,3 +112,13 @@ def test_failed_replace_leaves_no_temp_file(tmp_path, monkeypatch):
 def test_truncation_never_leaves_trailing_space(tmp_path):
     store = NamesStore(str(tmp_path / "names.json"))
     assert store.set("ABC", "layers", 0, "a" * 39 + " b")["layers"]["0"] == "a" * 39
+
+
+def test_file_with_a_byte_order_mark_is_read(tmp_path):
+    """ Windows Notepad may save UTF-8 with a BOM; that is not a corrupt file """
+    path = tmp_path / "names.json"
+    path.write_bytes(codecs.BOM_UTF8 + json.dumps({"ABC": {"layers": {"0": "base"}}}).encode("utf-8"))
+    store = NamesStore(str(path))
+    assert store.get("ABC")["layers"] == {"0": "base"}
+    assert store.set("ABC", "layers", 1, "nav")["layers"] == {"0": "base", "1": "nav"}
+    assert not (tmp_path / "names.json.corrupt").exists()

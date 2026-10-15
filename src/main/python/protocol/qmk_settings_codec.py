@@ -17,7 +17,7 @@ class QmkSettingsCodec:
     def load(cls, path=None):
         """ Load setting definitions; the default path works when running from source """
         cls.qsid_fields = defaultdict(list)
-        with open(path or DEFAULT_DEFINITIONS, "r") as inf:
+        with open(path or DEFAULT_DEFINITIONS, "r", encoding="utf-8") as inf:
             cls.settings_defs = json.load(inf)
         for tab in cls.settings_defs["tabs"]:
             for field in tab["fields"]:
@@ -30,6 +30,15 @@ class QmkSettingsCodec:
         return cls.qsid_fields
 
     @classmethod
+    def _known_fields(cls, qsid):
+        """ The fields of a known qsid. Looks it up without adding it to the defaultdict, which would make it
+        "supported" from then on. """
+        fields = cls.fields().get(qsid)
+        if not fields:
+            raise RuntimeError("unknown QMK setting {}".format(qsid))
+        return fields
+
+    @classmethod
     def is_qsid_supported(cls, qsid):
         """ Return whether this qsid is known to the settings definitions """
         return qsid in cls.fields()
@@ -37,7 +46,7 @@ class QmkSettingsCodec:
     @classmethod
     def qsid_serialize(cls, qsid, data):
         """ Serialize from internal representation into binary that can be sent to the firmware """
-        fields = cls.fields()[qsid]
+        fields = cls._known_fields(qsid)
         if fields[0]["type"] == "boolean":
             assert isinstance(data, int)
             return data.to_bytes(fields[0].get("width", 1), byteorder="little")
@@ -49,7 +58,7 @@ class QmkSettingsCodec:
     @classmethod
     def qsid_deserialize(cls, qsid, data):
         """ Deserialize from binary received from firmware into internal representation """
-        fields = cls.fields()[qsid]
+        fields = cls._known_fields(qsid)
         if fields[0]["type"] == "boolean":
             return int.from_bytes(data[0:fields[0].get("width", 1)], byteorder="little")
         elif fields[0]["type"] == "integer":

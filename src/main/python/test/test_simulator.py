@@ -350,3 +350,15 @@ def test_closed_device_raises_like_hidapi():
         transport.hid_send(dev, b"\x01")
     dev.open_path(b"simulated")
     assert transport.hid_send(dev, b"\x01")[0] == 1
+
+
+@pytest.mark.parametrize("lookup", [
+    lambda qsid: QmkSettingsCodec.qsid_serialize(qsid, 1),
+    lambda qsid: QmkSettingsCodec.qsid_deserialize(qsid, b"\x01"),
+])
+def test_unknown_qsid_lookup_does_not_make_it_supported(lookup):
+    assert not QmkSettingsCodec.is_qsid_supported(60000)
+    with pytest.raises(RuntimeError):
+        lookup(60000)
+    assert not QmkSettingsCodec.is_qsid_supported(60000)
+    assert 60000 not in QmkSettingsCodec.fields()

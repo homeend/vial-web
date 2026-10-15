@@ -3,7 +3,6 @@ import logging
 import os
 import pathlib
 import sys
-import time
 from logging.handlers import RotatingFileHandler
 
 from PyQt5.QtCore import QCoreApplication, QStandardPaths
@@ -22,7 +21,6 @@ VIAL_SERIAL_NUMBER_MAGIC = "vial:f64c2b3c"
 
 # For bootloader
 VIBL_SERIAL_NUMBER_MAGIC = "vibl:d4f8159c"
-
 
 # these should match what we have in vial-qmk/keyboards/vial_example
 # so that people don't accidentally reuse a sample keyboard UID
