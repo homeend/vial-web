@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import html from "../../index.html?raw";
 import { applyTheme, readTheme, saveTheme, THEME_KEY, type ThemeRoot, type ThemeStorage } from "./theme";
 
 function storage(initial: Record<string, string> = {}): ThemeStorage & { data: Record<string, string> } {
@@ -78,5 +79,13 @@ describe("applyTheme", () => {
     applyTheme(r, "dark");
     applyTheme(r, "system");
     expect(r.attributes).toEqual({});
+  });
+});
+
+describe("the pre-paint script in index.html", () => {
+  it("reads the same storage key and the same two values as theme.ts", () => {
+    expect(html).toContain(JSON.stringify(THEME_KEY));
+    expect(html).toContain('"light"');
+    expect(html).toContain('"dark"');
   });
 });
