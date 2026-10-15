@@ -1,15 +1,59 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { toasts } from "../lib/toasts.svelte";
+
+  let region: HTMLElement;
+  /** where focus was before it came into the toasts: it goes back there when the last focused toast goes */
+  let returnTo: HTMLElement | null = null;
+
+  function focusIn(id: number, event: FocusEvent) {
+    toasts.hold(id, "focus", true);
+    const from = event.relatedTarget;
+    if (from instanceof HTMLElement && !region.contains(from)) returnTo = from;
+  }
+
+  function focusOut(id: number, event: FocusEvent) {
+    const to = event.relatedTarget;
+    if (!(to instanceof Node && (event.currentTarget as HTMLElement).contains(to))) toasts.hold(id, "focus", false);
+  }
+
+  async function dismiss(id: number) {
+    const i = toasts.items.findIndex((t) => t.id === id);
+    const hadFocus = region.querySelector(`[data-toast="${id}"]`)?.contains(document.activeElement) ?? false;
+    // the next toast's button, else the one before, else where focus came from
+    const neighbour = toasts.items[i + 1] ?? toasts.items[i - 1];
+    toasts.dismiss(id);
+    if (!hadFocus) return;
+    await tick();
+    const next = neighbour && region.querySelector<HTMLElement>(`[data-toast="${neighbour.id}"] button`);
+    const target = next ?? (returnTo?.isConnected ? returnTo : region);
+    target.focus();
+  }
 </script>
 
-<div class="toasts" role="status" aria-live="assertive">
+<!-- the live region reads out each message alone (not the Dismiss buttons); the toasts themselves aren't live -->
+<div class="visually-hidden" aria-live="assertive">
   {#each toasts.items as toast (toast.id)}
-    <div class="toast">
-      <span>{toast.message}</span>
-      <button type="button" aria-label="Dismiss" onclick={() => toasts.dismiss(toast.id)}>×</button>
-    </div>
+    <p>{toast.message}</p>
   {/each}
 </div>
+
+<section class="toasts" aria-label="Notifications" tabindex="-1" bind:this={region}>
+  {#each toasts.items as toast (toast.id)}
+    <div
+      class="toast"
+      data-toast={toast.id}
+      role="group"
+      onmouseenter={() => toasts.hold(toast.id, "hover", true)}
+      onmouseleave={() => toasts.hold(toast.id, "hover", false)}
+      onfocusin={(e) => focusIn(toast.id, e)}
+      onfocusout={(e) => focusOut(toast.id, e)}
+    >
+      <span>{toast.message}</span>
+      <button type="button" aria-label="Dismiss" onclick={() => dismiss(toast.id)}>×</button>
+    </div>
+  {/each}
+</section>
 
 <style>
   .toasts {
@@ -20,6 +64,7 @@
     display: grid;
     gap: 8px;
     width: min(380px, calc(100vw - 40px));
+    outline: none;
   }
 
   .toast {

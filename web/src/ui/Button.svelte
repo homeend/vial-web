@@ -8,10 +8,11 @@
     children: Snippet;
   }
 
-  let { variant = "secondary", size = "md", type = "button", children, ...rest }: Props = $props();
+  let { variant = "secondary", size = "md", type = "button", class: className, children, ...rest }: Props = $props();
 </script>
 
-<button class="btn {variant} {size}" {type} {...rest}>
+<!-- a caller's class is added to the button's own -->
+<button class={["btn", variant, size, className]} {type} {...rest}>
   {@render children()}
 </button>
 

@@ -8,7 +8,8 @@
   let { tone, title, message }: Props = $props();
 </script>
 
-<div class="banner {tone}" role="alert">
+<!-- danger interrupts (the keyboard is unplugged, or couldn't be read); warning waits its turn -->
+<div class="banner {tone}" role={tone === "danger" ? "alert" : "status"}>
   <svg viewBox="0 0 20 20" aria-hidden="true">
     <path d="M10 3l8 14H2z" />
     <path d="M10 8.5v3.5M10 14.5v.01" />
