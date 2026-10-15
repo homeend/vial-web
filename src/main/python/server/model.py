@@ -43,6 +43,19 @@ def layer_name(names, index):
     return (custom, True) if custom else (("Base" if index == 0 else "Layer {}".format(index)), False)
 
 
+def display_name(kb, names, kind, index):
+    """ The name a layer, tap dance or macro is shown with -> schemas.Named """
+    if kind == "layers":
+        name, custom = layer_name(names, index)
+    elif kind == "tapDance":
+        entry = tap_dance(index, kb.tap_dance_entries[index], names)
+        name, custom = entry.name, entry.customName
+    else:
+        entry = macros(kb, names).items[index]
+        name, custom = entry.name, entry.customName
+    return schemas.Named(kind=kind, index=index, name=name, customName=custom)
+
+
 def tap_dance(index, entry, names):
     tap, hold, double_tap, tap_hold, term = entry
     slots = [d(tap), d(hold), d(double_tap), d(tap_hold)]
@@ -148,11 +161,16 @@ def uid_of(kb):
     return "{:016X}".format(kb.keyboard_id & 0xFFFFFFFFFFFFFFFF)
 
 
+def catalogue_keycode(keycode):
+    described = describe(keycode.qmk_id)
+    return schemas.CatalogueKeycode(**described, aliases=[a for a in keycode.alias if a != described["code"]])
+
+
 def keycode_catalogue():
     """ Keycodes the picker offers, grouped; hidden (unsupported) keycodes are left out """
     out = []
     for name, keycodes in KEYCODE_CATEGORIES:
-        items = [d(kc.qmk_id) for kc in keycodes if not kc.hidden and "(kc)" not in kc.qmk_id]
+        items = [catalogue_keycode(kc) for kc in keycodes if not kc.hidden and "(kc)" not in kc.qmk_id]
         masks = [kc.qmk_id for kc in keycodes if not kc.hidden and "(kc)" in kc.qmk_id]
         if items or masks:
             out.append({"name": name, "keycodes": items, "templates": masks})

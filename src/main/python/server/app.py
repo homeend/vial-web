@@ -5,9 +5,10 @@ import contextlib
 import logging
 import os
 import secrets
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -163,6 +164,17 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     app.state.hub = hub
     app.state.manager = manager
 
+    def openapi():
+        # WebSocket messages have no place in OpenAPI's paths: the event shape is added as a component, so the UI's
+        # types are generated for it too
+        if app.openapi_schema is None:
+            schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+            components = schema.setdefault("components", {}).setdefault("schemas", {})
+            components["Event"] = schemas.Event.model_json_schema(ref_template="#/components/schemas/{model}")
+            app.openapi_schema = schema
+        return app.openapi_schema
+    app.openapi = openapi
+
     def token_ok(value):
         # as bytes: compare_digest refuses str with non-ASCII characters
         return value is not None and secrets.compare_digest(value.encode("utf-8", "replace"), token.encode("utf-8"))
@@ -287,11 +299,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
                     lang: Lang = languages.DEFAULT):
         return run(lambda kb: edits.set_encoder(kb, layer, index, direction, body.code), lang)
 
-    @app.put("/api/layout-options")
+    @app.put("/api/layout-options", response_model=schemas.LayoutOptionsValue)
     def set_layout_options(body: schemas.SetLayoutOptions):
-        return {"value": run(lambda kb: edits.set_layout_options(kb, body.value))}
+        return schemas.LayoutOptionsValue(value=run(lambda kb: edits.set_layout_options(kb, body.value)))
 
-    @app.get("/api/keycodes")
+    @app.get("/api/keycodes", response_model=list[schemas.KeycodeCategory])
     def keycodes(lang: Lang = languages.DEFAULT):
         return offline(model.keycode_catalogue, lang)
 
@@ -343,12 +355,14 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     def get_names():
         return run(lambda kb: names_for(kb))
 
-    @app.put("/api/names/{kind}/{index}", response_model=schemas.Names)
-    def set_name(kind: str, index: int, body: schemas.NameIn):
+    @app.put("/api/names/{kind}/{index}", response_model=schemas.Named)
+    def set_name(kind: Literal["layers", "tapDance", "macros"], index: int, body: schemas.NameIn,
+                 lang: Lang = languages.DEFAULT):
         def do(kb):
             edits.check_name(kb, kind, index)
-            return names.set(model.uid_of(kb), kind, index, body.name)
-        return run(do)
+            stored = names.set(model.uid_of(kb), kind, index, body.name)
+            return model.display_name(kb, stored, kind, index)
+        return run(do, lang)
 
     @app.get("/api/layout-file")
     def download_layout():
@@ -419,7 +433,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     if static_dir and os.path.isdir(static_dir):
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="ui")
     else:
-        @app.get("/", response_class=HTMLResponse)
+        @app.get("/", response_class=HTMLResponse, include_in_schema=False)
         def placeholder():
             return PLACEHOLDER_PAGE
 

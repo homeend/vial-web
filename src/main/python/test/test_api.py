@@ -155,6 +155,13 @@ def test_keycode_catalogue_has_descriptions(client):
     assert gesc["description"].startswith("Esc normally") and "tooltip" not in gesc
 
 
+def test_keycode_catalogue_lists_aliases_for_search(client):
+    basic = client.get("/api/keycodes").json()[0]["keycodes"]
+    esc = next(k for k in basic if k["code"] == "KC_ESCAPE")
+    assert (esc["tap"], esc["aliases"]) == ("Esc", ["KC_ESC"])
+    assert next(k for k in basic if k["code"] == "KC_A")["aliases"] == []
+
+
 def test_placeholder_page_when_ui_not_built(client):
     response = client.get("/")
     assert response.status_code == 200 and "Vial server is running" in response.text
@@ -169,6 +176,18 @@ def test_placeholder_page_keeps_an_events_connection_open(client):
 
 
 # ---------- writing ----------
+
+def test_layout_options_answer_with_the_value_set(tmp_path):
+    definition = {"name": "Options", "matrix": {"rows": 1, "cols": 2},
+                  "layouts": {"labels": ["Split"], "keymap": [["0,0", "0,1\n\n\n0,0"]]}}
+    from simulator.virtual_keyboard import VirtualKeyboard
+    manager = DeviceManager(FakeBackend(lambda: VirtualKeyboard(definition)))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "n.json")), TOKEN, PORT, poll_interval=0)
+    with TestClient(app, base_url=BASE) as c:
+        c.get("/?token=" + TOKEN, follow_redirects=False)
+        assert c.put("/api/layout-options", json={"value": 1}).json() == {"value": 1}
+
 
 def test_set_key_writes_to_keyboard(client, virtual):
     response = client.put("/api/keymap/0/0/0", json={"code": "LCTL(KC_A)"})
@@ -243,9 +262,26 @@ def test_settings_and_lighting(client, virtual):
 
 
 def test_names(client):
-    assert client.put("/api/names/layers/1", json={"name": "symbols"}).json()["layers"] == {"1": "symbols"}
+    named = client.put("/api/names/layers/1", json={"name": "symbols"}).json()
+    assert named == {"kind": "layers", "index": 1, "name": "symbols", "customName": True}
+    assert client.get("/api/names").json()["layers"] == {"1": "symbols"}
     assert client.get("/api/keyboard").json()["layers"][1]["name"] == "symbols"
     assert client.put("/api/names/combos/1", json={"name": "x"}).status_code == 422
+
+
+def test_cleared_name_answers_with_the_name_shown_instead(client):
+    client.put("/api/names/layers/0", json={"name": "letters"})
+    cleared = client.put("/api/names/layers/0", json={"name": ""}).json()
+    assert cleared == {"kind": "layers", "index": 0, "name": "Base", "customName": False}
+    assert client.put("/api/names/layers/3", json={"name": None}).json()["name"] == "Layer 3"
+
+
+def test_tap_dance_and_macro_names_answer_with_the_suggested_name(client):
+    suggested = client.put("/api/names/tapDance/0", json={"name": ""}).json()
+    assert suggested == {"kind": "tapDance", "index": 0, "name": "Tab / Caps Lock", "customName": False}
+    custom = client.put("/api/names/macros/0", json={"name": "status"}).json()
+    assert custom == {"kind": "macros", "index": 0, "name": "status", "customName": True}
+    assert client.put("/api/names/macros/0", json={"name": ""}).json()["name"] == "git status"
 
 
 def test_layout_file_round_trip(client, virtual):

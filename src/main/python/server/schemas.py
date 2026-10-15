@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ Shapes of everything the API sends and accepts. The UI's TypeScript types are generated from these. """
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -165,9 +165,27 @@ class Lighting(BaseModel):
     backlight: Optional[Backlight] = None
 
 
+class LayoutOptionsValue(BaseModel):
+    value: int
+
+
+class Named(BaseModel):
+    """ The name a layer, tap dance or macro is shown with: the user's, or the one given when it has none """
+    kind: Literal["layers", "tapDance", "macros"]
+    index: int
+    name: str
+    customName: bool
+
+
+class Event(BaseModel):
+    """ What /api/events sends: the keyboard was plugged in, unplugged, or read again """
+    type: Literal["connected", "disconnected", "reloaded"]
+
+
 class LayoutOptions(BaseModel):
     value: int
-    labels: list
+    labels: list[Union[str, list[str]]]
+    """ one entry per option, as in vial.json: a name (an on/off option), or [name, choice 0, choice 1, ...] """
 
 
 class KeyboardModel(BaseModel):
@@ -197,6 +215,19 @@ class Session(BaseModel):
     fake: bool
     device: Optional[str] = None
     error: Optional[str] = None
+
+
+class CatalogueKeycode(Described):
+    aliases: list[str] = []
+    """ other names of the keycode, e.g. KC_ESC for KC_ESCAPE """
+
+
+class KeycodeCategory(BaseModel):
+    """ A group of the keycode picker """
+    name: str
+    keycodes: list[CatalogueKeycode]
+    templates: list[str]
+    """ keycodes that wrap another one, e.g. "LT1(kc)" or "LSFT(kc)" """
 
 
 class KeyboardLanguage(BaseModel):
