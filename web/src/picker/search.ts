@@ -12,21 +12,29 @@ interface Entry {
   kind: number;
 }
 
-const SIDES: Record<string, string> = { l: "left", r: "right" };
+const SIDES: Record<string, string> = { L: "left", R: "right" };
+
+/** the other names people search the GUI key by */
+const GUI_WORDS = ["gui", "win", "windows", "cmd", "command", "super", "meta"];
 
 function fold(text: string): string {
   return text.normalize("NFC").toLowerCase();
 }
 
-/** "Left Shift" for LShift: plain modifiers have no description, so give them the words people search for */
-function derivedLabels(k: CatalogueKeycode, label: string): string[] {
-  const m = k.kind === "modifier" ? /^([lr])(ctrl|shift|alt|gui)$/.exec(label) : null;
-  return m ? [m[2], `${SIDES[m[1]]} ${m[2]}`] : [];
+/**
+ * "Left Shift" for KC_LSHIFT: plain modifiers have no description, so give them the words people search for.
+ * Taken from the code, not the legend: a localized legend (Polish "AltGr") is still the right Alt.
+ */
+function derivedLabels(k: CatalogueKeycode): string[] {
+  const m = /^KC_([LR])(CTRL|SHIFT|ALT|GUI)$/.exec(k.code);
+  if (!m) return [];
+  const words = m[2] === "GUI" ? GUI_WORDS : [m[2].toLowerCase()];
+  return words.flatMap((word) => [word, `${SIDES[m[1]]} ${word}`]);
 }
 
 function entry(k: CatalogueKeycode): Entry {
   const labels = [k.tap, k.legend.shifted, k.legend.altGr].filter((l): l is string => !!l).map(fold);
-  for (const label of [...labels]) labels.push(...derivedLabels(k, label));
+  labels.push(...derivedLabels(k));
   const names = [k.code, ...k.aliases].map(fold);
   return {
     k,
@@ -80,9 +88,11 @@ function indexOf(categories: KeycodeCategory[]): Entry[] {
   return index;
 }
 
+const normalize = (query: string) => fold(query).trim().replace(/\s+/g, " ");
+
 /** Keycodes of all categories matching the query, best first, each once */
 export function searchKeycodes(categories: KeycodeCategory[], query: string): CatalogueKeycode[] {
-  const q = fold(query).trim().replace(/\s+/g, " ");
+  const q = normalize(query);
   if (!q) return [];
   const found: { k: CatalogueKeycode; rank: number; kind: number; order: number }[] = [];
   for (const e of indexOf(categories)) {
@@ -90,4 +100,28 @@ export function searchKeycodes(categories: KeycodeCategory[], query: string): Ca
     if (r != null) found.push({ k: e.k, rank: r, kind: e.kind, order: found.length });
   }
   return found.sort((a, b) => a.rank - b.rank || a.kind - b.kind || a.order - b.order).map((f) => f.k);
+}
+
+/** Kinds of template, by the words that name them (without spaces or dashes) */
+const TEMPLATE_KINDS: { words: string[]; matches: (template: string) => boolean }[] = [
+  { words: ["mt", "modtap"], matches: (t) => /_T\(kc\)$/.test(t) },
+  { words: ["lt", "layertap"], matches: (t) => /^LT\d+\(kc\)$/.test(t) },
+];
+
+/**
+ * Templates ("LSFT(kc)") of all categories whose name starts with the query, or of the kind it names
+ * ("mod tap", "mt", "layer tap", "lt"), in catalogue order, each once. A single character finds none.
+ */
+export function searchTemplates(categories: KeycodeCategory[], query: string): string[] {
+  const q = normalize(query);
+  if (q.length < 2) return [];
+  const word = q.replace(/[\s-]+/g, "");
+  const kinds = TEMPLATE_KINDS.filter((kind) => kind.words.includes(word));
+  const found = new Set<string>();
+  for (const category of categories) {
+    for (const t of category.templates) {
+      if (fold(t).startsWith(q) || kinds.some((kind) => kind.matches(t))) found.add(t);
+    }
+  }
+  return [...found];
 }

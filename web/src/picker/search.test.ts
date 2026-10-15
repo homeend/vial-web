@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogueKeycode, KeycodeCategory } from "../api/types";
-import { searchKeycodes } from "./search";
+import { searchKeycodes, searchTemplates } from "./search";
 
 function k(code: string, tap: string, aliases: string[] = [], description: string | null = null,
   shifted: string | null = null, kind: CatalogueKeycode["kind"] = "basic"): CatalogueKeycode {
@@ -110,5 +110,61 @@ describe("searchKeycodes", () => {
     expect(codes("  caps \t  lock ")).toEqual(["KC_CAPSLOCK"]);
     const cats = catalogue(k("KC_E", "é"));
     expect(codes("é", cats)).toEqual(["KC_E"]);
+  });
+});
+
+describe("modifier words come from the code", () => {
+  const mods = catalogue(
+    k("KC_LGUI", "LGui", ["KC_LCMD", "KC_LWIN"], null, null, "modifier"),
+    k("KC_RGUI", "RGui", ["KC_RCMD", "KC_RWIN"], null, null, "modifier"),
+    k("KC_RALT", "AltGr", ["KC_ALGR", "KC_ROPT"], null, null, "modifier"),
+    k("KC_LALT", "LAlt", ["KC_LOPT"], null, null, "modifier"),
+  );
+
+  it("finds the GUI keys by their other names", () => {
+    for (const word of ["win", "windows", "cmd", "command", "super", "meta", "gui"]) {
+      expect(codes(word, mods)).toEqual(["KC_LGUI", "KC_RGUI"]);
+    }
+    expect(codes("left win", mods)).toEqual(["KC_LGUI"]);
+    expect(codes("right super", mods)).toEqual(["KC_RGUI"]);
+  });
+
+  it("finds a localized modifier by its side and name", () => {
+    expect(codes("right alt", mods)).toEqual(["KC_RALT"]);
+    expect(codes("alt", mods)).toEqual(["KC_RALT", "KC_LALT"]);
+  });
+});
+
+describe("searchTemplates", () => {
+  const cats: KeycodeCategory[] = [
+    { name: "Layers", keycodes: [], templates: ["LT0(kc)", "LT1(kc)"] },
+    {
+      name: "Modifiers", keycodes: [],
+      templates: ["LSFT(kc)", "LALT(kc)", "LSA(kc)", "LSFT_T(kc)", "LALT_T(kc)", "MEH_T(kc)", "ALL_T(kc)"],
+    },
+    { name: "Again", keycodes: [], templates: ["LSFT(kc)"] },
+  ];
+  const found = (query: string) => searchTemplates(cats, query);
+
+  it("finds templates whose name starts with the query, each once", () => {
+    expect(found("lsft")).toEqual(["LSFT(kc)", "LSFT_T(kc)"]);
+    expect(found("LS")).toEqual(["LSFT(kc)", "LSA(kc)", "LSFT_T(kc)"]);
+    expect(found("lsft_t(")).toEqual(["LSFT_T(kc)"]);
+  });
+
+  it("finds mod-taps and layer-taps by what they are", () => {
+    const modTaps = ["LSFT_T(kc)", "LALT_T(kc)", "MEH_T(kc)", "ALL_T(kc)"];
+    expect(found("mod tap")).toEqual(modTaps);
+    expect(found("mt")).toEqual(modTaps);
+    expect(found("Mod-Tap")).toEqual(modTaps);
+    expect(found("layer tap")).toEqual(["LT0(kc)", "LT1(kc)"]);
+    expect(found("lt")).toEqual(["LT0(kc)", "LT1(kc)"]);
+  });
+
+  it("needs two characters, and finds nothing for other words", () => {
+    expect(found("l")).toEqual([]);
+    expect(found("  ")).toEqual([]);
+    expect(found("esc")).toEqual([]);
+    expect(found("alt")).toEqual([]);
   });
 });

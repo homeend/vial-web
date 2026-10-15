@@ -3,6 +3,7 @@
   import { ApiError } from "../api/errors";
   import type { Described } from "../api/types";
   import Button from "../ui/Button.svelte";
+  import { isUnfinished } from "./template";
 
   interface Props {
     /** the expression typed so far; a template click fills it in */
@@ -17,13 +18,16 @@
   let result = $state<Described | null>(null);
   let problem = $state<string | null>(null);
   let checking = $state(false);
+  /** a template not filled in yet, e.g. "LSFT(KC_)": nothing to check */
+  let unfinished = $state(false);
 
   // ask the server what the expression means, once typing pauses
   $effect(() => {
     const expression = value.trim();
     result = null;
     problem = null;
-    if (!expression) {
+    unfinished = isUnfinished(expression);
+    if (!expression || unfinished) {
       checking = false;
       return;
     }
@@ -74,6 +78,8 @@
     {:else if result}
       <code>{result.code}</code>
       <span>tap {result.tap || "nothing"}{result.hold ? `, hold ${result.hold}` : ""}</span>
+    {:else if unfinished}
+      <span class="muted">Finish the keycode inside, e.g. LSFT(KC_A); it is checked once complete.</span>
     {:else if checking}
       <span class="muted">Checking…</span>
     {:else}

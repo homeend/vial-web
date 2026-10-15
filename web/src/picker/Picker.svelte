@@ -3,7 +3,8 @@
   import type { CatalogueKeycode, KeycodeCategory } from "../api/types";
   import { keyFace, type Names } from "../keyboard/labels";
   import AnyKeycode from "./AnyKeycode.svelte";
-  import { searchKeycodes } from "./search";
+  import { searchKeycodes, searchTemplates } from "./search";
+  import { fillTemplate } from "./template";
 
   interface Props {
     open: boolean;
@@ -19,26 +20,35 @@
   let { open = $bindable(), subject, categories, current, names, onpick }: Props = $props();
 
   let dialog = $state<HTMLDialogElement>();
-  let searchInput = $state<HTMLInputElement>();
+  let gridArea = $state<HTMLDivElement>();
   let query = $state("");
   let category = $state(0);
   let anyKeycode = $state("");
 
   const results = $derived(query.trim() ? searchKeycodes(categories, query) : null);
   const shown = $derived<CatalogueKeycode[]>(results ?? categories[category]?.keycodes ?? []);
-  const templates = $derived(results ? [] : (categories[category]?.templates ?? []));
+  const templates = $derived(results ? searchTemplates(categories, query) : (categories[category]?.templates ?? []));
+  /** what a screen reader hears as the results change */
+  const status = $derived.by(() => {
+    if (!results) return "";
+    if (results.length === 0 && templates.length === 0) return `No keycode matches “${query.trim()}”`;
+    const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
+    return count(results.length, "keycode") + (templates.length ? `, ${count(templates.length, "template")}` : "");
+  });
 
   $effect(() => {
     if (!dialog) return;
     if (open && !dialog.open) {
       query = "";
       anyKeycode = "";
-      dialog.showModal();
-      void tick().then(() => searchInput?.focus());
+      dialog.showModal(); // the search box has autofocus: it gets the focus straight away
     } else if (!open && dialog.open) {
       dialog.close();
     }
   });
+
+  /** a click closes the picker only if it started on the backdrop too: a drag out of the panel doesn't */
+  let pressedOnBackdrop = false;
 
   function pick(code: string) {
     open = false;
@@ -47,12 +57,45 @@
 
   function useTemplate(template: string) {
     // e.g. "LSFT(kc)": fill in the any-keycode box and let the user type the inner keycode
-    anyKeycode = template.replace("(kc)", "(KC_)");
+    anyKeycode = fillTemplate(template);
     void tick().then(() => {
       const input = document.getElementById("any-keycode") as HTMLInputElement | null;
       input?.focus();
       input?.setSelectionRange(anyKeycode.length - 1, anyKeycode.length - 1);
     });
+  }
+
+  function onSearchKey(event: KeyboardEvent) {
+    if (event.isComposing) return;
+    if (event.key === "Enter") {
+      // the top result
+      event.preventDefault();
+      if (results?.[0]) pick(results[0].code);
+      else if (templates[0]) useTemplate(templates[0]);
+    } else if (event.key === "ArrowDown") {
+      const first = gridArea?.querySelector<HTMLButtonElement>("button");
+      if (first) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  }
+
+  const tabId = (i: number) => `picker-tab-${i}`;
+
+  /** the tabs pattern: arrows, Home and End move along the categories and select */
+  function onTabKey(event: KeyboardEvent) {
+    const last = categories.length - 1;
+    const next = ({
+      ArrowLeft: category > 0 ? category - 1 : last,
+      ArrowRight: category < last ? category + 1 : 0,
+      Home: 0,
+      End: last,
+    } as Record<string, number>)[event.key];
+    if (next === undefined || last < 0) return;
+    event.preventDefault();
+    category = next;
+    document.getElementById(tabId(next))?.focus();
   }
 </script>
 
@@ -61,8 +104,10 @@
   class="picker"
   aria-labelledby="picker-title"
   onclose={() => (open = false)}
+  onpointerdown={(e) => (pressedOnBackdrop = e.target === dialog)}
   onclick={(e) => {
-    if (e.target === dialog) open = false;
+    if (pressedOnBackdrop && e.target === dialog) open = false;
+    pressedOnBackdrop = false;
   }}
 >
   <div class="panel">
@@ -77,46 +122,69 @@
     </header>
 
     <div class="search">
+      <!-- showModal() focuses the autofocus element: the search box gets the focus directly, not after the close button -->
+      <!-- svelte-ignore a11y_autofocus -->
       <input
-        bind:this={searchInput}
         bind:value={query}
         type="search"
         placeholder="Search keycodes: name, label or alias"
         aria-label="Search keycodes"
         autocomplete="off"
         spellcheck="false"
+        autofocus
+        onkeydown={onSearchKey}
       />
+      <p class="visually-hidden" aria-live="polite">{status}</p>
     </div>
 
     {#if !results}
       <div class="categories" role="tablist" aria-label="Keycode categories">
         {#each categories as c, i (c.name)}
-          <button type="button" role="tab" aria-selected={i === category} class:active={i === category}
-            onclick={() => (category = i)}>{c.name}</button>
+          <button
+            type="button"
+            role="tab"
+            id={tabId(i)}
+            aria-selected={i === category}
+            aria-controls="picker-panel"
+            tabindex={i === category ? 0 : -1}
+            class:active={i === category}
+            onclick={() => (category = i)}
+            onkeydown={onTabKey}>{c.name}</button
+          >
         {/each}
       </div>
     {/if}
 
-    <div class="grid-area" role={results ? "region" : "tabpanel"} aria-label={results ? "Search results" : categories[category]?.name}>
-      {#if results && results.length === 0}
-        <p class="empty">No keycode matches “{query}”. Try the Any keycode box below.</p>
+    <div
+      bind:this={gridArea}
+      class="grid-area"
+      id="picker-panel"
+      role={results ? "region" : "tabpanel"}
+      aria-label={results ? "Search results" : undefined}
+      aria-labelledby={results ? undefined : tabId(category)}
+    >
+      {#if results && results.length === 0 && templates.length === 0}
+        <p class="empty">No keycode matches “{query.trim()}”. Try the Any keycode box below.</p>
       {/if}
       <div class="grid">
-        {#each shown as k (k.code)}
+        {#each shown as k, i (k.code)}
           {@const face = keyFace(k, names)}
           <button
             type="button"
             class="kc tone-{face.tone}"
             data-tone={face.tone}
             class:current={k.code === current}
+            aria-current={k.code === current ? "true" : undefined}
             title={k.description ? `${k.code}: ${k.description}` : k.code}
             aria-label="{k.tap || k.code} ({k.code})"
+            aria-describedby={k.description ? `picker-description-${i}` : undefined}
             onclick={() => pick(k.code)}
           >
             {#if face.altGr}<span class="alt-gr">{face.altGr}</span>{/if}
             {#if face.shifted}<span class="kc-shifted">{face.shifted}</span>{/if}
             <span class="kc-tap">{face.main || "∅"}</span>
             <span class="kc-code">{k.code.replace(/^KC_/, "")}</span>
+            {#if k.description}<span id="picker-description-{i}" hidden>{k.description}</span>{/if}
           </button>
         {/each}
       </div>
