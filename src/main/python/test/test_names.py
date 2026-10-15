@@ -52,3 +52,62 @@ def test_suggest_macro_name():
     assert suggest_macro_name([{"type": "text", "text": "git status", "keys": []}]) == "git status"
     assert suggest_macro_name([{"type": "tap", "text": None, "keys": [slot("basic", "Home")]}]) == "Home"
     assert suggest_macro_name([]) == ""
+
+
+def test_set_on_garbage_file_moves_it_aside(tmp_path):
+    path = tmp_path / "names.json"
+    path.write_text('{"ABC": {"layers": {"0": "ba', encoding="utf-8")
+    store = NamesStore(str(path))
+    assert store.set("ABC", "layers", 1, "sym")["layers"] == {"1": "sym"}
+    assert (tmp_path / "names.json.corrupt").read_text(encoding="utf-8").startswith('{"ABC"')
+    path.write_text("again bad", encoding="utf-8")
+    store.set("ABC", "layers", 2, "x")
+    assert (tmp_path / "names.json.corrupt").read_text(encoding="utf-8") == "again bad"
+
+
+def test_read_error_does_not_wipe_names(tmp_path, monkeypatch):
+    store = NamesStore(str(tmp_path / "names.json"))
+    store.set("ABC", "layers", 0, "base")
+    real_open = open
+
+    def deny(path, *args, **kwargs):
+        if str(path) == store.path and "r" in (args[0] if args else kwargs.get("mode", "r")):
+            raise PermissionError("denied")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", deny)
+    assert store.get("ABC")["layers"] == {}
+    with pytest.raises(PermissionError):
+        store.set("ABC", "layers", 1, "x")
+    monkeypatch.undo()
+    assert store.get("ABC")["layers"] == {"0": "base"}
+
+
+@pytest.mark.parametrize("content", [
+    '{"ABC": "x"}', '{"ABC": {"layers": "xy"}}', '{"ABC": {"layers": [1]}}',
+    '{"ABC": {"layers": {"0": 5, "1": "ok"}}}', '[1, 2]',
+])
+def test_wrong_shapes_are_tolerated(tmp_path, content):
+    path = tmp_path / "names.json"
+    path.write_text(content, encoding="utf-8")
+    store = NamesStore(str(path))
+    assert set(store.get("ABC")) == {"layers", "tapDance", "macros"}
+    assert all(isinstance(v, str) for v in store.get("ABC")["layers"].values())
+    assert store.set("ABC", "macros", 3, "m")["macros"] == {"3": "m"}
+
+
+def test_failed_replace_leaves_no_temp_file(tmp_path, monkeypatch):
+    store = NamesStore(str(tmp_path / "names.json"))
+
+    def boom(src, dst):
+        raise OSError("boom")
+
+    monkeypatch.setattr("os.replace", boom)
+    with pytest.raises(OSError):
+        store.set("ABC", "layers", 0, "x")
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_truncation_never_leaves_trailing_space(tmp_path):
+    store = NamesStore(str(tmp_path / "names.json"))
+    assert store.set("ABC", "layers", 0, "a" * 39 + " b")["layers"]["0"] == "a" * 39

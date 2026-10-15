@@ -16,13 +16,30 @@ class NamesStore:
         self.path = path
         self.lock = threading.Lock()
 
-    def _load(self):
+    def _load(self, for_write=False):
+        """ Stored names, normalised to {uid: {kind: {index: name}}}. Reading for display treats any unreadable
+        file as empty; reading for write only treats a missing file as empty, moves an unparsable one aside to
+        <path>.corrupt and lets other I/O errors propagate, so a failed read never leads to wiping the names. """
         try:
             with open(self.path, "r", encoding="utf-8") as inf:
                 data = json.load(inf)
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
+        except FileNotFoundError:
             return {}
+        except ValueError:
+            if for_write:
+                os.replace(self.path, self.path + ".corrupt")
+            return {}
+        except OSError:
+            if for_write:
+                raise
+            return {}
+        clean = {}
+        if isinstance(data, dict):
+            for uid, entry in data.items():
+                if isinstance(entry, dict):
+                    clean[uid] = {kind: {str(k): v for k, v in names.items() if isinstance(v, str)}
+                                  for kind, names in entry.items() if isinstance(names, dict)}
+        return clean
 
     def get(self, uid):
         """ {"layers": {"0": "base"}, "tapDance": {...}, "macros": {...}} for this keyboard """
@@ -35,18 +52,24 @@ class NamesStore:
         if kind not in KINDS:
             raise ValueError("unknown name kind: {}".format(kind))
         with self.lock:
-            data = self._load()
+            data = self._load(for_write=True)
             entry = data.setdefault(uid, {}).setdefault(kind, {})
-            name = (name or "").strip()
+            name = (name or "").strip()[:40].strip()
             if name:
-                entry[str(index)] = name[:40]
+                entry[str(index)] = name
             else:
                 entry.pop(str(index), None)
             os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
             tmp = self.path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as outf:
-                json.dump(data, outf, indent=2, ensure_ascii=False)
-            os.replace(tmp, self.path)
+            try:
+                with open(tmp, "w", encoding="utf-8") as outf:
+                    json.dump(data, outf, indent=2, ensure_ascii=False)
+                    outf.flush()
+                    os.fsync(outf.fileno())
+                os.replace(tmp, self.path)
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
         return self.get(uid)
 
 
