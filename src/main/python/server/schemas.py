@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ Shapes of everything the API sends and accepts. The UI's TypeScript types are generated from these. """
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ---------- responses ----------
 
@@ -182,89 +182,107 @@ class Names(BaseModel):
 
 # ---------- requests ----------
 
+KEYCODE_MAX_LENGTH = 200
+MACRO_TEXT_MAX = 255
+""" characters in one macro text step """
+MACRO_DELAY_MAX = 64000
+MACRO_KEYS_MAX = 32
+""" keys in one macro tap / down / up step """
+MACRO_STEPS_MAX = 256
+MACROS_MAX = 256
+TAPPING_TERM_MAX = 10000
 
-class SetKeycode(BaseModel):
-    code: str
+KeycodeStr = Annotated[str, Field(max_length=KEYCODE_MAX_LENGTH)]
+Byte = Annotated[int, Field(ge=0, le=255)]
 
 
-class SetLayoutOptions(BaseModel):
+class Request(BaseModel):
+    """ Base of request bodies: unknown fields are an error, not silently dropped """
+    model_config = ConfigDict(extra="forbid")
+
+
+class SetKeycode(Request):
+    code: KeycodeStr
+
+
+class SetLayoutOptions(Request):
     value: int = Field(ge=0, le=0xFFFFFFFF)
 
 
-class ParseRequest(BaseModel):
-    expression: str = Field(max_length=200)
+class ParseRequest(Request):
+    expression: KeycodeStr
 
 
-class TapDanceIn(BaseModel):
-    tap: str
-    hold: str
-    doubleTap: str
-    tapHold: str
-    tappingTerm: int = Field(ge=0, le=10000)
+class TapDanceIn(Request):
+    tap: KeycodeStr
+    hold: KeycodeStr
+    doubleTap: KeycodeStr
+    tapHold: KeycodeStr
+    tappingTerm: int = Field(ge=0, le=TAPPING_TERM_MAX)
 
 
-class ComboIn(BaseModel):
-    keys: list[str] = Field(min_length=4, max_length=4)
-    output: str
+class ComboIn(Request):
+    keys: list[KeycodeStr] = Field(min_length=4, max_length=4)
+    output: KeycodeStr
 
 
-class KeyOverrideIn(BaseModel):
-    trigger: str
-    replacement: str
+class KeyOverrideIn(Request):
+    trigger: KeycodeStr
+    replacement: KeycodeStr
     layers: int = Field(ge=0, le=0xFFFF)
-    triggerMods: int = Field(ge=0, le=0xFF)
-    negativeModMask: int = Field(ge=0, le=0xFF)
-    suppressedMods: int = Field(ge=0, le=0xFF)
-    options: int = Field(ge=0, le=0xFF)
+    triggerMods: Byte
+    negativeModMask: Byte
+    suppressedMods: Byte
+    options: Byte
 
 
-class AltRepeatKeyIn(BaseModel):
-    keycode: str
-    altKeycode: str
-    allowedMods: int = Field(ge=0, le=0xFF)
-    options: int = Field(ge=0, le=0xFF)
+class AltRepeatKeyIn(Request):
+    keycode: KeycodeStr
+    altKeycode: KeycodeStr
+    allowedMods: Byte
+    options: Byte
 
 
-class MacroActionIn(BaseModel):
+class MacroActionIn(Request):
     type: Literal["text", "tap", "down", "up", "delay"]
-    text: Optional[str] = None
-    keys: list[str] = []
-    delay: Optional[int] = Field(default=None, ge=0, le=64000)
+    text: Optional[str] = Field(default=None, max_length=MACRO_TEXT_MAX)
+    keys: list[KeycodeStr] = Field(default=[], max_length=MACRO_KEYS_MAX)
+    delay: Optional[int] = Field(default=None, ge=0, le=MACRO_DELAY_MAX)
 
 
-class MacrosIn(BaseModel):
-    items: list[list[MacroActionIn]]
+class MacrosIn(Request):
+    items: list[Annotated[list[MacroActionIn], Field(max_length=MACRO_STEPS_MAX)]] = Field(max_length=MACROS_MAX)
 
 
-class SettingIn(BaseModel):
+class SettingIn(Request):
     value: int = Field(ge=0, le=0xFFFFFFFF)
 
 
-class VialRgbIn(BaseModel):
+class VialRgbIn(Request):
     mode: Optional[int] = Field(default=None, ge=0, le=0xFFFF)
-    speed: Optional[int] = Field(default=None, ge=0, le=255)
-    hsv: Optional[list[int]] = Field(default=None, min_length=3, max_length=3)
+    speed: Optional[Byte] = None
+    hsv: Optional[list[Byte]] = Field(default=None, min_length=3, max_length=3)
 
 
-class RgbLightIn(BaseModel):
-    brightness: Optional[int] = Field(default=None, ge=0, le=255)
-    effect: Optional[int] = Field(default=None, ge=0, le=255)
-    speed: Optional[int] = Field(default=None, ge=0, le=255)
-    hue: Optional[int] = Field(default=None, ge=0, le=255)
-    saturation: Optional[int] = Field(default=None, ge=0, le=255)
+class RgbLightIn(Request):
+    brightness: Optional[Byte] = None
+    effect: Optional[Byte] = None
+    speed: Optional[Byte] = None
+    hue: Optional[Byte] = None
+    saturation: Optional[Byte] = None
 
 
-class BacklightIn(BaseModel):
-    brightness: Optional[int] = Field(default=None, ge=0, le=255)
-    effect: Optional[int] = Field(default=None, ge=0, le=255)
+class BacklightIn(Request):
+    brightness: Optional[Byte] = None
+    effect: Optional[Byte] = None
 
 
-class LightingIn(BaseModel):
+class LightingIn(Request):
     vialrgb: Optional[VialRgbIn] = None
     rgblight: Optional[RgbLightIn] = None
     backlight: Optional[BacklightIn] = None
     save: bool = True
 
 
-class NameIn(BaseModel):
+class NameIn(Request):
     name: Optional[str] = Field(default=None, max_length=40)

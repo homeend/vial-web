@@ -1,6 +1,7 @@
 import pytest
 
-from server.describe import describe, parse, one_line
+from keycodes.keycodes import Keycode
+from server.describe import describe, parse, parse_value, one_line, reference
 
 
 @pytest.fixture(autouse=True)
@@ -49,10 +50,30 @@ def test_parse_accepts_expressions_and_numbers():
     assert parse(" 0x7E05 ")["code"] == "USER05"
 
 
-@pytest.mark.parametrize("expression", ["NOT_A_KEY", "0x10000", "-1", "KC_A +"])
+@pytest.mark.parametrize("expression", ["NOT_A_KEY", "0x10000", "-1", "KC_A +", "True", "False", "TD(300)", "MO(40)"])
 def test_parse_rejects_invalid(expression):
     with pytest.raises(ValueError):
         parse(expression)
+
+
+def test_parse_uses_the_firmware_value_of_numbered_keycodes():
+    # TO(n), PDF(n) and Mn beyond the loaded keyboard are not in the keycode tables
+    assert parse_value("TO(9)") == 0x5209
+    assert parse_value("PDF(5)") == 0x52E5
+    assert parse_value("M20") == 0x7714
+
+
+@pytest.mark.parametrize("protocol, value, expected", [
+    (6, 0x4305, ("layer", 3)), (6, 0x50A2, ("layer", 5)), (6, 0x5211, ("layer", 17)), (6, 0x5225, ("layer", 5)),
+    (6, 0x52A2, None), (6, 0x52C4, ("layer", 4)), (6, 0x52E1, ("layer", 1)), (6, 0x5705, ("tap dance", 5)),
+    (6, 0x7702, ("macro", 2)), (6, 0x7C77, ("layer", 3)), (6, 0x0004, None), (6, 0x7E00, None),
+    (5, 0x4305, ("layer", 3)), (5, 0x5013, ("layer", 3)), (5, 0x5104, ("layer", 4)), (5, 0x5402, ("layer", 2)),
+    (5, 0x5502, None), (5, 0x5706, ("tap dance", 6)), (5, 0x5805, ("layer", 5)), (5, 0x5952, ("layer", 5)),
+    (5, 0x5F14, ("macro", 2)), (5, 0x5F80, None),
+])
+def test_reference(monkeypatch, protocol, value, expected):
+    monkeypatch.setattr(Keycode, "protocol", protocol)
+    assert reference(value) == expected
 
 
 @pytest.mark.parametrize("label, expected", [

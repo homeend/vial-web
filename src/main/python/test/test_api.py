@@ -152,7 +152,7 @@ def test_macros(client, virtual):
     assert result.json()["items"][3]["name"] == "hi"
     assert virtual.macros()[3] == b"hi\x01\x01\x28\x01\x04\x15\x01"
 
-    items[0] = [{"type": "text", "text": "x" * 1000}]
+    items[0] = [{"type": "text", "text": "x" * 250}] * 4  # 1000 bytes; one text step holds at most 255
     response = client.put("/api/macros", json={"items": items})
     assert response.status_code == 422 and "bytes" in response.json()["detail"]
     assert client.put("/api/macros", json={"items": items[:3]}).status_code == 422

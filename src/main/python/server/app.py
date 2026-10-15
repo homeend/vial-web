@@ -135,6 +135,15 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     def run(fn):
         return manager.run(fn)
 
+    async def resync():
+        """ After a write failed halfway: read the keyboard again and tell the UI to do the same """
+        try:
+            await asyncio.to_thread(manager.reload)
+        except Exception:
+            log.exception("could not re-read the keyboard after a failed write")
+        if manager.connected:
+            await hub.broadcast({"type": "reloaded"})
+
     def names_for(kb):
         return names.get(model.uid_of(kb))
 
@@ -223,7 +232,10 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.put("/api/names/{kind}/{index}", response_model=schemas.Names)
     def set_name(kind: str, index: int, body: schemas.NameIn):
-        return run(lambda kb: names.set(model.uid_of(kb), kind, index, body.name))
+        def do(kb):
+            edits.check_name(kb, kind, index)
+            return names.set(model.uid_of(kb), kind, index, body.name)
+        return run(do)
 
     @app.get("/api/layout-file")
     def download_layout():
@@ -236,9 +248,23 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         data = await request.body()
         if len(data) > 1024 * 1024:
             raise ValueError("layout file is too large")
-        await asyncio.to_thread(run, lambda kb: edits.restore_layout_file(kb, data))
+        writing = []
+
+        def restore(kb):
+            apply = edits.prepare_layout_file(kb, data)  # checks the whole file; nothing is written if it fails
+            writing.append(True)
+            apply()
+            return model.build(kb, names_for(kb), manager.unlocked)
+
+        try:
+            result = await asyncio.to_thread(run, restore)
+        except Exception:
+            if writing:
+                # part of the file may have been written: re-read the keyboard and make the UI do the same
+                await resync()
+            raise
         await hub.broadcast({"type": "reloaded"})
-        return run(lambda kb: model.build(kb, names_for(kb), manager.unlocked))
+        return result
 
     @app.websocket("/api/events")
     async def events(ws: WebSocket):

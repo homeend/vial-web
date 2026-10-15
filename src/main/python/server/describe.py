@@ -25,6 +25,7 @@ RE_TAP_DANCE = re.compile(r"^TD\((\d+)\)$")
 RE_MACRO = re.compile(r"^M(\d+)$")
 RE_LAYER = re.compile(r"^(MO|TG|TO|TT|OSL|DF|PDF)\((\d+)\)$")
 RE_LAYER_TAP = re.compile(r"^LT(\d+)\((.+)\)$")
+RE_NUMBERED = re.compile(r"^(M\d+|(TD|MO|TG|TO|TT|OSL|DF|PDF)\(\d+\))$")
 
 
 def _result(code, kind, tap, hold=None, layer=None, index=None):
@@ -102,12 +103,58 @@ def describe(code):
     return _result(code, "other", Keycode.label(code))
 
 
-def parse(expression):
-    """ Free-form keycode expression, e.g. "LCTL(KC_A)" or "0x7E05" -> description; raises ValueError """
-    try:
-        value = Keycode.deserialize(expression.strip(), reraise=True)
-    except Exception as e:
-        raise ValueError("not a valid keycode: {}".format(e))
+def parse_value(expression):
+    """ Free-form keycode expression, e.g. "LCTL(KC_A)" or "0x7E05" -> firmware integer; raises ValueError """
+    expression = expression.strip()
+    if RE_NUMBERED.match(expression):
+        # numbered keycodes the keyboard doesn't have aren't in the keycode tables; the firmware's own tables give
+        # their real value (the generic parser gets some wrong, e.g. TO(n), or doesn't know them, e.g. M20, PDF(n))
+        try:
+            value = Keycode.resolve(expression)
+        except RuntimeError:
+            raise ValueError("not a valid keycode: {}".format(expression))
+    else:
+        try:
+            value = Keycode.deserialize(expression, reraise=True)
+        except Exception as e:
+            raise ValueError("not a valid keycode: {}".format(e))
+    if isinstance(value, bool):  # an int to Python, but "True" isn't a keycode
+        raise ValueError("not a valid keycode: {}".format(expression))
     if not isinstance(value, int) or not 0 <= value <= 0xFFFF:
         raise ValueError("keycode must be a number between 0 and 0xFFFF")
-    return describe(Keycode.serialize(value))
+    return value
+
+
+def parse(expression):
+    """ Free-form keycode expression, e.g. "LCTL(KC_A)" or "0x7E05" -> description; raises ValueError """
+    return describe(Keycode.serialize(parse_value(expression)))
+
+
+# (first, last, what, number) for keycodes that point at a layer, tap dance or macro; number(value) -> its number
+_REFERENCES_V6 = [
+    (0x4000, 0x4FFF, "layer", lambda v: (v >> 8) & 0xF),  # LT
+    (0x5000, 0x51FF, "layer", lambda v: (v >> 5) & 0xF),  # LM
+    (0x5200, 0x529F, "layer", lambda v: v & 0x1F),  # TO, MO, DF, TG, OSL
+    (0x52C0, 0x52FF, "layer", lambda v: v & 0x1F),  # TT, PDF
+    (0x5700, 0x57FF, "tap dance", lambda v: v & 0xFF),
+    (0x7700, 0x77FF, "macro", lambda v: v & 0xFF),
+    (0x7C77, 0x7C78, "layer", lambda v: 3),  # FN_MO13, FN_MO23
+]
+_REFERENCES_V5 = [
+    (0x4000, 0x4FFF, "layer", lambda v: (v >> 8) & 0xF),  # LT
+    (0x5000, 0x50FF, "layer", lambda v: v & 0xF),  # TO
+    (0x5100, 0x54FF, "layer", lambda v: v & 0xFF),  # MO, DF, TG, OSL
+    (0x5700, 0x57FF, "tap dance", lambda v: v & 0xFF),
+    (0x5800, 0x58FF, "layer", lambda v: v & 0xFF),  # TT
+    (0x5900, 0x59FF, "layer", lambda v: (v >> 4) & 0xF),  # LM
+    (0x5F10, 0x5F11, "layer", lambda v: 3),  # FN_MO13, FN_MO23
+    (0x5F12, 0x5F7F, "macro", lambda v: v - 0x5F12),
+]
+
+
+def reference(value):
+    """ Firmware keycode -> ("layer" | "tap dance" | "macro", number) it points at, or None """
+    for first, last, what, number in (_REFERENCES_V6 if Keycode.protocol == 6 else _REFERENCES_V5):
+        if first <= value <= last:
+            return what, number(value)
+    return None
