@@ -11,13 +11,23 @@ DEVICE_NOTIFY_ALL_INTERFACE_CLASSES = 4
 ERROR_CLASS_ALREADY_EXISTS = 1410
 WINDOW_CLASS_NAME = "VIAL_DEVICE_DETECTION"
 
-g_device_changes = 0
+g_changed_windows = set()
+""" windows that saw a device arrive or go away since their thread last looked; each thread has its own window """
 
 
 def device_changed(hwnd, msg, wp, lp):
-    global g_device_changes
     if wp in [win32con.DBT_DEVICEARRIVAL, win32con.DBT_DEVICEREMOVECOMPLETE]:
-        g_device_changes += 1
+        g_changed_windows.add(hwnd)
+    # pywin32 needs an int (LRESULT) back: for None it reports a TypeError through sys.excepthook on every message
+    return True
+
+
+def take_device_change(hwnd):
+    """ Whether a device arrived or went away since the last call for this window """
+    if hwnd in g_changed_windows:
+        g_changed_windows.discard(hwnd)
+        return True
+    return False
 
 
 def register_window_class():
@@ -33,28 +43,42 @@ def register_window_class():
             raise
 
 
+def create_notification_window():
+    """ A hidden message-only window; its messages are handled by the thread that creates it """
+    register_window_class()
+    return win32gui.CreateWindowEx(0, WINDOW_CLASS_NAME, None, 0, 0, 0, 0, 0, win32con.HWND_MESSAGE, None, None, None)
+
+
+def destroy_notification_window(hwnd):
+    """ Must be called from the thread that created the window """
+    win32gui.DestroyWindow(hwnd)
+    g_changed_windows.discard(hwnd)
+
+
 class AutorefreshThreadWin(AutorefreshThread):
 
     def run(self):
-        global g_device_changes
-
         # code based on:
         # - https://github.com/libsdl-org/SDL/blob/7b3449b89f0625e4603f5d8681e2bac1f51a9386/src/hidapi/SDL_hidapi.c
         # - https://github.com/vmware-archive/salt-windows-install/blob/master/deps/salt/python/App/Lib/site-packages/win32/Demos/win32gui_devicenotify.py
-        register_window_class()
-        hwnd = win32gui.CreateWindowEx(0, WINDOW_CLASS_NAME, None, 0, 0, 0, 0, 0, win32con.HWND_MESSAGE, None, None, None)
+        hwnd = create_notification_window()
+        try:
+            hdev = win32gui.RegisterDeviceNotification(
+                hwnd,
+                win32gui_struct.PackDEV_BROADCAST_DEVICEINTERFACE(GUID_DEVINTERFACE_USB_DEVICE),
+                win32con.DEVICE_NOTIFY_WINDOW_HANDLE | DEVICE_NOTIFY_ALL_INTERFACE_CLASSES
+            )
+            try:
+                while not self.isInterruptionRequested():
+                    for x in range(100):
+                        win32gui.PumpWaitingMessages()
+                        time.sleep(0.01)
+                        if self.isInterruptionRequested():
+                            return
 
-        hdev = win32gui.RegisterDeviceNotification(
-            hwnd,
-            win32gui_struct.PackDEV_BROADCAST_DEVICEINTERFACE(GUID_DEVINTERFACE_USB_DEVICE),
-            win32con.DEVICE_NOTIFY_WINDOW_HANDLE | DEVICE_NOTIFY_ALL_INTERFACE_CLASSES
-        )
-
-        while True:
-            for x in range(100):
-                win32gui.PumpWaitingMessages()
-                time.sleep(0.01)
-
-            if g_device_changes > 0:
-                g_device_changes = 0
-                self.update()
+                    if take_device_change(hwnd):
+                        self.update()
+            finally:
+                win32gui.UnregisterDeviceNotification(hdev)
+        finally:
+            destroy_notification_window(hwnd)

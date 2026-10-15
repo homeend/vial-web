@@ -34,9 +34,14 @@ class AutorefreshThread(QThread):
         self.via_stack_json = {"definitions": {}}
 
     def run(self):
-        while True:
+        while not self.isInterruptionRequested():
             self.update()
             time.sleep(1)
+
+    def stop(self):
+        """ Ask the thread to finish and wait until it has """
+        self.requestInterruption()
+        self.wait()
 
     def lock(self):
         with self.mutex:

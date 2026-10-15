@@ -77,6 +77,15 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(main_window, "QSettings", lambda *args: QSettings(path, QSettings.IniFormat))
 
 
+@pytest.fixture(autouse=True)
+def stop_autorefresh():
+    """ Each MainWindow starts a device-watching thread that never ends by itself. The windows stay alive (see
+    all_mw), but their threads must not: one left running reacts to device changes during later tests. """
+    yield
+    for mw in all_mw:
+        mw.autorefresh.stop()
+
+
 def prepare(qtbot, keyboard_json, combos=None, tap_dance=None):
     from hidproxy import hid
 

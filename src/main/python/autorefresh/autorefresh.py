@@ -85,3 +85,7 @@ class Autorefresh(QObject):
 
     def update(self, quiet=True, hard=False):
         self.thread.update(quiet, hard)
+
+    def stop(self):
+        """ Stop looking for devices; the thread doesn't end by itself """
+        self.thread.stop()
