@@ -66,9 +66,11 @@
   }
 
   function onSearchKey(event: KeyboardEvent) {
-    if (event.isComposing) return;
+    // an IME committing text (Safari sends keyCode 229 after isComposing is already false)
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === "Enter") {
-      // the top result
+      // the top result; an empty search has none (a double or held Enter on opening must not fill a template)
+      if (!results) return;
       event.preventDefault();
       if (results?.[0]) pick(results[0].code);
       else if (templates[0]) useTemplate(templates[0]);
