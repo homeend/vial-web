@@ -10,7 +10,7 @@ const RETRY_MAX_MS = 5000;
 const EVENTS: Record<ServerEvent, true> = { connected: true, disconnected: true, reloaded: true };
 
 function isServerEvent(type: unknown): type is ServerEvent {
-  return typeof type === "string" && type in EVENTS;
+  return typeof type === "string" && Object.hasOwn(EVENTS, type);
 }
 
 /** Keeps a WebSocket to /api/events open, reconnecting when it drops. Returns a function that closes it for good. */
@@ -32,7 +32,13 @@ export function connectEvents(
       onLink("open");
     };
     socket.onmessage = (message) => {
-      const type = (JSON.parse(String(message.data)) as { type?: string }).type;
+      let frame: unknown;
+      try {
+        frame = JSON.parse(String(message.data));
+      } catch {
+        return; // not JSON: not an event
+      }
+      const type = (frame as { type?: unknown } | null)?.type;
       if (isServerEvent(type)) onEvent(type);
     };
     socket.onclose = () => {

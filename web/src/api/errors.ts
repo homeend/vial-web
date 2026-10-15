@@ -34,8 +34,12 @@ export function errorMessage(status: number, detail?: string): string {
   }
 }
 
-/** "Changing the key failed: The keyboard didn't respond." */
+/**
+ * "Changing the key failed: The keyboard didn't respond."
+ * request() reports every failure to reach the server as ApiError(0), so anything else is a bug in the page.
+ */
 export function failureMessage(action: string, error: unknown): string {
-  const cause = error instanceof ApiError ? error.message : errorMessage(0);
-  return `${action} failed: ${cause}`;
+  if (error instanceof ApiError) return `${action} failed: ${error.message}`;
+  console.error(error);
+  return `${action} failed: Unexpected error in the page.`;
 }

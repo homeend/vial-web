@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApiError, errorMessage, failureMessage } from "./errors";
 
 describe("errorMessage", () => {
@@ -32,8 +32,19 @@ describe("failureMessage", () => {
       .toBe("Changing the key failed: The keyboard didn't respond.");
   });
 
-  it("handles errors that aren't from the API", () => {
-    expect(failureMessage("Loading", new TypeError("Failed to fetch")))
+  it("reports a status 0 ApiError as the server being unreachable", () => {
+    expect(failureMessage("Loading", new ApiError(0)))
       .toBe("Loading failed: Can't reach Vial. Is it still running?");
+  });
+
+  it("logs errors that aren't from the API and calls them a bug in the page", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const bug = new TypeError("Cannot read properties of undefined");
+    try {
+      expect(failureMessage("Loading", bug)).toBe("Loading failed: Unexpected error in the page.");
+      expect(log).toHaveBeenCalledWith(bug);
+    } finally {
+      log.mockRestore();
+    }
   });
 });
