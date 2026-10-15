@@ -50,6 +50,16 @@ Press Ctrl+C to stop."""
 
 log = logging.getLogger(__name__)
 
+_data_root = None
+""" --data-dir: one folder holding the lock, server.json, vial.log and names.json instead of the user's data and
+config dirs (fake mode still uses its own subfolder of it). None: the user's dirs. """
+
+
+def use_data_dir(path):
+    """ Keep every file in path (None: the user's data and config dirs) """
+    global _data_root
+    _data_root = path
+
 
 def _mode_dir(path, fake):
     return os.path.join(path, FAKE_SUBDIR) if fake else path
@@ -57,12 +67,12 @@ def _mode_dir(path, fake):
 
 def data_dir(fake):
     """ Holds the instance lock, server.json and vial.log of real mode, or (fake=True) of fake mode """
-    return _mode_dir(platformdirs.user_data_dir(APP_NAME, appauthor=False), fake)
+    return _mode_dir(_data_root or platformdirs.user_data_dir(APP_NAME, appauthor=False), fake)
 
 
 def config_dir(fake):
     """ Holds names.json of real mode, or (fake=True) of fake mode """
-    return _mode_dir(platformdirs.user_config_dir(APP_NAME, appauthor=False), fake)
+    return _mode_dir(_data_root or platformdirs.user_config_dir(APP_NAME, appauthor=False), fake)
 
 
 def lock_file(fake):
@@ -291,6 +301,9 @@ def parse_args(argv):
     parser.add_argument("--port", type=port_number, default=0, help="port to listen on (default: any free port)")
     parser.add_argument("--no-browser", action="store_true", help="don't open the browser")
     parser.add_argument("--dry-run", action="store_true", help="connect, print a summary and exit without serving")
+    parser.add_argument("--data-dir", type=os.path.abspath,
+                        help="keep the instance lock, session file, log and names in this folder instead of the "
+                             "user's data and config folders (for tests and development)")
     args = parser.parse_args(argv)
     if (args.definition or args.layout) and not args.fake:
         parser.error("--definition and --layout only work with --fake")
@@ -299,6 +312,7 @@ def parse_args(argv):
 
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    use_data_dir(args.data_dir)
 
     # Claim the instance before touching any keyboard: a second instance opening the keyboard and reading
     # everything from it would mix up the replies the first one is waiting for. The claim is held from before

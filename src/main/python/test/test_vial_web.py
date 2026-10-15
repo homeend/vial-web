@@ -31,6 +31,13 @@ def reset_unlock_handler():
     set_unlock_handler(None)
 
 
+@pytest.fixture(autouse=True)
+def reset_data_dir():
+    """ main(["--data-dir", ...]) and use_data_dir() choose the data dir for the whole process """
+    yield
+    vial_web.use_data_dir(None)
+
+
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     """ Keeps the data dirs (log, server.json) and the config dirs of both modes in tmp_path, and the browser closed.
@@ -736,3 +743,62 @@ def test_connection_reset_is_ignored(home):
     finally:
         thread.join(2)
         listener.close()
+
+
+# ---------- --data-dir ----------
+
+@pytest.fixture
+def no_platform_dirs(monkeypatch):
+    """ Fails the test if anything asks for the user's real data or config dir """
+    def refuse(*args, **kwargs):
+        raise AssertionError("used the user's own data or config dir")
+    monkeypatch.setattr(vial_web.platformdirs, "user_data_dir", refuse)
+    monkeypatch.setattr(vial_web.platformdirs, "user_config_dir", refuse)
+    monkeypatch.setattr(vial_web.webbrowser, "open", refuse)
+
+
+@pytest.fixture
+def root_log_handlers():
+    """ Removes (and closes) the log handlers main() adds to the root logger """
+    root = logging.getLogger()
+    level, before = root.level, list(root.handlers)
+    yield
+    root.setLevel(level)
+    for handler in [h for h in root.handlers if h not in before]:
+        root.removeHandler(handler)
+        handler.close()
+
+
+def test_data_dir_option_is_made_absolute(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert vial_web.parse_args(["--fake", "--data-dir", "here"]).data_dir == str(tmp_path / "here")
+    assert vial_web.parse_args(["--fake"]).data_dir is None
+
+
+@pytest.mark.parametrize("fake", [True, False])
+def test_data_dir_holds_every_file_of_its_mode(tmp_path, no_platform_dirs, fake):
+    vial_web.use_data_dir(str(tmp_path))
+    where = str(tmp_path / "fake") if fake else str(tmp_path)
+    for path in (vial_web.lock_file, vial_web.session_file, vial_web.log_file, vial_web.names_file):
+        assert os.path.dirname(path(fake)) == where
+
+
+def test_fake_launch_with_data_dir_keeps_everything_in_it(tmp_path, no_platform_dirs, fake_server, monkeypatch,
+                                                          root_log_handlers):
+    from server import names
+    paths = []
+    store = names.NamesStore
+    monkeypatch.setattr(names, "NamesStore", lambda path: paths.append(path) or store(path))
+    assert vial_web.main(["--fake", "--no-browser", "--data-dir", str(tmp_path)]) == 0
+    fake_dir = tmp_path / "fake"
+    assert paths == [str(fake_dir / "names.json")]
+    assert fake_server.seen["session"]["fake"] is True  # server.json was found in the fake subfolder while serving
+    assert sorted(os.listdir(tmp_path)) == ["fake"]
+    assert "vial.lock" in os.listdir(fake_dir) and "vial.log" in os.listdir(fake_dir)
+
+
+def test_launch_without_data_dir_uses_the_user_dirs_again(tmp_path, home, fake_server):
+    vial_web.use_data_dir(str(tmp_path / "elsewhere"))
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert vial_web.data_dir(True) != str(tmp_path / "elsewhere" / "fake")
+    assert not os.path.exists(tmp_path / "elsewhere")
