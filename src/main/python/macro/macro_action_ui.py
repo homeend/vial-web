@@ -4,7 +4,8 @@ from PyQt5.QtWidgets import QLineEdit, QToolButton, QWidget, QSizePolicy, QSpinB
 from constants import KEY_SIZE_RATIO
 from tabbed_keycodes import TabbedKeycodes
 from widgets.flowlayout import FlowLayout
-from macro.macro_action import ActionText, ActionSequence, ActionDown, ActionUp, ActionTap, ActionDelay
+from macro.macro_action import ActionText, ActionSequence, ActionDown, ActionUp, ActionTap, ActionDelay, \
+    tag_to_action  # noqa: F401 (re-exported for macro_tab)
 from widgets.key_widget import KeyWidget
 
 
@@ -182,14 +183,6 @@ class ActionDelayUI(BasicActionUI):
         self.act.delay = self.value.value()
         self.changed.emit()
 
-
-tag_to_action = {
-    "down": ActionDown,
-    "up": ActionUp,
-    "tap": ActionTap,
-    "text": ActionText,
-    "delay": ActionDelay,
-}
 
 ui_action = {
     ActionText: ActionTextUI,

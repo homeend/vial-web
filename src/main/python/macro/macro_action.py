@@ -157,3 +157,12 @@ class ActionDelay(BasicAction):
 
     def __eq__(self, other):
         return super().__eq__(other) and self.delay == other.delay
+
+
+tag_to_action = {
+    "down": ActionDown,
+    "up": ActionUp,
+    "tap": ActionTap,
+    "text": ActionText,
+    "delay": ActionDelay,
+}
