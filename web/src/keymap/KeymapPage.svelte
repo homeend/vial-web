@@ -91,8 +91,14 @@
     const target = event.target as HTMLElement;
     // Enter and Delete act on the key that has the focus, never on one the focus merely fell from (to <body>);
     // the arrows also start from <body>, and leave every other control (buttons, tabs, fields) alone
-    const onKey = target instanceof HTMLElement && target.hasAttribute("data-ref");
+    const ref = target instanceof HTMLElement ? target.getAttribute("data-ref") : null;
+    const focused = ref === null ? -1 : placement.items.findIndex((i) => `${i.kind}:${i.index}` === ref);
+    const onKey = focused >= 0;
     const direction = ARROWS[event.key];
+    const handled = direction || event.key === "Enter" || event.key === "Delete" || event.key === "Backspace";
+    // the focused key may not be the selected one (focus moved without a click, a press dragged off a key before
+    // its release): it is the one these keys act on, and the one the arrows move from
+    if (handled && onKey && focused !== selectedIndex) select(focused);
     if (direction && (onKey || target === document.body) && selectedIndex >= 0) {
       event.preventDefault();
       select(neighbour(placement.items, selectedIndex, direction));
