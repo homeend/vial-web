@@ -119,6 +119,54 @@ def test_real_dry_run_refuses_while_vial_is_running(home, no_keyboard, monkeypat
     assert "already running" in capsys.readouterr().err
 
 
+# ---------- a launch while another one is starting up ----------
+
+@pytest.fixture
+def other_instance(home):
+    """ Another Vial that has claimed the instance and is still connecting to the keyboard """
+    claim = vial_web.claim_instance()
+    assert claim is not None
+    yield
+    vial_web.release_instance(claim)
+
+
+def test_instance_claim_is_exclusive(home):
+    claim = vial_web.claim_instance()
+    assert claim is not None
+    assert vial_web.claim_instance() is None
+    vial_web.release_instance(claim)
+    claim = vial_web.claim_instance()
+    assert claim is not None
+    vial_web.release_instance(claim)
+
+
+def test_launch_while_another_is_starting_waits_for_it(home, no_keyboard, other_instance, monkeypatch, capsys):
+    answers = iter([None, None, None, LIVE_URL])
+    monkeypatch.setattr(vial_web, "running_session", lambda: next(answers))
+    waits = []
+    monkeypatch.setattr(vial_web.time, "sleep", waits.append)
+    assert vial_web.main(["--fake"]) == 0
+    assert home == [LIVE_URL]
+    assert LIVE_URL in capsys.readouterr().out
+    assert len(waits) == 2  # the first check found nothing; two more while waiting, then the answer
+
+
+def test_launch_gives_up_on_one_that_never_answers(home, no_keyboard, other_instance, monkeypatch, capsys):
+    monkeypatch.setattr(vial_web, "running_session", lambda: None)
+    monkeypatch.setattr(vial_web, "STARTUP_WAIT", 0.3)
+    assert vial_web.main([]) == 1
+    out, err = capsys.readouterr()
+    assert "did not answer within 0.3 seconds" in err
+    assert "Traceback" not in err and "Open it at" not in out
+    assert home == []
+
+
+def test_real_dry_run_refuses_while_another_is_starting(home, no_keyboard, other_instance, monkeypatch, capsys):
+    monkeypatch.setattr(vial_web, "running_session", lambda: None)
+    assert vial_web.main(["--dry-run"]) != 0
+    assert "already running" in capsys.readouterr().err
+
+
 # ---------- binding the port ----------
 
 def test_bind_socket_listens_on_localhost_only():
@@ -185,6 +233,25 @@ def test_serving_announces_the_bound_port_and_cleans_up(home, fake_server, capsy
         threading.Event().wait(0.02)
     assert home == [url]
     assert not os.path.exists(vial_web.session_file())
+
+
+def test_instance_is_claimed_before_connecting_and_released_at_exit(home, fake_server, monkeypatch):
+    claimed_while_connecting = []
+    connect = DeviceManager.connect
+
+    def check_claim(manager):
+        claim = vial_web.claim_instance()
+        claimed_while_connecting.append(claim is None)
+        if claim is not None:
+            vial_web.release_instance(claim)
+        return connect(manager)
+    monkeypatch.setattr(DeviceManager, "connect", check_claim)
+    fake_server.while_serving = lambda: claimed_while_connecting.append(vial_web.claim_instance() is None)
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert claimed_while_connecting == [True, True]
+    claim = vial_web.claim_instance()
+    assert claim is not None
+    vial_web.release_instance(claim)
 
 
 def test_cleanup_keeps_another_instances_session_file(home, fake_server):

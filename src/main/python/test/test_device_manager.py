@@ -1,5 +1,6 @@
 import logging
 import sys
+import time
 import types
 
 import pytest
@@ -87,6 +88,39 @@ def test_dead_handle_while_present_is_reopened_by_the_next_check(manager):
     assert manager.check() == []
 
 
+def test_requests_on_a_dead_handle_fail_at_once_until_it_is_reopened(manager, monkeypatch):
+    """ Only the first request goes through the protocol's retries (20 x 0.5 s while holding the device lock) """
+    sleeps = []
+    monkeypatch.setattr(transport.time, "sleep", sleeps.append)
+
+    def dead(data):
+        raise OSError("the handle is invalid")
+    manager.device.write = dead
+    with pytest.raises(RuntimeError):
+        manager.run(lambda kb: kb.set_key(0, 0, 0, "KC_B"))
+    assert len(sleeps) == 19
+    for code in ("KC_C", "KC_D"):
+        sleeps.clear()
+        started = time.monotonic()
+        with pytest.raises(DeviceIOError):
+            manager.run(lambda kb: kb.set_key(0, 0, 0, code))
+        assert sleeps == []
+        assert time.monotonic() - started < 0.5
+    assert manager.connected
+    assert manager.check() == ["disconnected", "connected"]
+    manager.run(lambda kb: kb.set_key(0, 0, 0, "KC_C"))
+    assert manager.backend.virtual.keymap[0][0][0] == encode("KC_C")
+
+
+def test_request_that_fails_on_a_working_handle_does_not_break_it(manager):
+    def fail(kb):
+        raise RuntimeError("bad reply")
+    with pytest.raises(RuntimeError):
+        manager.run(fail)
+    assert not manager.handle.broken
+    assert manager.run(lambda kb: kb.get_unlock_status()) == 1
+
+
 def test_closed_handle_is_a_device_error_not_a_bad_request(manager):
     manager.device.close()  # real hidapi and the simulator raise ValueError("not opened") from now on
     with pytest.raises(DeviceIOError):
@@ -168,21 +202,16 @@ def test_keyboard_that_fails_to_load_is_not_reopened_on_every_poll():
         assert m.check() == []
     assert backend.opened == 1
     assert m.error == "unsupported keyboard"
-    # retried later, less and less often
-    clock.now += 2
-    m.check()
-    assert backend.opened == 2
-    clock.now += 2
-    m.check()
-    assert backend.opened == 2
-    clock.now += 2
-    m.check()
-    assert backend.opened == 3
-    clock.now += 1000
-    m.check()
-    clock.now += 30
-    m.check()
-    assert backend.opened == 5  # at most every 30 s
+    # polled every second: retried after 2, 4, 8 and 16 s, then every 30 s
+    attempts = [clock.now]
+    for _ in range(300):
+        clock.now += 1
+        opened = backend.opened
+        m.check()
+        if backend.opened > opened:
+            attempts.append(clock.now)
+    waits = [later - earlier for earlier, later in zip(attempts, attempts[1:])]
+    assert waits == [2, 4, 8, 16] + [30] * 9
 
 
 def test_keyboard_that_failed_to_load_is_retried_after_a_replug():
@@ -235,26 +264,46 @@ def test_check_survives_find_failing(caplog):
     assert not m.connected
 
 
-def test_check_treats_present_failing_as_unplugged(manager, caplog, monkeypatch):
-    def broken(candidate):
-        raise OSError("hidapi exploded")
-    monkeypatch.setattr(manager.backend, "present", broken)
-    monkeypatch.setattr(manager.backend, "find", lambda: [])
+def broken_present(candidate):
+    raise OSError("hidapi exploded")
+
+
+def test_check_keeps_the_keyboard_when_present_fails(manager, caplog, monkeypatch):
+    """ Unknown is not unplugged: closing and reloading the keyboard on every poll would be worse """
+    clock = Clock()
+    manager.clock = clock
+    monkeypatch.setattr(manager.backend, "present", broken_present)
+    device = manager.device
     with caplog.at_level(logging.ERROR, logger="server.device"):
-        assert manager.check() == ["disconnected"]
-    assert "hidapi exploded" in caplog.text
+        for _ in range(60):
+            assert manager.check() == []
+            clock.now += 1
+        assert caplog.text.count("could not check whether the keyboard is still connected") == 1  # once a minute
+        assert "hidapi exploded" in caplog.text
+        manager.check()
+        assert caplog.text.count("could not check whether the keyboard is still connected") == 2
+    assert manager.device is device
+    manager.run(lambda kb: kb.set_key(0, 0, 0, "KC_B"))
+    assert manager.backend.virtual.keymap[0][0][0] == encode("KC_B")
 
 
-def test_run_keeps_the_original_error_when_present_fails(manager, monkeypatch):
-    def broken(candidate):
-        raise OSError("hidapi exploded")
-    monkeypatch.setattr(manager.backend, "present", broken)
+def test_run_reraises_the_original_error_when_present_fails(manager, monkeypatch):
+    monkeypatch.setattr(manager.backend, "present", broken_present)
 
     def fail(kb):
         raise RuntimeError("bad reply")
-    with pytest.raises(NotConnected) as info:
+    with pytest.raises(RuntimeError, match="bad reply"):
         manager.run(fail)
-    assert str(info.value.__cause__) == "bad reply"
+    assert manager.connected
+
+
+def test_unplug_is_noticed_while_present_fails(manager, monkeypatch):
+    """ Through the dead handle instead """
+    monkeypatch.setattr(manager.backend, "present", broken_present)
+    manager.backend.virtual.connected = False
+    with pytest.raises(RuntimeError):
+        manager.run(lambda kb: kb.set_key(0, 0, 0, "KC_B"))
+    assert manager.check() == ["disconnected"]
     assert not manager.connected
 
 

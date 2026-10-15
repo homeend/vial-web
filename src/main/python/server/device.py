@@ -14,6 +14,8 @@ RETRY_FIRST = 2.0
 """ seconds before a keyboard that failed to load is tried again; the wait doubles after each failure... """
 RETRY_MAX = 30.0
 """ ...up to this many seconds """
+PRESENT_ERROR_LOG_INTERVAL = 60.0
+""" a backend that keeps failing to tell whether the keyboard is plugged in is logged at most this often (seconds) """
 
 Status = namedtuple("Status", "connected title unlocked error")
 
@@ -45,13 +47,22 @@ class CheckedDevice:
       so it becomes DeviceIOError (which the protocol's retries don't swallow, and the API reports as 502).
     - Remembers whether the last exchange with the keyboard worked, so the hot-plug poll can tell a dead handle
       from a request that failed for another reason.
+    - Once a request has failed on it while it wasn't working (broken), every further exchange fails at once,
+      instead of going through the protocol's retries (seconds each, holding the device lock) until the hot-plug
+      poll reopens it. Within one request the retries still run, so a handle that recovers is kept.
     """
 
     def __init__(self, dev):
         self.dev = dev
         self.healthy = True
+        self.broken = False
+
+    def _check_usable(self):
+        if self.broken:
+            raise DeviceIOError("the connection to the keyboard is broken; waiting for it to be reopened")
 
     def write(self, data):
+        self._check_usable()
         try:
             written = self.dev.write(data)
         except ValueError as e:
@@ -65,6 +76,7 @@ class CheckedDevice:
         return written
 
     def read(self, length, timeout_ms=0):
+        self._check_usable()
         try:
             data = self.dev.read(length, timeout_ms=timeout_ms)
         except ValueError as e:
@@ -138,7 +150,9 @@ class DeviceManager:
     - an unplugged keyboard is closed ("disconnected");
     - a keyboard whose handle stopped working while it is still listed (a replug on the same port within one poll,
       a USB reset) is closed and reopened ("disconnected", then "connected"). The request that hit the dead handle
-      still fails: writes are not retried, since they are not known to be safe to repeat;
+      still fails: writes are not retried, since they are not known to be safe to repeat. Requests made before the
+      poll reopens it fail at once;
+    - a keyboard whose presence can't be checked (the backend raises) is kept as it is;
     - with no keyboard, the first one found is opened and loaded ("connected"). One that fails to load is not tried
       again for RETRY_FIRST seconds, doubling up to RETRY_MAX, unless it is unplugged and plugged back in.
     """
@@ -157,6 +171,8 @@ class DeviceManager:
         self.pending_events = []
         self.failures = {}
         """ candidate key -> (failed attempts, clock time of the next attempt) """
+        self.present_error_logged = None
+        """ clock time a failing present() was last logged """
 
     @property
     def connected(self):
@@ -242,8 +258,11 @@ class DeviceManager:
             try:
                 return fn(self.keyboard)
             except (OSError, RuntimeError) as e:
-                if isinstance(e, (NotConnected, KeyboardLocked)) or self._present():
-                    # still plugged in: if the handle itself stopped working, check() reopens it
+                if isinstance(e, (NotConnected, KeyboardLocked)) or self._present() is not False:
+                    # still plugged in (or the backend can't tell): if the handle itself stopped working, later
+                    # requests fail at once until check() reopens it
+                    if self.handle is not None and not self.handle.healthy:
+                        self.handle.broken = True
                     raise
                 self._close()
                 self.pending_events.append("disconnected")
@@ -253,7 +272,7 @@ class DeviceManager:
         """ Hot-plug poll, called about once a second. Returns the events since the last call. """
         with self.lock:
             if self.keyboard is not None:
-                if not self._present():
+                if self._present() is False:
                     self._close()
                     self.pending_events.append("disconnected")
                 elif not self.handle.healthy:
@@ -266,11 +285,17 @@ class DeviceManager:
             return events
 
     def _present(self):
+        """ Whether the open keyboard is still plugged in, or None when the backend can't tell (it raised). Unknown
+        keeps the keyboard: treating it as unplugged would close and reload it on every poll while it works. An
+        unplug still shows up as a dead handle, which check() reopens. """
         try:
             return bool(self.backend.present(self.candidate))
         except Exception:
-            log.exception("could not check whether the keyboard is still connected")
-            return False
+            now = self.clock()
+            if self.present_error_logged is None or now - self.present_error_logged >= PRESENT_ERROR_LOG_INTERVAL:
+                self.present_error_logged = now
+                log.exception("could not check whether the keyboard is still connected; assuming it is")
+            return None
 
     @staticmethod
     def _close_device(dev):

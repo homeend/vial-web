@@ -13,6 +13,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 import urllib.request
 import webbrowser
 from logging.handlers import RotatingFileHandler
@@ -22,6 +23,8 @@ import platformdirs
 APP_NAME = "Vial"
 HEALTH_REPLY_LIMIT = 64 * 1024
 """ bytes read from whatever answers the health check """
+STARTUP_WAIT = 10.0
+""" seconds a second launch waits for a Vial that is still starting up to answer """
 
 STARTED_MESSAGE = """Vial is running{fake}. Open it at:
   {url}
@@ -126,6 +129,47 @@ def running_session():
     return None
 
 
+def claim_instance():
+    """ Take the instance lock in the data dir, held until release_instance() or the end of the process.
+    Returns None if another Vial holds it: that one is starting up or running, and owns the keyboard. """
+    fd = os.open(os.path.join(ensure_data_dir(), "vial.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        return None
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def release_instance(claim):
+    os.close(claim)  # closing the file releases the lock
+
+
+def wait_for_session(timeout):
+    """ The URL of the running Vial server once it answers, or None after timeout seconds """
+    deadline = time.monotonic() + timeout
+    while True:
+        url = running_session()
+        if url or time.monotonic() >= deadline:
+            return url
+        time.sleep(0.25)
+
+
+def open_running(url, args):
+    print("Vial is already running. Open it at:\n  " + url, flush=True)
+    if not args.no_browser:
+        webbrowser.open(url)
+    return 0
+
+
 def make_backend(args):
     if args.fake:
         from server.device import FakeBackend
@@ -167,32 +211,44 @@ def parse_args(argv):
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
 
-    # Look for a running Vial before touching any keyboard: a second instance opening the keyboard and reading
-    # everything from it would mix up the replies the first one is waiting for.
-    sock = None
-    if args.dry_run:
-        if not args.fake and running_session():
-            print("Vial is already running and using the keyboard; stop it before using --dry-run", file=sys.stderr)
-            return 1
-    else:
-        setup_logging()
-        existing = running_session()
-        if existing:
-            print("Vial is already running. Open it at:\n  " + existing, flush=True)
-            if not args.no_browser:
-                webbrowser.open(existing)
-            return 0
-        try:
-            sock = bind_socket(args.port)
-        except OSError as e:
-            print("Vial could not listen on {}: {}".format(
-                "port {}".format(args.port) if args.port else "a free port", e.strerror or e), file=sys.stderr)
-            return 1
+    # Claim the instance before touching any keyboard: a second instance opening the keyboard and reading
+    # everything from it would mix up the replies the first one is waiting for. The claim is held from before
+    # connecting (a full read of the keyboard) until exit, so it also covers a Vial that is still starting up.
+    claim = sock = None
     try:
+        if args.dry_run:
+            if not args.fake:
+                claim = claim_instance()
+                if claim is None or running_session():
+                    print("Vial is already running and using the keyboard; stop it before using --dry-run",
+                          file=sys.stderr)
+                    return 1
+        else:
+            setup_logging()
+            existing = running_session()
+            if existing:
+                return open_running(existing, args)
+            claim = claim_instance()
+            if claim is None:
+                # another Vial is starting up: it answers once it has read the keyboard
+                existing = wait_for_session(STARTUP_WAIT)
+                if existing:
+                    return open_running(existing, args)
+                print("Another Vial is starting up but did not answer within {:g} seconds. Try again in a moment, "
+                      "or stop the other one first.".format(STARTUP_WAIT), file=sys.stderr)
+                return 1
+            try:
+                sock = bind_socket(args.port)
+            except OSError as e:
+                print("Vial could not listen on {}: {}".format(
+                    "port {}".format(args.port) if args.port else "a free port", e.strerror or e), file=sys.stderr)
+                return 1
         return run(args, sock)
     finally:
         if sock is not None:
             sock.close()
+        if claim is not None:
+            release_instance(claim)
 
 
 def run(args, sock):
