@@ -1,0 +1,209 @@
+/* Colour tokens and base styles. Components keep their own styles; they only use these tokens.
+   Two palettes: light (here) and dark. The dark one applies with data-theme="dark" on <html> (chosen in the top bar),
+   or when the system prefers dark and the user hasn't chosen light. CSS can't share one block between a selector and
+   a media query, so the dark palette is written twice, identically. */
+:root {
+  color-scheme: light;
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --surface-2: #eef0f4;
+  --board-bg: #f8f9fb;
+  --border: #dfe2e9;
+  --border-strong: #c3c9d4;
+  --text: #191f2d;
+  --text-2: #535c6e;
+  --text-3: #858d9d;
+  --accent: #2b63f0;
+  --accent-weak: #e5edff;
+  --accent-text: #ffffff;
+  --danger: #c92a2a;
+  --danger-weak: #fdecec;
+  --danger-line: #f1b5b5;
+  --ok: #1a8f4c;
+  --warning-weak: #fff4dc;
+  --warning-text: #6d4300;
+  --badge: #8a3cc2;
+
+  --key-bg: #ffffff;
+  --key-border: #cfd5df;
+  --key-shadow: #bfc6d2;
+  --key-text: #191f2d;
+  --key-dashed: #aab2bf;
+  --tone-mod: #23a049;
+  --tone-layer: #1872e8;
+  --tone-tap-dance: #9a43cf;
+  --tone-macro: #e07f00;
+  /* how much of a kind's colour goes into a key's face and outline */
+  --tone-fill: 15%;
+  --tone-line: 62%;
+  --tone-text: 60%;
+
+  /* layout: the navigation plus a content column of at most 1100 px, centred on wide screens */
+  --nav-width: 190px;
+  --content-max: 1100px;
+  --shell-gap: 28px;
+  --shell-gutter: 24px;
+  --shell-width: calc(var(--nav-width) + var(--shell-gap) + var(--content-max) + 2 * var(--shell-gutter));
+
+  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 8%);
+  --shadow-lg: 0 12px 32px rgb(16 24 40 / 18%);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #101217;
+  --surface: #191c23;
+  --surface-2: #222630;
+  --board-bg: #15181e;
+  --border: #2b303b;
+  --border-strong: #3e4553;
+  --text: #e8ebf1;
+  --text-2: #a6aebd;
+  --text-3: #7a8292;
+  --accent: #6a96ff;
+  --accent-weak: #1f2d4d;
+  --accent-text: #0b1020;
+  --danger: #ff7a7a;
+  --danger-weak: #341c20;
+  --danger-line: #6e2f35;
+  --ok: #45d483;
+  --warning-weak: #362b14;
+  --warning-text: #ffd47e;
+  --badge: #d29bf5;
+
+  --key-bg: #272b35;
+  --key-border: #3c4250;
+  --key-shadow: #08090c;
+  --key-text: #f0f2f6;
+  --key-dashed: #5d6575;
+  --tone-mod: #44d070;
+  --tone-layer: #5ba2ff;
+  --tone-tap-dance: #c98af2;
+  --tone-macro: #ffaa3d;
+  --tone-fill: 22%;
+  --tone-line: 70%;
+  --tone-text: 80%;
+
+  --shadow: 0 1px 2px rgb(0 0 0 / 45%);
+  --shadow-lg: 0 16px 40px rgb(0 0 0 / 55%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #101217;
+    --surface: #191c23;
+    --surface-2: #222630;
+    --board-bg: #15181e;
+    --border: #2b303b;
+    --border-strong: #3e4553;
+    --text: #e8ebf1;
+    --text-2: #a6aebd;
+    --text-3: #7a8292;
+    --accent: #6a96ff;
+    --accent-weak: #1f2d4d;
+    --accent-text: #0b1020;
+    --danger: #ff7a7a;
+    --danger-weak: #341c20;
+    --danger-line: #6e2f35;
+    --ok: #45d483;
+    --warning-weak: #362b14;
+    --warning-text: #ffd47e;
+    --badge: #d29bf5;
+
+    --key-bg: #272b35;
+    --key-border: #3c4250;
+    --key-shadow: #08090c;
+    --key-text: #f0f2f6;
+    --key-dashed: #5d6575;
+    --tone-mod: #44d070;
+    --tone-layer: #5ba2ff;
+    --tone-tap-dance: #c98af2;
+    --tone-macro: #ffaa3d;
+    --tone-fill: 22%;
+    --tone-line: 70%;
+    --tone-text: 80%;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 45%);
+    --shadow-lg: 0 16px 40px rgb(0 0 0 / 55%);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Key colours by kind (see keyboard/labels.ts toneOf): any element with data-tone gets --tone (the kind's colour),
+   --fill and --line (its key face and outline) */
+[data-tone] {
+  --tone: var(--key-border);
+  --fill: var(--key-bg);
+  --line: var(--key-border);
+}
+
+[data-tone="mod"] {
+  --tone: var(--tone-mod);
+}
+
+[data-tone="layer"] {
+  --tone: var(--tone-layer);
+}
+
+[data-tone="tap-dance"] {
+  --tone: var(--tone-tap-dance);
+}
+
+[data-tone="macro"] {
+  --tone: var(--tone-macro);
+}
+
+[data-tone="transparent"] {
+  --line: var(--key-dashed);
+}
+
+[data-tone="mod"],
+[data-tone="layer"],
+[data-tone="tap-dance"],
+[data-tone="macro"] {
+  --fill: color-mix(in srgb, var(--tone) var(--tone-fill), var(--key-bg));
+  --line: color-mix(in srgb, var(--tone) var(--tone-line), var(--key-bg));
+}

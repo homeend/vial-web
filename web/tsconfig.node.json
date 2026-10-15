@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023", "dom"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": ["vite.config.ts", "svelte.config.js", "playwright.config.ts", "e2e/**/*.ts", "scripts/**/*.mjs"]
+}
