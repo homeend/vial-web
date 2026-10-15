@@ -130,7 +130,7 @@ def test_setting_value_must_fit_the_setting(client, virtual):
     assert virtual.settings[7] == 65535
 
 
-@pytest.mark.parametrize("text", ["a\0b", "\x01\x04", "\u0105\u20ac", "x" * 256, "bell\x07", "del\x7f"])
+@pytest.mark.parametrize("text", ["a\0b", "\x01\x04", "\u0105\u20ac", "bell\x07", "del\x7f"])
 def test_macro_text_must_be_printable_ascii(client, virtual, text):
     before = snapshot(virtual)
     response = client.put("/api/macros", json={"items": macro_items(m0=[{"type": "text", "text": text}])})
@@ -144,6 +144,28 @@ def test_macro_text_allows_tab_and_newline(client, virtual):
     assert response.status_code == 200
     assert response.json()["items"][3]["actions"] == [{"type": "text", "text": text, "keys": [], "delay": None}]
     assert virtual.macros()[3] == text.encode("ascii")
+
+
+TEXT_400 = {"type": "text", "text": "a" * 200 + "b" * 200, "keys": [], "delay": None}
+TAP_40 = {"type": "tap", "text": None, "keys": ["KC_A"] * 20 + ["KC_B"] * 20, "delay": None}
+BANG = {"type": "text", "text": "!", "keys": [], "delay": None}
+
+
+@pytest.mark.parametrize("steps, merged, edited", [
+    ([{"type": "text", "text": "a" * 200}, {"type": "text", "text": "b" * 200}],
+     [TEXT_400], [dict(TEXT_400, text=TEXT_400["text"] + "!")]),
+    ([{"type": "tap", "keys": ["KC_A"] * 20}, {"type": "tap", "keys": ["KC_B"] * 20}],
+     [TAP_40], [TAP_40, BANG]),
+], ids=["text", "taps"])
+def test_macro_steps_merged_by_the_keyboard_stay_editable(client, virtual, steps, merged, edited):
+    """ The macro format has no separator between steps of the same kind: they read back as one step """
+    assert client.put("/api/macros", json={"items": macro_items(m4=steps)}).status_code == 200
+    items = current_macros(client)
+    assert items[4] == merged
+    items[4].append(BANG)
+    response = client.put("/api/macros", json={"items": items})
+    assert response.status_code == 200, response.text
+    assert current_macros(client)[4] == edited
 
 
 def test_name_index_must_exist(client):
@@ -176,7 +198,6 @@ def test_lighting_is_checked_before_writing(client, virtual):
     ("/api/combos/0", {"keys": ["KC_A", "KC_B", "KC_NO", "KC_NO"], "output": "KC_C", "x": 0}),
     ("/api/key-overrides/0", dict(KO_BODY, enabled=True)),
     ("/api/alt-repeat/0", dict(ARK_BODY, enabled=True)),
-    ("/api/macros", {"items": macro_items(m0=[{"type": "tap", "keys": ["KC_A"] * 33}])}),
     ("/api/macros", {"items": macro_items(m0=[{"type": "tap", "keys": ["KC_A"]}] * 257)}),
     ("/api/macros", {"items": [[] for _ in range(257)]}),
     ("/api/macros", {"items": macro_items(m0=[{"type": "tap", "keys": ["KC_A"], "name": "x"}])}),
@@ -435,7 +456,8 @@ def test_layout_file_with_integer_keycodes(client, virtual):
     assert virtual.combos[3] == (encode("KC_A"), encode("KC_B"), 0, 0, encode("M1"))
     assert virtual.key_overrides[2] == (encode("KC_A"), encode("KC_B"), 3, 2, 0, 2, 0x81)
     assert virtual.alt_repeat_keys[1] == (encode("KC_UP"), encode("KC_DOWN"), 0, 8)
-    assert [a["keys"] for a in response.json()["macros"]["items"][2]["actions"]][0][1]["code"] == "LCTL(KC_C)"
+    step = response.json()["macros"]["items"][2]["actions"][0]
+    assert [k["code"] for k in step["keys"]] == ["KC_A", "LCTL(KC_C)"]
 
 
 @pytest.mark.parametrize("section, change", [

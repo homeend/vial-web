@@ -130,12 +130,12 @@ def set_alt_repeat_key(kb, index, body):
 
 
 def _macro_action(kb, kind, text=None, keys=(), delay=None):
-    """ One step of a new or changed macro, from the API or from a .vil file """
+    """ One step of a new or changed macro, from the API or from a .vil file. There is no limit on the length of
+    a text step or the keys of a tap / down / up step: the keyboard stores consecutive steps of the same kind
+    without a separator, so they read back as one longer step. Only the macro memory limits them. """
     if kind == "text":
         if not isinstance(text, str) or not text:
             raise ValueError("a text step needs text")
-        if len(text) > schemas.MACRO_TEXT_MAX:
-            raise ValueError("a text step holds at most {} characters".format(schemas.MACRO_TEXT_MAX))
         if not MACRO_TEXT.fullmatch(text):
             raise ValueError("macro text can only hold printable ASCII characters, tabs and line breaks")
         return ActionText(text)
@@ -149,8 +149,6 @@ def _macro_action(kb, kind, text=None, keys=(), delay=None):
         raise ValueError("unknown macro step {!r}".format(kind))
     if not keys:
         raise ValueError("a {} step needs at least one key".format(kind))
-    if len(keys) > schemas.MACRO_KEYS_MAX:
-        raise ValueError("a {} step holds at most {} keys".format(kind, schemas.MACRO_KEYS_MAX))
     return tag_to_action[kind]([code(kb, k) for k in keys])
 
 

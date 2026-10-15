@@ -51,7 +51,8 @@ class EventHub:
         self.grace_seconds = grace_seconds
         self.send_timeout = send_timeout
         self._gone_timer = None
-        self._closing = set()
+        self._closing = {}
+        """ socket -> task closing it """
 
     async def add(self, ws):
         self.clients.add(ws)
@@ -84,10 +85,11 @@ class EventHub:
             log.info("dropping a UI tab from events: %s", e.__class__.__name__)
             self.clients.discard(ws)
             # close it, so the tab notices and reconnects instead of silently missing events; in the background,
-            # as a stalled connection may not close quickly either
-            task = asyncio.get_running_loop().create_task(self._close(ws))
-            self._closing.add(task)
-            task.add_done_callback(self._closing.discard)
+            # as a stalled connection may not close quickly either. Once: concurrent broadcasts can both drop it.
+            if ws not in self._closing:
+                task = asyncio.get_running_loop().create_task(self._close(ws))
+                self._closing[ws] = task
+                task.add_done_callback(lambda done: self._closing.pop(ws, None))
 
     async def _close(self, ws):
         try:
@@ -97,6 +99,14 @@ class EventHub:
 
     async def broadcast(self, event):
         await asyncio.gather(*(self._send(ws, event) for ws in list(self.clients)))
+
+    async def shutdown(self):
+        """ Server stopping: cancel the "all tabs closed" timer and any socket closes still running """
+        self.stop()
+        tasks = list(self._closing.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone=None,
@@ -127,7 +137,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         try:
             yield
         finally:
-            hub.stop()
+            await hub.shutdown()
             if task:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

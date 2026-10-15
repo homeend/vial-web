@@ -186,11 +186,7 @@ KEYCODE_MAX_LENGTH = 200
 
 # Limits for new values. A value equal to what the keyboard already holds is accepted even beyond them (firmware
 # defaults and other tools can leave such values), so these are checked in edits.py, not by the request models.
-MACRO_TEXT_MAX = 255
-""" characters in one macro text step """
 MACRO_DELAY_MAX = 64000
-MACRO_KEYS_MAX = 32
-""" keys in one macro tap / down / up step """
 MACRO_STEPS_MAX = 256
 TAPPING_TERM_MAX = 10000
 

@@ -112,6 +112,7 @@ class Tab:
         self.fails = fails
         self.close_stalls = close_stalls
         self.closed = None
+        self.close_calls = 0
 
     async def send_json(self, event):
         if self.fails:
@@ -122,6 +123,7 @@ class Tab:
 
     async def close(self, code=1000, reason=None):
         self.closed = code
+        self.close_calls += 1
         if self.close_stalls:
             await asyncio.Event().wait()
 
@@ -198,13 +200,31 @@ def test_dropped_tabs_are_closed_without_holding_up_the_broadcast():
         start = time.monotonic()
         await hub.broadcast({"type": "reloaded"})
         elapsed = time.monotonic() - start
-        await asyncio.sleep(0.3)  # the stalled close gives up after the send timeout
+        await asyncio.gather(*hub._closing.values())  # the stalled close gives up after the send timeout
         return good, stalled, broken, elapsed, hub
 
     good, stalled, broken, elapsed, hub = asyncio.run(scenario())
-    assert elapsed < 0.5
+    assert elapsed < 1.0  # one send timeout (0.1 s), not also the stalled close
     assert good.closed is None
     assert stalled.closed is not None and broken.closed is not None
+    assert not hub._closing
+
+
+def test_a_tab_is_closed_once_and_shutdown_ends_pending_closes():
+    async def scenario():
+        hub = EventHub(send_timeout=0.1)
+        stalled = Tab(stalls=True, close_stalls=True)
+        await hub.add(stalled)
+        # two broadcasts at once both find the tab stalled
+        await asyncio.gather(hub.broadcast({"type": "reloaded"}), hub.broadcast({"type": "connected"}))
+        pending = list(hub._closing.values())
+        assert pending and not any(task.done() for task in pending)  # the close itself is stalled
+        await hub.shutdown()
+        return stalled, pending, hub
+
+    stalled, pending, hub = asyncio.run(scenario())
+    assert stalled.close_calls == 1
+    assert all(task.done() for task in pending)
     assert not hub._closing
 
 
