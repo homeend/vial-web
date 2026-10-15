@@ -195,8 +195,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.get("/api/session", response_model=schemas.Session)
     def session():
-        return schemas.Session(status="connected" if manager.connected else "disconnected",
-                               fake=manager.backend.fake, device=manager.title, error=manager.error)
+        status = manager.status()
+        return schemas.Session(status="connected" if status.connected else "disconnected",
+                               fake=manager.backend.fake, device=status.title, error=status.error)
 
     @app.get("/api/keyboard", response_model=schemas.KeyboardModel)
     def keyboard():

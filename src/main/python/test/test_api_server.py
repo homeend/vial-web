@@ -212,6 +212,31 @@ def test_recursion_error_is_a_bad_request(server, monkeypatch):
     assert client.put("/api/keymap/0/0/0", json={"code": "KC_A"}).status_code == 422
 
 
+def test_closed_device_handle_is_a_keyboard_error_not_a_bad_request(server):
+    """ hidapi raises ValueError for a closed or invalid handle; that must not look like an invalid request """
+    client, manager, app = server
+    manager.device.close()
+    assert client.put("/api/keymap/0/0/0", json={"code": "KC_B"}).status_code == 502
+    # a request refused before the keyboard is touched is still a bad request
+    assert client.put("/api/keymap/0/0/0", json={"code": "NOT_A_KEYCODE"}).status_code == 422
+    # the hot-plug poll reopens the keyboard
+    assert manager.check() == ["disconnected", "connected"]
+    assert client.put("/api/keymap/0/0/0", json={"code": "KC_B"}).status_code == 200
+    assert manager.backend.virtual.keymap[0][0][0] == encode("KC_B")
+
+
+def test_failed_reload_reports_the_keyboard_as_disconnected(server, monkeypatch):
+    client, manager, app = server
+
+    def broken():
+        raise RuntimeError("bad reply")
+    monkeypatch.setattr(manager.keyboard, "reload_keymap", broken)
+    assert client.post("/api/reload").status_code == 502
+    session = client.get("/api/session").json()
+    assert (session["status"], session["device"], session["error"]) == ("disconnected", None, "bad reply")
+    assert client.get("/api/keyboard").status_code == 503
+
+
 def test_deeply_nested_request_bodies_are_bad_requests(server):
     client, manager, app = server
     deep = b"[" * 100000 + b"]" * 100000
