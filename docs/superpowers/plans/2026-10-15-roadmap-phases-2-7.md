@@ -80,7 +80,7 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
 **Not in phase 2:** "combos using this key" and "how this layer is reached" in the Inspector, the Overview view and the combo underline (all phase 3); the behaviour pages (phase 4).
 
 **Owner checklist**
-1. Run `python src/main/python/vial_web.py` (close the Qt app first).
+1. Build the UI once: `cd web && npm ci && npm run build`. Then run `python src/main/python/vial_web.py` (close the Qt app first).
 2. The browser shows your W-CORNE with your real keymap.
 3. Change one key and change it back.
 4. Switch the language to Polish and check the labels.

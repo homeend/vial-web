@@ -13,7 +13,7 @@ npm ci
 ```
 
 The scripts that run server code (`gen:api`, `check:api`, `e2e`) need the repository's Python
-virtual environment (`.venv` or `venv` at the repository root, with `test-requirements.txt`
+virtual environment (`.venv` or `venv` at the repository root, with `requirements.txt`
 installed), or a Python named by `VIAL_PYTHON`.
 
 ## Developing
@@ -37,7 +37,7 @@ its lock, log and names out of your user folders.
 |---|---|
 | `npm run build` | Build into `dist/` |
 | `npm run dev` | Build, then rebuild on every change |
-| `npm run check` | `svelte-check`: types, and Svelte 5 runes-only syntax; fails on warnings |
+| `npm run check` | `svelte-check` (types, Svelte 5 runes-only syntax; fails on warnings), then `tsc` for the configs, e2e tests and scripts |
 | `npm test` | Vitest unit tests (`src/**/*.test.ts`) |
 | `npm run e2e` | Build, then run the Playwright tests (`e2e/`) against `vial_web.py --fake` |
 | `npm run gen:api` | Regenerate `src/api/schema.d.ts` from the server's OpenAPI schema |
