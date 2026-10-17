@@ -1,0 +1,169 @@
+// How each layer is reached: by which keys, tap dances and combos, from which layers, and whether the keyboard can get
+// there at all from the base layer.
+//
+// Only what the keymap says is known: layer switching done in the firmware's own C code (tri-layer,
+// layer_state_set_user) isn't visible over the Vial protocol.
+import type { Described, KeyboardModel } from "../api/types";
+import type { Placement } from "../keyboard/geometry";
+import type { KeyRef } from "../keyboard/refs";
+import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
+import { codesOn, comboLayers, combosOf, type ComboInfo } from "./combos";
+import { effectiveAt, isLayer } from "./effective";
+
+export type LayerAction = NonNullable<Described["layerAction"]>;
+/** A tap dance slot that a way goes through */
+export interface ViaSlot {
+  tapDance: number;
+  slot: SlotLabel;
+}
+
+export type Via =
+  /** layer 0: where the keyboard starts */
+  | { type: "default" }
+  /** a key (or encoder direction) set on a layer: a layer key, a layer-tap, or a tap dance with a layer in a slot */
+  | { type: "key"; ref: KeyRef; layer: number; action: Described; slot: ViaSlot | null }
+  /** a combo whose output is a layer key, or a tap dance with a layer in a slot */
+  | { type: "combo"; combo: ComboInfo; slot: ViaSlot | null }
+  /** Vial's tri-layer keys FN_MO13 and FN_MO23 held together: each key, and the layer it is set on */
+  | { type: "tri-layer"; keys: { ref: KeyRef; layer: number }[] };
+
+export interface Way {
+  via: Via;
+  /** what it does with the layer */
+  action: LayerAction;
+  /** the layers it works on (never the layer it reaches); empty for a combo whose keycodes aren't on any key */
+  from: number[];
+}
+
+export interface LayerReach {
+  layer: number;
+  ways: Way[];
+  /** whether the keyboard can get to it from the base layer, through the ways */
+  reachable: boolean;
+}
+
+interface Target {
+  layer: number;
+  action: LayerAction;
+  slot: ViaSlot | null;
+}
+
+/** The layers a keycode reaches: a layer key or layer-tap's own layer, or each layer in a tap dance's slots. Layers the
+ * keyboard doesn't have are left out. */
+export function layerTargets(model: Pick<KeyboardModel, "layers" | "tapDance">, d: Described): Target[] {
+  if ((d.kind === "layer" || d.kind === "layer-tap") && isLayer(model, d.layer) && d.layerAction) {
+    return [{ layer: d.layer, action: d.layerAction, slot: null }];
+  }
+  if (d.kind !== "tap-dance" || d.index == null) return [];
+  const td = model.tapDance[d.index];
+  if (!td) return [];
+  return tapDanceSlots(td).flatMap(({ label, action }) =>
+    (action.kind === "layer" || action.kind === "layer-tap") && isLayer(model, action.layer) && action.layerAction
+      ? [{ layer: action.layer, action: action.layerAction, slot: { tapDance: td.index, slot: label } }]
+      : []);
+}
+
+type Model = Pick<KeyboardModel, "layers" | "tapDance" | "combos">;
+
+/** A tri-layer key (FN_MO13, FN_MO23) on the keymap */
+interface FnKey {
+  ref: KeyRef;
+  layer: number;
+  /** its own layer (1 or 2) and the one both together turn on (3) */
+  own: number;
+  tri: number;
+  worksOn: number[];
+}
+
+/** Holding two tri-layer keys of different layers: one pressed first from a layer it works on, which turns its own
+ * layer on, where the other one must work (set there, or fallen through to) */
+function triLayerWays(keys: FnKey[]): { target: number; way: Way }[] {
+  const ways: { target: number; way: Way }[] = [];
+  for (const a of keys) {
+    for (const b of keys) {
+      if (a.own >= b.own || a.tri !== b.tri) continue;
+      const from = new Set([
+        ...(b.worksOn.includes(a.own) ? a.worksOn : []),
+        ...(a.worksOn.includes(b.own) ? b.worksOn : []),
+      ]);
+      from.delete(a.tri);
+      if (from.size === 0) continue;
+      ways.push({
+        target: a.tri,
+        way: {
+          via: { type: "tri-layer", keys: [{ ref: a.ref, layer: a.layer }, { ref: b.ref, layer: b.layer }] },
+          action: "while held",
+          from: [...from].sort((x, y) => x - y),
+        },
+      });
+    }
+  }
+  return ways;
+}
+
+/** For every layer, every way it is reached and from which layers, and whether it can be reached at all.
+ *
+ * - Keys: a key set on layer S works on S, and on the layers where that key is transparent when S is the base layer
+ *   (see effectiveAt). A key on the layer it reaches doesn't reach it (it can only leave it), so isn't listed.
+ * - Combos: a combo works on the layers where each of its keycodes is on some key (QMK matches combos by keycode on
+ *   the active layers), transparent keys falling through to the base layer.
+ * - Tri-layer keys: FN_MO13 and FN_MO23 held together turn on layer 3 (see triLayerWays).
+ * - LM (a layer with modifiers) counts as a key held for its layer.
+ * - Layer 0 is where the keyboard starts. A layer is reachable when a way to it works on a reachable layer; DF (a new
+ *   default layer) counts like any other way.
+ */
+export function layerReach(model: Model, placement: Placement): LayerReach[] {
+  const count = model.layers.length;
+  const ways: Way[][] = Array.from({ length: count }, (_, layer) => (layer === 0
+    ? [{ via: { type: "default" }, action: "default", from: [] }]
+    : []));
+
+  const refs = placement.items.map((i) => ({ kind: i.kind, index: i.index }));
+  const fnKeys: FnKey[] = [];
+  for (let layer = 0; layer < count; layer++) {
+    for (const ref of refs) {
+      const action = effectiveAt(model, layer, ref);
+      // each key once, from the layer it is set on
+      if (!action || action.layer !== layer) continue;
+      const worksOn = Array.from({ length: count }, (_, l) => l).filter((l) => effectiveAt(model, l, ref)?.layer === layer);
+      const d = action.action;
+      if (d.kind === "layer" && isLayer(model, d.layer) && isLayer(model, d.triLayer)) {
+        fnKeys.push({ ref, layer, own: d.layer, tri: d.triLayer, worksOn });
+      }
+      for (const target of layerTargets(model, action.action)) {
+        const from = worksOn.filter((l) => l !== target.layer);
+        if (from.length === 0) continue;
+        ways[target.layer].push({
+          via: { type: "key", ref, layer, action: action.action, slot: target.slot },
+          action: target.action,
+          from,
+        });
+      }
+    }
+  }
+
+  for (const { target, way } of triLayerWays(fnKeys)) ways[target].push(way);
+
+  const layerCodes = Array.from({ length: count }, (_, layer) => codesOn(model, placement, layer));
+  for (const combo of combosOf(model, placement)) {
+    const usable = comboLayers(combo, layerCodes);
+    for (const target of layerTargets(model, combo.output)) {
+      const from = usable.filter((l) => l !== target.layer);
+      // one that only works on the layer it reaches only leaves it; one that works nowhere is still shown
+      if (usable.length > 0 && from.length === 0) continue;
+      ways[target.layer].push({ via: { type: "combo", combo, slot: target.slot }, action: target.action, from });
+    }
+  }
+
+  const reachable = new Set(count > 0 ? [0] : []);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (let layer = 0; layer < count; layer++) {
+      if (!reachable.has(layer) && ways[layer].some((w) => w.from.some((l) => reachable.has(l)))) {
+        reachable.add(layer);
+        grew = true;
+      }
+    }
+  }
+  return ways.map((w, layer) => ({ layer, ways: w, reachable: reachable.has(layer) }));
+}

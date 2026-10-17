@@ -27,8 +27,11 @@ export function freeTapDance(model: Model): number | null {
   return free ? free.index : null;
 }
 
+/** The four ways of pressing a tap dance key */
+export type SlotLabel = "Tap" | "Hold" | "Double tap" | "Tap, then hold";
+
 /** The four ways of pressing a tap dance key, and what each does */
-export function tapDanceSlots(td: TapDance): { label: string; action: Described }[] {
+export function tapDanceSlots(td: TapDance): { label: SlotLabel; action: Described }[] {
   return [
     { label: "Tap", action: td.tap },
     { label: "Hold", action: td.hold },

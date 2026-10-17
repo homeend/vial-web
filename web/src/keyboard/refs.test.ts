@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Described, KeyGeometry, KeyboardModel } from "../api/types";
-import { actionAt, positionLine, whereIs } from "./refs";
+import { actionAt, positionLine, refId, whereIs } from "./refs";
 
 const d = (code: string): Described => ({
   code, kind: "basic", tap: code, legend: { main: code }, hold: null, layer: null, layerAction: null, index: null,
@@ -22,6 +22,13 @@ describe("actionAt", () => {
     expect(actionAt(model, 1, { kind: "key", index: 0 })?.code).toBe("KC_B");
     expect(actionAt(model, 0, { kind: "encoder", index: 1 })?.code).toBe("KC_VOLU");
     expect(actionAt(model, 5, { kind: "key", index: 0 })).toBeUndefined();
+  });
+});
+
+describe("refId", () => {
+  it("is a key's or encoder direction's identity as one string", () => {
+    expect(refId({ kind: "key", index: 3 })).toBe("key:3");
+    expect(refId({ kind: "encoder", index: 0 })).toBe("encoder:0");
   });
 });
 

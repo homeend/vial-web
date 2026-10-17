@@ -7,6 +7,11 @@ export interface KeyRef {
   index: number;
 }
 
+/** "key:3" or "encoder:1": a key's identity as one string (the keyboard drawing's data-ref, keys of sets and maps) */
+export function refId(ref: KeyRef): string {
+  return `${ref.kind}:${ref.index}`;
+}
+
 /** What a key or encoder direction does on a layer */
 export function actionAt(model: Pick<KeyboardModel, "layers">, layer: number, ref: KeyRef): Described | undefined {
   const l = model.layers[layer];
