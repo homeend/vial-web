@@ -1,5 +1,6 @@
 <script lang="ts">
   import { legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
+  import { legendFont } from "./textWidth.svelte";
 
   interface Props {
     face: KeyFace;
@@ -17,8 +18,8 @@
   const inner = $derived(size * 0.86 - 4);
   const sizes = $derived(
     round
-      ? legendSizes({ ...face, main }, inner * 0.8, inner * 0.6, size)
-      : legendSizes({ ...face, main }, inner, inner, size),
+      ? legendSizes({ ...face, main }, inner * 0.8, inner * 0.6, size, legendFont.width)
+      : legendSizes({ ...face, main }, inner, inner, size, legendFont.width),
   );
 </script>
 
@@ -26,7 +27,7 @@
   class="cap tone-{face.tone}" data-tone={face.tone}
   class:round
   style="--size: {size}px; --tap-size: {sizes.main}px; --shifted-size: {sizes.shifted}px;
-    --hold-size: {sizes.hold}px"
+    --hold-size: {sizes.hold}px; --hold-lines: {sizes.holdLines || 2}"
   aria-hidden="true"
 >
   {#if face.altGr}<span class="alt-gr">{face.altGr}</span>{/if}
@@ -94,8 +95,8 @@
     margin-top: calc(var(--size) * 0.04);
     overflow: hidden;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    -webkit-line-clamp: var(--hold-lines, 2);
+    line-clamp: var(--hold-lines, 2);
     color: color-mix(in srgb, var(--tone) var(--tone-text), var(--key-text));
     font-size: var(--hold-size);
     font-weight: 550;

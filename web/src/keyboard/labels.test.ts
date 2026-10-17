@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Described, KeyboardModel } from "../api/types";
 import {
-  actionSummary, holdSize, keyFace, keyLabel, keyTitle, legendScale, legendSizes, legendWords, MAIN_LINE, mainLines,
-  namesOf, toneOf, type Names,
+  actionSummary, HOLD_MAX_LINES, holdLines, holdSize, keyFace, keyLabel, keyTitle, legendScale, legendSizes, legendWords, MAIN_LINE, mainLines,
+  namesOf, toneOf, estimatedWidth, type Names, type TextWidth,
 } from "./labels";
 
 type Fields = Partial<Described> & Pick<Described, "code" | "kind" | "tap">;
@@ -366,5 +366,115 @@ describe("legendSizes", () => {
     const holdLines = sizes.hold * 0.55 * "Layer 2".length > 0.83 * 48 ? 2 : 1;
     expect(mainHeight("Ctrl+Shift+Esc", sizes.main, 0.83 * 48) + holdLines * sizes.hold * 1.1 + 0.04 * 48)
       .toBeLessThanOrEqual(0.83 * 48 + 1e-9);
+  });
+});
+
+describe("a measured text width", () => {
+  /** a font as wide as Verdana: 0.7 of the font size per character, wider than the 0.55 estimate */
+  const wide = (text: string) => [...text].length * 0.7;
+  const face = (main: string, hold: string | null) => ({ main, shifted: null, altGr: null, hold, tone: "macro" as const });
+
+  it("is estimated from the characters by default", () => {
+    expect(estimatedWidth("Caps", 10)).toBeCloseTo(4 * 0.55, 9);
+    expect(estimatedWidth("Caps", 100)).toBe(estimatedWidth("Caps", 10));
+    expect(estimatedWidth("日本", 10)).toBe(2);
+    expect(holdSize("Tab / Caps Lock", 40, 48)).toBe(holdSize("Tab / Caps Lock", 40, 48, estimatedWidth));
+  });
+
+  it("decides where a main legend breaks, the space between words included", () => {
+    // 14 px a character at 20 px: "Caps" is 56 px, and "Caps Lock" 126 px
+    expect(mainLines("Caps Lock", 20, 125, wide)).toBe(2);
+    expect(mainLines("Caps Lock", 20, 126, wide)).toBe(1);
+    // a space measured narrower than the letters around it
+    const narrowSpace = (text: string) => (text === " " ? 0.25 : text.length * 0.7);
+    expect(mainLines("Caps Lock", 20, 117, narrowSpace)).toBe(1);
+  });
+
+  it("makes a long name small enough for two lines in a wide font", () => {
+    // a 1.5u key 72 px wide has about 60 px for its labels
+    const size = holdSize("Tab / Caps Lock", 60, 72, wide);
+    expect(size).toBeLessThan(holdSize("Tab / Caps Lock", 60, 72));
+    expect(size * wide("Caps Lock")).toBeLessThanOrEqual(60);
+  });
+
+  it("fits the longest word across the key in a wide font", () => {
+    const sizes = legendSizes(face("Bootloader", "git status"), 60, 60, 72, wide);
+    expect(sizes.main * wide("Bootloader")).toBeLessThanOrEqual(60 + 1e-9);
+    expect(sizes.main).toBeLessThan(legendSizes(face("Bootloader", "git status"), 60, 60, 72).main);
+    expect(sizes.hold * wide("status")).toBeLessThanOrEqual(60 + 1e-9);
+  });
+
+  it("keeps the main legend and a two-line name in the key's height in a wide font", () => {
+    const sizes = legendSizes(face("TD 0", "Tab / Caps Lock"), 40, 40, 48, wide);
+    const lines = mainLines("TD 0", sizes.main, 40, wide);
+    expect(lines * MAIN_LINE * sizes.main + 2 * sizes.hold * 1.1 + 0.04 * 48).toBeLessThanOrEqual(40 + 1e-9);
+  });
+});
+
+describe("holdLines", () => {
+  const wide = (text: string) => [...text].length * 0.7;
+
+  it("counts the lines of a name broken greedily at spaces", () => {
+    // 7 px a character at 10 px: "Tab / Caps" is 70 px, the whole name 105 px
+    expect(holdLines("Tab / Caps Lock", 10, 105, wide)).toBe(1);
+    expect(holdLines("Tab / Caps Lock", 10, 70, wide)).toBe(2);
+    // "Tab /" then "Caps Lock" (63 px), wider than 62
+    expect(holdLines("Tab / Caps Lock", 10, 63, wide)).toBe(2);
+    expect(holdLines("Tab / Caps Lock", 10, 62, wide)).toBe(3);
+  });
+
+  it("breaks a word wider than a line anywhere", () => {
+    expect(holdLines("Bootloader", 10, 30, wide)).toBe(3);
+    expect(holdLines("A Bootloader", 10, 30, wide)).toBe(4);
+  });
+
+  it("is one line for an empty name, or without room", () => {
+    expect(holdLines("", 10, 40)).toBe(1);
+    expect(holdLines("git status", 0, 40)).toBe(1);
+  });
+});
+
+describe("a long name on a small key in a wide font", () => {
+  const wide = (text: string) => [...text].length * 0.7;
+  const face = { main: "TD 0", shifted: null, altGr: null, hold: "Tab / Caps Lock", tone: "tap-dance" as const };
+
+  it("takes two lines while it can shrink", () => {
+    const size = holdSize("Tab / Caps Lock", 60, 72, wide);
+    expect(holdLines("Tab / Caps Lock", size, 60, wide)).toBeLessThanOrEqual(2);
+    expect(legendSizes(face, 60, 60, 72, wide).holdLines).toBe(2);
+  });
+
+  it("gets a third line at the smallest size, and the main legend makes room for it", () => {
+    // 37 px wide (a 1u key at 1280 px): "Tab / Caps" is 49 px at 7 px
+    const sizes = legendSizes(face, 37, 37, 44, wide);
+    expect(sizes.hold).toBe(7);
+    expect(sizes.holdLines).toBe(HOLD_MAX_LINES);
+    const lines = mainLines("TD 0", sizes.main, 37, wide);
+    expect(lines * MAIN_LINE * sizes.main + 3 * sizes.hold * 1.1 + 0.04 * 44).toBeLessThanOrEqual(37 + 1e-9);
+  });
+
+  it("has no hold lines without a hold label", () => {
+    expect(legendSizes({ ...face, hold: null }, 37, 37, 44, wide).holdLines).toBe(0);
+  });
+});
+
+describe("a text width that depends on the size", () => {
+  /** a hinted font: each character 0.55 of the font size, rounded up to whole pixels, so small text is wider than
+   * scaled down (5 px a character at 8 px, 0.625 of the font size; 0.55 at 100 px) */
+  const hinted: TextWidth = (text, px) => ([...text].length * Math.ceil(0.55 * px)) / px;
+  const face = (main: string, hold: string | null) => ({ main, shifted: null, altGr: null, hold, tone: "macro" as const });
+
+  it("is measured at the size the legend gets", () => {
+    for (const room of [40, 47, 60]) {
+      const sizes = legendSizes(face("Bootloader", "Tab / Caps Lock"), room, room, room * 1.2, hinted);
+      expect(sizes.main * hinted("Bootloader", sizes.main)).toBeLessThanOrEqual(room + 1e-9);
+      expect(holdLines("Tab / Caps Lock", sizes.hold, room, hinted)).toBeLessThanOrEqual(sizes.holdLines);
+      expect(sizes.hold * hinted("Caps", sizes.hold)).toBeLessThanOrEqual(room + 1e-9);
+    }
+  });
+
+  it("shrinks a long name until it takes two lines at its size", () => {
+    const size = holdSize("git status", 40, 48, hinted);
+    expect(holdLines("git status", size, 40, hinted)).toBeLessThanOrEqual(2);
   });
 });

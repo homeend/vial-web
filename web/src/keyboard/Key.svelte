@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PlacedKey } from "./geometry";
   import { legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
+  import { legendFont } from "./textWidth.svelte";
 
   interface Props {
     item: PlacedKey;
@@ -40,7 +41,7 @@
 
   // the legends fit inside the primary rectangle, less the gap between keys and the padding
   const sizes = $derived(
-    legendSizes(face, (item.w - GAP - 2 * PAD) * u, (item.h - GAP - 2 * PAD) * u, u),
+    legendSizes(face, (item.w - GAP - 2 * PAD) * u, (item.h - GAP - 2 * PAD) * u, u, legendFont.width),
   );
 
   const style = $derived(
@@ -53,6 +54,7 @@
       `--tap-size: ${sizes.main}px`,
       `--shifted-size: ${sizes.shifted}px`,
       `--hold-size: ${sizes.hold}px`,
+      `--hold-lines: ${sizes.holdLines || 2}`,
       item.r ? `transform: rotate(${item.r}deg)` : "",
       item.r ? `transform-origin: ${(item.rx - item.x - box.left) * u}px ${(item.ry - item.y - box.top) * u}px` : "",
     ].filter(Boolean).join("; "),
@@ -206,15 +208,16 @@
     line-height: 1;
   }
 
-  /* names of tap dances and macros can be long: two lines at most, smaller for longer names */
+  /* names of tap dances and macros can be long: two lines at most (three at the smallest size), smaller for longer
+     names */
   .hold {
     display: -webkit-box;
     max-width: 100%;
     margin-top: calc(var(--u) * 0.04);
     overflow: hidden;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    -webkit-line-clamp: var(--hold-lines, 2);
+    line-clamp: var(--hold-lines, 2);
     color: color-mix(in srgb, var(--tone) var(--tone-text), var(--key-text));
     font-size: var(--hold-size);
     font-weight: 550;

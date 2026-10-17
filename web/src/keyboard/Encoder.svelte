@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PlacedKey } from "./geometry";
   import { legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
+  import { legendFont } from "./textWidth.svelte";
 
   interface Props {
     /** one direction of an encoder: 0 counter-clockwise, 1 clockwise */
@@ -19,7 +20,7 @@
   const size = $derived(Math.min(item.w, item.h) * u * 0.91);
   // the labels fit in the box inscribed in the knob, inside its border (2 px): 80 % of its width by 60 % of its height
   const inner = $derived(Math.max(0, size - 4));
-  const sizes = $derived(legendSizes({ ...face, shifted: null }, inner * 0.8, inner * 0.6, u * 0.9));
+  const sizes = $derived(legendSizes({ ...face, shifted: null }, inner * 0.8, inner * 0.6, u * 0.9, legendFont.width));
 
   // a round knob needs no rotation: it sits on the (rotated) centre of its key
   const style = $derived(
@@ -31,6 +32,7 @@
       `--u: ${u}px`,
       `--tap-size: ${sizes.main}px`,
       `--hold-size: ${sizes.hold}px`,
+      `--hold-lines: ${sizes.holdLines || 2}`,
     ].join("; "),
   );
 </script>
@@ -144,8 +146,8 @@
     margin-top: calc(var(--u) * 0.036);
     overflow: hidden;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
+    -webkit-line-clamp: var(--hold-lines, 2);
+    line-clamp: var(--hold-lines, 2);
     color: color-mix(in srgb, var(--tone) var(--tone-text), var(--key-text));
     font-size: var(--hold-size);
     line-height: 1.1;

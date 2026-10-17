@@ -1,4 +1,4 @@
-import { expect, keyIndex, labelsCutOff, screenshots, test } from "./fixtures";
+import { expect, keyIndex, labelsCutOff, open, screenshots, test, useFont } from "./fixtures";
 
 test.describe("width and fit", () => {
   test("1280 x 800: every label fits on its key", async ({ app }) => {
@@ -39,6 +39,21 @@ test.describe("width and fit", () => {
       expect(await labelsCutOff(app)).toEqual([]);
     }).toPass();
     await screenshots(app, "keymap-800", { fullPage: true });
+  });
+
+  // labels are sized by measuring them in the font the browser uses, which differs between systems (Segoe UI on
+  // Windows, often the much wider DejaVu Sans on Linux): a wide font must fit too
+  test("labels fit with a wide font, 800, 1280 and 2560 wide", async ({ page }) => {
+    const font = `Verdana, "DejaVu Sans", sans-serif`;
+    await useFont(page, font);
+    const app = await open(page, process.env.VIAL_URL);
+    expect(await app.locator("button.key .tap").first().evaluate((e) => getComputedStyle(e).fontFamily)).toBe(font);
+    for (const [width, height] of [[1280, 800], [2560, 1440], [800, 900]]) {
+      await app.setViewportSize({ width, height });
+      // the keyboard rescales a frame after the resize
+      await expect(async () => expect(await labelsCutOff(app)).toEqual([])).toPass({ timeout: 5_000 });
+      await screenshots(app, `keymap-wide-font-${width}`, { fullPage: true });
+    }
   });
 });
 

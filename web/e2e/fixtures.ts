@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 /** e2e/screenshots/, wherever the tests are run from */
 const SCREENSHOTS = fileURLToPath(new URL("./screenshots/", import.meta.url));
 
-async function open(page: Page, url: string | undefined): Promise<Page> {
+/** Opens a server's link and waits for the keyboard to be drawn */
+export async function open(page: Page, url: string | undefined): Promise<Page> {
   if (!url) throw new Error("the global setup did not start the server");
   await page.goto(url); // the link with the token sets the session cookie
   await expect(page.locator("button.key").first()).toBeVisible();
@@ -89,6 +90,25 @@ export async function screenshots(page: Page, name: string, options: { fullPage?
     await page.screenshot({ path: join(SCREENSHOTS, `${name}-${scheme}.png`), animations: "disabled", ...options });
   }
   await page.emulateMedia({ colorScheme: null });
+}
+
+/** Makes the page draw all its text in a font family from the start, before the app first measures text, as a
+ * system with other fonts would (call it before opening the page) */
+export async function useFont(page: Page, family: string): Promise<void> {
+  await page.addInitScript((font) => {
+    const apply = () => document.documentElement.style.setProperty("--font", font, "important");
+    if (document.documentElement) {
+      apply();
+      return;
+    }
+    // the script may run before the document has its root element
+    const observer = new MutationObserver(() => {
+      if (!document.documentElement) return;
+      apply();
+      observer.disconnect();
+    });
+    observer.observe(document, { childList: true });
+  }, family);
 }
 
 /** The key labels that don't fit on their key. Tap dance and macro names wrap to two lines and shrink, and the main
