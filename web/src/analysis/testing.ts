@@ -129,7 +129,9 @@ export function corne(setup: Setup): KeyboardModel {
   };
 }
 
-/** The simulator's Corne (simulator/corne.py), as the analysis sees it */
+/** A simplified Corne shaped like the simulator's (simulator/corne.py), NOT a copy of it: the base layer is close, but
+ * layers 1 and 3 hold only a few keys (layer 1 is mostly transparent) and the right-hand mod-taps use the left-hand
+ * mods. Don't take its expected values as the real simulator's. */
 export function simulatedCorne(): KeyboardModel {
   const grid = (rows: string[][]) => rows.flatMap((r) => r);
   const base = [

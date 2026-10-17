@@ -114,6 +114,37 @@ describe("layerReach", () => {
     expect(layers[3].ways).toEqual([]);
   });
 
+  it("doesn't take one physical key for both tri-layer keys", () => {
+    // key 0 is FN_MO13 on layer 0 and FN_MO23 on layer 1: holding it keeps the layer it came from
+    const layers = reach({
+      layers: [layer({ 0: "FN_MO13" }, "KC_NO"), layer({ 0: "FN_MO23" }, "KC_NO"), layer({}, "KC_NO"), layer({}, "KC_NO")],
+    });
+    expect(layers[3].ways).toEqual([]);
+    expect(layers[3].reachable).toBe(false);
+  });
+
+  it("finds no tri-layer way on a keyboard with fewer than 4 layers", () => {
+    const layers = reach({
+      layers: [layer({ [AT.leftInnerThumb]: "FN_MO13", [AT.rightInnerThumb]: "FN_MO23" }, "KC_NO"), layer({}), layer({})],
+    });
+    expect(layers.flatMap((l) => l.ways).some((w) => w.via.type === "tri-layer")).toBe(false);
+  });
+
+  it("gives no way for a layer the keyboard doesn't have, in a tap dance slot or as a combo's output", () => {
+    const layers = reach({
+      layers: [layer({ 0: "TD(0)", 1: "KC_J", 2: "KC_K" }, "KC_NO"), layer({}), layer({})],
+      tapDances: [["KC_NO", "OSL(3)", "KC_NO", "KC_NO"]],
+      combos: [{ keys: ["KC_J", "KC_K"], output: "OSL(3)" }],
+    });
+    expect(layers.map((l) => l.ways.length)).toEqual([1, 0, 0]);
+  });
+
+  it("counts PDF (a new persistent default layer) like DF", () => {
+    const layers = reach({ layers: [layer({ 0: "PDF(1)" }, "KC_NO"), layer({})] });
+    expect(layers[1].ways.map((w) => w.action)).toEqual(["default (saved)"]);
+    expect(layers[1].reachable).toBe(true);
+  });
+
   it("reaches layers through a tap dance's slots: tap, hold, double tap and tap then hold", () => {
     const layers = reach({
       layers: [layer({ [AT.leftOuterThumb]: "TD(0)" }, "KC_NO"), ...Array.from({ length: 4 }, () => layer({}, "KC_NO"))],

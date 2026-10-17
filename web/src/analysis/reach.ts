@@ -5,7 +5,7 @@
 // layer_state_set_user) isn't visible over the Vial protocol.
 import type { Described, KeyboardModel } from "../api/types";
 import type { Placement } from "../keyboard/geometry";
-import type { KeyRef } from "../keyboard/refs";
+import { refId, type KeyRef } from "../keyboard/refs";
 import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
 import { codesOn, comboLayers, combosOf, type ComboInfo } from "./combos";
 import { effectiveAt, isLayer } from "./effective";
@@ -76,12 +76,15 @@ interface FnKey {
 }
 
 /** Holding two tri-layer keys of different layers: one pressed first from a layer it works on, which turns its own
- * layer on, where the other one must work (set there, or fallen through to) */
+ * layer on, where the other one must work (set there, or fallen through to). The second key is looked up on the first
+ * key's layer, which extends the base-layer fall-through assumption of effectiveAt. The two must be different physical
+ * keys. */
 function triLayerWays(keys: FnKey[]): { target: number; way: Way }[] {
   const ways: { target: number; way: Way }[] = [];
   for (const a of keys) {
     for (const b of keys) {
-      if (a.own >= b.own || a.tri !== b.tri) continue;
+      // one physical key can't be both: the key held keeps the layer it came from
+      if (a.own >= b.own || a.tri !== b.tri || refId(a.ref) === refId(b.ref)) continue;
       const from = new Set([
         ...(b.worksOn.includes(a.own) ? a.worksOn : []),
         ...(a.worksOn.includes(b.own) ? b.worksOn : []),
