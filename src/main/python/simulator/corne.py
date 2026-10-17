@@ -92,10 +92,10 @@ LAYERS = [
 ]
 
 
-def keymap():
-    """ {(layer, row, col): keycode} for all layers """
+def keymap(layers=None):
+    """ {(layer, row, col): keycode} for the first `layers` layers (all of them by default) """
     out = {}
-    for layer, keys in enumerate(LAYERS):
+    for layer, keys in enumerate(LAYERS[:layers]):
         for side, positions in (("left", LEFT), ("right", RIGHT)):
             for r in range(3):
                 for c in range(6):
@@ -120,14 +120,15 @@ def macros():
     return b"\x00".join(data) + b"\x00"
 
 
-def make_corne():
-    """ A fresh simulated Corne; nothing is shared between calls """
+def make_corne(layers=len(LAYERS)):
+    """ A fresh simulated Corne; nothing is shared between calls. With more layers than the sample keymap has, the
+    others are empty (KC_NO); with fewer, the sample's last layers are left out. """
     ko_options_enabled = 0b1000_0111  # enabled, activates on trigger down / required mod down / negative mod up
     ark_options = 0b1110  # enabled, ignore mod handedness, bidirectional
     return VirtualKeyboard(
         definition(),
-        layers=len(LAYERS),
-        keymap=keymap(),
+        layers=layers,
+        keymap=keymap(layers),
         uid=CORNE_UID,
         vial_protocol=VIAL_PROTOCOL,
         macro_count=16,

@@ -92,6 +92,34 @@ def test_definition_requires_fake():
         vial_web.parse_args(["--definition", "x.json"])
 
 
+@pytest.mark.parametrize("layers", [1, 8, 32])
+def test_fake_mode_with_more_or_fewer_layers(capsys, layers):
+    assert vial_web.main(["--fake", "--layers", str(layers), "--dry-run"]) == 0
+    summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert (summary["name"], summary["layers"]) == ("Simulated Corne", layers)
+
+
+def test_layers_with_a_custom_definition(tmp_path, capsys):
+    path = tmp_path / "vial.json"
+    path.write_text(json.dumps(LAYOUT_2x2), encoding="utf-8")
+    assert vial_web.main(["--fake", "--definition", str(path), "--layers", "6", "--dry-run"]) == 0
+    summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert (summary["name"], summary["layers"]) == ("Tiny", 6)
+
+
+@pytest.mark.parametrize("layers", ["0", "33", "-1", "eight", "2.5"])
+def test_layers_must_be_a_layer_count(layers, capsys):
+    with pytest.raises(SystemExit):
+        vial_web.parse_args(["--fake", "--layers", layers])
+    assert "layer count (1 to 32)" in capsys.readouterr().err
+
+
+def test_layers_requires_fake(capsys):
+    with pytest.raises(SystemExit):
+        vial_web.parse_args(["--layers", "8"])
+    assert "only work with --fake" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("port", ["-1", "65536", "http", "1.5"])
 def test_port_must_be_a_port_number(port):
     with pytest.raises(SystemExit):
@@ -485,7 +513,7 @@ def simulated(monkeypatch):
     from simulator import corne
     made = []
     make = corne.make_corne
-    monkeypatch.setattr(corne, "make_corne", lambda: made.append(make()) or made[-1])
+    monkeypatch.setattr(corne, "make_corne", lambda **kwargs: made.append(make(**kwargs)) or made[-1])
     return made
 
 

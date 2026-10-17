@@ -272,15 +272,31 @@ def open_running(url, args):
 def make_backend(args):
     if args.fake:
         from server.device import FakeBackend
+        layers = args.layers or DEFAULT_FAKE_LAYERS
         if args.definition:
             from simulator.virtual_keyboard import VirtualKeyboard
             with open(args.definition, "r", encoding="utf-8") as inf:
                 definition = json.load(inf)
-            return FakeBackend(lambda: VirtualKeyboard(definition))
+            return FakeBackend(lambda: VirtualKeyboard(definition, layers=layers))
         from simulator.corne import make_corne
-        return FakeBackend(make_corne)
+        return FakeBackend(lambda: make_corne(layers=layers))
     from server.device import HidBackend
     return HidBackend()
+
+
+DEFAULT_FAKE_LAYERS = 4
+MAX_FAKE_LAYERS = 32
+""" Vial keyboards have at most 32 layers (the layer keycodes MO, TG, ... hold 5 bits) """
+
+
+def layer_count(text):
+    try:
+        count = int(text)
+    except ValueError:
+        count = 0
+    if not 1 <= count <= MAX_FAKE_LAYERS:
+        raise argparse.ArgumentTypeError("{!r} is not a layer count (1 to {})".format(text, MAX_FAKE_LAYERS))
+    return count
 
 
 def port_number(text):
@@ -298,6 +314,9 @@ def parse_args(argv):
     parser.add_argument("--fake", action="store_true", help="use a simulated keyboard instead of real hardware")
     parser.add_argument("--definition", help="with --fake: vial.json of the keyboard to simulate")
     parser.add_argument("--layout", help="with --fake: .vil layout file to load into the simulated keyboard")
+    parser.add_argument("--layers", type=layer_count,
+                        help="with --fake: how many layers the simulated keyboard has (1 to {}, default {})".format(
+                            MAX_FAKE_LAYERS, DEFAULT_FAKE_LAYERS))
     parser.add_argument("--port", type=port_number, default=0, help="port to listen on (default: any free port)")
     parser.add_argument("--no-browser", action="store_true", help="don't open the browser")
     parser.add_argument("--dry-run", action="store_true", help="connect, print a summary and exit without serving")
@@ -305,8 +324,8 @@ def parse_args(argv):
                         help="keep the instance lock, session file, log and names in this folder instead of the "
                              "user's data and config folders (for tests and development)")
     args = parser.parse_args(argv)
-    if (args.definition or args.layout) and not args.fake:
-        parser.error("--definition and --layout only work with --fake")
+    if (args.definition or args.layout or args.layers) and not args.fake:
+        parser.error("--definition, --layout and --layers only work with --fake")
     return args
 
 
