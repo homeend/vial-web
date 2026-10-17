@@ -96,6 +96,43 @@ def test_layer_action(code, action):
     assert describe(code)["layerAction"] == action
 
 
+@pytest.mark.parametrize("protocol, value, layer, action, hold", [
+    (6, 0x5022, 1, "while held, with modifiers", "Shift"),
+    (6, 0x5045, 2, "while held, with modifiers", "Ctrl+Alt"),
+    (6, 0x51F2, 15, "while held, with modifiers", "RShift"),
+    (6, 0x5180, 12, "while held", None),  # no modifiers: as MO
+    (5, 0x5912, 1, "while held, with modifiers", "Shift"),
+    (5, 0x5925, 2, "while held, with modifiers", "Ctrl+Alt"),
+])
+def test_layer_mod_is_a_layer_key(monkeypatch, protocol, value, layer, action, hold):
+    monkeypatch.setattr(Keycode, "protocol", protocol)
+    result = describe(Keycode.serialize(value))
+    assert (result["kind"], result["layer"], result["layerAction"], result["hold"], result["triLayer"]) ==         ("layer", layer, action, hold, None)
+    assert result["legend"]["main"] == "LM {}".format(layer)
+    assert result["description"].startswith("Turns on layer {} while held".format(layer))
+    assert result["tapCode"] is None
+
+
+@pytest.mark.parametrize("protocol, value, layer", [(6, 0x7C77, 1), (6, 0x7C78, 2), (5, 0x5F10, 1), (5, 0x5F11, 2)])
+def test_tri_layer_keys_are_layer_keys(monkeypatch, protocol, value, layer):
+    monkeypatch.setattr(Keycode, "protocol", protocol)
+    result = describe(Keycode.serialize(value))
+    assert (result["kind"], result["layer"], result["layerAction"], result["triLayer"]) ==         ("layer", layer, "while held", 3)
+    assert result["legend"]["main"] == "Fn{} (Fn3)".format(layer)
+    assert result["description"] == "Turns on layer {} while held, and layer 3 while Fn{} is held too".format(
+        layer, 3 - layer)
+
+
+def test_tri_layer_keys_by_name():
+    # the loaded Corne has 4 layers, so FN_MO13 and FN_MO23 have names
+    assert (describe("FN_MO13")["layer"], describe("FN_MO23")["layer"]) == (1, 2)
+    assert parse("FN_MO23")["triLayer"] == 3
+
+
+def test_other_keys_have_no_tri_layer():
+    assert describe("MO(3)")["triLayer"] is None
+
+
 # ---------- modifiers: every combination the firmware can store ----------
 
 MOD_BITS = [(0x01, "Ctrl"), (0x02, "Shift"), (0x04, "Alt"), (0x08, "Gui")]

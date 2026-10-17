@@ -12,7 +12,7 @@ KeyKind = Literal["basic", "modifier", "mod-tap", "layer-tap", "layer", "one-sho
 
 
 LayerAction = Literal["while held", "toggle", "switch to", "hold, or tap to toggle", "one-shot", "default",
-                      "default (saved)"]
+                      "default (saved)", "while held, with modifiers"]
 
 
 class Legend(BaseModel):
@@ -36,6 +36,9 @@ class Described(BaseModel):
     layer: Optional[int] = None
     layerAction: Optional[LayerAction] = None
     """ for keys that use a layer: what they do with it """
+    triLayer: Optional[int] = None
+    """ for FN_MO13 and FN_MO23 (Vial's tri-layer keys): the layer that is on while both are held, as well as their
+    own layer (1 or 2) """
     index: Optional[int] = None
     """ the tap dance or macro a key runs """
     description: Optional[str] = None

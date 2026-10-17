@@ -88,6 +88,8 @@ function layerSentence(d: Described, names: Names): string {
       return `Make ${layer} the default layer`;
     case "default (saved)":
       return `Make ${layer} the default layer, and remember it`;
+    case "while held, with modifiers":
+      return d.hold ? `${layer} with ${d.hold}, while held` : `${layer}, while held`;
     default:
       return d.tap;
   }

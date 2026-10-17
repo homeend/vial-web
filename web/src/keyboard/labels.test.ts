@@ -116,6 +116,12 @@ describe("actionSummary", () => {
     expect(actionSummary(key, names)).toEqual({ tap: sentence, hold: null });
   });
 
+  it("describes LM, a layer held with modifiers", () => {
+    const lm = d({ code: "0x5022", kind: "layer", tap: "LM 1", hold: "Shift", layer: 2, layerAction: "while held, with modifiers" });
+    expect(actionSummary(lm, names)).toEqual({ tap: "Layer 2 with Shift, while held", hold: null });
+    expect(actionSummary({ ...lm, hold: null }, names)).toEqual({ tap: "Layer 2, while held", hold: null });
+  });
+
   it("falls back to the tap text for a layer action it does not know", () => {
     const key = d({ code: "X(2)", kind: "layer", tap: "X 2", layer: 2, layerAction: "sideways" as never });
     expect(actionSummary(key, names)).toEqual({ tap: "X 2", hold: null });

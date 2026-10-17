@@ -435,7 +435,9 @@ export interface components {
             /** Layer */
             layer?: number | null;
             /** Layeraction */
-            layerAction?: ("while held" | "toggle" | "switch to" | "hold, or tap to toggle" | "one-shot" | "default" | "default (saved)") | null;
+            layerAction?: ("while held" | "toggle" | "switch to" | "hold, or tap to toggle" | "one-shot" | "default" | "default (saved)" | "while held, with modifiers") | null;
+            /** Trilayer */
+            triLayer?: number | null;
             /** Index */
             index?: number | null;
             /** Description */
@@ -483,7 +485,9 @@ export interface components {
             /** Layer */
             layer?: number | null;
             /** Layeraction */
-            layerAction?: ("while held" | "toggle" | "switch to" | "hold, or tap to toggle" | "one-shot" | "default" | "default (saved)") | null;
+            layerAction?: ("while held" | "toggle" | "switch to" | "hold, or tap to toggle" | "one-shot" | "default" | "default (saved)" | "while held, with modifiers") | null;
+            /** Trilayer */
+            triLayer?: number | null;
             /** Index */
             index?: number | null;
             /** Description */

@@ -14,6 +14,8 @@ LAYER_ACTIONS = {
     "MO": "while held", "TG": "toggle", "TO": "switch to", "TT": "hold, or tap to toggle",
     "OSL": "one-shot", "DF": "default", "PDF": "default (saved)",
 }
+LAYER_WITH_MODS = "while held, with modifiers"
+""" LM(layer, mods): the layer and the modifiers, while held """
 MODIFIER_KEYS = {"KC_LCTRL", "KC_LSHIFT", "KC_LALT", "KC_LGUI", "KC_RCTRL", "KC_RSHIFT", "KC_RALT", "KC_RGUI"}
 MOUSE_PREFIXES = ("KC_MS_", "KC_BTN", "KC_WH_", "KC_ACL")
 
@@ -36,6 +38,12 @@ QK_MOD_TAP = {6: (0x2000, 0x3FFF), 5: (0x6000, 0x7FFF)}
 """ mod-tap: modifiers on hold in bits 8-12, the tapped key in bits 0-7 """
 QK_ONE_SHOT_MOD = {6: (0x52A0, 0x52BF), 5: (0x5500, 0x55FF)}
 """ one-shot modifiers: modifiers in bits 0-4 """
+QK_LAYER_MOD = {6: (0x5000, 0x51FF), 5: (0x5900, 0x59FF)}
+""" LM(layer, mods): protocol 6 has the layer in bits 5-8 and the modifiers in bits 0-4; protocol 5 the layer in bits
+4-7 and the left-hand modifiers in bits 0-3 """
+TRI_LAYER_KEYS = {6: {0x7C77: 1, 0x7C78: 2}, 5: {0x5F10: 1, 0x5F11: 2}}
+""" FN_MO13 and FN_MO23: layer 1 or 2 while held, and layer 3 while both are held (Vial's tri-layer keys) """
+TRI_LAYER = 3
 BASIC = (0x00, 0xFF)
 """ basic keycodes, the ones a layer-tap or mod-tap can tap (both protocols) """
 TAPPABLE_KINDS = {"basic", "modifier", "media", "mouse"}
@@ -144,10 +152,23 @@ def _description(code):
     return keycode.tooltip if keycode is not None and keycode.tooltip else None
 
 
-def _result(code, kind, legend, tap=None, hold=None, layer=None, layer_action=None, index=None):
+def _result(code, kind, legend, tap=None, hold=None, layer=None, layer_action=None, index=None, tri_layer=None,
+            description=None):
     return {"code": code, "kind": kind, "tap": legend["main"] if tap is None else tap, "legend": legend,
             "hold": hold, "layer": layer, "layerAction": layer_action, "index": index,
-            "description": _description(code)}
+            "description": description or _description(code), "triLayer": tri_layer}
+
+
+def _layer_mod(code, value):
+    """ LM(layer, mods), e.g. 0x5022 (protocol 6): layer 1 with Shift, while held """
+    if _protocol() == 6:
+        layer, bits = (value >> 5) & 0xF, value & 0x1F
+    else:
+        layer, bits = (value >> 4) & 0xF, value & 0xF
+    mods = mods_name(bits) or None
+    description = "Turns on layer {} while held{}".format(layer, ", with {} held too".format(mods) if mods else "")
+    return _result(code, "layer", _legend("LM {}".format(layer)), hold=mods, layer=layer,
+                   layer_action=LAYER_WITH_MODS if mods else LAYER_ACTIONS["MO"], description=description)
 
 
 def _tap_code(result, value):
@@ -222,6 +243,14 @@ def _describe(code, value):
         layer = int(m.group(1))
         return _result(code, "layer-tap", _keycode_legend(m.group(2)), hold="layer {}".format(layer), layer=layer,
                        layer_action=LAYER_ACTIONS["MO"])
+    tri = TRI_LAYER_KEYS[_protocol()].get(value)
+    if tri is not None:
+        description = "Turns on layer {} while held, and layer {} while Fn{} is held too".format(
+            tri, TRI_LAYER, 3 - tri)
+        return _result(code, "layer", _legend("Fn{} (Fn{})".format(tri, TRI_LAYER)), layer=tri,
+                       layer_action=LAYER_ACTIONS["MO"], tri_layer=TRI_LAYER, description=description)
+    if _in(value, QK_LAYER_MOD):
+        return _layer_mod(code, value)
 
     # modifier bits naming no modifier (none, or only the right-hand bit) fall through and read as a raw code
     if _in(value, QK_MOD_TAP) and mods_name((value >> 8) & 0x1F):
