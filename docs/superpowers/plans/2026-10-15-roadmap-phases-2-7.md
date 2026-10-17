@@ -95,20 +95,26 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
 **Scope**
 - **`web/src/analysis/`** (pure functions with Vitest tests):
   - for each layer, which keys reach it and how (MO, TG, TO, TT, OSL, DF, LT, tap dance slots), and from which layers;
+  - combos whose output reaches a layer count as a way to reach it ("press MO(5) + OSL(3) together → layer 2"; the owner's W-CORNE has such a combo), and a tap dance slot used as a combo output counts too;
   - for each tap dance and macro, which keys use it;
   - combo member positions, found by looking up the combo's keycodes on the base layer, including the "several keys" and "no key" cases;
   - warnings for unused tap dances and macros, and for layers that nothing reaches.
 - **Overview view:**
-  - every layer as a small keyboard, labelled with how it's reached ("hold Space", "one-shot, right thumb");
+  - every layer as a small keyboard, labelled with how it's reached ("hold Space", "one-shot, right thumb", "combo: MO(5) + OSL(3)");
   - click a layer to open it in the Edit view;
   - an Edit/Overview switch at the top of the Keymap section.
-- **Inspector additions:** combos using this key, and how this layer is reached.
+- **Inspector additions:** combos using this key, with their partner keys and output ("with OSL(3) → layer 2"), and how this layer is reached, including by combos.
 - **Keys:** a red underline on combo member keys.
-- **e2e:** the overview shows all 4 Corne layers with correct "reached by" labels; clicking a layer opens it; screenshots at all three widths.
+- **e2e:**
+  - the overview shows all 4 Corne layers with correct "reached by" labels;
+  - a combo of two layer keys whose output is a layer key: the target layer's label names the combo, and the Inspector shows it on both member keys;
+  - clicking a layer opens it;
+  - screenshots at all three widths.
+- **Limit (shown in the UI's help text):** layer switching done in firmware C code (for example tri-layer or `layer_state_set_user`) isn't visible over the Vial protocol, so it can't be shown.
 
 **Open decision:** whether the overview shows layers that nothing reaches (default: yes, with a warning).
 
-**Owner checklist:** the overview of the real keymap matches what you know about your layers.
+**Owner checklist:** the overview of the real keymap matches what you know about your layers, and layer 2 shows that it's reached by the MO(5) + OSL(3) combo.
 
 ---
 
