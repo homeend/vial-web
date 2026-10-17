@@ -103,12 +103,18 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
   - every layer as a small keyboard, labelled with how it's reached ("hold Space", "one-shot, right thumb", "combo: MO(5) + OSL(3)");
   - click a layer to open it in the Edit view;
   - an Edit/Overview switch at the top of the Keymap section.
+- **Find a character or key** (owner's request, 2026-10-17): a search box in the Keymap section. Type a letter, symbol or key name ("ą", "@", "Esc", "MO(2)") and see everywhere it's produced:
+  - on which layers and keys, using the legends of the chosen keyboard language, so a symbol typed with Shift or AltGr counts too ("@: Shift + 2 on Base, left top row");
+  - inside tap dance slots, combo outputs, key overrides and macros;
+  - results listed with a click to jump to the key in the Edit view, and matching keys highlighted in the Overview;
+  - "not on your keymap" when nothing produces it.
 - **Inspector additions:** combos using this key, with their partner keys and output ("with OSL(3) → layer 2"), and how this layer is reached, including by combos.
 - **Keys:** a red underline on combo member keys.
 - **e2e:**
   - the overview shows all 4 Corne layers with correct "reached by" labels;
   - a combo of two layer keys whose output is a layer key: the target layer's label names the combo, and the Inspector shows it on both member keys;
   - clicking a layer opens it;
+  - finding "@" lists Shift + 2 and highlights it; finding a character that's nowhere says so;
   - an 8-layer keyboard (the owner's W-CORNE uses layers 0–7) fits the overview without horizontal scrolling within the width cap;
   - screenshots at all three widths.
 - **Limit (shown in the UI's help text):** layer switching done in firmware C code (for example tri-layer or `layer_state_set_user`) isn't visible over the Vial protocol, so it can't be shown.
