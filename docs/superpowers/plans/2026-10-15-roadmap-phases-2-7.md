@@ -109,6 +109,7 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
   - the overview shows all 4 Corne layers with correct "reached by" labels;
   - a combo of two layer keys whose output is a layer key: the target layer's label names the combo, and the Inspector shows it on both member keys;
   - clicking a layer opens it;
+  - an 8-layer keyboard (the owner's W-CORNE uses layers 0–7) fits the overview without horizontal scrolling within the width cap;
   - screenshots at all three widths.
 - **Limit (shown in the UI's help text):** layer switching done in firmware C code (for example tri-layer or `layer_state_set_user`) isn't visible over the Vial protocol, so it can't be shown.
 
