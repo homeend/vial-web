@@ -33,6 +33,9 @@ STARTUP_WAIT = 10.0
 FILE_RETRIES = 6
 FILE_RETRY_WAIT = 0.1
 """ server.json in use by another process: tries, and seconds between them """
+MAX_FAKE_LAYERS = 32
+""" --layers: Vial keyboards have at most 32 layers, as many as MO, TG, DF and OSL can name (LT, LM and protocol 5's
+TO only reach the first 16) """
 UVICORN_LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -272,21 +275,16 @@ def open_running(url, args):
 def make_backend(args):
     if args.fake:
         from server.device import FakeBackend
-        layers = args.layers or DEFAULT_FAKE_LAYERS
+        layers = {} if args.layers is None else {"layers": args.layers}  # else the simulator's own default
         if args.definition:
             from simulator.virtual_keyboard import VirtualKeyboard
             with open(args.definition, "r", encoding="utf-8") as inf:
                 definition = json.load(inf)
-            return FakeBackend(lambda: VirtualKeyboard(definition, layers=layers))
+            return FakeBackend(lambda: VirtualKeyboard(definition, **layers))
         from simulator.corne import make_corne
-        return FakeBackend(lambda: make_corne(layers=layers))
+        return FakeBackend(lambda: make_corne(**layers))
     from server.device import HidBackend
     return HidBackend()
-
-
-DEFAULT_FAKE_LAYERS = 4
-MAX_FAKE_LAYERS = 32
-""" Vial keyboards have at most 32 layers (the layer keycodes MO, TG, ... hold 5 bits) """
 
 
 def layer_count(text):
@@ -315,8 +313,8 @@ def parse_args(argv):
     parser.add_argument("--definition", help="with --fake: vial.json of the keyboard to simulate")
     parser.add_argument("--layout", help="with --fake: .vil layout file to load into the simulated keyboard")
     parser.add_argument("--layers", type=layer_count,
-                        help="with --fake: how many layers the simulated keyboard has (1 to {}, default {})".format(
-                            MAX_FAKE_LAYERS, DEFAULT_FAKE_LAYERS))
+                        help="with --fake: how many layers the simulated keyboard has (1 to {}; default: the "
+                             "simulator's own, 4 for the sample Corne)".format(MAX_FAKE_LAYERS))
     parser.add_argument("--port", type=port_number, default=0, help="port to listen on (default: any free port)")
     parser.add_argument("--no-browser", action="store_true", help="don't open the browser")
     parser.add_argument("--dry-run", action="store_true", help="connect, print a summary and exit without serving")

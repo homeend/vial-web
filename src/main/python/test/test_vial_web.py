@@ -99,6 +99,23 @@ def test_fake_mode_with_more_or_fewer_layers(capsys, layers):
     assert (summary["name"], summary["layers"]) == ("Simulated Corne", layers)
 
 
+def test_fake_layers_default_to_the_simulators(tmp_path):
+    from simulator import corne
+    assert vial_web.make_backend(vial_web.parse_args(["--fake"])).keyboard_factory().layers == len(corne.LAYERS)
+    path = tmp_path / "vial.json"
+    path.write_text(json.dumps(LAYOUT_2x2), encoding="utf-8")
+    custom = vial_web.make_backend(vial_web.parse_args(["--fake", "--definition", str(path)])).keyboard_factory()
+    assert custom.layers == 4  # VirtualKeyboard's default
+
+
+def test_extra_fake_layers_are_empty():
+    from simulator import corne
+    vk = vial_web.make_backend(vial_web.parse_args(["--fake", "--layers", "8"])).keyboard_factory()
+    assert len(vk.keymap) == 8
+    assert vk.keymap[:4] == corne.make_corne().keymap  # the sample's 4 layers, unchanged
+    assert all(code == 0 for layer in vk.keymap[4:] for row in layer for code in row)
+
+
 def test_layers_with_a_custom_definition(tmp_path, capsys):
     path = tmp_path / "vial.json"
     path.write_text(json.dumps(LAYOUT_2x2), encoding="utf-8")
