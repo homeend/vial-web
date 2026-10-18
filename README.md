@@ -14,7 +14,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 | 0 | Python 3.13 | done |
 | 1 | Keyboard simulator and local API server (`vial_web.py`) | done |
 | 2 | Web UI: see and edit every key on every layer | done |
-| 3 | Overview of all layers; how each layer is reached (including combos) | in progress |
+| 3 | Overview of all layers; how each layer is reached (including combos); find a character or key | done |
 | 4 | Tap dance, combos, macros pages; unlock | planned |
 | 5 | Parity with the Qt app | planned |
 | 6 | Packaging; Qt removed | planned |
@@ -76,12 +76,17 @@ python vial_web.py --fake
 | `--fake` | Use a simulated keyboard instead of real hardware |
 | `--definition FILE` | With `--fake`: the `vial.json` of the keyboard to simulate |
 | `--layout FILE` | With `--fake`: a `.vil` layout to load into the simulated keyboard |
+| `--layers N` | With `--fake`: simulate a keyboard with N layers (1 to 32); layers past the sample keymap are empty |
 | `--port PORT` | Port to listen on (default: any free port) |
 | `--no-browser` | Don't open the browser; the link with its session token is printed |
 | `--dry-run` | Connect, print a summary and exit |
 | `--data-dir DIR` | Keep the lock, session file, log and layer names in `DIR` instead of the user folders |
 
 The server listens on `127.0.0.1` only, and answers only pages opened through the printed link.
+
+The Overview shows how each layer is reached from what Vial can read: layer keys, tap dances and combos. Layer
+switching done in the keyboard's firmware code (for example `update_tri_layer_state` or `layer_state_set_user`) isn't
+visible over the Vial protocol, so it isn't shown.
 
 Qt app (until phase 6):
 
