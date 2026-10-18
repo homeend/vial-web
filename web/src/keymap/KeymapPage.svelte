@@ -18,7 +18,8 @@
   import LayerTabs from "./LayerTabs.svelte";
   import { neighbour, type Direction } from "./navigation";
   import Overview from "./Overview.svelte";
-  import { readView, saveView, type KeymapView } from "./view";
+  import ReachList from "./ReachList.svelte";
+  import { readReachOpen, readView, saveReachOpen, saveView, type KeymapView } from "./view";
   import ViewSwitch from "./ViewSwitch.svelte";
 
   interface Props {
@@ -28,6 +29,7 @@
   let { model }: Props = $props();
 
   let view = $state<KeymapView>(readView(browserStorage()));
+  let reachOpen = $state(readReachOpen(browserStorage()));
   let findText = $state("");
   let layer = $state(0);
   let selection = $state<KeyRef | null>(null);
@@ -205,9 +207,22 @@
     />
 
     <div class="workspace">
-      <div class="board" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
-        <Keyboard {placement} {faces} {labels} {combos} {highlights} selected={selectedIndex} onselect={select} />
-        <KindLegend />
+      <div class="layer" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
+        {#if analysis.reach[layer]}
+          <ReachList
+            reach={analysis.reach[layer]}
+            ctx={phrases}
+            open={reachOpen}
+            ontoggle={(open) => {
+              reachOpen = open;
+              saveReachOpen(browserStorage(), open);
+            }}
+          />
+        {/if}
+        <div class="board">
+          <Keyboard {placement} {faces} {labels} {combos} {highlights} selected={selectedIndex} onselect={select} />
+          <KindLegend />
+        </div>
       </div>
 
       {#if selection && current}
@@ -219,8 +234,6 @@
             {selection}
             canEdit={keyboard.canEdit && keyboard.pending === 0}
             {comboUses}
-            reach={analysis.reach[layer]}
-            {phrases}
             onchangekey={() => (pickerOpen = true)}
             onsetcode={(code, action) => fromInspector(() => setCode(code, action))}
             ontapdance={() => fromInspector(turnIntoTapDance)}
@@ -280,6 +293,13 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
     align-items: start;
+  }
+
+  .layer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    min-width: 0;
   }
 
   .board {

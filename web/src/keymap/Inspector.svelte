@@ -1,7 +1,5 @@
 <script lang="ts">
   import type { ComboUse } from "../analysis/combos";
-  import type { PhraseContext } from "../analysis/phrases";
-  import type { LayerReach } from "../analysis/reach";
   import type { Described, KeyboardModel } from "../api/types";
   import KeyCap from "../keyboard/KeyCap.svelte";
   import { actionSummary, keyFace, keyTitle, layerLabel, type Names } from "../keyboard/labels";
@@ -11,7 +9,6 @@
   import ComboList from "./ComboList.svelte";
   import { tapCodeOf } from "./hold";
   import HoldEditor from "./HoldEditor.svelte";
-  import ReachList from "./ReachList.svelte";
   import { freeTapDance, tapDanceSlots } from "./tapdance";
 
   interface Props {
@@ -22,9 +19,6 @@
     canEdit: boolean;
     /** the combos the key is part of on the layer */
     comboUses: ComboUse[];
-    /** how the layer is reached */
-    reach: LayerReach | undefined;
-    phrases: PhraseContext;
     onchangekey: () => void;
     onsetcode: (code: string, action: string) => Promise<boolean>;
     ontapdance: () => void;
@@ -32,7 +26,7 @@
   }
 
   let {
-    model, names, layer, selection, canEdit, comboUses, reach, phrases, onchangekey, onsetcode, ontapdance, onjump,
+    model, names, layer, selection, canEdit, comboUses, onchangekey, onsetcode, ontapdance, onjump,
   }: Props = $props();
 
   let editingHold = $state(false);
@@ -182,10 +176,6 @@
 
   {#if comboUses.length > 0}
     <ComboList uses={comboUses} {names} through={current.kind === "transparent"} />
-  {/if}
-
-  {#if reach}
-    <ReachList {reach} ctx={phrases} />
   {/if}
 </aside>
 

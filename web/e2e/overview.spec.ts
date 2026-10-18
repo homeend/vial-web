@@ -12,6 +12,18 @@ async function showOverview(page: Page) {
 
 const card = (page: Page, layer: number) => page.locator(`.card[data-layer="${layer}"]`);
 
+/** "How … is reached", above the keyboard in the Edit view */
+const reachFold = (page: Page) => page.locator("details.reach");
+
+/** Opens "How … is reached" (folded away by default) and gives its list */
+async function openReach(page: Page, title: string) {
+  const fold = reachFold(page);
+  if (!(await fold.evaluate((d) => (d as HTMLDetailsElement).open))) await fold.locator("summary").click();
+  const list = page.getByRole("region", { name: title });
+  await expect(list).toBeVisible();
+  return list;
+}
+
 test("the Overview shows every layer and how it is reached; clicking one opens it", async ({ app }) => {
   await showOverview(app);
   const overview = app.getByRole("region", { name: "Overview of the layers" });
@@ -39,8 +51,8 @@ test("the Overview shows every layer and how it is reached; clicking one opens i
   await expect(app.getByRole("tab", { name: "2 Layer 2" })).toHaveAttribute("aria-selected", "true");
   await expect(app.getByRole("tab", { name: "2 Layer 2" })).toBeFocused();
   await expect(app.getByRole("radio", { name: "Edit" })).toBeChecked();
-  await expect(app.getByRole("complementary", { name: "Selected key" })).toContainText("How Layer 2 is reached");
-  await expect(app.getByRole("complementary", { name: "Selected key" })).toContainText("hold B");
+  await expect(reachFold(app).locator("summary")).toHaveText(/How Layer 2 is reached\s*2 ways/);
+  await expect(await openReach(app, "How Layer 2 is reached")).toContainText("hold B");
 });
 
 test("the chosen view is remembered", async ({ app }) => {
@@ -72,7 +84,7 @@ test("a combo of two layer keys whose output is a layer key reaches that layer",
     await screenshots(app, "inspector-combo", { fullPage: true });
 
     await app.getByRole("tab", { name: "2 Layer 2" }).click();
-    await expect(app.getByRole("region", { name: "How Layer 2 is reached" })).toContainText("combo: Space (hold: Layer 1) + OSL(3)");
+    await expect(await openReach(app, "How Layer 2 is reached")).toContainText("combo: Space (hold: Layer 1) + OSL(3)");
 
     await showOverview(app);
     await expect(card(app, 2).getByRole("button")).toHaveAccessibleName(
@@ -225,7 +237,7 @@ test.describe("8 layers", () => {
     }
   });
 
-  test("the Inspector shows the combo on both of its keys", async ({ eightLayers: app }) => {
+  test("the Inspector shows the combo on both of its keys; an unreached layer warns above the keyboard", async ({ eightLayers: app }) => {
     const restore = await likeTheWCorne(app);
     try {
       await app.locator(`[data-ref="key:${await keyIndex(app, 3, 3)}"]`).click();
@@ -235,9 +247,13 @@ test.describe("8 layers", () => {
       await expect(app.getByRole("region", { name: "Combos with this key" })).toContainText(
         "with MO(5) → Layer 2, while held");
       await app.getByRole("tab", { name: "4 Layer 4" }).click();
-      await expect(app.getByRole("region", { name: "How Layer 4 is reached" })).toContainText(
-        "Nothing reaches this layer");
-      await screenshots(app, "inspector-unreached", { fullPage: true });
+      // folded away, it still warns
+      await expect(reachFold(app)).not.toHaveAttribute("open");
+      await expect(reachFold(app).locator("summary")).toHaveText(/How Layer 4 is reached\s*Nothing reaches this layer/);
+      await expect(reachFold(app)).toHaveClass(/\bunreached\b/);
+      await screenshots(app, "reach-unreached", { fullPage: true });
+      await expect(await openReach(app, "How Layer 4 is reached")).toContainText(
+        "No key, tap dance or combo switches to this layer.");
     } finally {
       await restore();
     }
@@ -264,4 +280,30 @@ test("a keyboard with encoders and rotated keys is drawn in the Overview as pict
   // only the cards are buttons: their keys and encoders are part of the picture
   await expect(overview.getByRole("button")).toHaveCount(4);
   await screenshots(macropad, "overview-macropad", { fullPage: true });
+});
+
+test("how a layer is reached is above the keyboard, folded away until opened, and stays as left", async ({ app }) => {
+  await expect(app.getByRole("complementary", { name: "Selected key" })).not.toContainText("is reached");
+  const fold = reachFold(app);
+  await expect(fold).not.toHaveAttribute("open");
+  await expect(fold.locator("summary")).toHaveText(/How Base is reached\s*2 ways/);
+  // between the layer tabs and the keyboard
+  const [tabs, summary, board] = await Promise.all([
+    app.getByRole("tab", { name: "0 Base" }).boundingBox(), fold.boundingBox(), app.locator(".board").boundingBox()]);
+  expect(summary!.y).toBeGreaterThan(tabs!.y + tabs!.height - 1);
+  expect(board!.y).toBeGreaterThan(summary!.y + summary!.height - 1);
+
+  const list = await openReach(app, "How Base is reached");
+  await expect(list).toContainText("default layer");
+  await screenshots(app, "reach-open", { fullPage: true });
+  // open on another layer, and after a reload
+  await app.getByRole("tab", { name: "1 Layer 1" }).click();
+  await expect(app.getByRole("region", { name: "How Layer 1 is reached" })).toContainText("hold Space");
+  await app.reload();
+  await expect(app.getByRole("region", { name: "How Base is reached" })).toBeVisible();
+  // folded again: stays folded
+  await fold.locator("summary").click();
+  await expect(fold).not.toHaveAttribute("open");
+  await app.reload();
+  await expect(reachFold(app)).not.toHaveAttribute("open");
 });
