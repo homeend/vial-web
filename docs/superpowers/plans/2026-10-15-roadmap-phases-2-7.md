@@ -153,7 +153,10 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
 - **Combos page**, one card per entry:
   - a small keyboard with the member keys highlighted, an arrow to the output, and a sentence ("Press K + Y together for Esc");
   - a note when a keycode sits on several keys or on none;
-  - edit the members and the output with the picker.
+  - edit the members and the output with the picker;
+  - choose the members by clicking keys on the card's small keyboard (up to 4, as Vial allows; clicking a chosen key removes it);
+  - a combo whose output reaches a layer says so with the Overview's wording ("MO(5) + OSL(3) → reaches layer 2");
+  - each combo under the Inspector's "Combos using this key" opens its card on this page.
 - **Macros page:**
   - each macro as a readable chain of steps (type "…" → tap Enter → wait 50 ms → press Ctrl+L), with a name and "used on";
   - a step editor: add, remove, reorder; text, tap, down, up, delay;
@@ -162,7 +165,9 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
 - **Navigation:** counts next to each entry; sections the firmware doesn't support are hidden.
 - **e2e:**
   - edit a tap dance slot and see "used on" jump to the key;
-  - create a combo and see the highlights;
+  - create a combo by clicking its keys and see the highlights;
+  - open a combo's card from the Inspector;
+  - a combo of two layer keys shows which layer it reaches;
   - build a macro with all step kinds;
   - try to edit a macro on a locked simulated keyboard, unlock by "holding" the unlock keys through a fake-only test hook, and see the edit saved.
 
