@@ -205,12 +205,13 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
 
 ## Phase 6: Packaging, Qt removed, CI on three systems
 
-**Result:** one `Vial.exe` (plus macOS and Linux builds) that starts the server and opens the browser. No Qt left.
+**Result:** the whole app in one file: a single `Vial.exe` (plus single-file macOS and Linux builds) that starts the server and opens the browser. Nothing to install or unpack. No Qt left.
 
 **Scope**
-- **PyInstaller spec** (`vial.spec`):
-  - bundles `web/dist`, `qmk_settings.json`, the keymaps and certifi;
+- **PyInstaller spec** (`vial.spec`), one-file mode (owner's goal: one big file containing the whole app):
+  - bundles the Python runtime, `web/dist`, `qmk_settings.json`, the keymaps and certifi into the one executable;
   - `vial_web.py` is the entry point;
+  - bundled files are read through `sys._MEIPASS` (one-file builds unpack to a temp folder at start); user data stays in the normal data dir, never next to the exe or in the temp folder;
   - Windows icon and version info.
 - **Windows console:** keep the console window. It shows the URL and the reopen message, and closing it or pressing Ctrl+C stops the server. Add a "Quit Vial" button in the UI (`POST /api/shutdown`), so Vial can also be closed from the browser. A windowless build (background process, reopen by double-click, auto-quit when no tab is open) can be decided after all phases are finished.
 - **Remove Qt and `fbs`:**
@@ -227,7 +228,7 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
 
 **Risk:** macOS and Linux builds can only be checked through CI runs; there's no local machine for them.
 
-**Owner checklist:** install the built `Vial.exe` on Windows and go through the phase 5 checklist again with it.
+**Owner checklist:** copy the built `Vial.exe` (one file) to any folder on Windows, run it, and go through the phase 5 checklist again with it.
 
 ---
 
