@@ -191,37 +191,43 @@
     <ViewSwitch {view} onchange={changeView} />
   </header>
 
-  <FindBox bind:text={findText} results={foundResults} onopen={(place) => void openKey(place)} />
+  {#snippet find()}
+    <FindBox bind:text={findText} results={foundResults} onopen={(place) => void openKey(place)} />
+  {/snippet}
 
   {#if view === "overview"}
+    {@render find()}
     <Overview
       {model} {phrases} {placement} {analysis} {highlighted} current={layer} onopen={(i) => void openLayer(i)}
     />
   {:else}
-    <LayerTabs
-      layers={model.layers}
-      active={layer}
-      canRename={keyboard.canEdit}
-      onselect={(i) => (layer = i)}
-      onrename={(i, name) => keyboard.renameLayer(i, name)}
-    />
-
+    <!-- the Inspector beside everything from the find box down, so that it starts high enough to fit the window -->
     <div class="workspace">
-      <div class="layer" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
-        {#if analysis.reach[layer]}
-          <ReachList
-            reach={analysis.reach[layer]}
-            ctx={phrases}
-            open={reachOpen}
-            ontoggle={(open) => {
-              reachOpen = open;
-              saveReachOpen(browserStorage(), open);
-            }}
-          />
-        {/if}
-        <div class="board">
-          <Keyboard {placement} {faces} {labels} {combos} {highlights} selected={selectedIndex} onselect={select} />
-          <KindLegend />
+      <div class="main">
+        {@render find()}
+        <LayerTabs
+          layers={model.layers}
+          active={layer}
+          canRename={keyboard.canEdit}
+          onselect={(i) => (layer = i)}
+          onrename={(i, name) => keyboard.renameLayer(i, name)}
+        />
+        <div class="layer" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
+          {#if analysis.reach[layer]}
+            <ReachList
+              reach={analysis.reach[layer]}
+              ctx={phrases}
+              open={reachOpen}
+              ontoggle={(open) => {
+                reachOpen = open;
+                saveReachOpen(browserStorage(), open);
+              }}
+            />
+          {/if}
+          <div class="board">
+            <Keyboard {placement} {faces} {labels} {combos} {highlights} selected={selectedIndex} onselect={select} />
+            <KindLegend />
+          </div>
         </div>
       </div>
 
@@ -293,6 +299,13 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
     align-items: start;
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    min-width: 0;
   }
 
   .layer {

@@ -237,6 +237,27 @@ test.describe("8 layers", () => {
     }
   });
 
+  test("on a 1080p screen the Inspector starts level with the find box and fits the window", async ({ eightLayers: app }) => {
+    const restore = await likeTheWCorne(app);
+    try {
+      await app.setViewportSize({ width: 1920, height: 950 }); // 1080 less the browser's own bars
+      await app.locator(`[data-ref="key:${await keyIndex(app, 0, 3)}"]`).click();
+      const inspector = app.getByRole("complementary", { name: "Selected key" });
+      await expect(inspector).toContainText("On the other layers");
+      const [box, find] = await Promise.all([
+        inspector.boundingBox(), app.getByRole("searchbox", { name: "Find a character or key" }).boundingBox()]);
+      expect(Math.abs(box!.y - find!.y)).toBeLessThanOrEqual(1);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(950);
+      // the other layers one line each
+      const rows = await inspector.locator(".others li").evaluateAll((items) => items.map((i) => i.getBoundingClientRect().height));
+      expect(rows).toHaveLength(7);
+      for (const height of rows) expect(height).toBeLessThanOrEqual(34);
+      await screenshots(app, "inspector-1080p");
+    } finally {
+      await restore();
+    }
+  });
+
   test("the Inspector shows the combo on both of its keys; an unreached layer warns above the keyboard", async ({ eightLayers: app }) => {
     const restore = await likeTheWCorne(app);
     try {

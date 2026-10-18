@@ -164,10 +164,15 @@
       <ul>
         {#each others as other (other.index)}
           <li>
-            <button type="button" title={other.label} onclick={() => onjump(other.index)}>
+            <!-- one line a layer, so that eight of them fit; the tooltip has what is cut short -->
+            <button
+              type="button"
+              title={other.detail ? `${other.label}: ${other.detail}` : other.label}
+              onclick={() => onjump(other.index)}
+            >
               <span class="other-layer">{other.label}</span>
-              <span class="chip tone-{other.face.tone}" data-tone={other.face.tone}>{other.face.main || "—"}</span>
               <span class="other-summary">{other.detail}</span>
+              <span class="chip tone-{other.face.tone}" data-tone={other.face.tone}>{other.face.main || "—"}</span>
             </button>
           </li>
         {/each}
@@ -284,7 +289,7 @@
 
   .others ul {
     display: grid;
-    gap: 2px;
+    gap: 0;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -292,11 +297,11 @@
 
   .others button {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: 2px 10px;
+    gap: 8px;
     width: 100%;
-    padding: 6px 8px;
+    padding: 4px 8px;
     border: 0;
     border-radius: 8px;
     background: transparent;
@@ -309,6 +314,7 @@
   }
 
   .other-layer {
+    max-width: 130px;
     overflow: hidden;
     font-size: 13px;
     text-overflow: ellipsis;
@@ -316,13 +322,11 @@
   }
 
   .other-summary {
-    grid-column: 1 / -1;
+    overflow: hidden;
     color: var(--text-3);
     font-size: 12px;
-  }
-
-  .other-summary:empty {
-    display: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .chip {
