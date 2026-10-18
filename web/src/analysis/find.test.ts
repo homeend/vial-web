@@ -3,7 +3,7 @@ import type { CatalogueKeycode, Described, KeyboardModel, KeycodeCategory } from
 import { placeKeyboard } from "../keyboard/geometry";
 import { namesOf } from "../keyboard/labels";
 import { codesOn, combosOf } from "./combos";
-import { findOnKeymap, foundKeys, matchOf, queryOf, type Found } from "./find";
+import { findOnKeymap, foundKeys, matchOf, queryOf, type Found, type Place } from "./find";
 import { foundLabel, howText } from "./phrases";
 import { positionNames } from "./positions";
 import { AT, corne, described, layer, type Setup } from "./testing";
@@ -18,8 +18,15 @@ const catalogue: KeycodeCategory[] = [{
   name: "Basic", templates: [], keycodes: [
     { ...described("KC_ESCAPE"), tap: "Esc", legend: { main: "Esc" }, aliases: ["KC_ESC"] } as CatalogueKeycode,
     { ...described("KC_2"), tap: "2", legend: { main: "2", shifted: "@" }, aliases: [] } as CatalogueKeycode,
+    { ...described("KC_Y"), aliases: [] } as CatalogueKeycode,
+    { ...described("KC_Z"), aliases: [] } as CatalogueKeycode,
   ],
 }];
+
+/** A layer-tap or mod-tap key, with the keycode it taps as the server gives it */
+function tapping(code: string, tapCode: string): Described {
+  return { ...described(code), tapCode };
+}
 
 function find(model: KeyboardModel, text: string) {
   const placement = placeKeyboard(model);
@@ -61,10 +68,39 @@ describe("matchOf", () => {
     expect(matchOf(described("MO(2)"), q("MO(3)"))).toBeNull();
   });
 
-  it("never matches empty or transparent keys, or an empty query", () => {
-    expect(matchOf(described("KC_NO"), q(""))).toBeNull();
+  it("never matches empty or transparent keys", () => {
+    expect(matchOf(described("KC_NO"), q("KC_NO"))).toBeNull();
     expect(matchOf(described("KC_TRNS"), q("▽"))).toBeNull();
+    expect(matchOf(described("KC_TRNS"), q("KC_TRNS"))).toBeNull();
+  });
+
+  it("never matches an empty query", () => {
+    expect(matchOf(withLegend("KC_2", "2", "@"), q(""))).toBeNull();
     expect(matchOf(withLegend("KC_2", "2", "@"), q("   "))).toBeNull();
+  });
+
+  it("matches a single character by legend only, never by a keycode's name", () => {
+    // German (QWERTZ): KC_Y types Z, and KC_Z types Y
+    const y = withLegend("KC_Y", "Z", null);
+    const z = withLegend("KC_Z", "Y", null);
+    expect(matchOf(y, q("y"))).toBeNull();
+    expect(matchOf(z, q("y"))).toBe("tap");
+    expect(matchOf(y, q("z"))).toBe("tap");
+    // a keycode's full name still names it
+    expect(matchOf(y, q("KC_Y"))).toBe("name");
+    expect(matchOf(z, q("KC_Y"))).toBeNull();
+  });
+
+  it("matches a layer-tap or mod-tap key by the name of the keycode it taps", () => {
+    const lt = tapping("LT1(KC_ESC)", "KC_ESCAPE");
+    const mt = tapping("LCTL_T(KC_ESC)", "KC_ESCAPE");
+    expect([matchOf(lt, q("esc")), matchOf(mt, q("esc"))]).toEqual(["tap", "tap"]);
+    for (const text of ["KC_ESC", "escape", "KC_ESCAPE"]) {
+      expect([matchOf(lt, q(text)), matchOf(mt, q(text))]).toEqual(["name", "name"]);
+    }
+    expect(matchOf(lt, q("LT1(KC_ESC)"))).toBe("name");
+    // a hold-only key taps nothing
+    expect(matchOf(tapping("LT1(KC_NO)", "KC_NO"), q("KC_NO"))).toBeNull();
   });
 });
 
@@ -79,6 +115,51 @@ describe("findOnKeymap", () => {
       "@ on Layer 2 (right inner thumb)",
     ]);
     expect(found.map((f) => f.type)).toEqual(["key", "key", "key"]);
+  });
+
+  it("finds @ as Shift + 2 on a layer-tap key", () => {
+    const model = keyboard();
+    model.layers[0].keys[AT.leftInnerThumb] = { ...withLegend("LT1(KC_2)", "2", "@"), kind: "layer-tap",
+      hold: "layer 1", layer: 1, layerAction: "while held", tapCode: "KC_2" };
+    expect(find(model, "@").labels).toEqual([
+      "Shift + 2 on Base (left top row, 2nd from the outside)",
+      "Shift + 2 on Base (left inner thumb)",
+    ]);
+  });
+
+  it("lists keys by layer, and on each layer as the keyboard is drawn", () => {
+    const model = keyboard();
+    model.layers[2].keys[AT.grid(0, 3)] = withLegend("KC_2", "2", "@");
+    model.layers[1].keys[AT.rightOuterThumb] = withLegend("KC_AT", "@", null);
+    model.layers[1].keys[AT.grid(2, 0)] = withLegend("KC_AT", "@", null);
+    expect(find(model, "@").labels).toEqual([
+      "Shift + 2 on Base (left top row, 2nd from the outside)",
+      "@ on Layer 1 (left bottom row, 1st from the outside)",
+      "@ on Layer 1 (right outer thumb)",
+      "Shift + 2 on Layer 2 (left top row, 4th from the outside)",
+    ]);
+  });
+
+  it("finds a letter by what it types in the keyboard language, not by its keycode's name", () => {
+    // German (QWERTZ): KC_Y types Z, and KC_Z types Y
+    const model = keyboard({}, {
+      [AT.grid(0, 6)]: withLegend("KC_Y", "Z", null), [AT.grid(2, 1)]: withLegend("KC_Z", "Y", null),
+    });
+    expect(find(model, "y").labels).toEqual(["Y on Base (left bottom row, 2nd from the outside)"]);
+    expect(find(model, "z").labels).toEqual(["Z on Base (right top row, 6th from the outside)"]);
+    // its keycode's name finds the key, showing what it types
+    expect(find(model, "KC_Y").labels).toEqual(["Z on Base (right top row, 6th from the outside)"]);
+  });
+
+  it("finds layer-tap and mod-tap keys by the name of the keycode they tap", () => {
+    const model = keyboard({}, {
+      [AT.leftInnerThumb]: tapping("LT1(KC_ESC)", "KC_ESCAPE"),
+      [AT.rightInnerThumb]: tapping("LCTL_T(KC_ESC)", "KC_ESCAPE"),
+    });
+    const labels = ["Esc on Base (left inner thumb)", "Esc on Base (right inner thumb)"];
+    expect(find(model, "KC_ESC").labels).toEqual(labels);
+    expect(find(model, "escape").labels).toEqual(labels);
+    expect(find(model, "KC_ESC").found.map((f) => f.how)).toEqual(["name", "name"]);
   });
 
   it("finds ą as AltGr + A with the Polish keyboard language", () => {
@@ -129,20 +210,62 @@ describe("findOnKeymap", () => {
     expect(find(model, "MO(2)").labels).toEqual(["MO 2 on Base (left inner thumb)"]);
   });
 
-  it("finds nothing for a character that is nowhere, or no text", () => {
+  it("finds nothing for a character that is nowhere", () => {
     expect(find(keyboard(), "ż").found).toEqual([]);
+  });
+
+  it("finds nothing for no text", () => {
     expect(find(keyboard(), "").found).toEqual([]);
+    expect(find(keyboard(), "  ").found).toEqual([]);
   });
 });
 
 describe("foundKeys", () => {
+  const seven = { layer: 0, ref: { kind: "key" as const, index: 7 } };
+  const runBy = (keys: Place[]) => ({ key: keys[0] ?? null, keys });
+
   it("are the keys found, and those that run what was found, by layer", () => {
     const found: Found[] = [
       { type: "key", layer: 1, ref: { kind: "key", index: 3 }, how: "tap", action: described("KC_A") },
-      { type: "tap-dance", tapDance: 0, slot: "Tap", how: "tap", action: described("KC_A"), key: { layer: 0, ref: { kind: "key", index: 7 } } },
-      { type: "macro", macro: 0, how: "text", text: "a", action: null, key: null },
+      { type: "tap-dance", tapDance: 0, slot: "Tap", how: "tap", action: described("KC_A"), ...runBy([seven]) },
+      { type: "macro", macro: 0, how: "text", text: "a", action: null, key: null, keys: [] },
     ];
     expect(foundKeys(found, 2).map((keys) => [...keys])).toEqual([["key:7"], ["key:3"]]);
+  });
+
+  it("leave out a place on a layer beyond those given", () => {
+    const found: Found[] = [
+      { type: "key", layer: 0, ref: { kind: "key", index: 3 }, how: "tap", action: described("KC_A") },
+      { type: "key", layer: 2, ref: { kind: "key", index: 4 }, how: "tap", action: described("KC_A") },
+    ];
+    expect(foundKeys(found, 2).map((keys) => [...keys])).toEqual([["key:3"], []]);
+  });
+
+  it("are every key that runs a tap dance, combo, key override or macro, not only the first", () => {
+    const model = keyboard({
+      tapDances: [["KC_ESC", "KC_NO", "KC_NO", "KC_NO"]],
+      combos: [{ keys: ["KC_J", "KC_K"], output: "KC_ESC" }],
+      keyOverrides: [{ trigger: "KC_BSPC", replacement: "KC_ESC" }],
+      macros: [1],
+    }, {
+      [AT.leftOuterThumb]: described("TD(0)"), [AT.grid(0, 0)]: described("KC_J"), [AT.grid(0, 2)]: described("KC_K"),
+      [AT.grid(0, 11)]: described("KC_BSPC"), [AT.grid(1, 11)]: described("KC_BSPC"),
+      [AT.rightOuterThumb]: described("M0"), [AT.rightMiddleThumb]: described("M0"),
+    });
+    model.layers[1].keys[AT.leftInnerThumb] = described("TD(0)");
+    model.macros.items[0].actions = [{ type: "tap", keys: [described("KC_ESC")] }];
+    const { found } = find(model, "Esc");
+    expect(found.map((f) => f.type)).toEqual(["tap-dance", "combo", "key-override", "macro"]);
+    const ids = (keys: Set<string>) => [...keys].map((id) => Number(id.slice("key:".length))).sort((a, b) => a - b);
+    expect(foundKeys(found, 3).map(ids)).toEqual([
+      [0, 2, AT.grid(0, 11), AT.grid(1, 11), AT.leftOuterThumb, AT.rightMiddleThumb, AT.rightOuterThumb]
+        .sort((a, b) => a - b),
+      [AT.leftInnerThumb],
+      [],
+    ]);
+    // a result still opens the first of its keys
+    const first = found.map((f) => (f.type === "key" ? null : f.key && `${f.key.layer}:${f.key.ref.index}`));
+    expect(first).toEqual([`0:${AT.leftOuterThumb}`, "0:0", `0:${AT.grid(0, 11)}`, `0:${AT.rightMiddleThumb}`]);
   });
 });
 
