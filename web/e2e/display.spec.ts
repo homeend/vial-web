@@ -43,7 +43,7 @@ test.describe("width and fit", () => {
 
   // labels are sized by measuring them in the font the browser uses, which differs between systems (Segoe UI on
   // Windows, often the much wider DejaVu Sans on Linux): a wide font must fit too
-  test("labels fit with a wide font, 800, 1280 and 2560 wide", async ({ page }) => {
+  test("labels fit with a wide font, 800, 1280 and 2560 wide, in the Edit view, the Overview and the find views", async ({ page }) => {
     const font = `Verdana, "DejaVu Sans", sans-serif`;
     await useFont(page, font);
     const app = await open(page, process.env.VIAL_URL);
@@ -54,6 +54,24 @@ test.describe("width and fit", () => {
       await expect(async () => expect(await labelsCutOff(app)).toEqual([])).toPass({ timeout: 5_000 });
       await screenshots(app, `keymap-wide-font-${width}`, { fullPage: true });
     }
+    // the Overview's small keys too
+    await app.getByRole("radio", { name: "Overview" }).check();
+    for (const [width, height] of [[1280, 800], [2560, 1440], [800, 900]]) {
+      await app.setViewportSize({ width, height });
+      await expect(async () => {
+        expect(await app.locator(".card .key .tap").count()).toBeGreaterThan(0);
+        expect(await labelsCutOff(app)).toEqual([]);
+      }).toPass({ timeout: 5_000 });
+      await screenshots(app, `overview-wide-font-${width}`, { fullPage: true });
+    }
+    // and with keys highlighted by the find box, in the Overview and in the Edit view it opens
+    await app.getByRole("searchbox", { name: "Find a character or key" }).fill("@");
+    await expect(app.locator(".card .key.found")).toHaveCount(2);
+    await expect(async () => expect(await labelsCutOff(app)).toEqual([])).toPass({ timeout: 5_000 });
+    await screenshots(app, "find-wide-font", { fullPage: true });
+    await app.locator("#find-results").getByRole("button", { name: /^Shift \+ 2/ }).click();
+    await expect(app.locator("button.key.found")).toHaveCount(1);
+    await expect(async () => expect(await labelsCutOff(app)).toEqual([])).toPass({ timeout: 5_000 });
   });
 });
 
