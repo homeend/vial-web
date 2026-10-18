@@ -141,11 +141,11 @@
     {/if}
   </svg>
   <span class="legend" style={legendStyle}>
-    {#if face.altGr}<span class="alt-gr">{face.altGr}</span>{/if}
-    {#if face.shifted}<span class="shifted">{face.shifted}</span>{/if}
+    {#if !compact && face.altGr}<span class="alt-gr">{face.altGr}</span>{/if}
+    {#if !compact && face.shifted}<span class="shifted">{face.shifted}</span>{/if}
     <!-- may break after each "+" of a combination; on one line, so no space gets into the text -->
     <span class="tap">{#each face.main.split(PLUS_BREAK) as part, i (i)}{#if i > 0}<wbr />{/if}{part}{/each}</span>
-    {#if face.hold}<span class="hold">{face.hold}</span>{/if}
+    {#if !compact && face.hold}<span class="hold">{face.hold}</span>{/if}
   </span>
 {/snippet}
 

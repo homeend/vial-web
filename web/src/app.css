@@ -86,7 +86,7 @@
   --tone-layer: #5ba2ff;
   --tone-tap-dance: #c98af2;
   --tone-macro: #ffaa3d;
-  --combo: #ff5577;
+  --combo: #ff6685; /* 3:1 or more on every key fill, macro and modifier keys included */
   --find: #ffcc33;
   --tone-fill: 22%;
   --tone-line: 70%;
@@ -128,7 +128,7 @@
     --tone-layer: #5ba2ff;
     --tone-tap-dance: #c98af2;
     --tone-macro: #ffaa3d;
-    --combo: #ff5577;
+    --combo: #ff6685; /* 3:1 or more on every key fill, macro and modifier keys included */
     --find: #ffcc33;
     --tone-fill: 22%;
     --tone-line: 70%;

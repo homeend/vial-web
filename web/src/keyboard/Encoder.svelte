@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PlacedKey } from "./geometry";
-  import { legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
+  import { compactLegendSize, legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
   import { refId } from "./refs";
   import { legendFont } from "./textWidth.svelte";
 
@@ -16,16 +16,24 @@
     found?: boolean;
     /** a knob to click; otherwise only a picture (the keyboard as a whole is labelled) */
     interactive?: boolean;
+    /** a small knob showing its main legend only, as large as it fits */
+    compact?: boolean;
     onselect: () => void;
   }
 
-  let { item, face, u, selected, label, focusable, found = false, interactive = true, onselect }: Props = $props();
+  let {
+    item, face, u, selected, label, focusable, found = false, interactive = true, compact = false, onselect,
+  }: Props = $props();
 
   const clockwise = $derived(item.geometry.direction === 1);
   const size = $derived(Math.min(item.w, item.h) * u * 0.91);
   // the labels fit in the box inscribed in the knob, inside its border (2 px): 80 % of its width by 60 % of its height
   const inner = $derived(Math.max(0, size - 4));
-  const sizes = $derived(legendSizes({ ...face, shifted: null }, inner * 0.8, inner * 0.6, u * 0.9, legendFont.width));
+  const sizes = $derived(
+    compact
+      ? { main: compactLegendSize(face.main, inner * 0.8, inner * 0.6, u * 0.9, legendFont.width), hold: 0, holdLines: 0 }
+      : legendSizes({ ...face, shifted: null }, inner * 0.8, inner * 0.6, u * 0.9, legendFont.width),
+  );
 
   // a round knob needs no rotation: it sits on the (rotated) centre of its key
   const style = $derived(
@@ -50,7 +58,7 @@
   <span class="legend">
     <!-- may break after each "+" of a combination; on one line, so no space gets into the text -->
     <span class="tap">{#each face.main.split(PLUS_BREAK) as part, i (i)}{#if i > 0}<wbr />{/if}{part}{/each}</span>
-    {#if face.hold}<span class="hold">{face.hold}</span>{/if}
+    {#if !compact && face.hold}<span class="hold">{face.hold}</span>{/if}
   </span>
 {/snippet}
 

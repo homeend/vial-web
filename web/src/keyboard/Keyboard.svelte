@@ -63,7 +63,7 @@
             combo={combos[i] ?? false} found={highlights[i] ?? false} {interactive} {compact} onselect={() => onselect(i)} />
         {:else}
           <Encoder {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
-            found={highlights[i] ?? false} {interactive} onselect={() => onselect(i)} />
+            found={highlights[i] ?? false} {interactive} {compact} onselect={() => onselect(i)} />
         {/if}
       {/each}
     {/if}
