@@ -1,5 +1,6 @@
-// How wide legends are in the font the browser draws them in. The app's font is the system's (system-ui), so it
-// differs between systems: Segoe UI on Windows, often the much wider DejaVu Sans on Linux. An estimate from the number
+// How wide legends are in the font the browser draws them in. The app's font is the system's UI font, so it
+// differs between systems: Segoe UI on Windows, Arial or Liberation Sans on Linux, or DejaVu Sans when neither is
+// there, which is much wider. An estimate from the number
 // of characters can't fit labels in all of them, so text is measured on a canvas, in the font family of the page and
 // at the size it is drawn at: small text isn't simply scaled down, as hinting rounds the width of each character
 // (Tahoma's "Layer 2" is 3.7 font sizes wide at 100 px, 4.4 at 8.9 px).
