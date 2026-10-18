@@ -25,9 +25,9 @@ test("the Overview shows every layer and how it is reached; clicking one opens i
   await expect(overview).toContainText("layer_state_set_user");
   // the simulated Corne's second tap dance and second macro are on no key
   await expect(overview.getByRole("region", { name: "Not used" })).toContainText(
-    "Tap dance 1 · Esc / LCtrl / Ctrl+S is set up, but no key or combo uses it.");
+    "Tap dance 1 · Esc / LCtrl / Ctrl+S is set up, but nothing uses it.");
   await expect(overview.getByRole("region", { name: "Not used" })).toContainText(
-    "Macro 1 · Home is set up, but no key or combo uses it.");
+    "Macro 1 · Home is set up, but nothing uses it.");
 
   await overview.getByRole("button", { name: /^Layer 2 —/ }).click();
   await expect(app.getByRole("tab", { name: "2 Layer 2" })).toHaveAttribute("aria-selected", "true");

@@ -47,11 +47,11 @@
   const unused = $derived([
     ...analysis.unused.tapDances.map((i) => {
       const name = names.tapDance(i);
-      return `Tap dance ${i}${name ? ` · ${name}` : ""} is set up, but no key or combo uses it.`;
+      return `Tap dance ${i}${name ? ` · ${name}` : ""} is set up, but nothing uses it.`;
     }),
     ...analysis.unused.macros.map((i) => {
       const name = names.macro(i);
-      return `Macro ${i}${name ? ` · ${name}` : ""} is set up, but no key or combo uses it.`;
+      return `Macro ${i}${name ? ` · ${name}` : ""} is set up, but nothing uses it.`;
     }),
   ]);
 </script>
