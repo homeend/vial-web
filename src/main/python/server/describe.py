@@ -309,6 +309,8 @@ def parse(expression):
 
 
 # (first, last, what, number) for keycodes that point at a layer, tap dance or macro; number(value) -> its number
+# FN_MO13 and FN_MO23 point at layer 3, not at 1 or 2 as describe() reports: this table says which layers a key needs
+# the keyboard to have, and they turn on layer 3 when both are held (describe() gives their own layer, triLayer 3)
 _REFERENCES_V6 = [
     (0x4000, 0x4FFF, "layer", lambda v: (v >> 8) & 0xF),  # LT
     (0x5000, 0x51FF, "layer", lambda v: (v >> 5) & 0xF),  # LM

@@ -107,17 +107,25 @@ def test_layer_action(code, action):
 def test_layer_mod_is_a_layer_key(monkeypatch, protocol, value, layer, action, hold):
     monkeypatch.setattr(Keycode, "protocol", protocol)
     result = describe(Keycode.serialize(value))
-    assert (result["kind"], result["layer"], result["layerAction"], result["hold"], result["triLayer"]) ==         ("layer", layer, action, hold, None)
+    assert (result["kind"], result["layer"], result["layerAction"], result["hold"], result["triLayer"]) == (
+        "layer", layer, action, hold, None)
     assert result["legend"]["main"] == "LM {}".format(layer)
     assert result["description"].startswith("Turns on layer {} while held".format(layer))
     assert result["tapCode"] is None
+
+
+def test_layer_mod_description(monkeypatch):
+    monkeypatch.setattr(Keycode, "protocol", 6)
+    assert describe(Keycode.serialize(0x5022))["description"] == "Turns on layer 1 while held, with Shift held too"
+    assert describe(Keycode.serialize(0x5180))["description"] == "Turns on layer 12 while held"
 
 
 @pytest.mark.parametrize("protocol, value, layer", [(6, 0x7C77, 1), (6, 0x7C78, 2), (5, 0x5F10, 1), (5, 0x5F11, 2)])
 def test_tri_layer_keys_are_layer_keys(monkeypatch, protocol, value, layer):
     monkeypatch.setattr(Keycode, "protocol", protocol)
     result = describe(Keycode.serialize(value))
-    assert (result["kind"], result["layer"], result["layerAction"], result["triLayer"]) ==         ("layer", layer, "while held", 3)
+    assert (result["kind"], result["layer"], result["layerAction"], result["triLayer"]) == (
+        "layer", layer, "while held", 3)
     assert result["legend"]["main"] == "Fn{} (Fn3)".format(layer)
     assert result["description"] == "Turns on layer {} while held, and layer 3 while Fn{} is held too".format(
         layer, 3 - layer)
