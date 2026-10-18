@@ -5,6 +5,7 @@ import { actionSummary, type Names } from "../keyboard/labels";
 import { refId } from "../keyboard/refs";
 import type { SlotLabel } from "../keymap/tapdance";
 import type { ComboUse } from "./combos";
+import type { Found, How } from "./find";
 import type { LayerAction, LayerReach, ViaSlot, Way } from "./reach";
 
 /** What a key does to the layer, as the verb of a label: "hold Space", "toggle (left outer thumb)" */
@@ -213,4 +214,32 @@ export function missingPartners(use: ComboUse, names: Names): string | null {
   const missing = use.partners.filter((p) => p.keys.length === 0).map((p) => memberName(p.action, names));
   if (missing.length === 0) return null;
   return `${andList(missing)} ${missing.length === 1 ? "isn't" : "aren't"} on this layer`;
+}
+
+/** What a keycode is pressed as to produce what was found: "2" (tapped, or by its name), "Shift + 2", "AltGr + A" */
+export function howText(how: How, d: Described): string {
+  const key = d.legend.main || d.tap || d.code;
+  return how === "shift" ? `Shift + ${key}` : how === "altgr" ? `AltGr + ${key}` : key;
+}
+
+/** A place a character or key was found, in words: "Shift + 2 on Base (left top row, 2nd from the outside)",
+ * "tap dance 0, double tap: Caps Lock", "combo M + C → Enter", "key override 0: Del instead of Bksp",
+ * "macro 0 types "git status"" */
+export function foundLabel(found: Found, ctx: PhraseContext): string {
+  switch (found.type) {
+    case "key": {
+      const place = ctx.positions.get(refId(found.ref)) ?? "a key";
+      return `${howText(found.how, found.action)} on ${ctx.names.layer(found.layer)} (${place})`;
+    }
+    case "tap-dance":
+      return `tap dance ${found.tapDance}, ${found.slot.toLowerCase()}: ${howText(found.how, found.action)}`;
+    case "combo":
+      return `combo ${comboName(found.combo.members, ctx.names)} → ${howText(found.how, found.action)}`;
+    case "key-override":
+      return `key override ${found.keyOverride}: ${howText(found.how, found.action)} instead of ${
+        found.trigger.tap || found.trigger.code}`;
+    case "macro":
+      if (found.how === "text" || !found.action) return `macro ${found.macro} types "${found.text ?? ""}"`;
+      return `macro ${found.macro} presses ${howText(found.how, found.action)}`;
+  }
 }

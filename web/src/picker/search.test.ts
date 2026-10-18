@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogueKeycode, KeycodeCategory } from "../api/types";
-import { searchKeycodes, searchTemplates } from "./search";
+import { codesNamed, searchKeycodes, searchTemplates, searchText } from "./search";
 
 function k(code: string, tap: string, aliases: string[] = [], description: string | null = null,
   shifted: string | null = null, kind: CatalogueKeycode["kind"] = "basic"): CatalogueKeycode {
@@ -166,5 +166,25 @@ describe("searchTemplates", () => {
     expect(found("  ")).toEqual([]);
     expect(found("esc")).toEqual([]);
     expect(found("alt")).toEqual([]);
+  });
+});
+
+describe("codesNamed", () => {
+  it("finds the keycodes a name or alias names exactly, with or without KC_", () => {
+    expect([...codesNamed(categories, "esc")]).toEqual(["KC_ESCAPE"]);
+    expect([...codesNamed(categories, " KC_Caps ")]).toEqual(["KC_CAPSLOCK"]);
+    expect([...codesNamed(categories, "kc_gesc")]).toEqual(["KC_GESC"]);
+  });
+
+  it("doesn't match labels or parts of names", () => {
+    expect([...codesNamed(categories, "Caps Lock")]).toEqual([]);
+    expect([...codesNamed(categories, "es")]).toEqual([]);
+    expect([...codesNamed(categories, "")]).toEqual([]);
+  });
+});
+
+describe("searchText", () => {
+  it("folds case and spaces", () => {
+    expect(searchText("  Caps   LOCK ")).toBe("caps lock");
   });
 });

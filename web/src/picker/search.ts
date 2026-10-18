@@ -102,6 +102,22 @@ export function searchKeycodes(categories: KeycodeCategory[], query: string): Ca
   return found.sort((a, b) => a.rank - b.rank || a.kind - b.kind || a.order - b.order).map((f) => f.k);
 }
 
+/** The keycodes the query names exactly: by their name, an alias, or either without KC_ ("esc", "KC_ESC", "caps") */
+export function codesNamed(categories: KeycodeCategory[], query: string): Set<string> {
+  const q = normalize(query);
+  const found = new Set<string>();
+  if (!q) return found;
+  for (const e of indexOf(categories)) {
+    if (e.names.includes(q) || e.bare.includes(q)) found.add(e.k.code);
+  }
+  return found;
+}
+
+/** A search text as searches compare it: case folded, spaces trimmed and collapsed */
+export function searchText(query: string): string {
+  return normalize(query);
+}
+
 /** Kinds of template, by the words that name them (without spaces or dashes) */
 const TEMPLATE_KINDS: { words: string[]; matches: (template: string) => boolean }[] = [
   { words: ["mt", "modtap"], matches: (t) => /_T\(kc\)$/.test(t) },
