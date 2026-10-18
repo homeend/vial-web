@@ -29,7 +29,9 @@ python vial_web.py --fake        # open the printed link; reload the page after 
 ```
 
 `--fake` runs a simulated keyboard and never touches real hardware. Add `--data-dir DIR` to keep
-its lock, log and names out of your user folders.
+its lock, log and names out of your user folders. With `--fake`, `--layers N` (1 to 32) gives the
+simulated keyboard N layers (the sample keymap fills the first four, the others are empty), and
+`--definition FILE` simulates another keyboard.
 
 ## Scripts
 
@@ -52,8 +54,9 @@ CI runs `npm run check:api`.
 
 ## End-to-end tests
 
-`e2e/global-setup.ts` starts two `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
-default Corne, and `e2e/fixtures/macropad.vial.json` with encoders),
+`e2e/global-setup.ts` starts three `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
+default Corne; `e2e/fixtures/macropad.vial.json` with encoders; and the Corne with `--layers 8`, as the
+owner's keyboard has),
 reads the links with the session token from their output and stops them afterwards. Screenshots, each in the
 light and the dark theme (`*-light.png`, `*-dark.png`), go to `e2e/screenshots/` (not committed).
 
@@ -68,7 +71,8 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | `src/api/` | Typed HTTP client, error messages, WebSocket events, generated schema types |
 | `src/lib/` | The keyboard store (loaded model, connection, edits), toasts, and the theme (System, Light, Dark) |
 | `src/keyboard/` | Drawing any keyboard from its geometry; key labels |
-| `src/keymap/` | Keymap Edit view: layer tabs, Inspector, hold editor, keyboard navigation |
+| `src/analysis/` | Pure functions over the loaded model: how each layer is reached, combo keys, tap dance and macro usage, finding a character or key, and the phrases for them |
+| `src/keymap/` | Keymap Edit and Overview views: layer tabs, Inspector, hold editor, keyboard navigation, layer cards, find box |
 | `src/picker/` | Keycode picker: search, categories, any-keycode entry |
 | `src/shell/` | Top bar, navigation, banners, toasts |
 | `src/ui/` | Small shared controls |

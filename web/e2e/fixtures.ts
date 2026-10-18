@@ -14,13 +14,16 @@ export async function open(page: Page, url: string | undefined): Promise<Page> {
 }
 
 /** The page, opened from a server's link, with the keyboard drawn: `app` shows the simulated Corne, `macropad` the
- * simulated macropad with encoders */
-export const test = base.extend<{ app: Page; macropad: Page }>({
+ * simulated macropad with encoders, `eightLayers` the simulated Corne with 8 layers (4-7 empty) */
+export const test = base.extend<{ app: Page; macropad: Page; eightLayers: Page }>({
   app: async ({ page }, use) => {
     await use(await open(page, process.env.VIAL_URL));
   },
   macropad: async ({ page }, use) => {
     await use(await open(page, process.env.VIAL_MACROPAD_URL));
+  },
+  eightLayers: async ({ page }, use) => {
+    await use(await open(page, process.env.VIAL_EIGHT_LAYERS_URL));
   },
 });
 
@@ -70,6 +73,17 @@ export async function setEncoderCodeAt(page: Page, layer: number, index: number,
   await put(page, `/api/encoders/${layer}/${encoder}/${direction}`, { code });
 }
 
+/** A combo's keycodes (all four slots) and output, as the server reports them */
+export async function comboAt(page: Page, index: number): Promise<{ keys: string[]; output: string }> {
+  const combo = (await keyboardModel(page)).combos[index];
+  return { keys: combo.keys.map((k: { code: string }) => k.code), output: combo.output.code };
+}
+
+/** Sets a combo through the API: four keycodes (KC_NO for an empty slot) and the output */
+export async function setCombo(page: Page, index: number, combo: { keys: string[]; output: string }): Promise<void> {
+  await put(page, `/api/combos/${index}`, combo);
+}
+
 /** The custom name of a layer, or null when it has its default name */
 export async function layerNameOf(page: Page, layer: number): Promise<string | null> {
   const names = await (await page.request.get(serverUrl(page, "/api/names"))).json();
@@ -115,9 +129,10 @@ export async function useFont(page: Page, family: string): Promise<void> {
  * legend makes room for them, rather than anything being cut off. (A line that is cut off shows as a whole line of
  * overflow; letters reaching a little past their line box, a few pixels, don't count.) */
 export async function labelsCutOff(page: Page): Promise<string[]> {
-  const labels = page.locator("button.key .hold, button.key .tap, button.key .shifted");
+  // the keys of the Edit view (buttons) and of the Overview's small keyboards (pictures)
+  const labels = page.locator(".key .hold, .key .tap, .key .shifted");
   const cut = await labels.evaluateAll((elements) => elements.filter((l) => {
-    const key = l.closest("button")!.querySelector(".legend")!.getBoundingClientRect();
+    const key = l.closest(".key")!.querySelector(".legend")!.getBoundingClientRect();
     const box = l.getBoundingClientRect();
     const font = parseFloat(getComputedStyle(l).fontSize);
     return l.scrollHeight - l.clientHeight > font * 0.3 || l.scrollWidth > l.clientWidth + 1 ||

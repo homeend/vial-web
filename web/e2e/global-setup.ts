@@ -1,6 +1,7 @@
-// Starts two `vial_web.py --fake --no-browser` servers, each on a free port with its own temporary data dir, and
-// stops them afterwards: the default simulated Corne (VIAL_URL) and a macropad with encoders, rotated keys, an ISO
-// Enter, a decal and a layout option (VIAL_MACROPAD_URL). The URLs carry the session token.
+// Starts three `vial_web.py --fake --no-browser` servers, each on a free port with its own temporary data dir, and
+// stops them afterwards: the default simulated Corne (VIAL_URL), a macropad with encoders, rotated keys, an ISO
+// Enter, a decal and a layout option (VIAL_MACROPAD_URL), and the Corne with 8 layers, as the owner's W-CORNE has
+// (VIAL_EIGHT_LAYERS_URL). The URLs carry the session token.
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -117,14 +118,23 @@ async function startServer(extraArgs: string[]): Promise<{ url: string; stop: ()
 }
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
-  const corne = await startServer([]);
-  const macropad = await startServer(["--definition", MACROPAD_DEFINITION]).catch(async (error: unknown) => {
-    await corne.stop();
-    throw error;
-  });
+  const started = await Promise.allSettled([
+    startServer([]),
+    startServer(["--definition", MACROPAD_DEFINITION]),
+    startServer(["--layers", "8"]),
+  ]);
+  const servers = started.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
+  const failed = started.find((s) => s.status === "rejected");
+  if (failed) {
+    // never leave the others running
+    await Promise.all(servers.map((s) => s.stop()));
+    throw failed.reason;
+  }
+  const [corne, macropad, eight] = servers;
   process.env.VIAL_URL = corne.url;
   process.env.VIAL_MACROPAD_URL = macropad.url;
+  process.env.VIAL_EIGHT_LAYERS_URL = eight.url;
   return async () => {
-    await Promise.all([corne.stop(), macropad.stop()]);
+    await Promise.all(servers.map((s) => s.stop()));
   };
 }
