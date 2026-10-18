@@ -157,6 +157,13 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
   - choose the members by clicking keys on the card's small keyboard (up to 4, as Vial allows; clicking a chosen key removes it);
   - a combo whose output reaches a layer says so with the Overview's wording ("MO(5) + OSL(3) → reaches layer 2");
   - each combo under the Inspector's "Combos using this key" opens its card on this page.
+- **Combo colours on keys** (owner's remark on phase 3; replaces the single red underline):
+  - every combo with keys on a layer gets its own colour from a fixed palette, so different combos on the same layer never share a colour (past the palette's size colours repeat, in a stated order);
+  - a key in one combo keeps an underline, in that combo's colour;
+  - a key in several combos shows a row of dots along its bottom edge instead, one per combo in its colour, so they all fit (past what fits, "+n");
+  - the same colour marks the combo everywhere: the Edit keyboard, the Overview, the Inspector's "Combos using this key" entries and the Combos page cards;
+  - the palette reads on the key colours in light and dark (at least 3:1), and never uses the find highlight's amber;
+  - the aria labels keep naming the combos, so colour isn't the only cue.
 - **Macros page:**
   - each macro as a readable chain of steps (type "…" → tap Enter → wait 50 ms → press Ctrl+L), with a name and "used on";
   - a step editor: add, remove, reorder; text, tap, down, up, delay;
@@ -168,6 +175,7 @@ This roadmap is the contract for the remaining phases. It fixes each phase's sco
   - create a combo by clicking its keys and see the highlights;
   - open a combo's card from the Inspector;
   - a combo of two layer keys shows which layer it reaches;
+  - two combos sharing a key: the shared key shows two dots in two different colours, and each other member key is underlined in its own combo's colour;
   - build a macro with all step kinds;
   - try to edit a macro on a locked simulated keyboard, unlock by "holding" the unlock keys through a fake-only test hook, and see the edit saved.
 
