@@ -64,14 +64,20 @@ export interface PhraseContext {
   positions: Map<string, string>;
 }
 
+/** What a key types when tapped, when its label names it ("Space" for LT1(KC_SPC)), or null */
+function typedName(d: Described): string | null {
+  return LABELLED.has(d.kind) && d.tap ? d.tap : null;
+}
+
 /** What the key is called in a label: what it types when tapped ("Space" for LT1(KC_SPC), "Tab" for a tap dance that
- * taps Tab), or null when its label says nothing about it (MO 2, OSL 3, a tap dance tapping a layer key) */
+ * taps Tab), or null when its label says nothing about it (MO 2, OSL 3, a tap dance tapping a layer key). A tap dance
+ * that a tap dance taps isn't followed (as layerTargets doesn't): it may be the same one, or one that runs it back. */
 export function tapName(d: Described, model: Pick<KeyboardModel, "tapDance">): string | null {
   if (d.kind === "tap-dance") {
     const tap = d.index != null ? model.tapDance[d.index]?.tap : undefined;
-    return tap ? tapName(tap, model) : null;
+    return tap ? typedName(tap) : null;
   }
-  return LABELLED.has(d.kind) && d.tap ? d.tap : null;
+  return typedName(d);
 }
 
 /** A combo's keycode as a label: what it types, with a short note of what holding it does ("Space (hold: Layer 1)",
@@ -103,6 +109,16 @@ export function comboName(members: { action: Described }[], names: Names): strin
 /** "Base", "Layer 1, Nav" */
 function layerList(layers: number[], names: Names): string {
   return layers.map((l) => names.layer(l)).join(", ");
+}
+
+/** "Q", "Q and W", "Q, W and E" */
+function andList(items: string[]): string {
+  return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** Whether pressing a tap dance slot this way keeps the key held (so a layer held in it stays on) */
+function isHeld(slot: SlotLabel): boolean {
+  return slot === "Hold" || slot === "Tap, then hold";
 }
 
 /** The layer key a way runs: the key's own, or the one in the tap dance slot it goes through */
@@ -138,15 +154,16 @@ export function wayLabel(way: Way, ctx: PhraseContext): string {
     return `hold both Fn keys${from} (${places.join(" and ")})`;
   }
   if (via.type === "combo") {
+    // "combo: J + K, held", "combo: J + K, tapped then held"; a layer held from another slot: "tapped and held"
+    const purpose = PURPOSES[way.action] || (via.slot && !isHeld(via.slot.slot) ? " and held" : "");
     const slot = via.slot ? `, ${PARTICIPLES[via.slot.slot]}` : "";
-    return `combo: ${comboName(via.combo.members, ctx.names)}${slot}${PURPOSES[way.action]}${mods}${from}`;
+    return `combo: ${comboName(via.combo.members, ctx.names)}${slot}${purpose}${mods}${from}`;
   }
   const name = via.slot?.slot === "Tap" ? null : tapName(via.action, ctx.model);
   const place = ctx.positions.get(refId(via.ref)) ?? "a key";
   if (via.slot) {
     // "hold Tab", "tap then hold Tab": holding the slot is holding the layer; other gestures say what they do
-    const held = via.slot.slot === "Hold" || via.slot.slot === "Tap, then hold";
-    const purpose = PURPOSES[way.action] || (held ? "" : " and hold");
+    const purpose = PURPOSES[way.action] || (isHeld(via.slot.slot) ? "" : " and hold");
     const gesture = GESTURES[via.slot.slot];
     return name ? `${gesture} ${name}${purpose}${mods}${from}` : `${gesture}${purpose}${mods}${from} (${place})`;
   }
@@ -171,10 +188,17 @@ export function wayDetail(way: Way, ctx: PhraseContext): string {
   return parts.join(" · ");
 }
 
-/** Why a layer can't be reached, or null when it can */
+/** Why a layer can't be reached, or null when it can. A way that works on no layer is a combo whose keycodes aren't on
+ * the keymap (combo outputs are the only ways layerReach keeps with no layers): it can't fire. */
 export function unreachedReason(reach: LayerReach): string | null {
   if (reach.reachable) return null;
-  return reach.ways.length === 0 ? "Nothing reaches this layer" : "Only reached from layers that nothing reaches";
+  if (reach.ways.some((w) => w.from.length > 0)) return "Only reached from layers that nothing reaches";
+  // a combo with a tap dance output can reach the layer from several slots: count it once
+  const dead = new Set(reach.ways.map((w) => (w.via.type === "combo" ? `combo:${w.via.combo.index}` : w.via.type)));
+  if (dead.size === 0) return "Nothing reaches this layer";
+  return dead.size === 1
+    ? "Only a combo that can't fire reaches this layer"
+    : "Only combos that can't fire reach this layer";
 }
 
 /** A combo a key is part of, from that key's side: "with OSL(3) → Layer 2, while held",
@@ -188,5 +212,5 @@ export function comboUseLabel(use: ComboUse, names: Names): string {
 export function missingPartners(use: ComboUse, names: Names): string | null {
   const missing = use.partners.filter((p) => p.keys.length === 0).map((p) => memberName(p.action, names));
   if (missing.length === 0) return null;
-  return `${missing.join(" and ")} ${missing.length === 1 ? "isn't" : "aren't"} on this layer`;
+  return `${andList(missing)} ${missing.length === 1 ? "isn't" : "aren't"} on this layer`;
 }

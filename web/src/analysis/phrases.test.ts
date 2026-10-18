@@ -45,6 +45,16 @@ describe("tapName", () => {
       expect(tapName(described(code), model)).toBeNull();
     }
   });
+
+  it("doesn't follow a tap dance that a tap dance taps, so one running itself or another one running it is null", () => {
+    const self = corne({ layers: [], tapDances: [["TD(0)", "MO(1)", "KC_NO", "KC_NO"]] });
+    expect(tapName(described("TD(0)"), self)).toBeNull();
+    const mutual = corne({
+      layers: [], tapDances: [["TD(1)", "MO(1)", "KC_NO", "KC_NO"], ["TD(0)", "MO(2)", "KC_NO", "KC_NO"]],
+    });
+    expect(tapName(described("TD(0)"), mutual)).toBeNull();
+    expect(tapName(described("TD(1)"), mutual)).toBeNull();
+  });
 });
 
 describe("memberName and comboName", () => {
@@ -127,6 +137,20 @@ describe("wayLabel and wayDetail", () => {
     expect(details[2]).toEqual(["tap dance 0, double tap · from Base"]);
   });
 
+  it("name a tap dance that runs itself, or that another one runs, by where it is", () => {
+    const self = of({
+      layers: [layer({ [AT.leftOuterThumb]: "TD(0)" }, "KC_NO"), layer({}, "KC_NO")],
+      tapDances: [["TD(0)", "MO(1)", "KC_NO", "KC_NO"]],
+    });
+    expect(self.labels[1]).toEqual(["hold (left outer thumb)"]);
+    const mutual = of({
+      layers: [layer({ [AT.leftOuterThumb]: "TD(0)", [AT.rightOuterThumb]: "TD(1)" }, "KC_NO"),
+        layer({}, "KC_NO"), layer({}, "KC_NO")],
+      tapDances: [["TD(1)", "MO(1)", "KC_NO", "KC_NO"], ["TD(0)", "MO(2)", "KC_NO", "KC_NO"]],
+    });
+    expect(mutual.labels.slice(1)).toEqual([["hold (left outer thumb)"], ["hold (right outer thumb)"]]);
+  });
+
   it("name a combo by its keycodes, and the tap dance slot of a combo's tap dance", () => {
     const { labels, details } = of({
       layers: [layer({ [AT.leftInnerThumb]: "MO(5)", [AT.rightOuterThumb]: "OSL(3)", 0: "KC_J", 1: "KC_K", 2: "LT1(KC_SPC)" },
@@ -141,6 +165,17 @@ describe("wayLabel and wayDetail", () => {
     expect(labels[7]).toEqual(["combo: Q + W to toggle"]);
     expect(details[7]).toEqual(["can't fire: its keys aren't all on one layer"]);
     expect(labels[1]).toEqual(["hold Space", "combo: Space (hold: Layer 1) + OSL(3) with Ctrl"]);
+  });
+
+  it("say that a combo's tap dance is tapped and held, or double-tapped and held, for a layer held in that slot", () => {
+    const { labels } = of({
+      layers: [layer({ 0: "KC_J", 1: "KC_K" }, "KC_NO"), layer({}), layer({}), layer({})],
+      tapDances: [["MO(1)", "KC_NO", "MO(2)", "MO(3)"]],
+      combos: [{ keys: ["KC_J", "KC_K"], output: "TD(0)" }],
+    });
+    expect(labels.slice(1)).toEqual([
+      ["combo: J + K, tapped and held"], ["combo: J + K, double-tapped and held"], ["combo: J + K, tapped then held"],
+    ]);
   });
 
   it("say where a way works when it doesn't work on the base layer", () => {
@@ -170,6 +205,19 @@ describe("unreachedReason", () => {
     const { reach } = of({ layers: [layer({ 0: "KC_A" }, "KC_NO"), layer({}), layer({ 1: "MO(3)" }, "KC_NO"), layer({})] });
     expect(reach.map(unreachedReason)).toEqual([
       null, "Nothing reaches this layer", "Nothing reaches this layer", "Only reached from layers that nothing reaches",
+    ]);
+  });
+
+  it("says when only combos that can't fire reach a layer", () => {
+    const { reach } = of({
+      layers: [layer({ 0: "KC_A" }, "KC_NO"), layer({}), layer({}), layer({ 1: "MO(4)" }, "KC_NO"), layer({})],
+      tapDances: [["KC_NO", "MO(2)", "TG(2)", "KC_NO"]],
+      combos: [{ keys: ["KC_Q", "KC_W"], output: "MO(1)" }, { keys: ["KC_Q", "KC_E"], output: "TD(0)" },
+        { keys: ["KC_Q", "KC_R"], output: "TG(2)" }, { keys: ["KC_Q", "KC_W"], output: "MO(4)" }],
+    });
+    expect(reach.map(unreachedReason)).toEqual([
+      null, "Only a combo that can't fire reaches this layer", "Only combos that can't fire reach this layer",
+      "Nothing reaches this layer", "Only reached from layers that nothing reaches",
     ]);
   });
 });
@@ -207,5 +255,15 @@ describe("comboUseLabel and missingPartners", () => {
     expect(uses(AT.leftInnerThumb).map((u) => missingPartners(u, names))).toEqual([null]);
     expect(uses(0).map((u) => missingPartners(u, names))).toEqual(["Y isn't on this layer"]);
     expect(uses(1).map((u) => missingPartners(u, names))).toEqual([null, "Q and W aren't on this layer"]);
+  });
+
+  it("list three or more missing keys with commas", () => {
+    const many = corne({
+      layers: [layer({ 0: "KC_A" }, "KC_NO")],
+      combos: [{ keys: ["KC_A", "KC_Q", "KC_W", "KC_E"], output: "KC_B" }],
+    });
+    const p = placeKeyboard(many);
+    const [use] = combosUsing(combosOf(many, p), many, codesOn(many, p, 0), 0, { kind: "key", index: 0 });
+    expect(missingPartners(use, namesOf(many))).toBe("Q, W and E aren't on this layer");
   });
 });
