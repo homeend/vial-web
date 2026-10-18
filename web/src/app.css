@@ -35,8 +35,8 @@
   --tone-macro: #e07f00;
   /* the underline of a key that is part of a combo */
   --combo: #e8264a;
-  /* keys that produce what the find box looks for */
-  --find: #e0a100;
+  /* keys that produce what the find box looks for: a dark amber, at least 3:1 against every key face and the board */
+  --find: #9e6c00;
   /* how much of a kind's colour goes into a key's face and outline */
   --tone-fill: 15%;
   --tone-line: 62%;

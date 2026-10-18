@@ -34,6 +34,9 @@
   const PAD = 0.04;
   const COMPACT_PAD = 0.015;
   const ROUND = 0.12;
+  /** the found ring, in pixels: its distance from the key's rectangle, and its width */
+  const RING_GAP = 3.5;
+  const RING_WIDTH = 2;
 
   // the button covers both rectangles; everything inside is relative to its top-left corner
   const box = $derived.by(() => {
@@ -62,6 +65,21 @@
       : legendSizes(face, width, height, u, legendFont.width);
   });
 
+  // a found key also gets a ring outside its outline, apart from it: found shows by shape as well as colour, on keys
+  // of any kind and next to the selection's outline (5 px wide, so 2.5 px out). One shape: the key grown by the gap
+  // and the ring, less the key grown by the gap (a mask), so that the two rectangles of an ISO Enter get one ring
+  const ring = $derived.by(() => {
+    const grow = (r: { x: number; y: number; w: number; h: number }, by: number) => ({
+      x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by, rx: ROUND * u + by,
+    });
+    return { outer: rects.map((r) => grow(r, RING_GAP + RING_WIDTH)), inner: rects.map((r) => grow(r, RING_GAP)) };
+  });
+  const uid = $props.id();
+  const ringMask = `find-ring-${uid}`;
+  // the focus ring goes outside the found ring (the focus ring is offset from the button, which reaches half a gap
+  // past the outline)
+  const ringClear = $derived(RING_GAP + RING_WIDTH + 1 - (GAP * u) / 2);
+
   const style = $derived(
     [
       `left: ${(item.x + box.left) * u}px`,
@@ -73,6 +91,7 @@
       `--shifted-size: ${sizes.shifted}px`,
       `--hold-size: ${sizes.hold}px`,
       `--hold-lines: ${sizes.holdLines || 2}`,
+      `--ring-clear: ${ringClear}px`,
       item.r ? `transform: rotate(${item.r}deg)` : "",
       item.r ? `transform-origin: ${(item.rx - item.x - box.left) * u}px ${(item.ry - item.y - box.top) * u}px` : "",
     ].filter(Boolean).join("; "),
@@ -95,6 +114,20 @@
 
 {#snippet cap()}
   <svg class="cap" width={box.width * u} height={box.height * u} aria-hidden="true">
+    {#if found}
+      <!-- white keeps, black cuts away: mask values, not colours that show -->
+      <mask id={ringMask}>
+        {#each ring.outer as r, i (i)}
+          <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={r.rx} fill="white" />
+        {/each}
+        {#each ring.inner as r, i (i)}
+          <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={r.rx} fill="black" />
+        {/each}
+      </mask>
+      {#each ring.outer as r, i (i)}
+        <rect class="find-ring" x={r.x} y={r.y} width={r.w} height={r.h} rx={r.rx} mask="url(#{ringMask})" />
+      {/each}
+    {/if}
     <!-- outlines first, then the fills over them: two rectangles read as one key (ISO Enter) -->
     {#each rects as r, i (i)}
       <rect class="edge" x={r.x} y={r.y} width={r.w} height={r.h} rx={ROUND * u} />
@@ -213,6 +246,15 @@
     filter: drop-shadow(0 0 calc(var(--u) * 0.12) color-mix(in srgb, var(--find) 70%, transparent));
   }
 
+  /* the ring reaches into the gap between keys (past it, on small keys): a found key sits above its neighbours */
+  .found {
+    z-index: 1;
+  }
+
+  .find-ring {
+    fill: var(--find);
+  }
+
   .selected .edge {
     stroke: var(--accent);
     stroke-width: 5;
@@ -220,11 +262,15 @@
   }
 
   /* a thin ring outside the key, apart from the thick outline of the selection; it turns with the key, and sits
-     above its neighbours */
+     above its neighbours (found ones included) */
   .key:focus-visible {
-    z-index: 1;
+    z-index: 2;
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  .found:focus-visible {
+    outline-offset: max(2px, var(--ring-clear));
   }
 
   /* a key of two rectangles (ISO Enter) answers the pointer only where it is drawn, not in its notch */
@@ -235,6 +281,13 @@
   .notched .cap rect {
     cursor: pointer;
     pointer-events: visiblePainted;
+  }
+
+  /* a picture's keys take no clicks: a found one, raised above its neighbours, must not take them from what holds
+     the picture (an Overview card opens on a click anywhere) */
+  .static,
+  .static .cap rect {
+    pointer-events: none;
   }
 
   .legend {

@@ -112,6 +112,18 @@
     box-shadow: 0 0 0 2px var(--find);
   }
 
+  /* and a ring outside the knob, apart from it (3 to 5 px out): found shows by shape as well as colour, and next to
+     the selection's */
+  .found::after {
+    content: "";
+    position: absolute;
+    /* from the inside of the knob's border (2 px) */
+    inset: -7px;
+    border: 2px solid var(--find);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
   .selected {
     border-color: var(--accent);
     box-shadow: 0 0 0 2px var(--accent);
@@ -122,6 +134,11 @@
     z-index: 1;
     outline: 2px solid var(--accent);
     outline-offset: 4px;
+  }
+
+  /* outside the found ring */
+  .found:focus-visible {
+    outline-offset: 7px;
   }
 
   .arrow {
