@@ -47,6 +47,7 @@
   const current = $derived(actionOn(layer));
   const face = $derived(keyFace(current, names));
   const summary = $derived(actionSummary(current, names));
+  const position = $derived(positionLine(model, selection, names.layer(layer)));
   const tapCode = $derived(selection.kind === "key" ? tapCodeOf(current) : null);
   const freeSlot = $derived(freeTapDance(model));
   // a key that does nothing, or falls through, has no action to put in a tap dance
@@ -80,7 +81,7 @@
     <KeyCap {face} size={68} round={selection.kind === "encoder"} />
     <div class="heading">
       <h2>{keyTitle(current, names)}</h2>
-      <p class="position">{positionLine(model, selection, names.layer(layer))}</p>
+      <p class="position" title={position}>{position}</p>
     </div>
   </header>
 
@@ -163,7 +164,7 @@
       <ul>
         {#each others as other (other.index)}
           <li>
-            <button type="button" onclick={() => onjump(other.index)}>
+            <button type="button" title={other.label} onclick={() => onjump(other.index)}>
               <span class="other-layer">{other.label}</span>
               <span class="chip tone-{other.face.tone}" data-tone={other.face.tone}>{other.face.main || "—"}</span>
               <span class="other-summary">{other.detail}</span>
@@ -182,6 +183,11 @@
 <style>
   .inspector {
     display: grid;
+    /* not "auto": a long name, cut short, must not widen the column */
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    /* long names break rather than widen the panel */
+    overflow-wrap: anywhere;
     align-content: start;
     gap: 14px;
     padding: 16px;
@@ -208,10 +214,14 @@
     letter-spacing: -0.01em;
   }
 
+  /* a long layer name is cut short; the tooltip has all of it */
   .position {
     margin: 4px 0 0;
+    overflow: hidden;
     color: var(--text-3);
     font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .code code {

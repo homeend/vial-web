@@ -163,3 +163,49 @@ test("clearing a layer's name gives it its default name back", async ({ app }) =
     await setLayerName(app, 3, before);
   }
 });
+
+test("a long layer name is renamed in a dialog that shows all of it, and cut short with a tooltip elsewhere", async ({ app }) => {
+  const before = await layerNameOf(app, 2);
+  const long = "Navigation and arrows with the mouse keys"; // 41: one more than a name can have
+  const kept = long.slice(0, 40);
+  try {
+    await app.getByRole("tab", { name: "2 Layer 2" }).dblclick();
+    const dialog = app.getByRole("dialog", { name: "Rename layer 2" });
+    await expect(dialog).toBeVisible();
+    const name = dialog.getByLabel("Name of layer 2");
+    await expect(name).toBeFocused();
+    await name.pressSequentially(long);
+    await expect(name).toHaveValue(kept);
+    await expect(dialog).toContainText("40 / 40");
+    // all 40 characters fit in the field
+    expect(await name.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+    await screenshots(app, "rename-dialog");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(app.getByRole("tab", { name: `2 ${kept}` })).toBeFocused();
+    expect(await layerNameOf(app, 2)).toBe(kept);
+
+    // cut short, with all of it in the tooltip: the tab, the Inspector, how the layer is reached
+    const tab = app.getByRole("tab", { name: `2 ${kept}` });
+    await expect(tab).toHaveAttribute("title", `${kept} · double-click to rename`);
+    expect(await tab.locator(".name").evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
+    const position = app.locator(".inspector .position");
+    await expect(position).toHaveAttribute("title", new RegExp(`${kept} layer$`));
+    const inspector = (await app.getByRole("complementary", { name: "Selected key" }).boundingBox())!;
+    expect(await app.locator(".inspector").evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+    expect(inspector.width).toBeLessThanOrEqual(291);
+    const reachName = app.locator("details.reach summary .name");
+    await expect(reachName).toHaveAttribute("title", `Layer 2 · ${kept}`);
+    expect(await reachName.evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
+    await screenshots(app, "long-layer-name", { fullPage: true });
+
+    // Escape leaves the name as it was
+    await tab.dblclick();
+    await dialog.getByLabel("Name of layer 2").fill("Something else");
+    await dialog.getByLabel("Name of layer 2").press("Escape");
+    await expect(dialog).toBeHidden();
+    expect(await layerNameOf(app, 2)).toBe(kept);
+  } finally {
+    await setLayerName(app, 2, before);
+  }
+});

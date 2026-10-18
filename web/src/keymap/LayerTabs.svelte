@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { tick } from "svelte";
   import type { Layer } from "../api/types";
+  import LayerNameDialog from "./LayerNameDialog.svelte";
 
   interface Props {
     layers: Layer[];
@@ -13,47 +13,26 @@
 
   let { layers, active, canRename, onselect, onrename }: Props = $props();
 
-  let editing = $state<number | null>(null);
-  let draft = $state("");
-  let input = $state<HTMLInputElement>();
+  /** the layer being renamed, in the dialog */
+  let renaming = $state<number | null>(null);
 
   const tabId = (index: number) => `layer-tab-${index}`;
+  const ownName = (index: number) => (layers[index]?.customName ? layers[index].name : "");
 
-  /** text: what the name field starts with (a failed rename gives back what was typed) */
-  async function startRename(index: number, text?: string) {
+  function startRename(index: number) {
     if (!canRename) return;
     onselect(index);
-    editing = index;
-    draft = text ?? (layers[index].customName ? layers[index].name : "");
-    await tick();
-    input?.select();
+    renaming = index;
   }
 
-  /** refocus: the layer's tab gets the focus back (Enter, Escape), rather than it staying where it went (a click) */
-  async function finish(save: boolean, refocus: boolean) {
-    if (editing === null) return;
-    const index = editing;
-    editing = null;
-    const layer = layers[index];
-    const name = draft.trim();
-    if (refocus) {
-      await tick();
-      document.getElementById(tabId(index))?.focus();
-    }
-    if (save && name !== (layer.customName ? layer.name : "")) {
-      // it failed (a toast says why): the field is back, with what was typed
-      if (!(await onrename(index, name))) await startRename(index, name);
-    }
+  /** an unchanged name isn't sent */
+  function save(index: number, name: string): Promise<boolean> {
+    return name === ownName(index) ? Promise.resolve(true) : onrename(index, name);
   }
 
-  function onkeydown(event: KeyboardEvent) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void finish(true, true);
-    } else if (event.key === "Escape") {
-      event.stopPropagation();
-      void finish(false, true);
-    }
+  function closed(index: number) {
+    renaming = null;
+    document.getElementById(tabId(index))?.focus();
   }
 
   /** the tabs pattern: arrows, Home and End move along the layers and select; F2 renames */
@@ -77,8 +56,8 @@
   }
 </script>
 
-<!-- The tablist holds only the tabs; the rename button and the name field are drawn among them (by their order)
-     but are outside it. While a layer is renamed its tab is hidden, and the field takes its place. -->
+<!-- The tablist holds only the tabs; the rename button is drawn among them (after the active tab, by its order)
+     but is outside it. Renaming happens in a dialog, wide enough for the longest name. -->
 <div class="tabs">
   <div class="tablist" role="tablist" aria-label="Layers">
     {#each layers as layer (layer.index)}
@@ -89,11 +68,10 @@
         class="tab"
         class:active={layer.index === active}
         style="order: {layer.index * 2}"
-        hidden={editing === layer.index}
         aria-selected={layer.index === active}
         aria-controls="layer-panel"
         tabindex={layer.index === active ? 0 : -1}
-        title={canRename ? "Double-click to rename" : undefined}
+        title={canRename ? `${layer.name} · double-click to rename` : layer.name}
         onclick={() => onselect(layer.index)}
         ondblclick={() => startRename(layer.index)}
         onkeydown={(e) => tabKeys(e, layer.index)}
@@ -103,20 +81,7 @@
       </button>
     {/each}
   </div>
-  {#if editing !== null}
-    <div class="tab active editing" style="order: {editing * 2}">
-      <span class="number">{editing}</span>
-      <input
-        bind:this={input}
-        bind:value={draft}
-        maxlength="40"
-        placeholder={editing === 0 ? "Base" : `Layer ${editing}`}
-        aria-label="Name of layer {editing}"
-        onblur={() => finish(true, false)}
-        {onkeydown}
-      />
-    </div>
-  {:else if canRename && layers[active]}
+  {#if canRename && layers[active]}
     <button
       type="button"
       class="rename"
@@ -131,6 +96,13 @@
     </button>
   {/if}
 </div>
+
+<LayerNameDialog
+  layer={renaming}
+  text={renaming === null ? "" : ownName(renaming)}
+  onsave={save}
+  onclose={closed}
+/>
 
 <style>
   .tabs {
@@ -163,10 +135,6 @@
     cursor: pointer;
   }
 
-  .tab[hidden] {
-    display: none;
-  }
-
   .tab:hover {
     color: var(--text);
   }
@@ -176,6 +144,14 @@
     background: var(--surface);
     box-shadow: var(--shadow);
     color: var(--text);
+  }
+
+  /* a long name is cut short; the tooltip has all of it */
+  .name {
+    max-width: 16ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .number {
@@ -189,15 +165,6 @@
     color: var(--tone-layer);
     font-size: 12px;
     font-weight: 700;
-  }
-
-  .editing input {
-    width: 150px;
-    padding: 3px 6px;
-    border: 1px solid var(--accent);
-    border-radius: 6px;
-    background: var(--surface);
-    outline: none;
   }
 
   .rename {

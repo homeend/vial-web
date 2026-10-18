@@ -14,12 +14,13 @@
 
   let { reach, ctx, open, ontoggle }: Props = $props();
 
-  const title = $derived(`How ${layerLabel(reach.layer, ctx.names)} is reached`);
+  const name = $derived(layerLabel(reach.layer, ctx.names));
   const warning = $derived(unreachedReason(reach));
   const ways = $derived(reach.ways.map((w) => ({ label: wayLabel(w, ctx), detail: wayDetail(w, ctx) })));
 </script>
 
-<!-- above the keyboard, folded away by default: its summary line says how many ways in, or warns -->
+<!-- above the keyboard, folded away by default: its summary line shows the first way in and how many more, or
+     warns; opened, it lists them all -->
 <details
   class="reach"
   class:unreached={warning !== null}
@@ -27,11 +28,15 @@
   ontoggle={(event) => ontoggle((event.currentTarget as HTMLDetailsElement).open)}
 >
   <summary>
-    <span class="title" id="reach-title">{title}</span>
+    <span class="title" id="reach-title">How <span class="name" title={name}>{name}</span> is reached</span>
     {#if warning}
       <span class="warning">{warning}</span>
+    {/if}
+    {#if open || ways.length === 0}
+      {#if !warning}<span class="count">{ways.length === 1 ? "1 way" : `${ways.length} ways`}</span>{/if}
     {:else}
-      <span class="count">{ways.length === 1 ? "1 way" : `${ways.length} ways`}</span>
+      <span class="first" title={ways[0].label}>{ways[0].label}</span>
+      {#if ways.length > 1}<span class="more">+{ways.length - 1} more</span>{/if}
     {/if}
   </summary>
   <section aria-labelledby="reach-title">
@@ -63,7 +68,6 @@
 
   summary {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 4px 10px;
     padding: 8px 12px;
@@ -80,6 +84,7 @@
   /* the fold's arrow: right when folded, down when open */
   summary::before {
     content: "";
+    flex: none;
     width: 6px;
     height: 6px;
     margin: 0 2px;
@@ -98,8 +103,44 @@
   }
 
   .title {
+    flex: none;
     font-size: 13px;
     font-weight: 650;
+    white-space: nowrap;
+  }
+
+  /* a long layer name is cut short; the tooltip has all of it */
+  .name {
+    display: inline-block;
+    max-width: 22ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+
+  /* the first way in, at the right end of the line, with how many more there are */
+  .first {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .more {
+    flex: none;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  summary:hover .more {
+    background: var(--surface);
   }
 
   .count {
@@ -108,6 +149,7 @@
   }
 
   .warning {
+    flex: none;
     padding: 2px 8px;
     border-radius: 6px;
     background: var(--warning-weak);

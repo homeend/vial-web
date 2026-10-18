@@ -51,7 +51,7 @@ test("the Overview shows every layer and how it is reached; clicking one opens i
   await expect(app.getByRole("tab", { name: "2 Layer 2" })).toHaveAttribute("aria-selected", "true");
   await expect(app.getByRole("tab", { name: "2 Layer 2" })).toBeFocused();
   await expect(app.getByRole("radio", { name: "Edit" })).toBeChecked();
-  await expect(reachFold(app).locator("summary")).toHaveText(/How Layer 2 is reached\s*2 ways/);
+  await expect(reachFold(app).locator("summary")).toHaveText(/How Layer 2 is reached\s*hold B\s*\+1 more/);
   await expect(await openReach(app, "How Layer 2 is reached")).toContainText("hold B");
 });
 
@@ -286,7 +286,8 @@ test("how a layer is reached is above the keyboard, folded away until opened, an
   await expect(app.getByRole("complementary", { name: "Selected key" })).not.toContainText("is reached");
   const fold = reachFold(app);
   await expect(fold).not.toHaveAttribute("open");
-  await expect(fold.locator("summary")).toHaveText(/How Base is reached\s*2 ways/);
+  // folded: the first way in, and how many more
+  await expect(fold.locator("summary")).toHaveText(/How Base is reached\s*default layer\s*\+1 more/);
   // between the layer tabs and the keyboard
   const [tabs, summary, board] = await Promise.all([
     app.getByRole("tab", { name: "0 Base" }).boundingBox(), fold.boundingBox(), app.locator(".board").boundingBox()]);
@@ -295,6 +296,7 @@ test("how a layer is reached is above the keyboard, folded away until opened, an
 
   const list = await openReach(app, "How Base is reached");
   await expect(list).toContainText("default layer");
+  await expect(fold.locator("summary")).toHaveText(/How Base is reached\s*2 ways/);
   await screenshots(app, "reach-open", { fullPage: true });
   // open on another layer, and after a reload
   await app.getByRole("tab", { name: "1 Layer 1" }).click();

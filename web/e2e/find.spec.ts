@@ -78,3 +78,24 @@ test("with the Polish keyboard language, ą is AltGr + A", async ({ app }) => {
   await findBox(app).fill("ą");
   await expect(results(app).getByRole("listitem")).toHaveText(["AltGr + A on Base (right home row, 5th from the outside)"]);
 });
+
+test("the clear button and Escape empty the find box and turn the results and highlights off", async ({ app }) => {
+  const clear = app.getByRole("button", { name: "Clear the search" });
+  await expect(clear).toHaveCount(0);
+  await findBox(app).fill("Esc");
+  await expect(results(app)).toBeVisible();
+  await expect(app.locator(".key.found")).not.toHaveCount(0);
+  await screenshots(app, "find-clear");
+  await clear.click();
+  await expect(findBox(app)).toHaveValue("");
+  await expect(findBox(app)).toBeFocused();
+  await expect(results(app)).toHaveCount(0);
+  await expect(app.locator(".key.found")).toHaveCount(0);
+  await expect(clear).toHaveCount(0);
+
+  await findBox(app).fill("@");
+  await expect(results(app)).toBeVisible();
+  await findBox(app).press("Escape");
+  await expect(findBox(app)).toHaveValue("");
+  await expect(results(app)).toHaveCount(0);
+});
