@@ -17,31 +17,51 @@
 
   /** more than this many places would only scroll: the highlighted keys show the rest */
   const SHOWN = 40;
+  /** milliseconds the typing pauses before screen readers are told what was found: once, not after every letter */
+  const ANNOUNCE_DELAY = 250;
   const searched = $derived(text.trim());
   const summary = $derived(
     !searched ? "" : results.length === 0 ? `“${searched}” is not on your keymap.`
       : `“${searched}”: ${results.length === 1 ? "1 place" : `${results.length} places`}`,
   );
+
+  // the results show at once; the announcement waits for the typing to pause
+  let announced = $state("");
+  $effect(() => {
+    const next = summary;
+    const timer = setTimeout(() => (announced = next), ANNOUNCE_DELAY);
+    return () => clearTimeout(timer);
+  });
+
+  /** the first result that is on a key: Enter opens it */
+  const first = $derived(results.find((r) => r.place)?.place ?? null);
+
+  function onkeydown(event: KeyboardEvent) {
+    if (event.key !== "Enter" || !first) return;
+    event.preventDefault();
+    onopen(first);
+  }
 </script>
 
-<section class="find" aria-label="Find a character or key">
+<search class="find" aria-label="Find a character or key">
   <input
     type="search"
     bind:value={text}
     placeholder="Find a character or key: ą, @, Esc, MO(2)"
     aria-label="Find a character or key"
-    aria-describedby={searched ? "find-results" : undefined}
+    aria-describedby={searched ? "find-summary" : undefined}
     spellcheck="false"
     autocomplete="off"
+    {onkeydown}
   />
-  <!-- said by screen readers as it changes; the same text is shown in the results -->
-  <p class="visually-hidden" role="status">{summary}</p>
+  <!-- said by screen readers once the typing pauses; the same text is shown in the results -->
+  <p class="visually-hidden" role="status">{announced}</p>
   {#if searched}
     <div id="find-results" class="results">
       {#if results.length === 0}
-        <p class="none">{summary}</p>
+        <p id="find-summary" class="none">{summary}</p>
       {:else}
-        <p class="count">{summary}</p>
+        <p id="find-summary" class="count">{summary}</p>
         <ul>
           {#each results.slice(0, SHOWN) as result, i (i)}
             <li>
@@ -58,7 +78,7 @@
       {/if}
     </div>
   {/if}
-</section>
+</search>
 
 <style>
   .find {
@@ -124,6 +144,14 @@
 
   button:hover {
     border-color: var(--find);
+  }
+
+  /* a result no key runs (a tap dance nothing uses, a combo whose keys aren't on the keymap) opens nothing: it
+     doesn't look like a button */
+  li > span {
+    border-style: dashed;
+    background: transparent;
+    color: var(--text-2);
   }
 
   .more {

@@ -14,7 +14,7 @@ test("finding @ lists Shift + 2 and the @ key, highlights them, and opens one", 
     "Shift + 2 on Layer 3 (left home row, 3rd from the outside)",
   ]);
   // and said to screen readers
-  await expect(app.getByRole("region", { name: "Find a character or key" }).getByRole("status")).toHaveText(
+  await expect(app.getByRole("search", { name: "Find a character or key" }).getByRole("status")).toHaveText(
     "“@”: 2 places");
 
   // highlighted in the Overview, on the layers they are on
@@ -32,6 +32,19 @@ test("finding @ lists Shift + 2 and the @ key, highlights them, and opens one", 
   await expect(two).toBeFocused();
   await expect(two).toHaveClass(/\bfound\b/);
   await screenshots(app, "find-edit");
+});
+
+test("Enter in the find box opens the first result on a key, which says it matches", async ({ app }) => {
+  await app.getByRole("radio", { name: "Overview" }).check();
+  await findBox(app).fill("@");
+  await findBox(app).press("Enter");
+  // the first result: "@ on Layer 1 (left top row, 3rd from the outside)"
+  const at = app.locator(`[data-ref="key:${await keyIndex(app, 0, 2)}"]`);
+  await expect(app.getByRole("radio", { name: "Edit" })).toBeChecked();
+  await expect(app.getByRole("tab", { name: "1 Layer 1" })).toHaveAttribute("aria-selected", "true");
+  await expect(at).toBeFocused();
+  await expect(at).toHaveAttribute("aria-label", /· matches the search$/);
+  await expect(app.locator(`[data-ref="key:${await keyIndex(app, 0, 1)}"]`)).not.toHaveAttribute("aria-label", /matches/);
 });
 
 test("a character that is nowhere on the keymap says so", async ({ app }) => {

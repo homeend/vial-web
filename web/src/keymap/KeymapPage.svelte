@@ -7,7 +7,7 @@
   import type { KeyboardModel } from "../api/types";
   import { placeKeyboard } from "../keyboard/geometry";
   import Keyboard from "../keyboard/Keyboard.svelte";
-  import { keyFace, keyLabel, layerLabel, namesOf, type KeyFace } from "../keyboard/labels";
+  import { EMPTY_FACE, keyFace, keyLabel, layerLabel, namesOf } from "../keyboard/labels";
   import { actionAt, refId, whereIs, type KeyRef } from "../keyboard/refs";
   import { keyboard } from "../lib/keyboard.svelte";
   import { browserStorage } from "../lib/theme";
@@ -55,8 +55,7 @@
   );
   const highlighted = $derived(foundKeys(found, model.layers.length));
   const actions = $derived(placement.items.map((item) => actionAt(model, layer, item)));
-  const EMPTY: KeyFace = { main: "", shifted: null, altGr: null, hold: null, tone: "none" };
-  const faces = $derived(actions.map((d) => (d ? keyFace(d, names) : EMPTY)));
+  const faces = $derived(actions.map((d) => (d ? keyFace(d, names) : EMPTY_FACE)));
   const combos = $derived(placement.items.map((item) => analysis.comboKeys[layer]?.has(refId(item)) ?? false));
   const highlights = $derived(placement.items.map((item) => highlighted[layer]?.has(refId(item)) ?? false));
   // what each key does, in words: what screen readers say, and the tooltip (with names a key cap may cut short)
@@ -64,7 +63,7 @@
     placement.items.map((item, i) => {
       const { what, where } = whereIs(model, item);
       const label = keyLabel(actions[i], names, `${what.toLowerCase()} ${where}`);
-      return combos[i] ? `${label} · part of a combo` : label;
+      return `${label}${combos[i] ? " · part of a combo" : ""}${highlights[i] ? " · matches the search" : ""}`;
     }),
   );
   const selectedIndex = $derived(
@@ -194,7 +193,7 @@
 
   {#if view === "overview"}
     <Overview
-      {model} {names} {placement} {analysis} {highlighted} current={layer} onopen={(i) => void openLayer(i)}
+      {model} {phrases} {placement} {analysis} {highlighted} current={layer} onopen={(i) => void openLayer(i)}
     />
   {:else}
     <LayerTabs

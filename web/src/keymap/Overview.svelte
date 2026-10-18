@@ -3,14 +3,15 @@
   import { unreachedReason, wayLabel, type PhraseContext } from "../analysis/phrases";
   import type { KeyboardModel } from "../api/types";
   import type { Placement } from "../keyboard/geometry";
-  import { keyFace, layerLabel, type KeyFace, type Names } from "../keyboard/labels";
+  import { EMPTY_FACE, keyFace, layerLabel } from "../keyboard/labels";
   import { actionAt, refId } from "../keyboard/refs";
   import KindLegend from "./KindLegend.svelte";
   import LayerCard from "./LayerCard.svelte";
 
   interface Props {
     model: KeyboardModel;
-    names: Names;
+    /** the model, its names and the key positions, for the labels saying how each layer is reached */
+    phrases: PhraseContext;
     placement: Placement;
     analysis: Analysis;
     /** by layer: the keys (refIds) the find box highlights */
@@ -20,28 +21,30 @@
     onopen: (layer: number) => void;
   }
 
-  let { model, names, placement, analysis, highlighted, current, onopen }: Props = $props();
+  let { model, phrases, placement, analysis, highlighted, current, onopen }: Props = $props();
 
-  const EMPTY: KeyFace = { main: "", shifted: null, altGr: null, hold: null, tone: "none" };
-  const ctx = $derived<PhraseContext>({ model, names, positions: analysis.positions });
+  const names = $derived(phrases.names);
 
-  // small keyboards show the tap action only: the colour says what kind of key it is
+  // small keyboards show the tap action only (compact keys): the colour says what kind of key it is
   const cards = $derived(
     model.layers.map((layer) => {
       const reach = analysis.reach[layer.index];
       return {
         index: layer.index,
         title: layerLabel(layer.index, names),
-        reachedBy: reach ? reach.ways.map((w) => wayLabel(w, ctx)) : [],
+        reachedBy: reach ? reach.ways.map((w) => wayLabel(w, phrases)) : [],
         warning: reach ? unreachedReason(reach) : null,
         faces: placement.items.map((item) => {
           const d = actionAt(model, layer.index, item);
-          return d ? { ...keyFace(d, names), shifted: null, altGr: null, hold: null } : EMPTY;
+          return d ? keyFace(d, names) : EMPTY_FACE;
         }),
         combos: placement.items.map((item) => analysis.comboKeys[layer.index]?.has(refId(item)) ?? false),
-        highlights: placement.items.map((item) => highlighted[layer.index]?.has(refId(item)) ?? false),
       };
     }),
+  );
+  // apart from the cards: typing in the find box changes only these
+  const highlights = $derived(
+    model.layers.map((layer) => placement.items.map((item) => highlighted[layer.index]?.has(refId(item)) ?? false)),
   );
 
   const unused = $derived([
@@ -58,8 +61,9 @@
 
 <div class="overview" role="region" aria-label="Overview of the layers">
   <p class="limit">
-    Layer switching done in the keyboard's firmware code (for example tri-layer or <code>layer_state_set_user</code>)
-    can't be seen over the Vial protocol, so it isn't shown here.
+    Layer switching done in the keyboard's firmware code (for example a tri-layer made in code with
+    <code>update_tri_layer_state</code>, or <code>layer_state_set_user</code>) can't be seen over the Vial protocol, so
+    it isn't shown here.
   </p>
   <div class="layers">
     {#each cards as card (card.index)}
@@ -71,7 +75,7 @@
         {placement}
         faces={card.faces}
         combos={card.combos}
-        highlights={card.highlights}
+        highlights={highlights[card.index] ?? []}
         current={card.index === current}
         onopen={() => onopen(card.index)}
       />

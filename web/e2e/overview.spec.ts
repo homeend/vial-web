@@ -23,6 +23,12 @@ test("the Overview shows every layer and how it is reached; clicking one opens i
   await expect(overview.getByRole("button", { name: "Layer 2 — reached by hold B; hold S" })).toBeVisible();
   await expect(overview.getByRole("button", { name: "Layer 3 — reached by one-shot (right outer thumb)" })).toBeVisible();
   await expect(overview).toContainText("layer_state_set_user");
+  // the current layer is marked for screen readers too
+  await expect(overview.getByRole("button", { name: /^Base —/ })).toHaveAttribute("aria-current", "true");
+  await expect(overview.locator("[aria-current]")).toHaveCount(1);
+  // small keys show their main legend only: no shifted, AltGr or hold legends (LT1(KC_SPC) has a hold)
+  await expect(overview.locator(".card .key .tap").first()).toBeVisible();
+  await expect(overview.locator(".card .key").locator(".hold, .shifted, .alt-gr")).toHaveCount(0);
   // the simulated Corne's second tap dance and second macro are on no key
   await expect(overview.getByRole("region", { name: "Not used" })).toContainText(
     "Tap dance 1 · Esc / LCtrl / Ctrl+S is set up, but nothing uses it.");

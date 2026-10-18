@@ -16,6 +16,9 @@ export interface KeyFace {
   tone: Tone;
 }
 
+/** The face of a place on the keyboard that has no keycode (a layer the keyboard reports too few keys for) */
+export const EMPTY_FACE: KeyFace = { main: "", shifted: null, altGr: null, hold: null, tone: "none" };
+
 /** Names of the layers, tap dances and macros keys refer to */
 export interface Names {
   layer(index: number): string;

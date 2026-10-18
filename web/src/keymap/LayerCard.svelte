@@ -30,7 +30,8 @@
 </script>
 
 <article class="card" class:current class:unreached={warning !== null} data-layer={index}>
-  <button type="button" class="open" aria-label={name} title="Open in the Edit view" onclick={onopen}>
+  <button type="button" class="open" aria-label={name} aria-current={current ? "true" : undefined} title="Open in the Edit view"
+    onclick={onopen}>
     <span class="number">{index}</span>
     <span class="title">{title}</span>
   </button>
