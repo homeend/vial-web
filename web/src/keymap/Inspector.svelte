@@ -1,11 +1,17 @@
 <script lang="ts">
+  import type { ComboUse } from "../analysis/combos";
+  import type { PhraseContext } from "../analysis/phrases";
+  import type { LayerReach } from "../analysis/reach";
   import type { Described, KeyboardModel } from "../api/types";
   import KeyCap from "../keyboard/KeyCap.svelte";
   import { actionSummary, keyFace, keyTitle, layerLabel, type Names } from "../keyboard/labels";
-  import { actionAt, positionLine, type KeyRef } from "../keyboard/refs";
+  import { actionAt, positionLine, refId, type KeyRef } from "../keyboard/refs";
   import Button from "../ui/Button.svelte";
+  import SectionTitle from "../ui/SectionTitle.svelte";
+  import ComboList from "./ComboList.svelte";
   import { tapCodeOf } from "./hold";
   import HoldEditor from "./HoldEditor.svelte";
+  import ReachList from "./ReachList.svelte";
   import { freeTapDance, tapDanceSlots } from "./tapdance";
 
   interface Props {
@@ -14,19 +20,26 @@
     layer: number;
     selection: KeyRef;
     canEdit: boolean;
+    /** the combos the key is part of on the layer */
+    comboUses: ComboUse[];
+    /** how the layer is reached */
+    reach: LayerReach | undefined;
+    phrases: PhraseContext;
     onchangekey: () => void;
     onsetcode: (code: string, action: string) => Promise<boolean>;
     ontapdance: () => void;
     onjump: (layer: number) => void;
   }
 
-  let { model, names, layer, selection, canEdit, onchangekey, onsetcode, ontapdance, onjump }: Props = $props();
+  let {
+    model, names, layer, selection, canEdit, comboUses, reach, phrases, onchangekey, onsetcode, ontapdance, onjump,
+  }: Props = $props();
 
   let editingHold = $state(false);
   // the hold editor is for one key on one layer: another one closes it
   let editedKey = "";
   $effect.pre(() => {
-    const key = `${layer}:${selection.kind}:${selection.index}`;
+    const key = `${layer}:${refId(selection)}`;
     if (key !== editedKey) {
       editedKey = key;
       editingHold = false;
@@ -84,7 +97,7 @@
 
   {#if tapDance}
     <section class="tap-dance" aria-label="Tap dance {tapDance.index}">
-      <h3>What each press does</h3>
+      <SectionTitle>What each press does</SectionTitle>
       <dl class="rows">
         {#each tapDanceSlots(tapDance) as slot (slot.label)}
           <dt>{slot.label}</dt>
@@ -138,7 +151,7 @@
   </div>
 
   {#if editingHold && tapCode}
-    {#key `${layer}:${selection.kind}:${selection.index}`}
+    {#key `${layer}:${refId(selection)}`}
       <HoldEditor
         {current}
         tap={tapCode}
@@ -152,7 +165,7 @@
 
   {#if others.length > 0}
     <section class="others">
-      <h3>On the other layers</h3>
+      <SectionTitle>On the other layers</SectionTitle>
       <ul>
         {#each others as other (other.index)}
           <li>
@@ -165,6 +178,14 @@
         {/each}
       </ul>
     </section>
+  {/if}
+
+  {#if comboUses.length > 0}
+    <ComboList uses={comboUses} {names} through={current.kind === "transparent"} />
+  {/if}
+
+  {#if reach}
+    <ReachList {reach} ctx={phrases} />
   {/if}
 </aside>
 
@@ -259,15 +280,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-  }
-
-  h3 {
-    margin: 0 0 8px;
-    color: var(--text-2);
-    font-size: 12px;
-    font-weight: 650;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
   }
 
   .others ul {

@@ -1,16 +1,25 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { analyse } from "../analysis/analysis";
+  import { combosUsing } from "../analysis/combos";
+  import { findOnKeymap, foundKeys, queryOf, type Place } from "../analysis/find";
+  import { foundLabel, type PhraseContext } from "../analysis/phrases";
   import type { KeyboardModel } from "../api/types";
   import { placeKeyboard } from "../keyboard/geometry";
   import Keyboard from "../keyboard/Keyboard.svelte";
   import { keyFace, keyLabel, layerLabel, namesOf, type KeyFace } from "../keyboard/labels";
-  import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
+  import { actionAt, refId, whereIs, type KeyRef } from "../keyboard/refs";
   import { keyboard } from "../lib/keyboard.svelte";
+  import { browserStorage } from "../lib/theme";
   import Picker from "../picker/Picker.svelte";
   import Inspector from "./Inspector.svelte";
+  import FindBox from "./FindBox.svelte";
   import KindLegend from "./KindLegend.svelte";
   import LayerTabs from "./LayerTabs.svelte";
   import { neighbour, type Direction } from "./navigation";
+  import Overview from "./Overview.svelte";
+  import { readView, saveView, type KeymapView } from "./view";
+  import ViewSwitch from "./ViewSwitch.svelte";
 
   interface Props {
     model: KeyboardModel;
@@ -18,6 +27,8 @@
 
   let { model }: Props = $props();
 
+  let view = $state<KeymapView>(readView(browserStorage()));
+  let findText = $state("");
   let layer = $state(0);
   let selection = $state<KeyRef | null>(null);
   let pickerOpen = $state(false);
@@ -28,14 +39,32 @@
 
   const names = $derived(namesOf(model));
   const placement = $derived(placeKeyboard(model));
+  // layers reached, combo keys, usage: worked out again from the model after every edit
+  const analysis = $derived(analyse(model, placement));
+  const phrases = $derived<PhraseContext>({ model, names, positions: analysis.positions });
+  // what the find box looks for, everywhere the keymap produces it (in the keyboard language's legends)
+  const found = $derived(
+    findOnKeymap(model, placement, queryOf(findText, keyboard.catalogue), analysis.combos, analysis.usage,
+      analysis.codes[0]),
+  );
+  const foundResults = $derived(
+    found.map((f) => ({
+      label: foundLabel(f, phrases),
+      place: f.type === "key" ? { layer: f.layer, ref: f.ref } : f.key,
+    })),
+  );
+  const highlighted = $derived(foundKeys(found, model.layers.length));
   const actions = $derived(placement.items.map((item) => actionAt(model, layer, item)));
   const EMPTY: KeyFace = { main: "", shifted: null, altGr: null, hold: null, tone: "none" };
   const faces = $derived(actions.map((d) => (d ? keyFace(d, names) : EMPTY)));
+  const combos = $derived(placement.items.map((item) => analysis.comboKeys[layer]?.has(refId(item)) ?? false));
+  const highlights = $derived(placement.items.map((item) => highlighted[layer]?.has(refId(item)) ?? false));
   // what each key does, in words: what screen readers say, and the tooltip (with names a key cap may cut short)
   const labels = $derived(
     placement.items.map((item, i) => {
       const { what, where } = whereIs(model, item);
-      return keyLabel(actions[i], names, `${what.toLowerCase()} ${where}`);
+      const label = keyLabel(actions[i], names, `${what.toLowerCase()} ${where}`);
+      return combos[i] ? `${label} · part of a combo` : label;
     }),
   );
   const selectedIndex = $derived(
@@ -51,6 +80,27 @@
     }
   });
 
+  function changeView(next: KeymapView) {
+    view = next;
+    saveView(browserStorage(), next);
+  }
+
+  /** From the Overview: the layer, in the Edit view, with the focus on its tab */
+  async function openLayer(index: number) {
+    layer = index;
+    changeView("edit");
+    await tick();
+    document.getElementById(`layer-tab-${index}`)?.focus();
+  }
+
+  /** From a find result: the key, selected in the Edit view on its layer */
+  async function openKey(place: Place) {
+    layer = place.layer;
+    selection = place.ref;
+    changeView("edit");
+    await focusSelected();
+  }
+
   function select(index: number) {
     const item = placement.items[index];
     if (item) selection = { kind: item.kind, index: item.index };
@@ -58,7 +108,7 @@
 
   async function focusSelected() {
     await tick();
-    if (selection) document.querySelector<HTMLElement>(`[data-ref="${selection.kind}:${selection.index}"]`)?.focus();
+    if (selection) document.querySelector<HTMLElement>(`[data-ref="${refId(selection)}"]`)?.focus();
   }
 
   function setCode(code: string, action = "Changing the key") {
@@ -85,14 +135,15 @@
 
   function onkeydown(event: KeyboardEvent) {
     // a dialog that is open (the picker) has the keyboard; its "close" event comes a moment after it closes
-    if (document.querySelector("dialog[open]") || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
+    if (view !== "edit" || document.querySelector("dialog[open]") || event.defaultPrevented || event.altKey ||
+      event.ctrlKey || event.metaKey) {
       return;
     }
     const target = event.target as HTMLElement;
     // Enter and Delete act on the key that has the focus, never on one the focus merely fell from (to <body>);
     // the arrows also start from <body>, and leave every other control (buttons, tabs, fields) alone
     const ref = target instanceof HTMLElement ? target.getAttribute("data-ref") : null;
-    const focused = ref === null ? -1 : placement.items.findIndex((i) => `${i.kind}:${i.index}` === ref);
+    const focused = ref === null ? -1 : placement.items.findIndex((i) => refId(i) === ref);
     const onKey = focused >= 0;
     const direction = ARROWS[event.key];
     const handled = direction || event.key === "Enter" || event.key === "Delete" || event.key === "Backspace";
@@ -114,6 +165,9 @@
   }
 
   const current = $derived(selection ? actionAt(model, layer, selection) : undefined);
+  const comboUses = $derived(
+    selection ? combosUsing(analysis.combos, model, analysis.codes[layer] ?? new Map(), layer, selection) : [],
+  );
   const subject = $derived.by(() => {
     if (!selection) return "";
     const { what, where } = whereIs(model, selection);
@@ -125,46 +179,64 @@
 
 <section class="keymap" aria-labelledby="keymap-title">
   <header class="head">
-    <h1 id="keymap-title">Keymap</h1>
-    <p>Click a key to see what it does. Arrow keys move, Enter changes it, Delete or Backspace clears it.</p>
+    <div class="title">
+      <h1 id="keymap-title">Keymap</h1>
+      {#if view === "edit"}
+        <p>Click a key to see what it does. Arrow keys move, Enter changes it, Delete or Backspace clears it.</p>
+      {:else}
+        <p>Every layer at once, and how each one is reached. Click a layer to edit it.</p>
+      {/if}
+    </div>
+    <ViewSwitch {view} onchange={changeView} />
   </header>
 
-  <LayerTabs
-    layers={model.layers}
-    active={layer}
-    canRename={keyboard.canEdit}
-    onselect={(i) => (layer = i)}
-    onrename={(i, name) => keyboard.renameLayer(i, name)}
-  />
+  <FindBox bind:text={findText} results={foundResults} onopen={(place) => void openKey(place)} />
 
-  <div class="workspace">
-    <div class="board" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
-      <Keyboard {placement} {faces} {labels} selected={selectedIndex} onselect={select} />
-      <KindLegend />
+  {#if view === "overview"}
+    <Overview
+      {model} {names} {placement} {analysis} {highlighted} current={layer} onopen={(i) => void openLayer(i)}
+    />
+  {:else}
+    <LayerTabs
+      layers={model.layers}
+      active={layer}
+      canRename={keyboard.canEdit}
+      onselect={(i) => (layer = i)}
+      onrename={(i, name) => keyboard.renameLayer(i, name)}
+    />
+
+    <div class="workspace">
+      <div class="board" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
+        <Keyboard {placement} {faces} {labels} {combos} {highlights} selected={selectedIndex} onselect={select} />
+        <KindLegend />
+      </div>
+
+      {#if selection && current}
+        {#key refId(selection)}
+          <Inspector
+            {model}
+            {names}
+            {layer}
+            {selection}
+            canEdit={keyboard.canEdit && keyboard.pending === 0}
+            {comboUses}
+            reach={analysis.reach[layer]}
+            {phrases}
+            onchangekey={() => (pickerOpen = true)}
+            onsetcode={(code, action) => fromInspector(() => setCode(code, action))}
+            ontapdance={() => fromInspector(turnIntoTapDance)}
+            onjump={(i) => {
+              layer = i;
+              void focusSelected();
+            }}
+          />
+        {/key}
+      {/if}
     </div>
-
-    {#if selection && current}
-      {#key `${selection.kind}:${selection.index}`}
-        <Inspector
-          {model}
-          {names}
-          {layer}
-          {selection}
-          canEdit={keyboard.canEdit && keyboard.pending === 0}
-          onchangekey={() => (pickerOpen = true)}
-          onsetcode={(code, action) => fromInspector(() => setCode(code, action))}
-          ontapdance={() => fromInspector(turnIntoTapDance)}
-          onjump={(i) => {
-            layer = i;
-            void focusSelected();
-          }}
-        />
-      {/key}
-    {/if}
-  </div>
+  {/if}
 </section>
 
-{#if selection && current}
+{#if view === "edit" && selection && current}
   <Picker
     bind:open={pickerOpen}
     {subject}
@@ -183,6 +255,14 @@
     gap: 16px;
     /* the Inspector goes beside the keyboard when the keymap itself is wide enough, whatever else is on the page */
     container: keymap / inline-size;
+  }
+
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px 16px;
   }
 
   .head h1 {
