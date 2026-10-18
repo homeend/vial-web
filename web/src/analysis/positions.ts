@@ -4,11 +4,12 @@ import { boundsOf, type PlacedKey, type Placement } from "../keyboard/geometry";
 import { refId } from "../keyboard/refs";
 
 /** a gap between the keys at least this wide (in key units) splits the keyboard into two halves: a Sofle's or a
- * Moonlander's halves are half a key apart, the gaps in a TKL or a Quefrency a quarter */
-const SPLIT_GAP = 0.5;
+ * Moonlander's halves are half a key apart, the gaps in a TKL or a Quefrency a quarter (between the two) */
+const SPLIT_GAP = 0.45;
 /** each half has at least this share of the keys */
 const SPLIT_SHARE = 0.25;
-/** a key whose centre is more than this far (in key units) below the first key of a row starts the next row */
+/** a key whose centre is more than this far (in key units) below the first key of a row starts the next row; also
+ * how much lower other low keys must be than a bottom finger row to be the thumbs (see thumbsOf) */
 const ROW_SPAN = 0.8;
 /** keys whose centres are at most this far apart across (in key units) stand in one column (rows staggered by a
  * quarter of a key don't) */
@@ -16,23 +17,30 @@ const COLUMN_SLACK = 0.1;
 /** a half's keys stand in columns (column stagger) when at least this share of them is in columns of two or more */
 const COLUMNS_SHARE = 0.6;
 /** a thumb key's lower edge is more than this far (in key units) below that of the lowest key of its half's outermost
- * column: less than half a key, as a Kyria's outer thumbs are exactly half a key lower (a Moonlander's tall thumb
- * keys reach up beside the bottom row, so their centres are no lower than its) */
+ * column: less than half a key, as a Kyria's outer thumbs are exactly half a key lower. Lower edges, not centres: a
+ * Moonlander's tall thumb keys reach up beside the bottom row, so their centres are only 0.375 lower than its. */
 const THUMB_DROP = 0.4;
 /** and the thumbs stay at least this far (in key units) in from the outer edge of that column: a low row that comes
  * nearer (a row of modifiers on a row-staggered keyboard, or the bottom row of an Ergodox-like half without its
- * thumb cluster, half a key in under the wide outer keys) is no thumbs; real thumbs start a key or more in */
+ * thumb cluster, half a key in under the wide outer keys) is no thumbs; real thumbs start a key or more in. A safety
+ * net: no real board in the sample needs it, only made-up ones (a split 65%, an Ergodox without thumb keys). */
 const THUMB_INSET = 0.75;
 /** a key whose centre is less than this far across (in key units) from a column stands under it: a key under the
- * wide outer keys of an Ergodox is a quarter off, one between two columns (Kyria, Lily58) half */
-const UNDER_SLACK = 0.3;
+ * wide outer keys of an Ergodox is a quarter off, one between two columns (Kyria, Lily58) half (between the two) */
+const UNDER_SLACK = 0.375;
 /** a key at most this far (in key units) below the last key of a column is the next one down; the thumb cluster of
  * a Dactyl Manuform is two keys below */
 const ROW_STEP = 1.25;
 /** keys whose centres are less than this far apart up and down (in key units), as one of them is turned, are level */
-const ROW_LEVEL = 0.3;
-/** and less than this far apart across are next to each other in a row (the Iris's turned key is 1.5 from its row) */
-const ROW_REACH = 1.6;
+const ROW_LEVEL = 0.25;
+/** and less than this far apart across are next to each other in a row (the Iris's turned key is 1.5 from its row,
+ * the next key but one is 2) */
+const ROW_REACH = 1.8;
+/** a key is right under another, as that one is turned, when its centre is less than this far across from the other's
+ * (in key units) */
+const UNDER_ACROSS = 0.5;
+/** and more than this far down */
+const UNDER_DOWN = 0.5;
 /** keys less than this far apart (in key units) touch */
 const TOUCH = 0.05;
 
@@ -120,7 +128,7 @@ function seenFrom(key: PlacedKey, other: PlacedKey): [number, number] {
 /** Whether `below` sits right under `key` as `key` is turned */
 function isUnder(key: PlacedKey, below: PlacedKey): boolean {
   const [across, down] = seenFrom(key, below);
-  return Math.abs(across) < 0.5 && down > 0.5;
+  return Math.abs(across) < UNDER_ACROSS && down > UNDER_DOWN;
 }
 
 /** Whether `other` sits next to `key` in a row, as `key` is turned */
@@ -164,8 +172,9 @@ function thumbsOf(half: PlacedKey[], side: Side): PlacedKey[] {
   const fingerRow = low.filter(nextDown);
   const others = low.filter((k) => !fingerRow.includes(k));
   const lowest = (keys: PlacedKey[]) => Math.max(...keys.map((k) => k.cy));
+  // the others are a row lower still: further below the finger row than one row spans (ROW_SPAN, as in rowsOf)
   const lowerStill = fingerRow.length > 0 && others.length > 0 && lowest(others) - lowest(fingerRow) > ROW_SPAN;
-  const thumbs = lowerStill ? others : low;
+  const thumbs = [...(lowerStill ? others : low)]; // a copy: the loop below takes keys out of it
 
   const fingers = half.filter((k) => !thumbs.includes(k));
   const endsRow = (k: PlacedKey) => thumbs.some((other) => other !== k && isUnder(k, other)) &&

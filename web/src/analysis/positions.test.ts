@@ -321,6 +321,8 @@ describe("positionNames on real split keyboards", () => {
     expect([65, 66, 67].map(at)).toEqual(["right inner thumb", "right middle thumb", "right outer thumb"]);
     expect([68, 59].map(at)).toEqual(inRow("left half, row 5", [1, 5]));
     expect(at(71)).toBe("right half, row 5, 1st from the outside");
+    // the red key: the drawn layout has it as a wide key level with row 4, past its inner end, so it is named in that
+    // row (on the keyboard itself it sits above the thumb keys)
     expect(at(49)).toBe("left half, row 4, 7th from the outside");
     expect(at(50)).toBe("right half, row 4, 7th from the outside");
   });
