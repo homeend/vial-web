@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Described, KeyboardModel } from "../api/types";
 import {
-  actionSummary, HOLD_MAX_LINES, holdLines, holdSize, keyFace, keyLabel, keyTitle, legendScale, legendSizes, legendWords, MAIN_LINE, mainLines,
+  actionSummary, compactLegendSize, HOLD_MAX_LINES, holdLines, holdSize, keyFace, keyLabel, keyTitle, legendScale, legendSizes, legendWords, MAIN_LINE, mainLines,
   namesOf, toneOf, estimatedWidth, type Names, type TextWidth,
 } from "./labels";
 
@@ -482,5 +482,54 @@ describe("a text width that depends on the size", () => {
   it("shrinks a long name until it takes two lines at its size", () => {
     const size = holdSize("git status", 40, 48, hinted);
     expect(holdLines("git status", size, 40, hinted)).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("compactLegendSize", () => {
+  // a key of 31 px: about 25.7 px inside
+  const inside = 25.7;
+  /** a font as wide as Verdana: 0.7 of the font size per character */
+  const wide = (text: string) => [...text].length * 0.7;
+
+  it("fills a small key: longer words are only as small as the width needs", () => {
+    expect(compactLegendSize("LCtrl", inside, inside, 31)).toBeCloseTo(inside / estimatedWidth("LCtrl", 10));
+    const space = { main: "Space", shifted: null, altGr: null, hold: null, tone: "normal" as const };
+    expect(compactLegendSize("Space", inside, inside, 31)).toBeGreaterThan(legendSizes(space, inside, inside, 31).main);
+    // short ones stop at the largest size
+    expect(compactLegendSize("Up", inside, inside, 31)).toBeCloseTo(0.42 * 31);
+  });
+
+  it("measures the text with the width it is given", () => {
+    const px = compactLegendSize("Home", inside, inside, 31, wide);
+    expect(px).toBeCloseTo(inside / wide("Home"));
+    expect(px).toBeLessThan(compactLegendSize("Home", inside, inside, 31));
+  });
+
+  it("shrinks until its longest part fits at the size it gets, for a font measured per size", () => {
+    /** each character 0.55 of the font size rounded up to whole pixels: small text is wider than scaled down */
+    const hinted: TextWidth = (text, px) => ([...text].length * Math.ceil(0.55 * px)) / px;
+    const px = compactLegendSize("LShift", inside, inside, 31, hinted);
+    expect(px * hinted("LShift", px)).toBeLessThanOrEqual(inside + 1e-9);
+  });
+
+  it("is at most 0.42 of the key, for one character", () => {
+    expect(compactLegendSize("A", inside, inside, 31)).toBeCloseTo(0.42 * 31);
+    expect(compactLegendSize("", inside, inside, 31)).toBeCloseTo(0.42 * 31);
+  });
+
+  it("fits the lines of a legend that wraps into the height", () => {
+    const px = compactLegendSize("Page Up", inside, inside, 31);
+    expect(px * MAIN_LINE * mainLines("Page Up", px, inside)).toBeLessThanOrEqual(inside);
+    expect(px).toBeGreaterThan(9);
+  });
+
+  it("keeps a legend on one line when that is nearly as large", () => {
+    const px = compactLegendSize("MO 5", inside, inside, 31);
+    expect(px).toBeCloseTo(inside / estimatedWidth("MO 5", px));
+    expect(mainLines("MO 5", px, inside)).toBe(1);
+  });
+
+  it("never goes below 7 px", () => {
+    expect(compactLegendSize("Bootloader", 12, 12, 14)).toBe(7);
   });
 });

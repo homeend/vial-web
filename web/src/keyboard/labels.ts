@@ -355,3 +355,37 @@ export function legendSizes(
   if (height(main) > free()) main = fitting();
   return { main: Math.max(MAIN_MIN_PX, main), shifted, hold, holdLines: nameLines };
 }
+
+/** the largest compact legend, in key units */
+const COMPACT_MAX = 0.42;
+/** a compact legend stays on one line if that keeps at least this share of the size it would have on several */
+const COMPACT_ONE_LINE = 0.75;
+
+/** Font size, in pixels, of the only legend of a key on a small keyboard (the Overview's): as large as fits widthPx
+ * by heightPx, its longest part across the key and its lines in the height, at most COMPACT_MAX of the key, at least
+ * 7 px, and on one line when that is nearly as large. Unlike legendSizes, which keeps longer words smaller so a
+ * full-size keyboard reads evenly, it fills the key: small keys need every pixel ("LCtrl", "Space", "Enter"). Text is
+ * measured as for legendSizes (textWidth), and estimated where nothing can be measured. */
+export function compactLegendSize(
+  main: string, widthPx: number, heightPx: number, u: number, textWidth = estimatedWidth,
+): number {
+  const width = Math.max(0, widthPx);
+  const most = COMPACT_MAX * u;
+  const words = legendWords(main);
+  if (words.length === 0) return Math.max(MAIN_MIN_PX, most);
+  const longest = (px: number) => Math.max(0, ...words.map((w) => textWidth(w, px)));
+  // its longest part across the key
+  let px = shrinking(Math.min(most, width / Math.max(longest(most), 1e-9)), MAIN_MIN_PX,
+    (size) => longest(size) * size <= width + 1e-9);
+  // wrapped onto more lines than fit: smaller, until it fits or can't wrap any less
+  for (let lines = mainLines(main, px, width, textWidth); px * MAIN_LINE * lines > heightPx && px > MAIN_MIN_PX;) {
+    px = Math.max(MAIN_MIN_PX, Math.min(px - 0.5, heightPx / (MAIN_LINE * lines)));
+    lines = mainLines(main, px, width, textWidth);
+  }
+  // on one line when that is nearly as large: "MO 5" and "Ctrl+Z" read better unbroken
+  const whole = (size: number) => textWidth(main, size) * size;
+  const oneLine = shrinking(Math.min(most, width / Math.max(textWidth(main, most), 1e-9), heightPx / MAIN_LINE),
+    MAIN_MIN_PX, (size) => whole(size) <= width + 1e-9);
+  const single = oneLine >= COMPACT_ONE_LINE * px && whole(oneLine) <= width + 1e-9;
+  return Math.max(MAIN_MIN_PX, single ? oneLine : px);
+}
