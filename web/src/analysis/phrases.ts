@@ -12,7 +12,7 @@ import type { LayerReach, ViaSlot, Way } from "./reach";
 const VERBS: Record<LayerAction, string> = {
   "while held": "hold",
   toggle: "toggle",
-  "switch to": "switch",
+  "switch to": "switch to it",
   "hold, or tap to toggle": "hold or toggle",
   "one-shot": "one-shot",
   default: "make default",
@@ -131,6 +131,14 @@ function layerKeyOf(way: Way, ctx: PhraseContext): Described | undefined {
   return via.type === "key" ? via.action : via.combo.output;
 }
 
+/** What a way does with the layer, as pressed: a hold-or-toggle key (TT) in a held tap dance slot is held, so it just
+ * holds the layer */
+function actionOf(way: Way): LayerAction {
+  const via = way.via;
+  const held = (via.type === "key" || via.type === "combo") && via.slot !== null && isHeld(via.slot.slot);
+  return held && way.action === "hold, or tap to toggle" ? "while held" : way.action;
+}
+
 /** " with Shift" for LM, a layer held with modifiers */
 function modifiers(way: Way, ctx: PhraseContext): string {
   const hold = way.action === "while held, with modifiers" ? layerKeyOf(way, ctx)?.hold : null;
@@ -156,7 +164,7 @@ export function wayLabel(way: Way, ctx: PhraseContext): string {
   }
   if (via.type === "combo") {
     // "combo: J + K, held", "combo: J + K, tapped then held"; a layer held from another slot: "tapped and held"
-    const purpose = PURPOSES[way.action] || (via.slot && !isHeld(via.slot.slot) ? " and held" : "");
+    const purpose = PURPOSES[actionOf(way)] || (via.slot && !isHeld(via.slot.slot) ? " and held" : "");
     const slot = via.slot ? `, ${PARTICIPLES[via.slot.slot]}` : "";
     return `combo: ${comboName(via.combo.members, ctx.names)}${slot}${purpose}${mods}${from}`;
   }
@@ -164,7 +172,7 @@ export function wayLabel(way: Way, ctx: PhraseContext): string {
   const place = ctx.positions.get(refId(via.ref)) ?? "a key";
   if (via.slot) {
     // "hold Tab", "tap then hold Tab": holding the slot is holding the layer; other gestures say what they do
-    const purpose = PURPOSES[way.action] || (isHeld(via.slot.slot) ? "" : " and hold");
+    const purpose = PURPOSES[actionOf(way)] || (isHeld(via.slot.slot) ? "" : " and hold");
     const gesture = GESTURES[via.slot.slot];
     return name ? `${gesture} ${name}${purpose}${mods}${from}` : `${gesture}${purpose}${mods}${from} (${place})`;
   }
@@ -173,13 +181,17 @@ export function wayLabel(way: Way, ctx: PhraseContext): string {
 }
 
 /** Where a way works, for the Inspector: "from any layer", "from Base, Nav", "the layer the keyboard starts on"; the
- * tap dance slot it goes through; for a combo whose keycodes aren't on any key, that it can't fire */
+ * tap dance slot it goes through; for a combo that can't fire, why: its keycodes aren't all on one layer, or it has one
+ * twice */
 export function wayDetail(way: Way, ctx: PhraseContext): string {
   const via = way.via;
   if (via.type === "default") return "the layer the keyboard starts on";
   const parts: string[] = [];
   if (via.type !== "tri-layer" && via.slot) parts.push(`tap dance ${via.slot.tapDance}, ${via.slot.slot.toLowerCase()}`);
-  if (way.from.length === 0) {
+  const repeated = via.type === "combo" ? repeatedCodes(via.combo).map((d) => memberName(d, ctx.names)) : [];
+  if (repeated.length > 0) {
+    parts.push(`can't fire: it has ${andList(repeated)} twice`);
+  } else if (way.from.length === 0) {
     parts.push("can't fire: its keys aren't all on one layer");
   } else {
     // a way never works on the layer it reaches: every other layer is all of them
@@ -190,7 +202,7 @@ export function wayDetail(way: Way, ctx: PhraseContext): string {
 }
 
 /** Why a layer can't be reached, or null when it can. A way that works on no layer is a combo whose keycodes aren't on
- * the keymap (combo outputs are the only ways layerReach keeps with no layers): it can't fire. */
+ * the keymap, or that has one twice (combo outputs are the only ways layerReach keeps with no layers): it can't fire. */
 export function unreachedReason(reach: LayerReach): string | null {
   if (reach.reachable) return null;
   if (reach.ways.some((w) => w.from.length > 0)) return "Only reached from layers that nothing reaches";
@@ -203,10 +215,14 @@ export function unreachedReason(reach: LayerReach): string | null {
 }
 
 /** A combo a key is part of, from that key's side: "with OSL(3) → Layer 2, while held",
- * "with Space (hold: Layer 1) → Layer 2, while held", "with Y → Esc" */
+ * "with Space (hold: Layer 1) → Layer 2, while held", "with Y → Esc", "with B → Space (hold: Layer 1)" */
 export function comboUseLabel(use: ComboUse, names: Names): string {
   const partners = use.partners.length > 0 ? `with ${comboName(use.partners, names)}` : "on its own";
-  return `${partners} → ${actionSummary(use.combo.output, names).tap}`;
+  const output = use.combo.output;
+  const does = output.kind === "layer-tap" || output.kind === "mod-tap"
+    ? memberName(output, names)
+    : actionSummary(output, names).tap;
+  return `${partners} → ${does}`;
 }
 
 /** Why a combo a key is part of can't fire on the layer, or null: it lists a keycode twice ("It has A twice, so it

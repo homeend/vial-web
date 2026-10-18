@@ -81,7 +81,7 @@ describe("wayLabel and wayDetail", () => {
   it("say how the simulated Corne's layers are reached", () => {
     const { labels, details } = setup(simulatedCorne());
     expect(labels).toEqual([
-      ["default layer", "switch from Layer 3 (right outer thumb)"],
+      ["default layer", "switch to it from Layer 3 (right outer thumb)"],
       ["hold Space"],
       ["hold B", "hold S"],
       ["one-shot (right outer thumb)"],
@@ -115,6 +115,27 @@ describe("wayLabel and wayDetail", () => {
     ]);
   });
 
+  it('say "switch to it" for a switch key, named by where it is', () => {
+    const { labels } = of({ layers: [layer({ [AT.leftOuterThumb]: "TO(1)" }, "KC_NO"), layer({}, "KC_NO")] });
+    expect(labels[1]).toEqual(["switch to it (left outer thumb)"]);
+  });
+
+  it("use the names the user gave the layers", () => {
+    const model = corne({
+      layers: [layer({ 0: "LT1(KC_SPC)", 1: "KC_J", 2: "KC_K" }, "KC_NO"), layer({ 3: "MO(2)" }), layer({ 3: "TG(3)" }),
+        layer({ [AT.rightOuterThumb]: "TO(0)" }, "KC_NO")],
+      combos: [{ keys: ["LT1(KC_SPC)", "KC_J"], output: "OSL(2)" }],
+    });
+    ["Base", "Nav", "Sym", "Num"].forEach((name, i) => (model.layers[i] = { ...model.layers[i], name, customName: i > 0 }));
+    const { labels, details } = setup(model);
+    expect(labels[0]).toEqual(["default layer", "switch to it from Num (right outer thumb)"]);
+    expect(labels[2]).toEqual([
+      "hold from Nav (left top row, 4th from the outside)", "combo: Space (hold: Nav) + J for a one-shot",
+    ]);
+    expect(details[2]).toEqual(["from Nav", "from Base, Nav"]);
+    expect(labels[3]).toEqual(["toggle from Sym (left top row, 4th from the outside)"]);
+  });
+
   it("name a layer-tap by what it types", () => {
     const { labels } = of({ layers: [layer({ 0: "LT1(KC_SPC)", 1: "LT1(KC_NO)" }, "KC_NO"), layer({}, "KC_NO")] });
     expect(labels[1]).toEqual(["hold Space", "hold (left top row, 2nd from the outside)"]);
@@ -135,6 +156,18 @@ describe("wayLabel and wayDetail", () => {
       ["double-tap and hold (right inner thumb)"],
     ]);
     expect(details[2]).toEqual(["tap dance 0, double tap · from Base"]);
+  });
+
+  it('say "hold" for a hold-or-toggle key in a held tap dance slot: holding it holds the layer', () => {
+    const { labels } = of({
+      layers: [layer({ [AT.leftOuterThumb]: "TD(0)", 0: "KC_J", 1: "KC_K" }, "KC_NO"),
+        ...Array.from({ length: 4 }, () => layer({}, "KC_NO"))],
+      tapDances: [["KC_TAB", "TT(1)", "TT(2)", "TT(3)"], ["KC_NO", "TT(4)", "KC_NO", "KC_NO"]],
+      combos: [{ keys: ["KC_J", "KC_K"], output: "TD(1)" }],
+    });
+    expect(labels.slice(1)).toEqual([
+      ["hold Tab"], ["double-tap Tab to hold or toggle"], ["tap then hold Tab"], ["combo: J + K, held"],
+    ]);
   });
 
   it("name a tap dance that runs itself, or that another one runs, by where it is", () => {
@@ -164,6 +197,11 @@ describe("wayLabel and wayDetail", () => {
     expect(labels[6]).toEqual(["combo: J + K, double-tapped to toggle"]);
     expect(labels[7]).toEqual(["combo: Q + W to toggle"]);
     expect(details[7]).toEqual(["can't fire: its keys aren't all on one layer"]);
+    const twice = of({
+      layers: [layer({ 0: "KC_J", 1: "KC_J" }, "KC_NO"), layer({})],
+      combos: [{ keys: ["KC_J", "KC_J"], output: "TG(1)" }],
+    });
+    expect(twice.details[1]).toEqual(["can't fire: it has J twice"]);
     expect(labels[1]).toEqual(["hold Space", "combo: Space (hold: Layer 1) + OSL(3) with Ctrl"]);
   });
 
@@ -249,6 +287,19 @@ describe("comboUseLabel and missingPartners", () => {
     const p = placeKeyboard(lt);
     const [use] = combosUsing(combosOf(lt, p), lt, codesOn(lt, p, 0), 0, { kind: "key", index: 1 });
     expect(comboUseLabel(use, namesOf(lt))).toBe("with Space (hold: Layer 1) → Layer 2, while held");
+  });
+
+  it("say what holding a combo's layer-tap or mod-tap output does", () => {
+    const outputs = corne({
+      layers: [layer({ 0: "KC_A", 1: "KC_B" }, "KC_NO"), layer({})],
+      combos: [{ keys: ["KC_A", "KC_B"], output: "LT1(KC_SPC)" }, { keys: ["KC_A"], output: "LSFT_T(KC_T)" }],
+    });
+    outputs.layers[1] = { ...outputs.layers[1], name: "Nav", customName: true };
+    const p = placeKeyboard(outputs);
+    const used = combosUsing(combosOf(outputs, p), outputs, codesOn(outputs, p, 0), 0, { kind: "key", index: 0 });
+    expect(used.map((u) => comboUseLabel(u, namesOf(outputs)))).toEqual([
+      "with B → Space (hold: Nav)", "on its own → T (hold: Shift)",
+    ]);
   });
 
   it("say which other keys aren't on the layer", () => {

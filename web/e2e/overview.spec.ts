@@ -17,7 +17,7 @@ test("the Overview shows every layer and how it is reached; clicking one opens i
   const overview = app.getByRole("region", { name: "Overview of the layers" });
   await expect(overview.locator(".card")).toHaveCount(4);
   await expect(overview.getByRole("button")).toHaveText([/^0\s*Base$/, /^1\s*Layer 1$/, /^2\s*Layer 2$/, /^3\s*Layer 3$/]);
-  await expect(overview.getByRole("button", { name: "Base — reached by default layer; switch from Layer 3 (right outer thumb)" }))
+  await expect(overview.getByRole("button", { name: "Base — reached by default layer; switch to it from Layer 3 (right outer thumb)" }))
     .toBeVisible();
   await expect(overview.getByRole("button", { name: "Layer 1 — reached by hold Space" })).toBeVisible();
   await expect(overview.getByRole("button", { name: "Layer 2 — reached by hold B; hold S" })).toBeVisible();
