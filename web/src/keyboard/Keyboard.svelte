@@ -3,6 +3,7 @@
   import { encoderKnobs, type Placement } from "./geometry";
   import Key from "./Key.svelte";
   import type { KeyFace } from "./labels";
+  import { refId } from "./refs";
 
   interface Props {
     placement: Placement;
@@ -15,9 +16,21 @@
     onselect: (index: number) => void;
     /** largest key size, in pixels */
     maxUnit?: number;
+    /** which placed keys are part of a combo (underlined), aligned with placement.items */
+    combos?: boolean[];
+    /** keys to click and move between; otherwise a picture, hidden from screen readers (what shows it says what it
+     * is) */
+    interactive?: boolean;
+    /** small keys, main legends only, as large as they fit (the Overview's) */
+    compact?: boolean;
+    /** which placed keys produce what the find box looks for (highlighted), aligned with placement.items */
+    highlights?: boolean[];
   }
 
-  let { placement, faces, labels, selected, onselect, maxUnit = 72 }: Props = $props();
+  let {
+    placement, faces, labels, selected, onselect, maxUnit = 72, combos = [], interactive = true, compact = false,
+    highlights = [],
+  }: Props = $props();
 
   let width = $state(0);
   // as big as fits the width, never bigger than maxUnit
@@ -29,11 +42,11 @@
   const focusIndex = $derived(selected >= 0 && selected < placement.items.length ? selected : 0);
 </script>
 
-<div class="keyboard" bind:clientWidth={width}>
+<div class="keyboard" bind:clientWidth={width} aria-hidden={interactive ? undefined : "true"}>
   <div
     class="plate"
-    role="group"
-    aria-label="Keyboard"
+    role={interactive ? "group" : undefined}
+    aria-label={interactive ? "Keyboard" : undefined}
     style="width: {placement.width * u}px; height: {placement.height * u}px"
   >
     {#if u > 0}
@@ -44,13 +57,13 @@
             width: {knob.length * u}px; height: {knob.thickness * u}px; transform: rotate({knob.angle}deg)"
         ></div>
       {/each}
-      {#each placement.items as item, i (`${item.kind}:${item.index}`)}
+      {#each placement.items as item, i (refId(item))}
         {#if item.kind === "key"}
           <Key {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
-            onselect={() => onselect(i)} />
+            combo={combos[i] ?? false} found={highlights[i] ?? false} {interactive} {compact} onselect={() => onselect(i)} />
         {:else}
           <Encoder {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
-            onselect={() => onselect(i)} />
+            found={highlights[i] ?? false} {interactive} onselect={() => onselect(i)} />
         {/if}
       {/each}
     {/if}

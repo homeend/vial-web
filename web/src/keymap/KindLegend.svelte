@@ -5,6 +5,7 @@
   <li><i class="tap-dance"></i>tap dance</li>
   <li><i class="macro"></i>macro</li>
   <li><i class="transparent"></i>transparent (falls through)</li>
+  <li><i class="combo"></i>part of a combo</li>
 </ul>
 
 <style>
@@ -57,5 +58,9 @@
   .transparent {
     border-style: dashed;
     background: transparent;
+  }
+
+  .combo {
+    box-shadow: inset 0 -3px 0 var(--combo);
   }
 </style>

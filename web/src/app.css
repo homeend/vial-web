@@ -33,6 +33,10 @@
   --tone-layer: #1872e8;
   --tone-tap-dance: #9a43cf;
   --tone-macro: #e07f00;
+  /* the underline of a key that is part of a combo */
+  --combo: #e8264a;
+  /* keys that produce what the find box looks for */
+  --find: #e0a100;
   /* how much of a kind's colour goes into a key's face and outline */
   --tone-fill: 15%;
   --tone-line: 62%;
@@ -82,6 +86,8 @@
   --tone-layer: #5ba2ff;
   --tone-tap-dance: #c98af2;
   --tone-macro: #ffaa3d;
+  --combo: #ff5577;
+  --find: #ffcc33;
   --tone-fill: 22%;
   --tone-line: 70%;
   --tone-text: 80%;
@@ -122,6 +128,8 @@
     --tone-layer: #5ba2ff;
     --tone-tap-dance: #c98af2;
     --tone-macro: #ffaa3d;
+    --combo: #ff5577;
+    --find: #ffcc33;
     --tone-fill: 22%;
     --tone-line: 70%;
     --tone-text: 80%;

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PlacedKey } from "./geometry";
   import { legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
+  import { refId } from "./refs";
   import { legendFont } from "./textWidth.svelte";
 
   interface Props {
@@ -11,10 +12,14 @@
     selected: boolean;
     label: string;
     focusable: boolean;
+    /** produces what the find box looks for: highlighted */
+    found?: boolean;
+    /** a knob to click; otherwise only a picture (the keyboard as a whole is labelled) */
+    interactive?: boolean;
     onselect: () => void;
   }
 
-  let { item, face, u, selected, label, focusable, onselect }: Props = $props();
+  let { item, face, u, selected, label, focusable, found = false, interactive = true, onselect }: Props = $props();
 
   const clockwise = $derived(item.geometry.direction === 1);
   const size = $derived(Math.min(item.w, item.h) * u * 0.91);
@@ -37,18 +42,7 @@
   );
 </script>
 
-<button
-  type="button"
-  class="encoder tone-{face.tone}" data-tone={face.tone}
-  class:selected
-  {style}
-  aria-label={label}
-  title={label}
-  aria-pressed={selected}
-  tabindex={focusable ? 0 : -1}
-  data-ref="{item.kind}:{item.index}"
-  onclick={onselect}
->
+{#snippet knob()}
   <svg class="arrow" viewBox="0 0 24 24" aria-hidden="true" class:mirrored={!clockwise}>
     <path d="M19 12a7 7 0 1 1-2.05-4.95" />
     <path d="M17.5 3.5v4h-4" />
@@ -58,7 +52,29 @@
     <span class="tap">{#each face.main.split(PLUS_BREAK) as part, i (i)}{#if i > 0}<wbr />{/if}{part}{/each}</span>
     {#if face.hold}<span class="hold">{face.hold}</span>{/if}
   </span>
-</button>
+{/snippet}
+
+{#if interactive}
+  <button
+    type="button"
+    class="encoder tone-{face.tone}" data-tone={face.tone}
+    class:selected
+    class:found
+    {style}
+    aria-label={label}
+    title={label}
+    aria-pressed={selected}
+    tabindex={focusable ? 0 : -1}
+    data-ref={refId(item)}
+    onclick={onselect}
+  >
+    {@render knob()}
+  </button>
+{:else}
+  <div class="encoder static tone-{face.tone}" data-tone={face.tone} class:found {style}>
+    {@render knob()}
+  </div>
+{/if}
 
 <style>
   .encoder {
@@ -76,6 +92,10 @@
     cursor: pointer;
   }
 
+  .static {
+    cursor: inherit;
+  }
+
   .tone-transparent {
     --fill: transparent;
     border-style: dashed;
@@ -85,6 +105,11 @@
 
   .tone-none {
     color: var(--text-3);
+  }
+
+  .found {
+    border-color: var(--find);
+    box-shadow: 0 0 0 2px var(--find);
   }
 
   .selected {

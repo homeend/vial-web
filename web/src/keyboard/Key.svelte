@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PlacedKey } from "./geometry";
-  import { legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
+  import { compactLegendSize, legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
+  import { refId } from "./refs";
   import { legendFont } from "./textWidth.svelte";
 
   interface Props {
@@ -13,14 +14,25 @@
     label: string;
     /** reaches the key with Tab (the selected one, or the first) */
     focusable: boolean;
+    /** part of a combo: underlined */
+    combo?: boolean;
+    /** produces what the find box looks for: highlighted */
+    found?: boolean;
+    /** a key to click; otherwise only a picture (the keyboard as a whole is labelled) */
+    interactive?: boolean;
+    /** a small key showing its main legend only, as large as it fits */
+    compact?: boolean;
     onselect: () => void;
   }
 
-  let { item, face, u, selected, label, focusable, onselect }: Props = $props();
+  let {
+    item, face, u, selected, label, focusable, combo = false, found = false, interactive = true, compact = false, onselect,
+  }: Props = $props();
 
   const GAP = 0.09;
   /** space around the labels, in key units */
   const PAD = 0.04;
+  const COMPACT_PAD = 0.015;
   const ROUND = 0.12;
 
   // the button covers both rectangles; everything inside is relative to its top-left corner
@@ -40,9 +52,15 @@
   });
 
   // the legends fit inside the primary rectangle, less the gap between keys and the padding
-  const sizes = $derived(
-    legendSizes(face, (item.w - GAP - 2 * PAD) * u, (item.h - GAP - 2 * PAD) * u, u, legendFont.width),
-  );
+  // a small key keeps less space around its only legend
+  const pad = $derived(compact ? COMPACT_PAD : PAD);
+  const sizes = $derived.by(() => {
+    const width = (item.w - GAP - 2 * pad) * u;
+    const height = (item.h - GAP - 2 * pad) * u;
+    return compact
+      ? { main: compactLegendSize(face.main, width, height, u, legendFont.width), shifted: 0, hold: 0, holdLines: 0 }
+      : legendSizes(face, width, height, u, legendFont.width);
+  });
 
   const style = $derived(
     [
@@ -60,24 +78,22 @@
     ].filter(Boolean).join("; "),
   );
 
+  // a line along the bottom of the primary rectangle, inside its outline
+  const underline = $derived.by(() => {
+    const r = rects[0];
+    const thickness = Math.max(2, u * 0.07);
+    const inset = Math.max(2, u * 0.12);
+    const bottom = r.y + r.h - Math.max(1.5, u * 0.05);
+    return { x: r.x + inset, y: bottom - thickness, w: Math.max(0, r.w - 2 * inset), h: thickness };
+  });
+
   const legendStyle = $derived(
-    `left: ${rects[0].x}px; top: ${rects[0].y}px; width: ${rects[0].w}px; height: ${rects[0].h}px`,
+    `left: ${rects[0].x}px; top: ${rects[0].y}px; width: ${rects[0].w}px; height: ${rects[0].h}px; ` +
+      `padding: ${pad * u}px`,
   );
 </script>
 
-<button
-  type="button"
-  class="key tone-{face.tone}" data-tone={face.tone}
-  class:selected
-  class:notched={item.hasSecond}
-  {style}
-  aria-label={label}
-  title={label}
-  aria-pressed={selected}
-  tabindex={focusable ? 0 : -1}
-  data-ref="{item.kind}:{item.index}"
-  onclick={onselect}
->
+{#snippet cap()}
   <svg class="cap" width={box.width * u} height={box.height * u} aria-hidden="true">
     <!-- outlines first, then the fills over them: two rectangles read as one key (ISO Enter) -->
     {#each rects as r, i (i)}
@@ -86,6 +102,10 @@
     {#each rects as r, i (i)}
       <rect class="face" x={r.x} y={r.y} width={r.w} height={r.h} rx={ROUND * u} />
     {/each}
+    {#if combo}
+      <rect class="combo-mark" x={underline.x} y={underline.y} width={underline.w} height={underline.h}
+        rx={underline.h / 2} />
+    {/if}
   </svg>
   <span class="legend" style={legendStyle}>
     {#if face.altGr}<span class="alt-gr">{face.altGr}</span>{/if}
@@ -94,7 +114,31 @@
     <span class="tap">{#each face.main.split(PLUS_BREAK) as part, i (i)}{#if i > 0}<wbr />{/if}{part}{/each}</span>
     {#if face.hold}<span class="hold">{face.hold}</span>{/if}
   </span>
-</button>
+{/snippet}
+
+{#if interactive}
+  <button
+    type="button"
+    class="key tone-{face.tone}" data-tone={face.tone}
+    class:selected
+    class:notched={item.hasSecond}
+    class:combo
+    class:found
+    {style}
+    aria-label={label}
+    title={label}
+    aria-pressed={selected}
+    tabindex={focusable ? 0 : -1}
+    data-ref={refId(item)}
+    onclick={onselect}
+  >
+    {@render cap()}
+  </button>
+{:else}
+  <div class="key static tone-{face.tone}" data-tone={face.tone} class:combo class:found {style}>
+    {@render cap()}
+  </div>
+{/if}
 
 <style>
   .key {
@@ -147,8 +191,26 @@
     fill: color-mix(in srgb, var(--key-bg) 55%, var(--board-bg));
   }
 
-  .key:hover .face {
+  .combo-mark {
+    fill: var(--combo);
+  }
+
+  .static {
+    cursor: inherit;
+  }
+
+  .key:not(.static):hover .face {
     fill: color-mix(in srgb, var(--fill) 88%, var(--accent));
+  }
+
+  .found .edge {
+    stroke: var(--find);
+    stroke-width: 4;
+    stroke-dasharray: none;
+  }
+
+  .found .cap {
+    filter: drop-shadow(0 0 calc(var(--u) * 0.12) color-mix(in srgb, var(--find) 70%, transparent));
   }
 
   .selected .edge {
@@ -181,7 +243,6 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: calc(var(--u) * 0.04);
     pointer-events: none;
     overflow: hidden;
   }
