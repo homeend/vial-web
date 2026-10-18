@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { KeyGeometry } from "../api/types";
 import { placeKeyboard } from "../keyboard/geometry";
 import { refId } from "../keyboard/refs";
-import { CRKBD, FERRIS_SWEEP, IRIS, KYRIA, boardKeys } from "./boards.test-data";
+import {
+  ALICE, CRKBD, DACTYL_MANUFORM, ELORA, ERGODOX_EZ, FERRIS_SWEEP, IRIS, KYRIA, MOONLANDER, REDOX, SOFLE, boardKeys,
+} from "./boards.test-data";
 import { ordinal, positionNames, rowsOf, rowsOfHalf, splitLine } from "./positions";
 import { AT, corneKeys } from "./testing";
 
@@ -34,13 +36,14 @@ const sixty = [
 ];
 /** a Planck: 4 rows of 12, a 2 unit space bar */
 const planck = [...[0, 1, 2].flatMap((y) => row(y, 0, ones(12))), ...row(3, 0, [...ones(5), 2, ...ones(5)])];
-/** a split row-staggered keyboard (like a Quefrency): halves 1 unit apart, the bottom rows reach the outer edges.
- * Left half keys 0-27 (bottom row 24-27), right half 28-62 (bottom row 57-62). */
+/** a split row-staggered keyboard (like a Quefrency): halves 1 unit apart, the bottom rows reach the outer edges, the
+ * rows of each half start at different places. Left half keys 0-27 (bottom row 24-27), right half 28-62 (bottom row
+ * 57-62). */
 const split65 = [
   ...row(0, 0, ones(7)), ...row(1, 0, [1.5, ...ones(5)]), ...row(2, 0, [1.75, ...ones(5)]),
   ...row(3, 0, [2.25, ...ones(4)]), ...row(4, 0, [1.75, 1.25, 1.5, 2.25]),
-  ...row(0, 8, [...ones(6), 2]), ...row(1, 8, [...ones(7), 1.5]), ...row(2, 8, [...ones(6), 2.25]),
-  ...row(3, 8, [...ones(5), 1.75, 1]), ...row(4, 8, [2.75, 1.25, 1.25, 1, 1, 1]),
+  ...row(0, 8.5, [...ones(6), 2]), ...row(1, 8, [...ones(7), 1.5]), ...row(2, 8.25, [...ones(6), 2.25]),
+  ...row(3, 8.75, [...ones(5), 1.75, 1]), ...row(4, 8, [2.75, 1.25, 1.25, 1, 1, 1]),
 ];
 
 const namesOf = (keys: KeyGeometry[]) => {
@@ -82,6 +85,21 @@ describe("splitLine", () => {
   it("is the widest gap with enough keys on each side: a lone key far out doesn't hide the split", () => {
     expect(split([...corneKeys(), g({ x: 20 })])).toBe(7.5);
   });
+
+  it("splits at a gap of half a key, not a quarter", () => {
+    expect(split([...row(0, 0, ones(4)), ...row(0, 4.5, ones(4))])).toBe(4.25);
+    expect(split([...row(0, 0, ones(4)), ...row(0, 4.25, ones(4))])).toBeNull();
+    expect(split(boardKeys(SOFLE))).toBeCloseTo(7.5);
+    expect(split(boardKeys(MOONLANDER))).toBeCloseTo(9.25);
+  });
+
+  it("measures between all keys when most of them are turned", () => {
+    // an Alice: 28 of its 65 keys are upright, far apart on its two turned blocks
+    expect(split(boardKeys(ALICE))).toBeNull();
+    // most keys upright: the turned one in the middle doesn't count
+    const keys = [...row(0, 0, ones(3)), g({ x: 3.2, r: 30, rx: 3.7, ry: 0.5 }), ...row(0, 5, ones(3))];
+    expect(split(keys)).toBe(4);
+  });
 });
 
 describe("rowsOf", () => {
@@ -102,6 +120,21 @@ describe("rowsOfHalf", () => {
     // a key beside the columns joins the row it is nearest in the nearest column
     const more = rowsOfHalf(board([...keys, g({ x: 3.2, y: 2.6, r: 30, rx: 3.7, ry: 3.1 })]).items);
     expect(more.map((r) => r.map((k) => k.index))).toEqual([[0, 1, 2], [3, 4, 5], [6, 7, 8, 9]]);
+  });
+
+  it("counts down the columns when most keys, if not nearly all, stand in them", () => {
+    // 9 of 11 keys in columns, the 1st column 1.25 units below the 3rd
+    const keys = [0, 1, 2].flatMap((y) => [g({ x: 0, y: y + 1.25 }), g({ x: 1, y: y + 0.5 }), g({ x: 2, y })]);
+    const rows = rowsOfHalf(board([...keys, g({ x: 3.1, y: 0.2 }), g({ x: 3.3, y: 1.3 })]).items);
+    expect(rows.map((r) => r.map((k) => k.index))).toEqual([[0, 1, 2, 9], [3, 4, 5, 10], [6, 7, 8]]);
+  });
+
+  it("is as rowsOf when only some keys stand in columns", () => {
+    // the top two rows in line (12 of 21 keys in columns), the others staggered
+    const keys = [...row(0, 0, ones(6)), ...row(1, 0, ones(6)), ...row(2, 0, [1.75, ...ones(4)]),
+      ...row(3, 0, [2.25, ...ones(3)])];
+    const rows = rowsOfHalf(board(keys).items);
+    expect(rows.map((r) => r.length)).toEqual([6, 6, 5, 4]);
   });
 
   it("is as rowsOf for keys not in columns", () => {
@@ -186,6 +219,16 @@ describe("positionNames", () => {
     expect([...positionNames(board(inLine)).values()].filter((n) => n.includes("thumb"))).toEqual([]);
   });
 
+  it("finds no thumbs in a bottom row half a key in from the outer edge, under wider outer keys", () => {
+    // an Ergodox without its thumb cluster: 4 rows starting with a 1.5 unit key, then a bottom row of 4 from x 0.5
+    const keys = [...[0, 1, 2, 3].flatMap((y) => [...row(y, 0, [1.5, ...ones(5)]), ...row(y, 9, [...ones(5), 1.5])]),
+      ...row(4, 0.5, ones(4)), ...row(4, 11, ones(4))];
+    const at = namesOf(keys);
+    expect(at(48)).toBe("left half, row 5, 1st from the outside");
+    expect(at(55)).toBe("right half, row 5, 1st from the outside");
+    expect([...positionNames(board(keys)).values()].filter((n) => n.includes("thumb"))).toEqual([]);
+  });
+
   it("names a split keyboard alike with a lone key far out, which ends a row", () => {
     const outlier = namesOf([...corneKeys(), g({ x: 20, y: 0 })]);
     const rightTop = [6, 7, 8, 9, 10, 11].map((col) => AT.grid(0, col));
@@ -248,5 +291,69 @@ describe("positionNames on real split keyboards", () => {
     expect([47, 45].map(at)).toEqual(
       ["right bottom row, 7th from the outside", "right bottom row, 8th from the outside"]);
     expect(at(8)).toBe("left top row, 1st from the outside");
+  });
+
+  const thumbs = (side: string, count: number) =>
+    Array.from({ length: count }, (_, i) => `${side} thumb, ${ordinal(i + 1)} from the inside`);
+  const inRow = (where: string, places: number[]) => places.map((n) => `${where}, ${ordinal(n)} from the outside`);
+
+  it("Elora: as a Kyria, but upright: the two keys above the inner thumbs rest against the bottom row", () => {
+    const at = namesOf(boardKeys(ELORA));
+    expect([60, 58, 54, 49, 48].map(at)).toEqual(thumbs("left", 5));
+    expect([61, 59, 57, 52, 53].map(at)).toEqual(thumbs("right", 5));
+    expect([50, 55].map(at)).toEqual(inRow("left half, row 4", [7, 8]));
+    expect([51, 56].map(at)).toEqual(inRow("right half, row 4", [7, 8]));
+    expect(at(44)).toBe("left half, row 4, 1st from the outside");
+  });
+
+  it("Sofle: halves half a key apart, five thumbs, an encoder's push key at the end of the bottom row", () => {
+    const at = namesOf(boardKeys(SOFLE));
+    expect([57, 56, 51, 50, 53].map(at)).toEqual(thumbs("left", 5));
+    expect([58, 59, 52, 54, 55].map(at)).toEqual(thumbs("right", 5));
+    expect([44, 38].map(at)).toEqual(inRow("left half, row 4", [1, 7]));
+    expect([49, 39].map(at)).toEqual(inRow("right half, row 4", [1, 7]));
+    expect(at(6)).toBe("left half, row 1, 1st from the outside");
+  });
+
+  it("Moonlander: tall thumb keys beside the bottom row, a wide key level with the 4th row", () => {
+    const at = namesOf(boardKeys(MOONLANDER));
+    expect([64, 63, 62].map(at)).toEqual(["left inner thumb", "left middle thumb", "left outer thumb"]);
+    expect([65, 66, 67].map(at)).toEqual(["right inner thumb", "right middle thumb", "right outer thumb"]);
+    expect([68, 59].map(at)).toEqual(inRow("left half, row 5", [1, 5]));
+    expect(at(71)).toBe("right half, row 5, 1st from the outside");
+    expect(at(49)).toBe("left half, row 4, 7th from the outside");
+    expect(at(50)).toBe("right half, row 4, 7th from the outside");
+  });
+
+  it("Ergodox EZ: a bottom row under the finger columns, half a key in, and a thumb cluster of six", () => {
+    const at = namesOf(boardKeys(ERGODOX_EZ));
+    expect([60, 61, 56, 54, 57].map(at)).toEqual(inRow("left half, row 5", [1, 2, 3, 4, 5]));
+    expect([63, 55].map(at)).toEqual(inRow("right half, row 5", [1, 4]));
+    expect([65, 68, 64, 69, 67, 66].map(at)).toEqual(thumbs("left", 6));
+    expect([70, 72, 71, 75, 73, 74].map(at)).toEqual(thumbs("right", 6));
+    expect(at(10)).toBe("left half, row 1, 1st from the outside");
+    expect(at(21)).toBe("left half, row 2, 7th from the outside");
+    expect([50, 40].map(at)).toEqual(inRow("left half, row 4", [1, 7]));
+  });
+
+  it("Redox: as an Ergodox, with a bottom row of four and a thumb cluster of five", () => {
+    const at = namesOf(boardKeys(REDOX));
+    expect([56, 57, 54, 52].map(at)).toEqual(inRow("left half, row 5", [1, 2, 3, 4]));
+    expect([63, 65, 62, 64, 61].map(at)).toEqual(thumbs("left", 5));
+    expect([66, 68, 67, 69, 60].map(at)).toEqual(thumbs("right", 5));
+    // the inner column's first key sits between the 1st and 2nd rows: it goes with the 2nd
+    expect(at(12)).toBe("left half, row 2, 7th from the outside");
+    expect(at(26)).toBe("left half, row 3, 7th from the outside");
+    expect(at(13)).toBe("right half, row 2, 7th from the outside");
+  });
+
+  it("Dactyl Manuform 5x6: [ and ] under the finger columns, a thumb cluster of six well below", () => {
+    const at = namesOf(boardKeys(DACTYL_MANUFORM));
+    expect([48, 49].map(at)).toEqual(inRow("left half, row 5", [1, 2]));
+    expect([57, 56].map(at)).toEqual(inRow("right half, row 5", [1, 2]));
+    expect([53, 55, 52, 54, 51, 50].map(at)).toEqual(thumbs("left", 6));
+    expect([60, 62, 61, 63, 58, 59].map(at)).toEqual(thumbs("right", 6));
+    expect(at(18)).toBe("left half, row 4, 1st from the outside");
+    expect(at(47)).toBe("right half, row 4, 1st from the outside");
   });
 });

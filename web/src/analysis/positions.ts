@@ -3,8 +3,9 @@
 import { boundsOf, type PlacedKey, type Placement } from "../keyboard/geometry";
 import { refId } from "../keyboard/refs";
 
-/** a gap between the keys at least this wide (in key units) splits the keyboard into two halves */
-const SPLIT_GAP = 0.75;
+/** a gap between the keys at least this wide (in key units) splits the keyboard into two halves: a Sofle's or a
+ * Moonlander's halves are half a key apart, the gaps in a TKL or a Quefrency a quarter */
+const SPLIT_GAP = 0.5;
 /** each half has at least this share of the keys */
 const SPLIT_SHARE = 0.25;
 /** a key whose centre is more than this far (in key units) below the first key of a row starts the next row */
@@ -12,24 +13,39 @@ const ROW_SPAN = 0.8;
 /** keys whose centres are at most this far apart across (in key units) stand in one column (rows staggered by a
  * quarter of a key don't) */
 const COLUMN_SLACK = 0.1;
-/** keys stand in columns (a column-staggered keyboard) when at least this share of them is in the longest columns */
+/** a half's keys stand in columns (column stagger) when at least this share of them is in columns of two or more */
 const COLUMNS_SHARE = 0.6;
-/** a thumb key's centre is more than this far (in key units) below the lowest key of its half's outermost column */
+/** a thumb key's lower edge is more than this far (in key units) below that of the lowest key of its half's outermost
+ * column: less than half a key, as a Kyria's outer thumbs are exactly half a key lower (a Moonlander's tall thumb
+ * keys reach up beside the bottom row, so their centres are no lower than its) */
 const THUMB_DROP = 0.4;
-/** and none of the thumbs comes nearer than this (in key units) to the outer edge of that column: a bottom row that
- * does is a row of modifiers on a row-staggered keyboard */
-const THUMB_INSET = 0.5;
+/** and the thumbs stay at least this far (in key units) in from the outer edge of that column: a low row that comes
+ * nearer (a row of modifiers on a row-staggered keyboard, or the bottom row of an Ergodox-like half without its
+ * thumb cluster, half a key in under the wide outer keys) is no thumbs; real thumbs start a key or more in */
+const THUMB_INSET = 0.75;
+/** a key whose centre is less than this far across (in key units) from a column stands under it: a key under the
+ * wide outer keys of an Ergodox is a quarter off, one between two columns (Kyria, Lily58) half */
+const UNDER_SLACK = 0.3;
+/** a key at most this far (in key units) below the last key of a column is the next one down; the thumb cluster of
+ * a Dactyl Manuform is two keys below */
+const ROW_STEP = 1.25;
+/** keys whose centres are less than this far apart up and down (in key units), as one of them is turned, are level */
+const ROW_LEVEL = 0.3;
+/** and less than this far apart across are next to each other in a row (the Iris's turned key is 1.5 from its row) */
+const ROW_REACH = 1.6;
+/** keys less than this far apart (in key units) touch */
+const TOUCH = 0.05;
 
 export type Side = "left" | "right";
 
 /** The vertical line between the halves of a split keyboard (in key units), or null for a keyboard in one piece: the
  * widest gap of at least SPLIT_GAP across which no key reaches, with at least a quarter of the keys on each side.
  * The gap is measured between upright keys only, since thumb keys turned towards the middle reach into it (Ferris
- * Sweep, Kyria); every key counts, by its centre, for the side it is on. A Sofle stays in one piece: the push keys of
- * its encoders sit in the middle. */
+ * Sweep, Kyria), unless most keys are turned (an Alice, in one piece); every key counts, by its centre, for the side
+ * it is on. */
 export function splitLine(keys: PlacedKey[]): number | null {
   const upright = keys.filter((k) => !k.r);
-  const spans = (upright.length > 0 ? upright : keys)
+  const spans = (upright.length * 2 >= keys.length ? upright : keys)
     .map((k) => boundsOf(k))
     .map((b) => [b.left, b.right])
     .sort((a, b) => a[0] - b[0]);
@@ -77,14 +93,14 @@ export function rowsOf(keys: PlacedKey[]): PlacedKey[][] {
 }
 
 /** Rows of the keys of one half of a split keyboard, its thumbs left out, from the top, each from left to right. When
- * most keys stand in columns of the same length (column stagger), the rows are counted down those columns, however
- * far a column is staggered (a Ferris Sweep's pinky column), and any other key joins the row it is nearest in the
- * nearest of those columns: with the thumbs gone, such keys end a row (Iris, Kyria). Otherwise as rowsOf. */
+ * most keys stand in columns (column stagger), the rows are counted down the longest columns, however far a column
+ * is staggered (a Ferris Sweep's pinky column), and every other key joins the row it is nearest in the nearest of
+ * those: shorter columns (an Ergodox's outer one), keys at the end of a row (Iris, Kyria). Otherwise as rowsOf. */
 export function rowsOfHalf(keys: PlacedKey[]): PlacedKey[][] {
-  const columns = columnsOf(keys);
+  const columns = columnsOf(keys).filter((c) => c.length >= 2);
   const height = Math.max(0, ...columns.map((c) => c.length));
   const full = columns.filter((c) => c.length === height);
-  if (height < 2 || full.length * height < COLUMNS_SHARE * keys.length) return rowsOf(keys);
+  if (height < 2 || columns.flat().length < COLUMNS_SHARE * keys.length) return rowsOf(keys);
   const rows: PlacedKey[][] = Array.from({ length: height }, () => []);
   for (const key of keys) {
     const column = full[smallest(full.map((c) => Math.abs(c[0].cx - key.cx)))];
@@ -93,27 +109,71 @@ export function rowsOfHalf(keys: PlacedKey[]): PlacedKey[][] {
   return rows.map((row) => row.sort((a, b) => a.cx - b.cx));
 }
 
+/** Where `other` is as seen from `key`, turned with it: [across, down] */
+function seenFrom(key: PlacedKey, other: PlacedKey): [number, number] {
+  const a = (-key.r * Math.PI) / 180;
+  const dx = other.cx - key.cx;
+  const dy = other.cy - key.cy;
+  return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
+}
+
 /** Whether `below` sits right under `key` as `key` is turned */
 function isUnder(key: PlacedKey, below: PlacedKey): boolean {
-  const a = (-key.r * Math.PI) / 180;
-  const dx = below.cx - key.cx;
-  const dy = below.cy - key.cy;
-  return Math.abs(dx * Math.cos(a) - dy * Math.sin(a)) < 0.5 && dx * Math.sin(a) + dy * Math.cos(a) > 0.5;
+  const [across, down] = seenFrom(key, below);
+  return Math.abs(across) < 0.5 && down > 0.5;
+}
+
+/** Whether `other` sits next to `key` in a row, as `key` is turned */
+function isBeside(key: PlacedKey, other: PlacedKey): boolean {
+  const [across, down] = seenFrom(key, other);
+  return Math.abs(down) < ROW_LEVEL && Math.abs(across) < ROW_REACH;
+}
+
+/** Whether two upright keys touch, at a side or a corner */
+function isAgainst(key: PlacedKey, other: PlacedKey): boolean {
+  if (key.r || other.r) return false;
+  const a = boundsOf(key);
+  const b = boundsOf(other);
+  return Math.max(a.left - b.right, b.left - a.right, a.top - b.bottom, b.top - a.bottom) < TOUCH;
 }
 
 /** The thumb keys of one half of a split keyboard: those well below its outermost column (of at least two keys, so a
- * lone key out there doesn't count), but not a key with another one of them right under it as it is turned (that
- * ends a row above the thumbs: Iris, Kyria). None if one of them reaches the outer edge of that column. */
+ * lone key out there doesn't count), but
+ * - not a bottom finger row: keys right under the finger columns, the next one down, when other low keys are a row
+ *   lower still (Ergodox, Redox, Dactyl Manuform). On a Corne or a Sofle nothing is that much lower: those keys are
+ *   the thumbs;
+ * - not a key with another low key right under it that lines up with a finger key, as it is turned (Iris, Kyria), or
+ *   rests against one, upright (Elora), or does either with another such key: it ends a row above the thumbs. The
+ *   upper keys of a thumb cluster do neither (Ergodox, Redox, Dactyl Manuform).
+ * None if one of them comes within THUMB_INSET of the outer edge of that column. */
 function thumbsOf(half: PlacedKey[], side: Side): PlacedKey[] {
   const columns = columnsOf(half).filter((c) => c.length >= 2);
   const outer = side === "left" ? columns[0] : columns.at(-1);
   if (!outer) return [];
-  const bottom = Math.max(...outer.map((k) => k.cy));
+  const bottom = Math.max(...outer.map((k) => boundsOf(k).bottom));
   // where a key's outer side is, counted inwards (rightwards on the left half, leftwards on the right)
   const inward = (k: PlacedKey) => (side === "left" ? boundsOf(k).left : -boundsOf(k).right);
   const edge = Math.min(...outer.map(inward));
-  const low = half.filter((k) => k.cy - bottom > THUMB_DROP);
-  const thumbs = low.filter((k) => !low.some((other) => other !== k && other.r === k.r && isUnder(k, other)));
+  const low = half.filter((k) => boundsOf(k).bottom - bottom > THUMB_DROP);
+
+  const fingerColumns = columnsOf(half.filter((k) => !low.includes(k))).filter((c) => c.length >= 2);
+  const nextDown = (k: PlacedKey) => fingerColumns.some((c) => {
+    const step = k.cy - c[c.length - 1].cy;
+    return Math.abs(c[0].cx - k.cx) < UNDER_SLACK && step > 0 && step <= ROW_STEP;
+  });
+  const fingerRow = low.filter(nextDown);
+  const others = low.filter((k) => !fingerRow.includes(k));
+  const lowest = (keys: PlacedKey[]) => Math.max(...keys.map((k) => k.cy));
+  const lowerStill = fingerRow.length > 0 && others.length > 0 && lowest(others) - lowest(fingerRow) > ROW_SPAN;
+  const thumbs = lowerStill ? others : low;
+
+  const fingers = half.filter((k) => !thumbs.includes(k));
+  const endsRow = (k: PlacedKey) => thumbs.some((other) => other !== k && isUnder(k, other)) &&
+    fingers.some((f) => isBeside(k, f) || isAgainst(k, f));
+  for (let rowEnd = thumbs.find(endsRow); rowEnd; rowEnd = thumbs.find(endsRow)) {
+    thumbs.splice(thumbs.indexOf(rowEnd), 1);
+    fingers.push(rowEnd);
+  }
   return thumbs.some((k) => inward(k) - edge < THUMB_INSET) ? [] : thumbs;
 }
 
