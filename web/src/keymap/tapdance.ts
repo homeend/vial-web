@@ -1,10 +1,11 @@
 // Tap dances as the keymap shows them: what a tap dance key does, and finding a free one.
 import type { Described, KeyboardModel, TapDance } from "../api/types";
 
-type Model = Pick<KeyboardModel, "tapDance" | "layers" | "combos" | "keyOverrides" | "altRepeatKeys">;
+type Model = Pick<KeyboardModel, "tapDance" | "layers" | "combos" | "keyOverrides" | "altRepeatKeys" | "macros">;
 
 /** Every keycode of the keyboard that can run a tap dance: keys and encoders on every layer, combos (keys and
- * output), key overrides (trigger and replacement), alt repeat keys (both keycodes) and tap dances (every slot) */
+ * output), key overrides (trigger and replacement), alt repeat keys (both keycodes), tap dances (every slot) and
+ * macros (every step that taps, presses or releases keycodes) */
 function everyAction(model: Model): Described[] {
   return [
     ...model.layers.flatMap((layer) => [...layer.keys, ...layer.encoders]),
@@ -12,11 +13,12 @@ function everyAction(model: Model): Described[] {
     ...model.keyOverrides.flatMap((o) => [o.trigger, o.replacement]),
     ...model.altRepeatKeys.flatMap((a) => [a.keycode, a.altKeycode]),
     ...model.tapDance.flatMap((td) => tapDanceSlots(td).map((slot) => slot.action)),
+    ...model.macros.items.flatMap((m) => m.actions.flatMap((a) => a.keys)),
   ];
 }
 
-/** The first tap dance with nothing in it that nothing uses (no key, encoder, combo, key override, alt repeat key
- * or tap dance), or null */
+/** The first tap dance with nothing in it that nothing uses (no key, encoder, combo, key override, alt repeat key,
+ * tap dance or macro), or null */
 export function freeTapDance(model: Model): number | null {
   const used = new Set<number>();
   for (const d of everyAction(model)) {

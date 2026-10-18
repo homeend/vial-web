@@ -11,6 +11,8 @@ export type Use =
   | { type: "combo"; combo: number; part: "key" | "output" }
   /** a slot of another tap dance */
   | { type: "tap-dance"; tapDance: number; slot: SlotLabel }
+  /** a step of another macro (by index in its actions), which taps, presses or releases it */
+  | { type: "macro"; macro: number; step: number }
   | { type: "key-override"; keyOverride: number; part: "trigger" | "replacement" }
   | { type: "alt-repeat"; altRepeat: number; part: "keycode" | "alt keycode" };
 
@@ -23,8 +25,11 @@ export interface Usage {
 
 type Model = Pick<KeyboardModel, "layers" | "tapDance" | "combos" | "keyOverrides" | "altRepeatKeys" | "macros">;
 
-/** Which keys (on the keyboard as drawn: the chosen layout options), combos, tap dances, key overrides and alt repeat
- * keys use each tap dance and macro. A tap dance running itself from one of its slots doesn't count. */
+/** Which keys (on the keyboard as drawn: the chosen layout options), combos, tap dances, macros, key overrides and
+ * alt repeat keys use each tap dance and macro.
+ * - A combo with no keys never fires, so its output isn't a use (as combosOf, which leaves it out).
+ * - A tap dance running itself from one of its slots doesn't count, nor does a macro running itself from a step.
+ * - A disabled key override or alt repeat key still counts: it is set up, only switched off. */
 export function usageOf(model: Model, placement: Placement): Usage {
   const usage: Usage = {
     tapDances: model.tapDance.map(() => []),
@@ -43,6 +48,7 @@ export function usageOf(model: Model, placement: Placement): Usage {
     }
   });
   for (const combo of model.combos) {
+    if (combo.keys.every((k) => k.kind === "none")) continue;
     for (const key of combo.keys) note(key, { type: "combo", combo: combo.index, part: "key" });
     note(combo.output, { type: "combo", combo: combo.index, part: "output" });
   }
@@ -51,6 +57,14 @@ export function usageOf(model: Model, placement: Placement): Usage {
       if (action.kind === "tap-dance" && action.index === td.index) continue;
       note(action, { type: "tap-dance", tapDance: td.index, slot: label });
     }
+  }
+  for (const macro of model.macros.items) {
+    macro.actions.forEach((action, step) => {
+      for (const key of action.keys) {
+        if (key.kind === "macro" && key.index === macro.index) continue;
+        note(key, { type: "macro", macro: macro.index, step });
+      }
+    });
   }
   for (const o of model.keyOverrides) {
     note(o.trigger, { type: "key-override", keyOverride: o.index, part: "trigger" });

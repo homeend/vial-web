@@ -45,6 +45,28 @@ describe("usageOf", () => {
     ]);
   });
 
+  it("counts a macro's steps: a macro can tap, press or release a tap dance or another macro, but not itself", () => {
+    const model = corne({
+      layers: [layer({}, "KC_NO")], tapDances: [["KC_A", "KC_NO", "KC_NO", "KC_NO"]], macros: [1, 1],
+    });
+    model.macros.items[0].actions = [
+      { type: "text", text: "hi", keys: [] },
+      { type: "tap", keys: [described("KC_B"), described("M1")] },
+      { type: "down", keys: [described("TD(0)")] },
+      { type: "up", keys: [described("TD(0)")] },
+      { type: "tap", keys: [described("M0")] },
+    ];
+    model.macros.items[1].actions = [{ type: "tap", keys: [described("M1")] }];
+    const used = usageOf(model, placeKeyboard(model));
+    expect(used.macros).toEqual([[], [{ type: "macro", macro: 0, step: 1 }]]);
+    expect(used.tapDances).toEqual([[{ type: "macro", macro: 0, step: 2 }, { type: "macro", macro: 0, step: 3 }]]);
+  });
+
+  it("ignores a combo with no keys: it never fires", () => {
+    const used = usage({ layers: [layer({}, "KC_NO")], combos: [{ keys: [], output: "M0" }], macros: [1] });
+    expect(used.macros).toEqual([[]]);
+  });
+
   it("only counts the keys that are drawn, encoders included, and ignores numbers the keyboard doesn't have", () => {
     const model = corne({ layers: [layer({ 0: "TD(5)", 1: "M7" }, "KC_NO")], tapDances: [["KC_A", "KC_NO", "KC_NO", "KC_NO"]] });
     model.encoders = [{ ...model.keys[0], row: null, col: null, encoder: 0, direction: 0, x: 20 }];
@@ -72,5 +94,13 @@ describe("unusedOf", () => {
       macros: [3, 0],
     });
     expect(unusedOf(model, usageOf(model, placeKeyboard(model)))).toEqual({ tapDances: [], macros: [] });
+  });
+
+  it("counts a tap dance or macro that only a macro uses, but not a macro that only uses itself", () => {
+    const model = corne({ layers: [layer({ 0: "M0" }, "KC_NO")], tapDances: [["KC_A", "KC_NO", "KC_NO", "KC_NO"]],
+      macros: [1, 1, 1] });
+    model.macros.items[0].actions = [{ type: "tap", keys: [described("M1"), described("TD(0)")] }];
+    model.macros.items[2].actions = [{ type: "tap", keys: [described("M2")] }];
+    expect(unusedOf(model, usageOf(model, placeKeyboard(model)))).toEqual({ tapDances: [], macros: [2] });
   });
 });

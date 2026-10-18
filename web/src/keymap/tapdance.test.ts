@@ -21,6 +21,8 @@ interface Elsewhere {
   combos?: { keys: string[]; output: string }[];
   keyOverrides?: { trigger: string; replacement: string }[];
   altRepeatKeys?: { keycode: string; altKeycode: string }[];
+  /** each macro's steps, one keycode tapped in each */
+  macros?: string[][];
 }
 
 function model(tapDance: TapDance[], layerKeys: string[][], encoderKeys: string[][] = [], elsewhere: Elsewhere = {}) {
@@ -32,6 +34,8 @@ function model(tapDance: TapDance[], layerKeys: string[][], encoderKeys: string[
       { index, trigger: key(o.trigger), replacement: key(o.replacement) })),
     altRepeatKeys: (elsewhere.altRepeatKeys ?? []).map((a, index) => (
       { index, keycode: key(a.keycode), altKeycode: key(a.altKeycode) })),
+    macros: { items: (elsewhere.macros ?? []).map((steps, index) => (
+      { index, actions: steps.map((code) => ({ type: "tap", keys: [key(code)] })) })) },
   } as unknown as KeyboardModel;
 }
 
@@ -62,6 +66,11 @@ describe("freeTapDance", () => {
     const empty = [td(0, none), td(1, none), td(2, none)];
     expect(freeTapDance(model(empty, [["KC_A"]], [], { altRepeatKeys: [{ keycode: "TD(0)", altKeycode: "TD(1)" }] })))
       .toBe(2);
+  });
+
+  it("counts a tap dance a macro taps, presses or releases", () => {
+    const empty = [td(0, none), td(1, none), td(2, none)];
+    expect(freeTapDance(model(empty, [["KC_A"]], [], { macros: [["KC_B"], ["KC_C", "TD(0)"]] }))).toBe(1);
   });
 
   it("counts a tap dance another tap dance uses", () => {

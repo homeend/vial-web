@@ -57,6 +57,7 @@ function model(code: string): KeyboardModel {
     combos: [],
     keyOverrides: [],
     altRepeatKeys: [],
+    macros: { count: 0, memory: 0, used: 0, items: [] },
   } as unknown as KeyboardModel;
 }
 
