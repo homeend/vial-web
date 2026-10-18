@@ -1,12 +1,12 @@
 // The analysis in words, for the Overview and the Inspector: "hold Space", "one-shot (right outer thumb)",
 // "switch from Layer 3 (right outer thumb)", "double-tap Tab to toggle", "combo: MO(5) + OSL(3)", "with Y → Esc".
-import type { Described, KeyboardModel, TapDance } from "../api/types";
+import type { Described, KeyboardModel, LayerAction, TapDance } from "../api/types";
 import { actionSummary, type Names } from "../keyboard/labels";
 import { refId } from "../keyboard/refs";
 import type { SlotLabel } from "../keymap/tapdance";
-import type { ComboUse } from "./combos";
+import { repeatedCodes, type ComboUse } from "./combos";
 import type { Found, How } from "./find";
-import type { LayerAction, LayerReach, ViaSlot, Way } from "./reach";
+import type { LayerReach, ViaSlot, Way } from "./reach";
 
 /** What a key does to the layer, as the verb of a label: "hold Space", "toggle (left outer thumb)" */
 const VERBS: Record<LayerAction, string> = {
@@ -209,8 +209,11 @@ export function comboUseLabel(use: ComboUse, names: Names): string {
   return `${partners} → ${actionSummary(use.combo.output, names).tap}`;
 }
 
-/** The partners of a combo that aren't on any key of the layer, or null: "Y isn't on this layer" */
+/** Why a combo a key is part of can't fire on the layer, or null: it lists a keycode twice ("It has A twice, so it
+ * never fires"), or partners aren't on any key of the layer ("Y isn't on this layer") */
 export function missingPartners(use: ComboUse, names: Names): string | null {
+  const repeated = repeatedCodes(use.combo).map((d) => memberName(d, names));
+  if (repeated.length > 0) return `It has ${andList(repeated)} twice, so it never fires`;
   const missing = use.partners.filter((p) => p.keys.length === 0).map((p) => memberName(p.action, names));
   if (missing.length === 0) return null;
   return `${andList(missing)} ${missing.length === 1 ? "isn't" : "aren't"} on this layer`;

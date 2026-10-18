@@ -8,6 +8,8 @@ export type KeyGeometry = Schemas["KeyGeometry"];
 export type Layer = Schemas["Layer"];
 export type Described = Schemas["Described"];
 export type KeyKind = Described["kind"];
+/** what a layer key does with its layer: "while held", "toggle", ... */
+export type LayerAction = NonNullable<Described["layerAction"]>;
 export type LayoutOptions = Schemas["LayoutOptions"];
 export type KeycodeCategory = Schemas["KeycodeCategory"];
 export type CatalogueKeycode = Schemas["CatalogueKeycode"];

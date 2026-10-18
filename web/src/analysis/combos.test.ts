@@ -49,7 +49,7 @@ describe("combosOf", () => {
   });
 
   it("finds nothing on a keyboard without layers", () => {
-    const model = { ...corne({ layers: [], combos: [{ keys: ["KC_A"], output: "KC_B" }] }) };
+    const model = corne({ layers: [], combos: [{ keys: ["KC_A"], output: "KC_B" }] });
     expect(combosOf(model, placeKeyboard(model))[0].members[0].keys).toEqual([]);
   });
 });
@@ -86,6 +86,16 @@ describe("combo keys on a layer", () => {
     const layerCodes = model2.layers.map((_, l) => codesOn(model2, p, l));
     expect(comboLayers(combosOf(model2, p)[0], layerCodes)).toEqual([0, 2]);
   });
+
+  it("never fire when they list a keycode twice: QMK counts only one of the two as pressed", () => {
+    const twice = corne({
+      layers: [layer({ 0: "KC_A", 1: "KC_A", 2: "KC_B" }, "KC_NO")],
+      combos: [{ keys: ["KC_A", "KC_A"], output: "KC_X" }, { keys: ["KC_A", "KC_B", "KC_A"], output: "KC_Y" }],
+    });
+    const p = placeKeyboard(twice);
+    const layerCodes = [codesOn(twice, p, 0)];
+    expect(combosOf(twice, p).map((c) => comboLayers(c, layerCodes))).toEqual([[], []]);
+  });
 });
 
 describe("combosUsing", () => {
@@ -120,7 +130,7 @@ describe("combosUsing", () => {
     expect(using(0, AT.grid(0, 0))).toEqual([]);
   });
 
-  it("lists a keycode that is in a combo twice once as the key and once as a partner", () => {
+  it("lists a keycode that is in a combo twice once as the key and once as a partner (the combo never fires)", () => {
     const twice = corne({ layers: [layer({ 0: "KC_A" }, "KC_NO")], combos: [{ keys: ["KC_A", "KC_A"], output: "KC_B" }] });
     const p = placeKeyboard(twice);
     const [use] = combosUsing(combosOf(twice, p), twice, codesOn(twice, p, 0), 0, key(0));

@@ -3,14 +3,13 @@
 //
 // Only what the keymap says is known: layer switching done in the firmware's own C code (tri-layer,
 // layer_state_set_user) isn't visible over the Vial protocol.
-import type { Described, KeyboardModel } from "../api/types";
+import type { Described, KeyboardModel, LayerAction } from "../api/types";
 import type { Placement } from "../keyboard/geometry";
 import { refId, type KeyRef } from "../keyboard/refs";
 import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
 import { codesOn, comboLayers, combosOf, type ComboInfo } from "./combos";
-import { effectiveAt, isLayer } from "./effective";
+import { effectiveAt } from "./effective";
 
-export type LayerAction = NonNullable<Described["layerAction"]>;
 /** A tap dance slot that a way goes through */
 export interface ViaSlot {
   tapDance: number;
@@ -40,6 +39,11 @@ export interface LayerReach {
   ways: Way[];
   /** whether the keyboard can get to it from the base layer, through the ways */
   reachable: boolean;
+}
+
+/** Whether a layer number is one of the keyboard's layers (a keycode can name a layer the keyboard doesn't have) */
+function isLayer(model: Pick<KeyboardModel, "layers">, layer: number | null | undefined): layer is number {
+  return layer != null && Number.isInteger(layer) && layer >= 0 && layer < model.layers.length;
 }
 
 interface Target {

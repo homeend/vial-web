@@ -77,6 +77,12 @@ describe("layerReach", () => {
     expect(layers.every((l) => l.reachable)).toBe(true);
   });
 
+  it("describes LM as the server does: with modifiers, or without them as MO", () => {
+    expect([described("LM(1, MOD_LSFT)"), described("LM(1, 0)")].map((d) => [d.layerAction, d.hold])).toEqual([
+      ["while held, with modifiers", "Shift"], ["while held", null],
+    ]);
+  });
+
   it("knows LM, a layer held with modifiers", () => {
     const layers = reach({ layers: [layer({ 0: "LM(1, MOD_LSFT)" }, "KC_NO"), layer({ 0: "KC_A" })] });
     expect(layers[1].ways.map(brief)).toEqual(["key 0 on 0: while held, with modifiers from 0"]);
@@ -191,6 +197,15 @@ describe("layerReach", () => {
     expect(layers[2].ways.map(brief)).toEqual(["combo 0: toggle from 1"]);
     expect(layers[3].ways.map(brief)).toEqual(["combo 1: toggle from "]);
     expect(layers[3].reachable).toBe(false);
+  });
+
+  it("lists a combo with a keycode twice as one that can never fire", () => {
+    const layers = reach({
+      layers: [layer({ 0: "KC_J", 1: "KC_J" }, "KC_NO"), layer({})],
+      combos: [{ keys: ["KC_J", "KC_J"], output: "TG(1)" }],
+    });
+    expect(layers[1].ways.map(brief)).toEqual(["combo 0: toggle from "]);
+    expect(layers[1].reachable).toBe(false);
   });
 
   it("leaves out keys and combos that only work on the layer they reach", () => {

@@ -18,8 +18,3 @@ export function effectiveAt(model: Pick<KeyboardModel, "layers">, layer: number,
   const base = actionAt(model, 0, ref);
   return base ? { layer: 0, action: base } : undefined;
 }
-
-/** Whether a layer number is one of the keyboard's layers (a keycode can name a layer the keyboard doesn't have) */
-export function isLayer(model: Pick<KeyboardModel, "layers">, layer: number | null | undefined): layer is number {
-  return layer != null && Number.isInteger(layer) && layer >= 0 && layer < model.layers.length;
-}

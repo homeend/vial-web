@@ -1,6 +1,5 @@
 // For the analysis tests only: keyboard models built from keycode names, described roughly as the server does.
-import type { Described, KeyGeometry, KeyboardModel, TapDance } from "../api/types";
-import type { LayerAction } from "./reach";
+import type { Described, KeyGeometry, KeyboardModel, LayerAction, TapDance } from "../api/types";
 
 const LAYER_ACTIONS: Record<string, LayerAction> = {
   MO: "while held", TG: "toggle", TO: "switch to", TT: "hold, or tap to toggle", OSL: "one-shot", DF: "default",
@@ -31,8 +30,10 @@ export function described(code: string): Described {
   if (m) return plain("layer", `${m[1]} ${m[2]}`, { layer: Number(m[2]), layerAction: LAYER_ACTIONS[m[1]] });
   m = /^LM\((\d+), ?(\w+)\)$/.exec(code);
   if (m) {
-    return plain("layer", `LM ${m[1]}`, { layer: Number(m[1]), layerAction: "while held, with modifiers",
-      hold: MODS[m[2].replace("MOD_", "")] ?? m[2] });
+    // LM(n, 0) holds no modifiers: the server describes it as it does MO(n)
+    const mods = m[2] === "0" ? null : (MODS[m[2].replace("MOD_", "")] ?? m[2]);
+    return plain("layer", `LM ${m[1]}`, { layer: Number(m[1]),
+      layerAction: mods ? "while held, with modifiers" : "while held", hold: mods });
   }
   m = /^FN_MO([12])3$/.exec(code);
   if (m) return plain("layer", `Fn${m[1]} (Fn3)`, { layer: Number(m[1]), layerAction: "while held", triLayer: 3 });

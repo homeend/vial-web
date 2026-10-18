@@ -31,7 +31,9 @@ export function codesOn(model: Pick<KeyboardModel, "layers">, placement: Placeme
   for (const ref of keyRefs(placement)) {
     const code = effectiveAt(model, layer, ref)?.action.code;
     if (code === undefined) continue;
-    codes.set(code, [...(codes.get(code) ?? []), ref]);
+    const keys = codes.get(code);
+    if (keys) keys.push(ref);
+    else codes.set(code, [ref]);
   }
   return codes;
 }
@@ -50,13 +52,28 @@ export function combosOf(model: Model, placement: Placement): ComboInfo[] {
     .filter((combo) => combo.members.length > 0);
 }
 
-/** The layers on which a combo can fire: those where every one of its keycodes is on some key */
+/** The keycodes a combo lists more than once, each once. Such a combo never fires: QMK matches a pressed keycode to
+ * one of the combo's slots only, so the other slot it is in never counts as pressed. */
+export function repeatedCodes(combo: ComboInfo): Described[] {
+  const seen = new Set<string>();
+  const repeated = new Map<string, Described>();
+  for (const { action } of combo.members) {
+    if (seen.has(action.code)) repeated.set(action.code, action);
+    seen.add(action.code);
+  }
+  return [...repeated.values()];
+}
+
+/** The layers on which a combo can fire: those where every one of its keycodes is on some key (none for a combo
+ * that lists a keycode twice, see repeatedCodes) */
 export function comboLayers(combo: ComboInfo, layerCodes: Map<string, KeyRef[]>[]): number[] {
+  if (repeatedCodes(combo).length > 0) return [];
   return layerCodes.flatMap((codes, layer) => (combo.members.every((m) => codes.has(m.action.code)) ? [layer] : []));
 }
 
 /** The keys (by refId) that are part of a combo on a layer: those whose keycode there is one of a combo's. A
- * transparent key isn't marked (it would mark every empty layer); the combo goes through it all the same. */
+ * transparent key isn't marked (it would mark every empty layer); the combo goes through it all the same.
+ * codes must be the same layer's: codesOn(model, placement, layer). */
 export function comboKeysOn(
   combos: ComboInfo[],
   codes: Map<string, KeyRef[]>,
@@ -80,7 +97,8 @@ export interface ComboUse {
   partners: { action: Described; keys: KeyRef[] }[];
 }
 
-/** The combos a key is part of on a layer, through the keycode it has there */
+/** The combos a key is part of on a layer, through the keycode it has there. codes must be the same layer's:
+ * codesOn(model, placement, layer). */
 export function combosUsing(
   combos: ComboInfo[],
   model: Pick<KeyboardModel, "layers">,

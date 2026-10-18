@@ -266,4 +266,16 @@ describe("comboUseLabel and missingPartners", () => {
     const [use] = combosUsing(combosOf(many, p), many, codesOn(many, p, 0), 0, { kind: "key", index: 0 });
     expect(missingPartners(use, namesOf(many))).toBe("Q, W and E aren't on this layer");
   });
+
+  it("say that a combo listing a keycode twice never fires", () => {
+    const twice = corne({
+      layers: [layer({ 0: "KC_A", 1: "KC_A" }, "KC_NO")],
+      combos: [{ keys: ["KC_A", "KC_A"], output: "KC_B" }, { keys: ["KC_A", "KC_Q", "KC_A", "KC_Q"], output: "KC_C" }],
+    });
+    const p = placeKeyboard(twice);
+    const used = combosUsing(combosOf(twice, p), twice, codesOn(twice, p, 0), 0, { kind: "key", index: 0 });
+    expect(used.map((u) => missingPartners(u, namesOf(twice)))).toEqual([
+      "It has A twice, so it never fires", "It has A and Q twice, so it never fires",
+    ]);
+  });
 });
