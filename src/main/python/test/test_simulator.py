@@ -103,7 +103,8 @@ def test_reload_reads_macros_settings_and_lighting(corne):
 def test_sample_settings_have_no_legacy_bitfield(corne):
     vk, kb = corne
     # qsid 8 is the legacy bitfield for Permissive Hold / Retro Tapping, which 22-24 replace
-    assert kb.supported_settings == {2, 7, 22, 23, 24, 25}
+    assert 8 not in kb.supported_settings
+    assert {7, 22, 23, 24, 25} <= kb.supported_settings
 
 
 def test_writes_reach_the_simulator(corne):

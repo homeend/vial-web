@@ -212,7 +212,7 @@ def test_set_key_writes_to_keyboard(client, virtual):
     ("/api/keymap/0/0/0", {"code": "NOT_A_KEY"}),
     ("/api/tap-dance/99", {"tap": "KC_A", "hold": "KC_NO", "doubleTap": "KC_NO", "tapHold": "KC_NO",
                            "tappingTerm": 200}),
-    ("/api/qmk-settings/1", {"value": 1}),
+    ("/api/qmk-settings/8", {"value": 1}),  # a setting the simulated Corne doesn't have
 ])
 def test_invalid_writes_are_rejected(client, virtual, path, body):
     before = [row[:] for row in virtual.keymap[0]]

@@ -142,13 +142,19 @@ def make_corne(layers=len(LAYERS)):
         combos=[(encode("KC_K"), encode("KC_Y"), 0, 0, encode("KC_ESC")),
                 (encode("KC_M"), encode("KC_C"), 0, 0, encode("KC_ENT"))] +
                [(0, 0, 0, 0, 0)] * 6,
-        key_overrides=[(encode("KC_BSPC"), encode("KC_DEL"), 0xFFFF, 0x02, 0, 0x02, ko_options_enabled)] +
-                      [(0, 0, 0, 0, 0, 0, 0)] * 3,
+        # Left Shift + Backspace sends Delete on every layer; Shift (either) + Esc sends ~ on the base layer, as QMK's
+        # ko_make_basic(MOD_MASK_SHIFT, KC_ESC, KC_TILD) would, but only there
+        key_overrides=[(encode("KC_BSPC"), encode("KC_DEL"), 0xFFFF, 0x02, 0, 0x02, ko_options_enabled),
+                       (encode("KC_ESC"), encode("LSFT(KC_GRV)"), 0x0001, 0x22, 0, 0x22, ko_options_enabled)] +
+                      [(0, 0, 0, 0, 0, 0, 0)] * 2,
         # Shift+Left then Alt Repeat gives Shift+Right, and the other way round
         alt_repeat_keys=[(encode("KC_LEFT"), encode("KC_RGHT"), 0x02, ark_options)] + [(0, 0, 0, 0)] * 3,
         # 22-24 are the separate Permissive Hold / Hold On Other Key Press / Retro Tapping settings. The legacy
-        # bitfield (8) also has Permissive Hold and Retro Tapping bits, so it is left out to avoid showing them twice
-        settings={2: 50, 7: 200, 22: 0, 23: 0, 24: 0, 25: 100},
+        # bitfield (8) also has Permissive Hold and Retro Tapping bits, so it is left out to avoid showing them twice.
+        # The others are QMK's defaults: Grave Escape (1), Auto Shift (3, 4), One Shot Keys (5, 6), the mouse keys
+        # (9-17) and Magic (21, N-key rollover off)
+        settings={1: 0, 2: 50, 3: 0, 4: 175, 5: 5, 6: 5000, 7: 200, 9: 10, 10: 16, 11: 8, 12: 10, 13: 30, 14: 10,
+                  15: 80, 16: 8, 17: 40, 21: 0, 22: 0, 23: 0, 24: 0, 25: 100},
         # unlocked, as nobody can hold its keys; tests lock it to try the unlock
         unlocked=True,
         unlock_keys=UNLOCK_KEYS,
