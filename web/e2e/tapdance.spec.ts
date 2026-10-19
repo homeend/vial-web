@@ -82,6 +82,39 @@ test.describe("editing a tap dance keeps the focus", () => {
   });
 });
 
+test("New tap dance takes nothing while a change is being saved, and keeps the focus", async ({ app }) => {
+  const before = await tapDanceAt(app, 1);
+  let release = () => {};
+  const released = new Promise<void>((resolve) => (release = resolve));
+  try {
+    await app.route("**/api/tap-dance/1", async (route) => {
+      await released;
+      await route.continue();
+    });
+    await openTapDance(app);
+    const term = tapDanceCard(app, 1).getByRole("spinbutton");
+    await term.fill("300");
+    await term.press("Enter");
+    const add = app.getByRole("button", { name: "New tap dance" });
+    await expect(add).toHaveAttribute("aria-disabled", "true");
+    await expect(add).not.toHaveAttribute("disabled"); // aria-disabled: it keeps the focus
+    const cards = await app.locator("article[id^='tap-dance-']").count();
+    const address = app.url();
+    await add.click({ force: true });
+    await expect(add).toBeFocused();
+    expect(await app.locator("article[id^='tap-dance-']").count()).toBe(cards);
+    expect(app.url()).toBe(address);
+
+    release();
+    await expect.poll(async () => (await tapDanceAt(app, 1)).tappingTerm).toBe(300);
+    await expect(add).not.toHaveAttribute("aria-disabled");
+  } finally {
+    release();
+    await app.unroute("**/api/tap-dance/1");
+    await setTapDance(app, 1, before);
+  }
+});
+
 test("a tapping term out of range says what is wrong, isn't saved, and is put back on leaving the field", async ({ app }) => {
   const before = await tapDanceAt(app, 1);
   try {

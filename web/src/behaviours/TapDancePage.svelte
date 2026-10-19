@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import type { Analysis } from "../analysis/analysis";
   import type { KeyboardModel, TapDance, TapDanceIn } from "../api/types";
   import { namesOf } from "../keyboard/labels";
@@ -86,8 +87,22 @@
     text: model.tapDance[renaming]?.customName ? model.tapDance[renaming].name : "",
   });
 
+  // another keyboard: what was opened, named or picked for was the one before's
+  let shownUid = untrack(() => model.uid);
+  $effect.pre(() => {
+    const uid = model.uid;
+    untrack(() => {
+      if (uid === shownUid) return;
+      shownUid = uid;
+      opened = [];
+      renaming = null;
+      picking = null;
+      pickerOpen = false;
+    });
+  });
+
   function newTapDance() {
-    if (free === null) return;
+    if (free === null || busy) return;
     opened = [...opened, free];
     // on the page shown: no step back, which would look like it did nothing
     router.go("tap-dance", free, { replace: true });
@@ -101,7 +116,7 @@
     description="One key, up to four actions: tapped, held, tapped twice, or tapped then held. Click a slot to change it."
   >
     {#snippet action()}
-      <Button variant="primary" disabled={!canEdit || free === null}
+      <Button variant="primary" disabled={!canEdit || free === null} aria-disabled={busy || undefined}
         title={free === null ? "Every tap dance is in use" : `Sets up tap dance ${free}`} onclick={newTapDance}>
         New tap dance
       </Button>
