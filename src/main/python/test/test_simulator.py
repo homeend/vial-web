@@ -459,3 +459,30 @@ def test_unknown_qsid_lookup_does_not_make_it_supported(lookup):
         lookup(60000)
     assert not QmkSettingsCodec.is_qsid_supported(60000)
     assert 60000 not in QmkSettingsCodec.fields()
+
+
+def test_firmware_without_the_bootloader_jump_answers_it_unhandled():
+    vk = VirtualKeyboard(make_corne().definition, bootloader_jump=False)
+    reply = send(vk, bytes([CMD_VIA_BOOTLOADER_JUMP]))
+    assert reply[0] == 0xFF
+    assert vk.connected and not vk.bootloader_requested
+
+
+@pytest.mark.parametrize("levels", [0, 32])
+def test_backlight_levels_are_checked(levels):
+    with pytest.raises(SimulatorError):
+        VirtualKeyboard(make_corne(lighting="qmk_backlight").definition, backlight_levels=levels)
+
+
+def test_backlight_brightness_steps_follow_the_levels():
+    vk = VirtualKeyboard(make_corne(lighting="qmk_backlight").definition, backlight_levels=5)
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    kb.set_qmk_backlight_brightness(160)  # 160 * 5 / 255 = level 3
+    kb.reload_rgb()
+    assert vk.backlight["level"] == 3 and kb.backlight_brightness == 153
+
+
+def test_unknown_lighting_is_refused():
+    with pytest.raises(ValueError):
+        make_corne(lighting="rgb_matrix")

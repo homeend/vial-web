@@ -18,8 +18,13 @@ UNLOCK_KEYS = [LEFT[0][0], RIGHT[0][5]]
 """ held to unlock the keyboard: the outermost keys of both top rows (Tab and Backspace) """
 
 
-def definition():
-    """ vial.json for the simulated keyboard (KLE layout, matrix 8x6, VialRGB lighting) """
+LIGHTING = ("none", "qmk_backlight", "qmk_rgblight", "qmk_backlight_rgblight", "vialrgb")
+""" what vial.json's "lighting" can say, as the protocol code reads it (keyboard_comm.reload_persistent_rgb) """
+
+
+def definition(lighting="vialrgb"):
+    """ vial.json for the simulated keyboard (KLE layout, matrix 8x6); VialRGB lighting unless `lighting` (one of
+    LIGHTING) says otherwise """
     rows = []
     for r in range(3):
         rows.append(["{},{}".format(*rc) for rc in LEFT[r]] + [{"x": 3}] + ["{},{}".format(*rc) for rc in RIGHT[r]])
@@ -29,7 +34,7 @@ def definition():
         "name": "Simulated Corne",
         "vendorId": "0xFEED",
         "productId": "0x0042",
-        "lighting": "vialrgb",
+        "lighting": lighting,
         "matrix": {"rows": 8, "cols": 6},
         "layouts": {"keymap": rows},
     }
@@ -122,13 +127,15 @@ def macros():
     return b"\x00".join(data) + b"\x00"
 
 
-def make_corne(layers=len(LAYERS)):
+def make_corne(layers=len(LAYERS), lighting="vialrgb"):
     """ A fresh simulated Corne; nothing is shared between calls. With more layers than the sample keymap has, the
-    others are empty (KC_NO); with fewer, the sample's last layers are left out. """
+    others are empty (KC_NO); with fewer, the sample's last layers are left out. `lighting`: one of LIGHTING """
+    if lighting not in LIGHTING:
+        raise ValueError("unknown lighting {!r}".format(lighting))
     ko_options_enabled = 0b1000_0111  # enabled, activates on trigger down / required mod down / negative mod up
     ark_options = 0b1110  # enabled, ignore mod handedness, bidirectional
     return VirtualKeyboard(
-        definition(),
+        definition(lighting),
         layers=layers,
         keymap=keymap(layers),
         uid=CORNE_UID,

@@ -23,13 +23,13 @@ from protocol.constants import CMD_VIA_GET_PROTOCOL_VERSION, CMD_VIA_GET_KEYBOAR
     CMD_VIAL_QMK_SETTINGS_SET, CMD_VIAL_QMK_SETTINGS_RESET, CMD_VIAL_DYNAMIC_ENTRY_OP, \
     DYNAMIC_VIAL_GET_NUMBER_OF_ENTRIES, DYNAMIC_VIAL_TAP_DANCE_GET, DYNAMIC_VIAL_TAP_DANCE_SET, \
     DYNAMIC_VIAL_COMBO_GET, DYNAMIC_VIAL_COMBO_SET, DYNAMIC_VIAL_KEY_OVERRIDE_GET, DYNAMIC_VIAL_KEY_OVERRIDE_SET, \
-    DYNAMIC_VIAL_ALT_REPEAT_KEY_GET, DYNAMIC_VIAL_ALT_REPEAT_KEY_SET, BUFFER_FETCH_CHUNK
+    DYNAMIC_VIAL_ALT_REPEAT_KEY_GET, DYNAMIC_VIAL_ALT_REPEAT_KEY_SET, BUFFER_FETCH_CHUNK, CMD_VIA_BOOTLOADER_JUMP, \
+    VIA_ID_UNHANDLED
 from keycodes.keycodes_v5 import keycodes_v5
 from keycodes.keycodes_v6 import keycodes_v6
 from kle_serial import Serial as KleSerial
 from protocol.qmk_settings_codec import QmkSettingsCodec
 
-CMD_VIA_BOOTLOADER_JUMP = 0x0B
 # polls the firmware wants the unlock keys held for (VIAL_UNLOCK_COUNTER_MAX). The firmware counts down only on a poll
 # that comes MORE than 100 ms after the unlock start or the last count-down; a poll within 100 ms starts the count
 # again, even with the keys held. Hosts must therefore poll slower than that (Qt and our server poll every 200 ms).
@@ -48,6 +48,16 @@ UNKNOWN_SETTING_WIDTH = 4
 FEATURE_CAPS_WORD = 1 << 0
 FEATURE_LAYER_LOCK = 1 << 1
 NO_MORE = 0xFFFF
+# QMK RGB light (quantum/rgblight): the effects as numbered with every one of them built in (rgblight_modes.h): Vial's
+# list (Qt's rgb_configurator.py) ends at 36, then Twinkle takes 37 to 42. Breathing (2-5) keeps its own brightness and
+# the rainbow effects (6-14) their own hue: the firmware ignores those when it is sent a colour.
+RGBLIGHT_MODES = 42
+RGBLIGHT_BREATHING = range(2, 6)
+RGBLIGHT_RAINBOW = range(6, 15)
+# QMK backlight: the firmware's default number of brightness steps above off (BACKLIGHT_LEVELS)
+BACKLIGHT_LEVELS = 3
+# VialRGB's "off" effect, which turns the RGB matrix off (vialrgb.c)
+VIALRGB_EFFECT_OFF = 0
 
 
 class SimulatorError(RuntimeError):
@@ -60,7 +70,8 @@ class VirtualKeyboard:
                  via_protocol=9, macro_count=8, macro_memory=512, macros=b"", tap_dance=None, combos=None,
                  key_overrides=None, alt_repeat_keys=None, settings=None, unlocked=True, unlock_keys=(),
                  unlock_counter_max=UNLOCK_COUNTER_MAX, unlock_poll_gap=0.0, clock=time.monotonic,
-                 features=FEATURE_CAPS_WORD | FEATURE_LAYER_LOCK):
+                 features=FEATURE_CAPS_WORD | FEATURE_LAYER_LOCK, backlight_levels=BACKLIGHT_LEVELS,
+                 backlight_breathing=True, bootloader_jump=True):
         """
         definition: vial.json as a dict or JSON string
         keymap: optional {(layer, row, col): keycode}; unset keys are KC_NO
@@ -79,6 +90,11 @@ class VirtualKeyboard:
                          last count-down (and the keys are held), otherwise the countdown starts again. 0 (default):
                          every poll counts. FIRMWARE_UNLOCK_POLL_GAP is the real firmware's 100 ms.
         clock: seconds as a float, like time.monotonic; tests inject a fake one for unlock_poll_gap
+        backlight_levels: the backlight's brightness steps above off (BACKLIGHT_LEVELS, 1 to 31)
+        backlight_breathing: the firmware is built with BACKLIGHT_BREATHING; without it the effect reads 0 and a change
+                             of it does nothing
+        bootloader_jump: the firmware jumps to its bootloader when asked (a secure Vial build); False: built with
+                         VIAL_INSECURE, whose via.c doesn't handle the command
         """
         if isinstance(definition, str):
             definition = json.loads(definition)
@@ -131,13 +147,19 @@ class VirtualKeyboard:
         self.unlock_counter = 0
 
         lighting = definition.get("lighting", "none")
-        self.rgblight = {"brightness": 128, "effect": 1, "speed": 2, "color": (0, 255)} \
+        # what the firmware runs with, kept as each kind's lighting code keeps it (see _lighting_set)
+        self.rgblight = {"enable": True, "mode": 1, "hue": 0, "sat": 255, "val": 128, "speed": 0} \
             if lighting in ["qmk_rgblight", "qmk_backlight_rgblight"] else None
-        self.backlight = {"brightness": 128, "effect": 0} \
+        if not 1 <= backlight_levels <= 31:
+            raise SimulatorError("the backlight has 1 to 31 levels")
+        self.backlight = {"level": 2, "breathing": False, "levels": backlight_levels,
+                          "has_breathing": backlight_breathing} \
             if lighting in ["qmk_backlight", "qmk_backlight_rgblight"] else None
-        self.vialrgb = {"mode": 2, "speed": 128, "hsv": (0, 255, 128), "max_brightness": 200,
+        self.vialrgb = {"enable": True, "mode": 2, "speed": 128, "hsv": (0, 255, 128), "max_brightness": 200,
                         "supported": [1, 2, 3, 4, 5, 6, 7, 8]} if lighting == "vialrgb" else None
-        self.lighting_saved = False
+        self.lighting_saved = None
+        """ what the last lighting save kept (each kind's state, as its EEPROM copy would hold it); None before one """
+        self.bootloader_jump = bootloader_jump
 
         self.pressed = set()
         self.connected = True
@@ -275,22 +297,28 @@ class VirtualKeyboard:
     def _lighting_get(self, msg):
         sub = msg[1]
         head = msg[0:2]
-        if self.rgblight is not None and sub in [QMK_RGBLIGHT_BRIGHTNESS, QMK_RGBLIGHT_EFFECT,
-                                                 QMK_RGBLIGHT_EFFECT_SPEED, QMK_RGBLIGHT_COLOR]:
+        rgb = self.rgblight
+        if rgb is not None and sub in [QMK_RGBLIGHT_BRIGHTNESS, QMK_RGBLIGHT_EFFECT, QMK_RGBLIGHT_EFFECT_SPEED,
+                                       QMK_RGBLIGHT_COLOR]:
             if sub == QMK_RGBLIGHT_COLOR:
-                return head + bytes(self.rgblight["color"])
-            key = {QMK_RGBLIGHT_BRIGHTNESS: "brightness", QMK_RGBLIGHT_EFFECT: "effect",
-                   QMK_RGBLIGHT_EFFECT_SPEED: "speed"}[sub]
-            return head + bytes([self.rgblight[key]])
+                return head + bytes([rgb["hue"], rgb["sat"]])
+            if sub == QMK_RGBLIGHT_EFFECT:
+                # rgblight_get_mode(): 0 while the light is off
+                return head + bytes([rgb["mode"] if rgb["enable"] else 0])
+            return head + bytes([rgb["val" if sub == QMK_RGBLIGHT_BRIGHTNESS else "speed"]])
         if self.backlight is not None and sub in [QMK_BACKLIGHT_BRIGHTNESS, QMK_BACKLIGHT_EFFECT]:
-            key = "brightness" if sub == QMK_BACKLIGHT_BRIGHTNESS else "effect"
-            return head + bytes([self.backlight[key]])
+            bl = self.backlight
+            if sub == QMK_BACKLIGHT_BRIGHTNESS:
+                # via.c: level * 255 / BACKLIGHT_LEVELS
+                return head + bytes([bl["level"] * 255 // bl["levels"]])
+            return head + bytes([int(bl["has_breathing"] and bl["breathing"])])
         if self.vialrgb is not None:
             if sub == VIALRGB_GET_INFO:
                 return head + struct.pack("<HB", 1, self.vialrgb["max_brightness"])
             if sub == VIALRGB_GET_MODE:
-                return head + struct.pack("<HBBBB", self.vialrgb["mode"], self.vialrgb["speed"],
-                                          *self.vialrgb["hsv"])
+                # vialrgb.c get_mode(): "off" while the matrix is off
+                mode = self.vialrgb["mode"] if self.vialrgb["enable"] else VIALRGB_EFFECT_OFF
+                return head + struct.pack("<HBBBB", mode, self.vialrgb["speed"], *self.vialrgb["hsv"])
             if sub == VIALRGB_GET_SUPPORTED:
                 after = struct.unpack_from("<H", msg, 2)[0]
                 effects = [e for e in sorted(self.vialrgb["supported"]) if e > after][:15]
@@ -300,29 +328,72 @@ class VirtualKeyboard:
 
     def _lighting_set(self, msg):
         sub = msg[1]
-        if self.rgblight is not None and sub in [QMK_RGBLIGHT_BRIGHTNESS, QMK_RGBLIGHT_EFFECT,
-                                                 QMK_RGBLIGHT_EFFECT_SPEED, QMK_RGBLIGHT_COLOR]:
-            if sub == QMK_RGBLIGHT_COLOR:
-                self.rgblight["color"] = (msg[2], msg[3])
+        rgb = self.rgblight
+        if rgb is not None and sub in [QMK_RGBLIGHT_BRIGHTNESS, QMK_RGBLIGHT_EFFECT, QMK_RGBLIGHT_EFFECT_SPEED,
+                                       QMK_RGBLIGHT_COLOR]:
+            if sub == QMK_RGBLIGHT_BRIGHTNESS:
+                self._rgblight_sethsv(rgb["hue"], rgb["sat"], msg[2])
+            elif sub == QMK_RGBLIGHT_COLOR:
+                self._rgblight_sethsv(msg[2], msg[3], rgb["val"])
+            elif sub == QMK_RGBLIGHT_EFFECT:
+                # via.c: rgblight_mode_noeeprom, then off for 0 and on for anything else. A light that is off changes
+                # no mode, and turning it on starts the mode it had: from off, an effect takes two sends.
+                if rgb["enable"]:
+                    rgb["mode"] = min(max(msg[2], 1), RGBLIGHT_MODES)
+                rgb["enable"] = msg[2] != 0
             else:
-                key = {QMK_RGBLIGHT_BRIGHTNESS: "brightness", QMK_RGBLIGHT_EFFECT: "effect",
-                       QMK_RGBLIGHT_EFFECT_SPEED: "speed"}[sub]
-                self.rgblight[key] = msg[2]
+                rgb["speed"] = msg[2]
         elif self.backlight is not None and sub in [QMK_BACKLIGHT_BRIGHTNESS, QMK_BACKLIGHT_EFFECT]:
-            self.backlight["brightness" if sub == QMK_BACKLIGHT_BRIGHTNESS else "effect"] = msg[2]
+            bl = self.backlight
+            if sub == QMK_BACKLIGHT_BRIGHTNESS:
+                # via.c: value * BACKLIGHT_LEVELS / 255, rounded down
+                bl["level"] = msg[2] * bl["levels"] // 255
+            elif bl["has_breathing"]:
+                bl["breathing"] = msg[2] != 0
         elif self.vialrgb is not None and sub == VIALRGB_SET_MODE:
             mode, speed, h, s, v = struct.unpack_from("<HBBBB", msg, 2)
-            self.vialrgb["mode"], self.vialrgb["speed"], self.vialrgb["hsv"] = mode, speed, (h, s, v)
+            vr = self.vialrgb
+            # vialrgb.c set_mode: "off" turns the matrix off; any other effect turns it on
+            if mode == VIALRGB_EFFECT_OFF:
+                vr["enable"] = False
+            else:
+                vr["enable"] = True
+                vr["mode"] = mode
+            vr["speed"] = speed
+            # rgb_matrix_sethsv_noeeprom: nothing while off; the brightness at most RGB_MATRIX_MAXIMUM_BRIGHTNESS
+            if vr["enable"]:
+                vr["hsv"] = (h, s, min(v, vr["max_brightness"]))
         else:
             raise SimulatorError("unsupported lighting change 0x{:02X}".format(sub))
         self.writes.append(("lighting", sub))
         return msg[0:2]
 
+    def _rgblight_sethsv(self, hue, sat, val):
+        """ rgblight_sethsv_noeeprom: nothing while the light is off; breathing keeps its brightness and the rainbow
+        effects their hue """
+        rgb = self.rgblight
+        if not rgb["enable"]:
+            return
+        if rgb["mode"] in RGBLIGHT_BREATHING:
+            val = rgb["val"]
+        elif rgb["mode"] in RGBLIGHT_RAINBOW:
+            hue = rgb["hue"]
+        rgb["hue"], rgb["sat"], rgb["val"] = hue, sat, val
+
     def _lighting_save(self, msg):
-        self.lighting_saved = True
+        # via.c id_lighting_save: each kind's EEPROM copy is updated from what it runs with
+        self.lighting_saved = copy.deepcopy({"rgblight": self.rgblight, "backlight": self.backlight,
+                                             "vialrgb": self.vialrgb})
         return msg[0:1]
 
+    def lighting_now(self):
+        """ What a lighting save would keep now: compare with lighting_saved """
+        return {"rgblight": self.rgblight, "backlight": self.backlight, "vialrgb": self.vialrgb}
+
     def _bootloader(self, msg):
+        if not self.bootloader_jump:
+            # built with VIAL_INSECURE: via.c has no bootloader jump, and answers it as unhandled
+            return bytes([VIA_ID_UNHANDLED]) + msg[1:]
         if not self.unlocked:
             return msg
         # the firmware answers first, then jumps to the bootloader: the keyboard drops off the bus

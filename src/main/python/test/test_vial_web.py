@@ -15,7 +15,7 @@ import vial_web
 from protocol.unlock_hook import set_unlock_handler
 from server import device as device_module
 from server.device import DeviceManager, HidBackend
-from simulator.corne import encode
+from simulator.corne import LIGHTING, definition, encode
 from simulator.device import SimulatedHidDevice
 from test.test_core_isolation import run_isolated
 
@@ -915,3 +915,27 @@ def test_launch_without_data_dir_uses_the_user_dirs_again(tmp_path, home, fake_s
     assert vial_web.main(["--fake", "--no-browser"]) == 0
     assert vial_web.data_dir(True) != str(tmp_path / "elsewhere" / "fake")
     assert not os.path.exists(tmp_path / "elsewhere")
+
+
+@pytest.mark.parametrize("lighting", ["none", "qmk_backlight", "qmk_rgblight", "qmk_backlight_rgblight", "vialrgb"])
+def test_fake_lighting_of_the_corne_and_of_a_definition(lighting, tmp_path):
+    vk = vial_web.make_backend(vial_web.parse_args(["--fake", "--lighting", lighting])).keyboard_factory()
+    assert vk.definition["lighting"] == lighting
+    assert (vk.rgblight is not None) == ("rgblight" in lighting)
+    assert (vk.backlight is not None) == ("backlight" in lighting)
+    assert (vk.vialrgb is not None) == (lighting == "vialrgb")
+    path = tmp_path / "vial.json"
+    path.write_text(json.dumps(dict(definition(), lighting="none")), encoding="utf-8")
+    other = vial_web.make_backend(vial_web.parse_args(["--fake", "--definition", str(path), "--lighting", lighting]))
+    assert other.keyboard_factory().definition["lighting"] == lighting
+
+
+def test_fake_lighting_defaults_to_the_definitions_and_is_checked(capsys):
+    assert vial_web.make_backend(vial_web.parse_args(["--fake"])).keyboard_factory().definition["lighting"] == \
+        "vialrgb"
+    assert vial_web.LIGHTING_KINDS == LIGHTING
+    with pytest.raises(SystemExit):
+        vial_web.parse_args(["--fake", "--lighting", "rgb_matrix"])
+    with pytest.raises(SystemExit):
+        vial_web.parse_args(["--lighting", "vialrgb"])
+    assert "only work with --fake" in capsys.readouterr().err
