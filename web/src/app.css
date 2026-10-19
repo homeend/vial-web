@@ -207,7 +207,8 @@ code {
 
 /* A tap dance, combo or macro card. The one opened from elsewhere (.target) is drawn out for a moment in its
    --card-accent, then fades back to the others' look. Opened again while it already is (see behaviours/target.svelte.ts
-   replayed), .again changes the animation's name, which starts it over. */
+   replayed), .again changes the animation's name, which starts it over. The one being edited (.editing) keeps that
+   look until the editing ends. */
 .behaviour-card {
   display: grid;
   gap: 10px;
@@ -218,6 +219,11 @@ code {
   background: var(--surface);
   box-shadow: var(--shadow);
   scroll-margin-top: 80px;
+}
+
+.behaviour-card.editing {
+  border-color: var(--card-accent);
+  box-shadow: 0 0 0 1px var(--card-accent), var(--shadow);
 }
 
 .behaviour-card.target {

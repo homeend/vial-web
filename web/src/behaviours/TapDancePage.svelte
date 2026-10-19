@@ -114,10 +114,11 @@
     id="tap-dance-title"
     title="Tap dance"
     description="One key, up to four actions: tapped, held, tapped twice, or tapped then held. Click a slot to change it."
+    note="Each change is saved to the keyboard at once: there is no Save. To remove a tap dance, clear all four of its slots."
   >
     {#snippet action()}
       <Button variant="primary" disabled={!canEdit || free === null} aria-disabled={busy || undefined}
-        title={free === null ? "Every tap dance is in use" : `Sets up tap dance ${free}`} onclick={newTapDance}>
+        title={free === null ? "Every tap dance is in use" : `Sets up tap dance ${free}. Each change to it is saved to the keyboard at once.`} onclick={newTapDance}>
         New tap dance
       </Button>
     {/snippet}
@@ -137,6 +138,7 @@
       {canEdit}
       {busy}
       target={index === item}
+      editing={pickerOpen && picking?.index === index}
       onpickslot={(slot) => pickSlot(index, slot)}
       onclearslot={(slot) => setSlot(index, slot, "KC_NO")}
       onterm={(ms) => setTerm(index, ms)}

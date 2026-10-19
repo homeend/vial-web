@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { comboAt, expect, keyIndex, setCombo, test } from "./fixtures";
 
 // Editing a combo: a combo listing a keycode twice, where the focus goes, and the key chooser's cursor. The server is
@@ -15,6 +15,25 @@ const chooser = (page: Page, index: number) => page.getByRole("group", { name: `
 /** The element with the focus is inside the locator's */
 const focusedInside = (page: Page, selector: string) =>
   page.evaluate((s) => !!document.activeElement?.closest(s) && document.activeElement !== document.body, selector);
+
+/** The card's top border colour, once any highlight animation has ended */
+const borderOf = (card: Locator) =>
+  card.evaluate(async (e) => {
+    await Promise.all(e.getAnimations().map((a) => a.finished.catch(() => {})));
+    return getComputedStyle(e).borderTopColor;
+  });
+
+test("the combo being edited keeps its border in the combo's colour until the editing ends", async ({ app }) => {
+  await openCombos(app);
+  const card = comboCard(app, 0);
+  const plain = await borderOf(card);
+  await card.getByRole("button", { name: "Edit" }).click();
+  await expect(card).toHaveClass(/\bediting\b/);
+  expect(await borderOf(card)).not.toBe(plain);
+  await card.getByRole("button", { name: "Cancel" }).click();
+  await expect(card).not.toHaveClass(/\bediting\b/);
+  expect(await borderOf(card)).toBe(plain);
+});
 
 test("a combo listing a keycode twice can be edited, and saving it lists the keycode once", async ({ app }) => {
   const before = await comboAt(app, 2);

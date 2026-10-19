@@ -36,7 +36,7 @@
   const bytes = $derived(macroBytes(macro.actions, vialProtocol));
 </script>
 
-<article class="card behaviour-card" class:target class:again={target && replayed()} id="macro-{macro.index}" aria-labelledby={headingId}>
+<article class="card behaviour-card" class:target class:again={target && replayed()} class:editing={editor !== undefined} id="macro-{macro.index}" aria-labelledby={headingId}>
   <EntryHead id="M {macro.index}" {headingId} name={macro.name} tone="macro" {canEdit} {onrename}
     renameLabel="Rename macro {macro.index}">
     {#snippet actions()}

@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, setTapDance, tapDanceAt, test } from "./fixtures";
 
 // Editing a tap dance keeps the focus where it was. The server is shared by every test: each test puts back the tap
@@ -24,6 +24,29 @@ async function pickAnyKeycode(page: Page, code: string) {
   await picker.getByRole("button", { name: "Use", exact: true }).click();
   await expect(picker).toBeHidden();
 }
+
+/** The card's top border colour, once any highlight animation has ended */
+const borderOf = (card: Locator) =>
+  card.evaluate(async (e) => {
+    await Promise.all(e.getAnimations().map((a) => a.finished.catch(() => {})));
+    return getComputedStyle(e).borderTopColor;
+  });
+
+test("the tap dance whose slot is being picked keeps its border; the page says changes are saved at once", async ({ app }) => {
+  await openTapDance(app);
+  await expect(app.getByText("Each change is saved to the keyboard at once")).toBeVisible();
+  const card = tapDanceCard(app, 0);
+  const plain = await borderOf(card);
+  await slotButton(app, 0, 1).click();
+  const picker = app.getByRole("dialog", { name: "Choose a keycode" });
+  await expect(picker).toBeVisible();
+  await expect(card).toHaveClass(/\bediting\b/);
+  expect(await borderOf(card)).not.toBe(plain);
+  await app.keyboard.press("Escape");
+  await expect(picker).toBeHidden();
+  await expect(card).not.toHaveClass(/\bediting\b/);
+  expect(await borderOf(card)).toBe(plain);
+});
 
 test.describe("editing a tap dance keeps the focus", () => {
   test("on the slot picked", async ({ app }) => {

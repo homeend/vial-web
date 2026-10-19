@@ -1,4 +1,4 @@
-import type { Page, Route } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { expect, macrosOf, openUnlockDialog, serverUrl, setMacros, simulatorUnlock, test, unlockAgain } from "./fixtures";
 
 // Editing a macro: where the focus goes, a save that is slow or fails, a long macro, the memory the page counts, and
@@ -15,6 +15,13 @@ const macroCard = (page: Page, index: number) => page.locator(`#macro-${index}`)
 const focusedInside = (page: Page, selector: string) =>
   page.evaluate((s) => !!document.activeElement?.closest(s) && document.activeElement !== document.body, selector);
 const text = (t: string) => ({ type: "text", text: t, keys: [], delay: null });
+
+/** The card's top border colour, once any highlight animation has ended */
+const borderOf = (card: Locator) =>
+  card.evaluate(async (e) => {
+    await Promise.all(e.getAnimations().map((a) => a.finished.catch(() => {})));
+    return getComputedStyle(e).borderTopColor;
+  });
 
 /** Holds back the page's saves of the macros until `release` is called; `reply` answers them instead, when given */
 async function holdSaves(page: Page, reply?: (route: Route) => Promise<void>) {
@@ -45,6 +52,18 @@ test("Edit puts the focus on the first step, or on adding one; Cancel puts it on
     .toBeFocused();
   await added.getByRole("button", { name: "Cancel" }).click();
   await expect(app.locator("#macro-2-title")).toBeFocused();
+});
+
+test("the macro being edited keeps its border in the macro colour until the editing ends", async ({ app }) => {
+  await openMacros(app);
+  const card = macroCard(app, 0);
+  const plain = await borderOf(card);
+  await card.getByRole("button", { name: "Edit" }).click();
+  await expect(card).toHaveClass(/\bediting\b/);
+  expect(await borderOf(card)).not.toBe(plain);
+  await card.getByRole("button", { name: "Cancel" }).click();
+  await expect(card).not.toHaveClass(/\bediting\b/);
+  expect(await borderOf(card)).toBe(plain);
 });
 
 test.describe("saving a macro", () => {

@@ -20,6 +20,8 @@
     busy: boolean;
     /** the card opened from elsewhere: drawn out for a moment (the highlight fades) */
     target: boolean;
+    /** a slot's keycode is being picked: the card keeps its highlight meanwhile */
+    editing: boolean;
     /** choose what a slot does (with the keycode picker) */
     onpickslot: (slot: SlotLabel) => void;
     onclearslot: (slot: SlotLabel) => void;
@@ -30,7 +32,7 @@
   }
 
   let {
-    td, model, names, positions, uses, canEdit, busy, target, onpickslot, onclearslot, onterm, onrename, onopenuse,
+    td, model, names, positions, uses, canEdit, busy, target, editing, onpickslot, onclearslot, onterm, onrename, onopenuse,
   }: Props = $props();
 
   /** the longest tapping term the server takes (schemas.TAPPING_TERM_MAX) */
@@ -84,7 +86,7 @@
   }
 </script>
 
-<article class="card behaviour-card" class:target class:again={target && replayed()} id="tap-dance-{td.index}" aria-labelledby={headingId}>
+<article class="card behaviour-card" class:target class:again={target && replayed()} class:editing id="tap-dance-{td.index}" aria-labelledby={headingId}>
   <EntryHead id="TD {td.index}" {headingId} name={td.name} tone="tap-dance" {canEdit} {onrename}
     renameLabel="Rename tap dance {td.index}" />
 
