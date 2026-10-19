@@ -7,7 +7,9 @@
     message: string;
     actionLabel?: string;
     onaction?: () => void;
-    /** an id for the banner, so that it can take the focus from script (when what had it went away) */
+    /** an id for the banner, so that it can take the focus from script (when what had it went away): only a banner
+     * with one can (tabindex -1), so a click on another's text leaves the focus where it was (e.g. on the page, where
+     * the Keymap's arrow keys start) */
     id?: string;
   }
 
@@ -15,7 +17,7 @@
 </script>
 
 <!-- danger interrupts (the keyboard is unplugged, or couldn't be read); warning waits its turn -->
-<div class="banner {tone}" role={tone === "danger" ? "alert" : "status"} {id} tabindex="-1">
+<div class="banner {tone}" role={tone === "danger" ? "alert" : "status"} {id} tabindex={id ? -1 : undefined}>
   <svg viewBox="0 0 20 20" aria-hidden="true">
     <path d="M10 3l8 14H2z" />
     <path d="M10 8.5v3.5M10 14.5v.01" />

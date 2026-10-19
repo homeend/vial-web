@@ -339,6 +339,10 @@ test("the top bar locks and unlocks the keyboard; a cancelled unlock can be take
     const banner = app.getByRole("status").filter({ hasText: "The keyboard still waits to be unlocked" });
     await expect(banner).toBeVisible();
     expect(await unlockState(app)).toBe("cancelled");
+    // a click on its text doesn't give it the focus: only a banner that asks to take it can
+    await banner.getByText("It takes no changes").click();
+    expect(await app.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await expect(banner).not.toHaveAttribute("tabindex");
 
     await banner.getByRole("button", { name: "Unlock" }).click();
     await expect(dialog).toBeVisible();
