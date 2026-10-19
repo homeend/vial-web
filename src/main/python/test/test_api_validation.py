@@ -170,7 +170,7 @@ def test_a_setting_the_keyboard_rejects_keeps_its_value(client, virtual, monkeyp
 
     def refuse_settings(msg):
         if msg[1] == CMD_VIAL_QMK_SETTINGS_SET:
-            return b""
+            return b"\x01"
         return real(msg)
     monkeypatch.setattr(virtual, "_vial", refuse_settings)
     assert client.put("/api/qmk-settings/7", json={"value": 300}).status_code == 502
