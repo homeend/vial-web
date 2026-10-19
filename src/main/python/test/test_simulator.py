@@ -13,7 +13,8 @@ from protocol.keyboard_comm import Keyboard
 from protocol.qmk_settings_codec import QmkSettingsCodec
 from simulator.corne import make_corne, encode
 from simulator.device import SimulatedHidDevice
-from simulator.virtual_keyboard import VirtualKeyboard, SimulatorError, CMD_VIA_BOOTLOADER_JUMP
+from simulator.virtual_keyboard import VirtualKeyboard, SimulatorError, CMD_VIA_BOOTLOADER_JUMP, UNLOCK_COUNTER_MAX, \
+    FIRMWARE_UNLOCK_POLL_GAP
 from transport import MSG_LEN
 
 QK_BOOT = 0x7C00  # protocol 6
@@ -244,7 +245,7 @@ def test_unlock_poll_needs_unlock_start(locked):
     kb.unlock_start()
     assert kb.get_unlock_in_progress() == 1
     vk.hold_unlock_keys(True)
-    for remaining in range(49, 0, -1):
+    for remaining in range(UNLOCK_COUNTER_MAX - 1, 0, -1):
         assert kb.unlock_poll()[0:3] == bytes([0, 1, remaining])
     assert kb.unlock_poll()[0:3] == bytes([1, 0, 0])
     assert kb.get_unlock_status() == 1
@@ -278,9 +279,77 @@ def test_unlock_counts_down_while_the_unlock_keys_are_held():
     assert vk.pressed == set()
 
 
-def test_unlock_countdown_starts_at_one_or_more():
+@pytest.mark.parametrize("counter_max", [0, 256])
+def test_unlock_countdown_starts_at_1_to_255(counter_max):
     with pytest.raises(SimulatorError):
-        VirtualKeyboard(TINY, unlock_counter_max=0)
+        VirtualKeyboard(TINY, unlock_counter_max=counter_max)
+
+
+def test_unlock_poll_gap_cannot_be_negative():
+    with pytest.raises(SimulatorError):
+        VirtualKeyboard(TINY, unlock_poll_gap=-0.1)
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def gapped_keyboard(counter_max=3):
+    clock = FakeClock()
+    vk = VirtualKeyboard(TINY, unlocked=False, unlock_keys=[(0, 0)], unlock_counter_max=counter_max,
+                         unlock_poll_gap=FIRMWARE_UNLOCK_POLL_GAP, clock=clock)
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    kb.unlock_start()
+    vk.hold_unlock_keys(True)
+    return vk, kb, clock
+
+
+def test_polls_within_the_gap_never_count_down():
+    vk, kb, clock = gapped_keyboard()
+    for _ in range(9):
+        # the start's timestamp stays, so every poll up to the gap after the start is too fast
+        clock.now += FIRMWARE_UNLOCK_POLL_GAP / 10
+        assert kb.unlock_poll()[0:3] == bytes([0, 1, 3])
+    assert not vk.unlocked
+
+
+def test_polls_slower_than_the_gap_count_down_and_unlock():
+    vk, kb, clock = gapped_keyboard()
+    replies = []
+    for _ in range(3):
+        clock.now += 0.2
+        replies.append(kb.unlock_poll()[0:3])
+    assert replies == [bytes([0, 1, 2]), bytes([0, 1, 1]), bytes([1, 0, 0])]
+    assert kb.get_unlock_status() == 1
+
+
+def test_a_too_fast_poll_starts_the_countdown_again():
+    vk, kb, clock = gapped_keyboard()
+    clock.now += 0.2
+    assert kb.unlock_poll()[0:3] == bytes([0, 1, 2])
+    clock.now += 0.05
+    assert kb.unlock_poll()[0:3] == bytes([0, 1, 3])
+    # the too-fast poll did not move the count timer, so the next slow-enough poll counts again
+    clock.now += 0.06
+    assert kb.unlock_poll()[0:3] == bytes([0, 1, 2])
+    clock.now += 0.2
+    assert kb.unlock_poll()[0:3] == bytes([0, 1, 1])
+    clock.now += 0.2
+    assert kb.unlock_poll()[0:3] == bytes([1, 0, 0])
+
+
+def test_the_simulated_corne_has_tab_and_backspace_as_unlock_keys():
+    vk = make_corne()
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    assert kb.get_unlock_keys() == [(0, 0), (4, 0)]
+    assert vk.keymap[0][0][0] == encode("KC_TAB")
+    assert vk.keymap[0][4][0] == encode("KC_BSPC")
 
 
 def test_unlock_in_progress_only_answers_unlock_and_identity_commands(locked):
@@ -291,8 +360,10 @@ def test_unlock_in_progress_only_answers_unlock_and_identity_commands(locked):
     assert vk.keymap[0][0][0] == encode("KC_TAB")
     assert kb.get_uid() == struct.pack("<Q", 0x5EEDC0DE00420042)
     vk.hold_unlock_keys(True)
-    while kb.unlock_poll()[1]:
-        pass
+    for _ in range(UNLOCK_COUNTER_MAX):
+        if not kb.unlock_poll()[1]:
+            break
+    assert vk.unlocked
     kb.set_key(0, 0, 0, "KC_A")
     assert vk.keymap[0][0][0] == encode("KC_A")
 

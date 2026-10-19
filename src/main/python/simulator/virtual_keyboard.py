@@ -9,6 +9,7 @@ import json
 import lzma
 import math
 import struct
+import time
 
 from protocol.constants import CMD_VIA_GET_PROTOCOL_VERSION, CMD_VIA_GET_KEYBOARD_VALUE, CMD_VIA_SET_KEYBOARD_VALUE, \
     CMD_VIA_SET_KEYCODE, CMD_VIA_LIGHTING_SET_VALUE, CMD_VIA_LIGHTING_GET_VALUE, CMD_VIA_LIGHTING_SAVE, \
@@ -29,9 +30,13 @@ from kle_serial import Serial as KleSerial
 from protocol.qmk_settings_codec import QmkSettingsCodec
 
 CMD_VIA_BOOTLOADER_JUMP = 0x0B
-# polls the firmware wants the unlock keys held for (VIAL_UNLOCK_COUNTER_MAX). The firmware counts down at most once
-# every 100 ms; the simulator counts down on every poll, so tests needn't wait.
+# polls the firmware wants the unlock keys held for (VIAL_UNLOCK_COUNTER_MAX). The firmware counts down only on a poll
+# that comes MORE than 100 ms after the unlock start or the last count-down; a poll within 100 ms starts the count
+# again, even with the keys held. Hosts must therefore poll slower than that (Qt and our server poll every 200 ms).
+# By default the simulator counts down on every poll, so tests needn't wait; see unlock_poll_gap.
 UNLOCK_COUNTER_MAX = 50
+# the firmware's minimum time between two count-downs, in seconds
+FIRMWARE_UNLOCK_POLL_GAP = 0.1
 # the firmware has room for this many unlock keys in the unlock status reply
 MAX_UNLOCK_KEYS = 15
 # while an unlock is in progress the firmware answers only these Vial commands and echoes everything else
@@ -54,7 +59,8 @@ class VirtualKeyboard:
     def __init__(self, definition, layers=4, keymap=None, uid=0xF00DFACEDEADBEEF, vial_protocol=6,
                  via_protocol=9, macro_count=8, macro_memory=512, macros=b"", tap_dance=None, combos=None,
                  key_overrides=None, alt_repeat_keys=None, settings=None, unlocked=True, unlock_keys=(),
-                 unlock_counter_max=UNLOCK_COUNTER_MAX, features=FEATURE_CAPS_WORD | FEATURE_LAYER_LOCK):
+                 unlock_counter_max=UNLOCK_COUNTER_MAX, unlock_poll_gap=0.0, clock=time.monotonic,
+                 features=FEATURE_CAPS_WORD | FEATURE_LAYER_LOCK):
         """
         definition: vial.json as a dict or JSON string
         keymap: optional {(layer, row, col): keycode}; unset keys are KC_NO
@@ -66,8 +72,13 @@ class VirtualKeyboard:
         settings: {qsid: int} of supported QMK settings; None means the firmware has no QMK settings
         unlocked: start unlocked; a locked keyboard refuses security-sensitive writes like Vial firmware does
         unlock_keys: [(row, col)] the user must press(); every UNLOCK_POLL while all of them are held counts down by
-                     one, and the keyboard unlocks at zero. None: no key needs holding, the polls alone count down.
-        unlock_counter_max: where the countdown starts (VIAL_UNLOCK_COUNTER_MAX); a key let go starts it again
+                     one, and the keyboard unlocks at zero. Empty: no key needs holding, the polls alone count down.
+        unlock_counter_max: where the countdown starts (VIAL_UNLOCK_COUNTER_MAX); a key let go starts it again;
+                            1 to 255 (the firmware's counter is one byte)
+        unlock_poll_gap: seconds; a poll counts down only if more than this has passed since the unlock start or the
+                         last count-down (and the keys are held), otherwise the countdown starts again. 0 (default):
+                         every poll counts. FIRMWARE_UNLOCK_POLL_GAP is the real firmware's 100 ms.
+        clock: seconds as a float, like time.monotonic; tests inject a fake one for unlock_poll_gap
         """
         if isinstance(definition, str):
             definition = json.loads(definition)
@@ -106,8 +117,13 @@ class VirtualKeyboard:
 
         if len(unlock_keys) > MAX_UNLOCK_KEYS:
             raise SimulatorError("at most {} unlock keys fit into the unlock status".format(MAX_UNLOCK_KEYS))
-        if unlock_counter_max < 1:
-            raise SimulatorError("the unlock countdown must start at 1 or more")
+        if not 1 <= unlock_counter_max <= 255:
+            raise SimulatorError("the unlock countdown must start at 1 to 255")
+        if unlock_poll_gap < 0:
+            raise SimulatorError("the unlock poll gap cannot be negative")
+        self.unlock_poll_gap = unlock_poll_gap
+        self.clock = clock
+        self.unlock_timer = 0.0
         self.unlock_keys = list(unlock_keys)
         self.unlock_counter_max = unlock_counter_max
         self.unlocked = unlocked
@@ -344,11 +360,16 @@ class VirtualKeyboard:
         if sub == CMD_VIAL_UNLOCK_START:
             self.unlock_in_progress = True
             self.unlock_counter = self.unlock_counter_max
+            self.unlock_timer = self.clock()
             return b""
         if sub == CMD_VIAL_UNLOCK_POLL:
             if self.unlock_in_progress:
-                if all(rc in self.pressed for rc in self.unlock_keys):
-                    # counts down while every unlock key stays held
+                now = self.clock()
+                held = all(rc in self.pressed for rc in self.unlock_keys)
+                slow_enough = self.unlock_poll_gap <= 0 or now - self.unlock_timer > self.unlock_poll_gap
+                if held and slow_enough:
+                    # counts down while every unlock key stays held, and (if gapped) the polls come slowly enough
+                    self.unlock_timer = now
                     self.unlock_counter -= 1
                     if self.unlock_counter == 0:
                         self.unlocked, self.unlock_in_progress = True, False
