@@ -38,8 +38,10 @@
 </nav>
 
 <style>
+  /* a narrow window: the sections take as many rows as they need rather than widen the page */
   ul {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
     margin: 0;
     padding: 0;
@@ -80,12 +82,7 @@
     opacity: 0.7;
   }
 
-  /* a phone: the four sections fit on one row, or wrap onto a second one rather than widen the page */
   @media (max-width: 600px) {
-    ul {
-      flex-wrap: wrap;
-    }
-
     button {
       gap: 8px;
       padding: 8px 10px;

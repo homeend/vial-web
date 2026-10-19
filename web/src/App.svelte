@@ -1,8 +1,11 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
+  import KeyboardPage from "./about/KeyboardPage.svelte";
   import { analyse } from "./analysis/analysis";
+  import AltRepeatPage from "./behaviours/AltRepeatPage.svelte";
   import CombosPage from "./behaviours/CombosPage.svelte";
   import { behaviourCounts } from "./behaviours/entries";
+  import KeyOverridesPage from "./behaviours/KeyOverridesPage.svelte";
   import MacrosPage from "./behaviours/MacrosPage.svelte";
   import TapDancePage from "./behaviours/TapDancePage.svelte";
   import { placeKeyboard } from "./keyboard/geometry";
@@ -17,6 +20,7 @@
   import Toasts from "./shell/Toasts.svelte";
   import TopBar from "./shell/TopBar.svelte";
   import UnlockDialog from "./shell/UnlockDialog.svelte";
+  import SettingsPage from "./settings/SettingsPage.svelte";
 
   $effect(() => keyboard.start());
   $effect(() => router.start());
@@ -26,7 +30,8 @@
   const analysis = $derived(keyboard.model && placement ? analyse(keyboard.model, placement) : null);
   const names = $derived(keyboard.model ? namesOf(keyboard.model) : null);
 
-  // sections the keyboard's firmware doesn't have (no tap dances, combos or macros) are left out
+  // sections the keyboard's firmware doesn't have (no tap dances, combos, macros, key overrides, alt-repeat keys or
+  // QMK settings) are left out
   const sections = $derived.by<Section[]>(() => {
     const model = keyboard.model;
     const list: Section[] = [{ id: "keymap", label: "Keymap", count: model?.layers.length }];
@@ -35,6 +40,10 @@
     if (counts.tapDance !== null) list.push({ id: "tap-dance", label: "Tap dance", count: counts.tapDance });
     if (counts.combos !== null) list.push({ id: "combos", label: "Combos", count: counts.combos });
     if (counts.macros !== null) list.push({ id: "macros", label: "Macros", count: counts.macros });
+    if (counts.keyOverrides !== null) list.push({ id: "key-overrides", label: "Key overrides", count: counts.keyOverrides });
+    if (counts.altRepeat !== null) list.push({ id: "alt-repeat", label: "Alt-repeat", count: counts.altRepeat });
+    if (model.settings.length > 0) list.push({ id: "settings", label: "Settings" });
+    list.push({ id: "keyboard", label: "Keyboard" });
     return list;
   });
   // a section this keyboard doesn't have shows the keymap
@@ -137,6 +146,14 @@
           <CombosPage model={keyboard.model} {placement} {analysis} item={router.route.item} />
         {:else if section === "macros"}
           <MacrosPage model={keyboard.model} {analysis} item={router.route.item} />
+        {:else if section === "key-overrides"}
+          <KeyOverridesPage model={keyboard.model} item={router.route.item} />
+        {:else if section === "alt-repeat"}
+          <AltRepeatPage model={keyboard.model} item={router.route.item} />
+        {:else if section === "settings"}
+          <SettingsPage model={keyboard.model} />
+        {:else if section === "keyboard"}
+          <KeyboardPage model={keyboard.model} {analysis} />
         {:else}
           <KeymapPage model={keyboard.model} {placement} {analysis} />
         {/if}
@@ -181,7 +198,7 @@
     max-width: var(--content-max);
   }
 
-  /* list pages (tap dance, combos, macros) are narrower than the keymap, centred in its column */
+  /* list pages (all but the keymap) are narrower than the keymap, centred in its column */
   .page.list {
     width: 100%;
     max-width: var(--list-max);

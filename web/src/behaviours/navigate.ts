@@ -1,4 +1,5 @@
-// Going to where something is used: the key in the Keymap, or the combo, tap dance or macro on its page. One on the
+// Going to where something is used: the key in the Keymap, or the combo, tap dance, macro, key override or alt-repeat
+// key on its page. One on the
 // page shown (a tap dance another one runs) opens without a step back, which would look like it did nothing.
 import type { Use } from "../analysis/usage";
 import type { SectionId } from "../lib/route";
@@ -22,7 +23,11 @@ export function openUse(use: Use): void {
     case "macro":
       open("macros", use.macro);
       break;
-    default:
-      break; // key overrides and alt-repeat keys have no page yet
+    case "key-override":
+      open("key-overrides", use.keyOverride);
+      break;
+    case "alt-repeat":
+      open("alt-repeat", use.altRepeat);
+      break;
   }
 }

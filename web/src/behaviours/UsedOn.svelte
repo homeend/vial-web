@@ -10,14 +10,11 @@
     positions: Map<string, string>;
     /** what to put on a key to use it, for the warning when nothing does: "TD(3)" */
     keycode: string;
-    /** go to a use: the key in the Keymap, or the combo, tap dance or macro on its page */
+    /** go to a use: the key in the Keymap, or the combo, tap dance, macro, key override or alt-repeat key on its page */
     onopen: (use: Use) => void;
   }
 
   let { uses, names, positions, keycode, onopen }: Props = $props();
-
-  /** key overrides and alt-repeat keys have no page yet */
-  const openable = (use: Use) => use.type !== "key-override" && use.type !== "alt-repeat";
 </script>
 
 {#if uses.length === 0}
@@ -29,11 +26,7 @@
       {#each uses as use, i (i)}
         {@const label = useLabel(use, names, positions)}
         <li>
-          {#if openable(use)}
-            <button type="button" title="{label} · go there" onclick={() => onopen(use)}>{label}</button>
-          {:else}
-            <span class="plain">{label}</span>
-          {/if}
+          <button type="button" title="{label} · go there" onclick={() => onopen(use)}>{label}</button>
         </li>
       {/each}
     </ul>
@@ -64,8 +57,7 @@
     list-style: none;
   }
 
-  button,
-  .plain {
+  button {
     display: inline-block;
     max-width: 100%;
     padding: 1px 9px;
@@ -88,10 +80,6 @@
 
   button:hover {
     background: var(--accent-weak);
-  }
-
-  .plain {
-    border-style: dashed;
   }
 
   .unused {
