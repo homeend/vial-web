@@ -66,6 +66,13 @@
     color: var(--danger);
   }
 
+  /* a toggle that is on (the Inspector's Copy or Swap while the other key is chosen) */
+  .btn[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent-weak);
+    color: var(--text);
+  }
+
   .btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;

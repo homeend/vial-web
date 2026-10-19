@@ -86,3 +86,26 @@ export function moveDone(kind: MoveKind, source: KeyWords, target: KeyWords): st
   const where = target.where.charAt(0).toUpperCase() + target.where.slice(1);
   return `${where} is now ${source.title} (it was ${target.title}).`;
 }
+
+/** A box in the window, in pixels */
+export interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Between the key dropped on and its menu, in pixels */
+export const MENU_GAP = 8;
+
+/** Where the menu of a drop goes, relative to the area that holds it: below the key, centred on it and kept inside the
+ * area's width; above it when the window has no room for it below but has above */
+export function menuPlace(
+  key: Box, area: Box, menu: { width: number; height: number }, windowHeight: number,
+): { left: number; top: number } {
+  const centre = (key.left + key.right) / 2 - area.left;
+  const left = Math.max(0, Math.min(centre - menu.width / 2, area.right - area.left - menu.width));
+  const above = key.bottom + MENU_GAP + menu.height > windowHeight && key.top - MENU_GAP - menu.height >= 0;
+  const top = above ? key.top - area.top - MENU_GAP - menu.height : key.bottom - area.top + MENU_GAP;
+  return { left, top };
+}

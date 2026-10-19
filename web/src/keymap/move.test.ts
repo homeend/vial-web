@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Described, KeyboardModel } from "../api/types";
 import {
-  DRAG_THRESHOLD, dropTarget, LONG_PRESS_MS, moveDone, movePlan, pickHint, pressState, stillApplies, TOUCH_SLOP,
-  undoOf, type Press,
+  DRAG_THRESHOLD, dropTarget, LONG_PRESS_MS, MENU_GAP, menuPlace, moveDone, movePlan, pickHint, pressState,
+  stillApplies, TOUCH_SLOP, undoOf, type Press,
 } from "./move";
 
 const mouse: Press = { x: 100, y: 100, time: 0, touch: false };
@@ -129,5 +129,27 @@ describe("phrases", () => {
   it("say what a move did", () => {
     expect(moveDone("replace", w, esc)).toBe("Row 1, column 3 is now W (it was Esc).");
     expect(moveDone("swap", w, esc)).toBe("Swapped W (row 1, column 2) and Esc (row 1, column 3).");
+  });
+});
+
+describe("menuPlace", () => {
+  // the area holding the menu: 600 x 300 px, at (100, 200) in the window
+  const area = { left: 100, top: 200, right: 700, bottom: 500 };
+  const menu = { width: 200, height: 120 };
+  const key = (left: number, top: number) => ({ left, top, right: left + 50, bottom: top + 50 });
+
+  it("goes below the key, centred on it", () => {
+    expect(menuPlace(key(300, 250), area, menu, 1000)).toEqual({ left: 125, top: 100 + MENU_GAP });
+  });
+
+  it("stays inside the area's width", () => {
+    expect(menuPlace(key(110, 250), area, menu, 1000).left).toBe(0);
+    expect(menuPlace(key(640, 250), area, menu, 1000).left).toBe(400);
+  });
+
+  it("goes above the key when the window has no room below it, but has above", () => {
+    expect(menuPlace(key(300, 400), area, menu, 500)).toEqual({ left: 125, top: 200 - MENU_GAP - 120 });
+    // no room above either: below, as the page scrolls
+    expect(menuPlace(key(300, 100), { ...area, top: 50 }, menu, 200).top).toBe(100 + MENU_GAP);
   });
 });

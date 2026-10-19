@@ -9,6 +9,7 @@
   import ComboList from "./ComboList.svelte";
   import { tapCodeOf } from "./hold";
   import HoldEditor from "./HoldEditor.svelte";
+  import type { MoveKind } from "./move";
   import { freeTapDance, tapDanceSlots } from "./tapdance";
 
   interface Props {
@@ -29,11 +30,15 @@
     onsetcode: (code: string, action: string) => Promise<boolean>;
     ontapdance: () => void;
     onjump: (layer: number) => void;
+    /** the other key of a copy or swap is being chosen */
+    moving: MoveKind | null;
+    /** copy the key to another one, or swap the two: the next key chosen is the other one */
+    onmove: (kind: MoveKind) => void;
   }
 
   let {
     model, names, layer, selection, canEdit, busy, comboUses, comboColours, onopencombo, onchangekey, onsetcode,
-    ontapdance, onjump,
+    ontapdance, onjump, moving, onmove,
   }: Props = $props();
 
   let editingHold = $state(false);
@@ -161,6 +166,16 @@
         onclick={unlessBusy(ontapdance)}
       >
         Turn into tap dance
+      </Button>
+    {/if}
+    {#if selection.kind === "key"}
+      <Button disabled={!canEdit} aria-disabled={busy || undefined} aria-pressed={moving === "replace"}
+        onclick={unlessBusy(() => onmove("replace"))}>
+        Copy to another key…
+      </Button>
+      <Button disabled={!canEdit} aria-disabled={busy || undefined} aria-pressed={moving === "swap"}
+        onclick={unlessBusy(() => onmove("swap"))}>
+        Swap with another key…
       </Button>
     {/if}
   </div>

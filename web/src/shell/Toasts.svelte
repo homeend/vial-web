@@ -19,13 +19,22 @@
     if (!(to instanceof Node && (event.currentTarget as HTMLElement).contains(to))) toasts.hold(id, "focus", false);
   }
 
-  async function dismiss(id: number) {
+  function dismiss(id: number) {
+    return leave(id, async () => toasts.dismiss(id));
+  }
+
+  function act(id: number) {
+    return leave(id, () => toasts.act(id));
+  }
+
+  /** Runs what may remove a toast; if it had the focus, the focus goes to a toast next to it, or back */
+  async function leave(id: number, run: () => Promise<void>) {
     const i = toasts.items.findIndex((t) => t.id === id);
     const hadFocus = region.querySelector(`[data-toast="${id}"]`)?.contains(document.activeElement) ?? false;
     // the next toast's button, else the one before, else where focus came from
     const neighbour = toasts.items[i + 1] ?? toasts.items[i - 1];
-    toasts.dismiss(id);
-    if (!hadFocus) return;
+    await run();
+    if (!hadFocus || toasts.items.some((t) => t.id === id)) return;
     await tick();
     const next = neighbour && region.querySelector<HTMLElement>(`[data-toast="${neighbour.id}"] button`);
     const target = next ?? (returnTo?.isConnected ? returnTo : region);
@@ -33,9 +42,15 @@
   }
 </script>
 
-<!-- the live region reads out each message alone (not the Dismiss buttons); the toasts themselves aren't live -->
+<!-- the live regions read out each message alone (not the buttons): a failure at once, what was done when the reader
+     is free; the toasts themselves aren't live -->
 <div class="visually-hidden" aria-live="assertive">
-  {#each toasts.items as toast (toast.id)}
+  {#each toasts.items.filter((t) => t.tone === "error") as toast (toast.id)}
+    <p>{toast.message}</p>
+  {/each}
+</div>
+<div class="visually-hidden" aria-live="polite">
+  {#each toasts.items.filter((t) => t.tone === "info") as toast (toast.id)}
     <p>{toast.message}</p>
   {/each}
 </div>
@@ -43,7 +58,7 @@
 <section class="toasts" aria-label="Notifications" tabindex="-1" bind:this={region}>
   {#each toasts.items as toast (toast.id)}
     <div
-      class="toast"
+      class="toast {toast.tone}"
       data-toast={toast.id}
       role="group"
       onmouseenter={() => toasts.hold(toast.id, "hover", true)}
@@ -52,7 +67,11 @@
       onfocusout={(e) => focusOut(toast.id, e)}
     >
       <span>{toast.message}</span>
-      <button type="button" aria-label="Dismiss" onclick={() => dismiss(toast.id)}>×</button>
+      {#if toast.action}
+        <!-- the toast goes once its action is done: the focus then goes where a dismissal sends it -->
+        <button type="button" class="action" onclick={() => act(toast.id)}>{toast.action.label}</button>
+      {/if}
+      <button type="button" class="dismiss" aria-label="Dismiss" onclick={() => dismiss(toast.id)}>×</button>
     </div>
   {/each}
 </section>
@@ -82,16 +101,38 @@
     font-size: 13.5px;
   }
 
+  .toast.info {
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+    border-left-color: var(--accent);
+  }
+
   span {
     flex: 1;
   }
 
-  button {
+  .dismiss {
     border: 0;
     background: transparent;
     color: var(--text-2);
     font-size: 18px;
     line-height: 1;
     cursor: pointer;
+  }
+
+  .action {
+    flex: none;
+    margin: -3px 0;
+    padding: 3px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+
+  .action:hover {
+    background: var(--surface-2);
   }
 </style>
