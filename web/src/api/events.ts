@@ -19,7 +19,7 @@ const RETRY_FIRST_MS = 500;
 const RETRY_MAX_MS = 5000;
 
 const EVENTS: Record<ServerEvent["type"], true> = {
-  connected: true, disconnected: true, reloaded: true, unlock: true, matrix: true,
+  connected: true, disconnected: true, reloaded: true, unlock: true, matrix: true, keyboards: true,
 };
 
 /** An event of a known type; an "unlock" one must carry the unlock state, a "matrix" one the keys held */

@@ -97,13 +97,13 @@ describe("connectEvents", () => {
   it("passes on the events it knows", () => {
     connect();
     FakeSocket.latest.accept();
-    for (const type of ["connected", "disconnected", "reloaded"]) {
+    for (const type of ["connected", "disconnected", "reloaded", "keyboards"]) {
       FakeSocket.latest.deliver(JSON.stringify({ type }));
     }
     const unlock = { state: "unlocking", keys: [{ row: 0, col: 0 }], remaining: 3, total: 50 };
     FakeSocket.latest.deliver(JSON.stringify({ type: "unlock", unlock }));
     expect(events).toEqual([{ type: "connected" }, { type: "disconnected" }, { type: "reloaded" },
-      { type: "unlock", unlock }]);
+      { type: "keyboards" }, { type: "unlock", unlock }]);
   });
 
   it("ignores events of unknown type", () => {

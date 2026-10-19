@@ -35,6 +35,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/keyboards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Keyboards
+         * @description The Vial keyboards plugged in (as the hot-plug poll last found them, about once a second), and the chosen
+         *     one while it is unplugged
+         */
+        get: operations["keyboards_api_keyboards_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keyboards/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Select Keyboard
+         * @description Use this keyboard from now on, while the server runs. The one open is closed, and whatever waited on it
+         *     stops (an unlock being followed, the matrix tester); the chosen one is opened, and read ("connected"), or the
+         *     session says why it couldn't be. The chosen keyboard unplugged is opened again once it is plugged back in; no
+         *     other is opened meanwhile. 404 when no keyboard of that id is plugged in (and it wasn't the chosen one).
+         */
+        post: operations["select_keyboard_api_keyboards_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/keyboard-languages": {
         parameters: {
             query?: never;
@@ -778,12 +822,39 @@ export interface components {
             /** Options */
             options: number;
         };
+        /**
+         * KeyboardEntry
+         * @description A Vial keyboard plugged in, or the chosen one while it is unplugged
+         */
+        KeyboardEntry: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Vendorid */
+            vendorId: number;
+            /** Productid */
+            productId: number;
+            /** Serial */
+            serial?: string | null;
+            /** Open */
+            open: boolean;
+            /** Plugged */
+            plugged: boolean;
+        };
         /** KeyboardLanguage */
         KeyboardLanguage: {
             /** Id */
             id: string;
             /** Name */
             name: string;
+        };
+        /** KeyboardList */
+        KeyboardList: {
+            /** Keyboards */
+            keyboards: components["schemas"]["KeyboardEntry"][];
+            /** Chosen */
+            chosen?: string | null;
         };
         /** KeyboardModel */
         KeyboardModel: {
@@ -1076,6 +1147,11 @@ export interface components {
             /** Saturation */
             saturation?: number | null;
         };
+        /** SelectKeyboard */
+        SelectKeyboard: {
+            /** Id */
+            id: string;
+        };
         /** Session */
         Session: {
             /**
@@ -1089,6 +1165,12 @@ export interface components {
             device?: string | null;
             /** Error */
             error?: string | null;
+            /** Errorkind */
+            errorKind?: ("list" | "read") | null;
+            /** Keyboard */
+            keyboard?: string | null;
+            /** Platform */
+            platform: string;
             unlock: components["schemas"]["UnlockState"];
         };
         /** SetKeycode */
@@ -1254,15 +1336,17 @@ export interface components {
         };
         /**
          * Event
-         * @description What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed; and,
-         *     to a tab that asked for it ({"type": "matrix", "watch": true}), the keys held, at every change
+         * @description What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed; the
+         *     keyboards plugged in, the one chosen or open, or why none could be read (Session.error) changed ("keyboards":
+         *     GET /api/keyboards and /api/session tell how); and, to a tab that asked for it ({"type": "matrix", "watch": true}),
+         *     the keys held, at every change
          */
         Event: {
             /**
              * Type
              * @enum {string}
              */
-            type: "connected" | "disconnected" | "reloaded" | "unlock" | "matrix";
+            type: "connected" | "disconnected" | "reloaded" | "unlock" | "matrix" | "keyboards";
             /** @default null */
             unlock: components["schemas"]["UnlockState"] | null;
             /** @default null */
@@ -1313,6 +1397,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Session"];
+                };
+            };
+        };
+    };
+    keyboards_api_keyboards_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyboardList"];
+                };
+            };
+        };
+    };
+    select_keyboard_api_keyboards_select_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectKeyboard"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyboardList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

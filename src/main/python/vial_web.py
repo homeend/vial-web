@@ -290,18 +290,36 @@ def make_backend(args):
             if args.unlock_counter is not None:
                 vk.unlock_counter_max = args.unlock_counter
             return vk
+        second = None  # one like the first
+        if args.second_definition:
+            from simulator.virtual_keyboard import VirtualKeyboard
+            second_definition = read_definition(args.second_definition)
+
+            def second():
+                return firmware_timed(VirtualKeyboard(second_definition))
         if args.definition:
             from simulator.virtual_keyboard import VirtualKeyboard
-            with open(args.definition, "r", encoding="utf-8") as inf:
-                definition = json.load(inf)
+            definition = read_definition(args.definition)
             if args.lighting is not None:
                 definition["lighting"] = args.lighting
-            return FakeBackend(lambda: firmware_timed(VirtualKeyboard(definition, **layers)))
+            return FakeBackend(lambda: firmware_timed(VirtualKeyboard(definition, **layers)), second)
         from simulator.corne import make_corne
         lighting = {} if args.lighting is None else {"lighting": args.lighting}
-        return FakeBackend(lambda: firmware_timed(make_corne(**layers, **lighting)))
+        return FakeBackend(lambda: firmware_timed(make_corne(**layers, **lighting)), second)
     from server.device import HidBackend
     return HidBackend()
+
+
+class DefinitionError(Exception):
+    """ A keyboard definition (vial.json) for the simulator couldn't be read """
+
+
+def read_definition(path):
+    try:
+        with open(path, "r", encoding="utf-8") as inf:
+            return json.load(inf)
+    except Exception as e:
+        raise DefinitionError("could not load the keyboard definition {}: {}".format(path, e)) from e
 
 
 def layer_count(text):
@@ -339,6 +357,9 @@ def parse_args(argv):
     parser.add_argument("--fake", action="store_true", help="use a simulated keyboard instead of real hardware")
     parser.add_argument("--definition", help="with --fake: vial.json of the keyboard to simulate")
     parser.add_argument("--layout", help="with --fake: .vil layout file to load into the simulated keyboard")
+    parser.add_argument("--second-definition",
+                        help="with --fake: vial.json of the second simulated keyboard, which the test hook "
+                             "PUT /api/simulator/second-keyboard plugs in (default: one like the first)")
     parser.add_argument("--layers", type=layer_count,
                         help="with --fake: how many layers the simulated keyboard has (1 to {}; default: the "
                              "simulator's own, 4 for the sample Corne)".format(MAX_FAKE_LAYERS))
@@ -355,8 +376,10 @@ def parse_args(argv):
                         help="keep the instance lock, session file, log and names in this folder instead of the "
                              "user's data and config folders (for tests and development)")
     args = parser.parse_args(argv)
-    if (args.definition or args.layout or args.layers or args.unlock_counter or args.lighting) and not args.fake:
-        parser.error("--definition, --layout, --layers, --unlock-counter and --lighting only work with --fake")
+    if (args.definition or args.layout or args.layers or args.unlock_counter or args.lighting
+            or args.second_definition) and not args.fake:
+        parser.error("--definition, --second-definition, --layout, --layers, --unlock-counter and --lighting only work "
+                     "with --fake")
     return args
 
 
@@ -417,6 +440,9 @@ def run(args, sock):
     set_unlock_handler(require_unlocked)
     try:
         backend = make_backend(args)
+    except DefinitionError as e:
+        print(e, file=sys.stderr)
+        return 1
     except Exception as e:
         print("could not load the keyboard definition {}: {}".format(args.definition, e), file=sys.stderr)
         return 1

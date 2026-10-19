@@ -239,9 +239,11 @@ class MatrixState(BaseModel):
 
 
 class Event(BaseModel):
-    """ What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed; and,
-    to a tab that asked for it ({"type": "matrix", "watch": true}), the keys held, at every change """
-    type: Literal["connected", "disconnected", "reloaded", "unlock", "matrix"]
+    """ What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed; the
+    keyboards plugged in, the one chosen or open, or why none could be read (Session.error) changed ("keyboards":
+    GET /api/keyboards and /api/session tell how); and, to a tab that asked for it ({"type": "matrix", "watch": true}),
+    the keys held, at every change """
+    type: Literal["connected", "disconnected", "reloaded", "unlock", "matrix", "keyboards"]
     unlock: Optional[UnlockState] = None
     """ with "unlock": the new state; sent at every change, and with each reading of the countdown """
     matrix: Optional[MatrixState] = None
@@ -355,8 +357,38 @@ class Session(BaseModel):
     fake: bool
     device: Optional[str] = None
     error: Optional[str] = None
+    """ why no keyboard could be opened """
+    errorKind: Optional[Literal["list", "read"]] = None
+    """ what `error` is about: looking for keyboards failed ("list"), or a keyboard found couldn't be read ("read") """
+    keyboard: Optional[str] = None
+    """ the id of the keyboard open (KeyboardEntry.id), if one is """
+    platform: str
+    """ the server's operating system, as Python's sys.platform names it: "win32", "linux", "darwin"... """
     unlock: UnlockState
     """ a keyboard that is unlocking while not connected waits for an unlock started earlier, before it is read """
+
+
+class KeyboardEntry(BaseModel):
+    """ A Vial keyboard plugged in, or the chosen one while it is unplugged """
+    id: str
+    """ what tells it apart from the others, the same after a replug (opaque: its USB serial number when it has one of
+    its own, else its USB IDs and name, and which of the keyboards alike it is) """
+    name: str
+    """ its USB product name """
+    vendorId: int
+    productId: int
+    serial: Optional[str] = None
+    """ its USB serial number, without the part every Vial keyboard has; None when that is all it has """
+    open: bool
+    """ it is the keyboard open (the one the other routes use) """
+    plugged: bool
+
+
+class KeyboardList(BaseModel):
+    keyboards: list[KeyboardEntry]
+    chosen: Optional[str] = None
+    """ the id of the keyboard chosen (POST /api/keyboards/select), kept while the server runs; None: none was, and
+    the first one found is opened """
 
 
 class CatalogueKeycode(Described):
@@ -499,6 +531,13 @@ class SimulatorConnection(Request):
     connected: bool
 
 
+class SimulatorSecondKeyboard(Request):
+    """ Fake mode only: whether the second simulated keyboard is plugged in; unreadable: plugged in with firmware this
+    Vial can't read (a newer Vial protocol), which is listed but fails to load """
+    connected: bool
+    unreadable: bool = False
+
+
 class SimulatorPress(Request):
     """ Fake mode only: a key of the simulated keyboard's matrix is pressed, or let go """
     row: Byte
@@ -511,6 +550,11 @@ class SimulatorUnlock(Request):
     keysHeld: Optional[bool] = None
     locked: Optional[bool] = None
     """ true: lock it, as plugging it in again would """
+
+
+class SelectKeyboard(Request):
+    id: str = Field(max_length=1000)
+    """ KeyboardEntry.id of the keyboard to use """
 
 
 class NameIn(Request):

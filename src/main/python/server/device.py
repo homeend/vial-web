@@ -6,6 +6,7 @@ import threading
 import time
 from collections import namedtuple
 from dataclasses import dataclass
+from typing import Optional
 
 from protocol.constants import CMD_VIA_BOOTLOADER_JUMP, CMD_VIA_GET_KEYBOARD_VALUE, CMD_VIA_VIAL_PREFIX, \
     CMD_VIAL_GET_KEYBOARD_ID, VIA_ID_UNHANDLED, VIA_SWITCH_MATRIX_STATE, VIAL_PROTOCOL_MATRIX_TESTER
@@ -27,6 +28,10 @@ SAFE_UNLOCK_POLL_GAP = 0.15
 The firmware (vial-qmk quantum/vial.c) counts down only on a poll that comes more than 100 ms after the unlock start or
 its last count-down: any sooner poll starts the countdown over, so polls that come too fast never unlock it. """
 
+VIAL_SERIAL_MAGIC = "vial:f64c2b3c"
+""" in the USB serial number of every Vial keyboard (hid_discovery.VIAL_SERIAL_NUMBER_MAGIC; not imported from there, as
+that loads hidapi) """
+
 Status = namedtuple("Status", "connected title unlocked error")
 
 
@@ -44,6 +49,10 @@ class KeyboardRefused(RuntimeError):
 
 class DeviceIOError(RuntimeError):
     """ The HID handle itself failed (it is closed or no longer valid), as opposed to a request that was refused """
+
+
+class UnknownKeyboard(LookupError):
+    """ No keyboard of that id is plugged in (DeviceManager.select) """
 
 
 def require_unlocked(keyboard):
@@ -229,33 +238,85 @@ class CheckedDevice:
 
 
 class FakeBackend:
-    """ Serves one simulated keyboard. Never touches hidapi. """
+    """ Serves simulated keyboards: the first one, and a second one plugged in and out on demand (set_second_connected).
+    Each is found as a real one is (the description hidapi gives), with a serial number of its own. Never touches
+    hidapi. """
 
     fake = True
+    VENDOR_ID = 0xF00D
+    PRODUCT_ID = 0xCAFE
 
-    def __init__(self, keyboard_factory):
+    def __init__(self, keyboard_factory, second_factory=None):
         self.keyboard_factory = keyboard_factory
+        self.second_factory = second_factory or keyboard_factory
+        """ makes the second keyboard; by default, one like the first """
         self.virtual = None
+        """ the first simulated keyboard, once looked for """
+        self.second = None
+        """ the second simulated keyboard, once plugged in """
+        self.second_protocol = None
+        """ the second keyboard's own Vial protocol, while it is plugged in unreadable """
+        # find() runs outside the device lock, while the test hooks change what is plugged in
+        self.lock = threading.RLock()
+
+    def _first(self):
+        with self.lock:
+            if self.virtual is None:
+                self.virtual = self.keyboard_factory()
+            return self.virtual
+
+    @staticmethod
+    def describe(number, virtual):
+        """ What hidapi would say of simulated keyboard `number` (1 or 2) """
+        return {"path": "simulated:{}".format(number), "vendor_id": FakeBackend.VENDOR_ID,
+                "product_id": FakeBackend.PRODUCT_ID, "serial_number": "{}:SIM{:04d}".format(VIAL_SERIAL_MAGIC, number),
+                "manufacturer_string": "Simulated", "product_string": virtual.definition.get("name", "keyboard")}
 
     def find(self):
-        if self.virtual is None:
-            self.virtual = self.keyboard_factory()
-        return ["simulated"] if self.virtual.connected else []
+        with self.lock:
+            plugged = [(1, self._first()), (2, self.second)]
+            return [self.describe(n, vk) for n, vk in plugged if vk is not None and vk.connected]
+
+    def virtual_of(self, candidate):
+        """ The simulated keyboard a candidate of find() is """
+        with self.lock:
+            return self._first() if candidate["path"] == "simulated:1" else self.second
 
     def open(self, candidate):
-        return SimulatedHidDevice(self.virtual), "Simulated: " + self.virtual.definition.get("name", "keyboard")
+        virtual = self.virtual_of(candidate)
+        return SimulatedHidDevice(virtual), "Simulated: " + virtual.definition.get("name", "keyboard")
 
     def present(self, candidate):
-        return self.virtual is not None and self.virtual.connected
+        virtual = self.virtual_of(candidate)
+        return virtual is not None and virtual.connected
 
     def set_connected(self, connected):
-        """ Simulate unplugging the keyboard (False) or plugging it back in (True, VirtualKeyboard.plug_in); the
+        """ Simulate unplugging the first keyboard (False) or plugging it back in (True, VirtualKeyboard.plug_in); the
         hot-plug poll notices """
-        if self.virtual is None:
-            self.virtual = self.keyboard_factory()
-        if connected and not self.virtual.connected:
-            self.virtual.plug_in()
-        self.virtual.connected = connected
+        with self.lock:
+            virtual = self._first()
+            if connected and not virtual.connected:
+                virtual.plug_in()
+            virtual.connected = connected
+
+    def set_second_connected(self, connected, unreadable=False):
+        """ Simulate plugging the second keyboard in (True) or unplugging it (False); the hot-plug poll notices.
+        unreadable: plugged in with firmware of a Vial protocol this Vial doesn't know, so it is listed but fails to
+        load (until it is plugged in again without that) """
+        with self.lock:
+            if self.second is None:
+                if not connected:
+                    return
+                self.second = self.second_factory()
+                self.second.connected = False
+            second = self.second
+            if connected and not second.connected:
+                second.plug_in()
+                if self.second_protocol is not None:
+                    second.vial_protocol, self.second_protocol = self.second_protocol, None
+                if unreadable:
+                    self.second_protocol, second.vial_protocol = second.vial_protocol, 99
+            second.connected = connected
 
 
 class HidBackend:
@@ -286,6 +347,63 @@ def candidate_key(candidate):
     return candidate.get("path") if isinstance(candidate, dict) else candidate
 
 
+@dataclass(frozen=True)
+class KeyboardInfo:
+    """ A Vial keyboard found (schemas.KeyboardEntry) """
+    id: str
+    """ what tells it apart from the others, the same after a replug (its HID path is not): its USB serial number when
+    it has one of its own, else its vendor and product IDs and product name; and, among keyboards alike, which one it
+    is in the order of their paths (1, 2...) """
+    name: str
+    vendor_id: int
+    product_id: int
+    serial: Optional[str]
+    """ its serial number without the Vial magic, if anything else is in it """
+    key: object
+    """ candidate_key() of the candidate """
+    candidate: object = None
+
+
+def own_serial(serial):
+    """ What a USB serial number has besides the Vial magic: most Vial firmware's serial number is only the magic, which
+    every Vial keyboard has. None when that is all. """
+    rest = (serial or "").replace(VIAL_SERIAL_MAGIC, "").strip(" :-_/")
+    return rest or None
+
+
+def keyboard_infos(candidates):
+    """ KeyboardInfo of each candidate of a backend's find(), in the same order """
+    def field(candidate, name, default):
+        value = candidate.get(name) if isinstance(candidate, dict) else None
+        return default if value is None else value
+    described = []
+    for candidate in candidates:
+        vid, pid = field(candidate, "vendor_id", 0), field(candidate, "product_id", 0)
+        serial = own_serial(field(candidate, "serial_number", ""))
+        title = "{} {}".format(field(candidate, "manufacturer_string", ""),
+                               field(candidate, "product_string", "")).strip()
+        name = field(candidate, "product_string", "").strip() or title or "Vial keyboard"
+        base = "{:04x}:{:04x}:{}".format(vid, pid, "serial:" + serial if serial else "name:" + name)
+        described.append((base, name, vid, pid, serial, candidate))
+    # keyboards alike, numbered in the order of their paths: as stable as it gets without a serial number
+    order = sorted(range(len(described)), key=lambda i: (described[i][0], str(candidate_key(described[i][5]))))
+    number, seen = {}, {}
+    for i in order:
+        base = described[i][0]
+        seen[base] = seen.get(base, 0) + 1
+        number[i] = seen[base]
+    return [KeyboardInfo("{}#{}".format(base, number[i]), name, vid, pid, serial, candidate_key(candidate), candidate)
+            for i, (base, name, vid, pid, serial, candidate) in enumerate(described)]
+
+
+ListedKeyboard = namedtuple("ListedKeyboard", "info plugged")
+""" A keyboard of the list: its KeyboardInfo, and whether it is plugged in (the chosen one stays listed unplugged) """
+
+KeyboardList = namedtuple("KeyboardList", "entries chosen open")
+""" The ListedKeyboard of each keyboard; the id of the one chosen (None: none was, the first one found is used) and of
+the one open (None: none is) """
+
+
 class DeviceManager:
     """
     Owns the open keyboard. All access goes through run() or read() (or reload()), which hold the device lock.
@@ -297,8 +415,20 @@ class DeviceManager:
       still fails: writes are not retried, since they are not known to be safe to repeat. Requests made before the
       poll reopens it fail at once;
     - a keyboard whose presence can't be checked (the backend raises) is kept as it is;
-    - with no keyboard, the first one found is opened and loaded ("connected"). One that fails to load is not tried
-      again for RETRY_FIRST seconds, doubling up to RETRY_MAX, unless it is unplugged and plugged back in.
+    - with no keyboard, the chosen one (select()) is opened and loaded once it is plugged in ("connected"), and only
+      that one; with none chosen, the first one found. One that fails to load is not tried again for RETRY_FIRST
+      seconds, doubling up to RETRY_MAX, unless it is unplugged and plugged back in.
+
+    Every poll lists the Vial keyboards plugged in (outside the device lock: that can take a while). `changes` counts
+    the changes of what the UI shows of them, while a keyboard is open or not: the list, the one chosen, the one open,
+    and the error that says why none could be read (`error`, `error_kind`). The server app tells the UI when it grows
+    ("keyboards" event); these changes are not events of take_events(), which are about the open keyboard.
+
+    select() chooses the keyboard to use, kept for the manager's lifetime by its id (KeyboardInfo.id, which stays the
+    same across a replug). Choosing another one closes the one open (whatever waited on it ends: an unlock followed,
+    requests refused until then) and opens the chosen one: "connected" when it is loaded; else "disconnected" for the
+    one closed, if it was loaded. The chosen keyboard unplugged stays listed, as unplugged, and is waited for: another
+    one is never opened instead.
 
     Unlocking works as Qt's unlocker does: start_unlock() sends unlock_start, then poll_unlock() (called about every
     200 ms while the state is "unlocking") reads the keyboard's countdown, which runs while the user holds the unlock
@@ -326,7 +456,21 @@ class DeviceManager:
         self.handle = None
         self.candidate = None
         self.title = None
-        self.error = None
+        self._error = None
+        self.error_kind = None
+        """ what `error` is about: "list" (looking for keyboards failed) or "read" (one found couldn't be read) """
+        self.changes = 0
+        """ counts the changes of the list, the choice, the keyboard open and the error (see the class) """
+        self.listed = []
+        """ KeyboardInfo of each Vial keyboard plugged in, as last found """
+        self.chosen = None
+        """ id of the keyboard chosen (select()); None: none was, the first one found is used """
+        self.chosen_info = None
+        """ the chosen keyboard's KeyboardInfo, as last found: it is listed while it is unplugged too """
+        self.open_id = None
+        """ id of the keyboard open (loaded, or waiting to be read until it is unlocked) """
+        self.list_error_logged = None
+        """ clock time a failing listing was last logged while a keyboard was open """
         self.unlocked = False
         self.unlocking = None
         """ _Unlock while the keyboard waits for its unlock keys """
@@ -342,6 +486,72 @@ class DeviceManager:
     def connected(self):
         return self.keyboard is not None
 
+    @property
+    def error(self):
+        """ why no keyboard could be opened, or None """
+        return self._error
+
+    @error.setter
+    def error(self, text):
+        # set this way, it is about a keyboard that couldn't be read
+        self._set_error(text, "read")
+
+    def _set_error(self, text, kind):
+        kind = kind if text is not None else None
+        if (text, kind) != (self._error, self.error_kind):
+            self._error, self.error_kind = text, kind
+            self.changes += 1
+
+    def _find(self):
+        """ (the candidates the backend finds, None), or (None, the exception it raised) """
+        try:
+            return list(self.backend.find()), None
+        except Exception as e:
+            return None, e
+
+    def _list(self, candidates):
+        """ Keep the keyboards found: a change when they aren't those listed before """
+        listed = keyboard_infos(candidates)
+        if [(i.id, i.name, i.serial) for i in listed] != [(i.id, i.name, i.serial) for i in self.listed]:
+            self.changes += 1
+        self.listed = listed
+        for info in listed:
+            if info.id == self.chosen:
+                self.chosen_info = info
+
+    def keyboard_list(self):
+        """ KeyboardList: the keyboards plugged in, and the chosen one unplugged """
+        with self.lock:
+            entries = [ListedKeyboard(info, True) for info in self.listed]
+            if self.chosen_info is not None and all(info.id != self.chosen for info in self.listed):
+                entries.append(ListedKeyboard(self.chosen_info, False))
+            return KeyboardList(entries, self.chosen, self.open_id)
+
+    def select(self, keyboard_id):
+        """ Choose the keyboard to use (see the class). One unplugged can be chosen only if it was chosen already
+        (UnknownKeyboard otherwise). Returns whether another keyboard was opened (loaded, or waiting to be read until it
+        is unlocked): False when the chosen one is open already, unplugged, or couldn't be opened (`error` says why). """
+        with self.lock:
+            info = next((i for i in self.listed if i.id == keyboard_id), None)
+            if info is None and keyboard_id != self.chosen:
+                raise UnknownKeyboard("no keyboard {} is plugged in".format(keyboard_id))
+            if keyboard_id != self.chosen:
+                self.chosen = keyboard_id
+                self.changes += 1
+            if info is None or self.open_id == keyboard_id:
+                return False  # opened once it is plugged in again, or open already
+            self.chosen_info = info
+            was_loaded, was_waiting = self.keyboard is not None, self.waiting is not None
+            at = len(self.pending_events)
+            if self._connect(wait_after_failures=False):
+                self.pending_events.append("connected")
+                return True
+            if was_loaded:
+                self.pending_events.insert(at, "disconnected")
+            elif was_waiting:
+                self.pending_events.insert(at, "unlock")  # its unlock is over
+            return self.device is not None
+
     def status(self):
         """ connected, title, unlocked and error, read together """
         with self.lock:
@@ -355,22 +565,25 @@ class DeviceManager:
         resume_unlock False (a dry run) it is sent nothing: the unlock is left as it is, not followed ("cancelled"). """
         return self._connect(wait_after_failures=False, resume_unlock=resume_unlock)
 
-    def _connect(self, wait_after_failures, resume_unlock=True):
+    def _connect(self, wait_after_failures, resume_unlock=True, found=None):
+        """ found: what _find() gave, if it was called already """
         with self.lock:
             self._close()
-            try:
-                candidates = list(self.backend.find())
-            except Exception as e:
-                log.exception("could not list keyboards")
-                self.error = "could not list keyboards: {}".format(e)
+            candidates, failure = self._find() if found is None else found
+            if failure is not None:
+                log.error("could not list keyboards", exc_info=failure)
+                self._set_error("could not list keyboards: {}".format(failure), "list")
                 return False
-            if not candidates:
+            self._list(candidates)
+            # the chosen keyboard only, or the first one found that loads
+            tried = [info for info in self.listed if self.chosen is None or info.id == self.chosen]
+            if not tried:
                 self.error = None
-            listed = {candidate_key(c) for c in candidates}
+            listed = {info.key for info in self.listed}
             # a keyboard that went away and came back gets a fresh start
             self.failures = {k: v for k, v in self.failures.items() if k in listed}
-            for candidate in candidates:
-                key = candidate_key(candidate)
+            for info in tried:
+                candidate, key = info.candidate, info.key
                 if wait_after_failures and key in self.failures and self.clock() < self.failures[key][1]:
                     continue
                 dev = None
@@ -396,6 +609,8 @@ class DeviceManager:
                     continue
                 self.failures.pop(key, None)
                 self.device, self.handle, self.candidate, self.title, self.error = dev, handle, candidate, title, None
+                self.open_id = info.id
+                self.changes += 1
                 if unlock_keys is not None:
                     log.info("%s is waiting to be unlocked: %s", title,
                              "finishing that before reading it" if resume_unlock else "left as it is")
@@ -631,14 +846,25 @@ class DeviceManager:
 
     def check(self):
         """ Hot-plug poll, called about once a second. Returns the events since the last call. """
+        # outside the device lock: listing every HID device can take a while on some systems, and requests to the
+        # open keyboard go on meanwhile (as Qt's autorefresh thread lists them)
+        found = self._find()
         with self.lock:
+            candidates, failure = found
+            if failure is None:
+                self._list(candidates)
+            elif self.device is not None:
+                now = self.clock()
+                if self.list_error_logged is None or now - self.list_error_logged >= PRESENT_ERROR_LOG_INTERVAL:
+                    self.list_error_logged = now
+                    log.error("could not list keyboards; the list is kept as it was", exc_info=failure)
             if self.device is not None:
                 if self._present() is False:
                     self._close_reporting()
                 elif not self.handle.healthy:
                     log.warning("%s stopped answering; reopening it", self.title)
                     self._close_reporting()
-            if self.device is None and self._connect(wait_after_failures=True):
+            if self.device is None and self._connect(wait_after_failures=True, found=found):
                 self.pending_events.append("connected")
             return self.take_events()
 
@@ -683,6 +909,9 @@ class DeviceManager:
     def _close(self):
         if self.device is not None:
             self._close_device(self.device)
+        if self.open_id is not None:
+            self.open_id = None
+            self.changes += 1
         self.keyboard = self.device = self.handle = self.candidate = self.title = self.waiting = None
         self.unlocking = self.unlock_sent = None
         self.unlocked = False

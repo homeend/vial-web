@@ -148,6 +148,8 @@ export class KeyboardStore {
       if (event.matrix && this.#matrixWatchers > 0) this.matrix = event.matrix;
       return;
     }
+    // the list of keyboards changed: no plug of the keyboard loaded
+    if (event.type === "keyboards") return;
     // the server's first event on a link (re)opened says how the keyboard is: a "connected" there, when it was
     // connected already, is no plug, unless the load it brings finds another keyboard (see load)
     const opening = this.#opening;

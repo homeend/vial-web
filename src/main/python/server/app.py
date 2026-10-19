@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import urllib.parse
 from typing import Annotated, Literal
 
@@ -17,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from protocol.qmk_settings_codec import QmkSettingsCodec
 from server import edits, languages, model, schemas
 from server.describe import keyboard_language, parse
-from server.device import NotConnected, KeyboardLocked, KeyboardRefused
+from server.device import NotConnected, KeyboardLocked, KeyboardRefused, UnknownKeyboard
 
 log = logging.getLogger(__name__)
 
@@ -182,6 +183,12 @@ class MatrixWatcher:
         """ The tab stops watching, or has gone; the task stops before its next reading once none watches """
         self.watchers.discard(ws)
 
+    def drop(self):
+        """ The keyboard read was closed (another one was chosen): no tab watches it any more, and a reading on its way
+        reaches none. A tab watches the keyboard open now once it asks again. """
+        self.watchers.clear()
+        self.last = None
+
     async def shutdown(self):
         """ The server is stopping: cancel the task, and start none from now on """
         self.stopping = True
@@ -319,9 +326,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     instance_id = instance_id or secrets.token_hex(8)
     cookie = cookie_name(port)
 
+    keyboards_told = [manager.changes]
+    """ manager.changes when the tabs were last told the keyboards changed """
+
     async def broadcast_events(events, progress=False):
         """ Send the device manager's events to every tab, an "unlock" one with the unlock state. progress: send the
-        unlock state even if it didn't change (a new reading of the countdown). An unlock to follow is followed. """
+        unlock state even if it didn't change (a new reading of the countdown). An unlock to follow is followed. Then
+        a "keyboards" event if the list of keyboards, the one chosen or open, or the error changed since the last. """
         # read in a thread: the device lock may be held for a while
         state = await asyncio.to_thread(manager.unlock_state)
         unlock = {"type": "unlock", "unlock": unlock_model(state).model_dump()}
@@ -331,6 +342,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             await hub.broadcast(unlock)
         if state.state == "unlocking":
             follower.start()
+        if manager.changes != keyboards_told[0]:
+            keyboards_told[0] = manager.changes
+            await hub.broadcast({"type": "keyboards"})
 
     follower = UnlockFollower(manager, broadcast_events, unlock_interval)
 
@@ -503,8 +517,40 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         with manager.lock:  # read together
             status = manager.status()
             unlock = unlock_model(manager.unlock_state())
+            error_kind, open_id = manager.error_kind, manager.open_id
         return schemas.Session(status="connected" if status.connected else "disconnected",
-                               fake=manager.backend.fake, device=status.title, error=status.error, unlock=unlock)
+                               fake=manager.backend.fake, device=status.title, error=status.error, errorKind=error_kind,
+                               keyboard=open_id, platform=sys.platform, unlock=unlock)
+
+    def keyboard_list():
+        listed = manager.keyboard_list()
+        return schemas.KeyboardList(
+            keyboards=[schemas.KeyboardEntry(id=e.info.id, name=e.info.name, vendorId=e.info.vendor_id,
+                                             productId=e.info.product_id, serial=e.info.serial,
+                                             open=e.info.id == listed.open, plugged=e.plugged)
+                       for e in listed.entries],
+            chosen=listed.chosen)
+
+    @app.get("/api/keyboards", response_model=schemas.KeyboardList)
+    def keyboards():
+        """ The Vial keyboards plugged in (as the hot-plug poll last found them, about once a second), and the chosen
+        one while it is unplugged """
+        return keyboard_list()
+
+    @app.post("/api/keyboards/select", response_model=schemas.KeyboardList)
+    async def select_keyboard(body: schemas.SelectKeyboard):
+        """ Use this keyboard from now on, while the server runs. The one open is closed, and whatever waited on it
+        stops (an unlock being followed, the matrix tester); the chosen one is opened, and read ("connected"), or the
+        session says why it couldn't be. The chosen keyboard unplugged is opened again once it is plugged back in; no
+        other is opened meanwhile. 404 when no keyboard of that id is plugged in (and it wasn't the chosen one). """
+        try:
+            switched = await asyncio.to_thread(manager.select, body.id)
+        except UnknownKeyboard as e:
+            raise HTTPException(404, str(e))
+        if switched or not manager.connected:
+            matrix.drop()
+        await broadcast_events(await asyncio.to_thread(manager.take_events))
+        return await asyncio.to_thread(keyboard_list)
 
     @app.get("/api/keyboard-languages", response_model=list[schemas.KeyboardLanguage])
     def keyboard_languages():
@@ -730,6 +776,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         def set_simulator_connection(body: schemas.SimulatorConnection):
             with manager.lock:
                 manager.backend.set_connected(body.connected)
+            return {"connected": body.connected}
+
+        # for UI tests: plug a second simulated keyboard in, or unplug it. Never exists for real keyboards.
+        @app.put("/api/simulator/second-keyboard", include_in_schema=False)
+        def set_simulator_second_keyboard(body: schemas.SimulatorSecondKeyboard):
+            with manager.lock:
+                manager.backend.set_second_connected(body.connected, unreadable=body.unreadable)
             return {"connected": body.connected}
 
         # for UI tests: a key of the simulated keyboard's matrix is pressed or let go (the matrix tester shows it). Never
