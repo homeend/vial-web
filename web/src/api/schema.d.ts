@@ -1219,17 +1219,33 @@ export interface components {
             hsv?: number[] | null;
         };
         /**
+         * MatrixState
+         * @description Which keys of the switch matrix are held, read about 20 times a second while a tab asks for it
+         */
+        MatrixState: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "testing" | "locked" | "unsupported" | "disconnected";
+            /** Pressed */
+            pressed: components["schemas"]["MatrixPosition"][];
+        };
+        /**
          * Event
-         * @description What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed
+         * @description What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed; and,
+         *     to a tab that asked for it ({"type": "matrix", "watch": true}), the keys held, at every change
          */
         Event: {
             /**
              * Type
              * @enum {string}
              */
-            type: "connected" | "disconnected" | "reloaded" | "unlock";
+            type: "connected" | "disconnected" | "reloaded" | "unlock" | "matrix";
             /** @default null */
             unlock: components["schemas"]["UnlockState"] | null;
+            /** @default null */
+            matrix: components["schemas"]["MatrixState"] | null;
         };
     };
     responses: never;

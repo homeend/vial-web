@@ -230,11 +230,22 @@ class UnlockState(BaseModel):
     """ where the countdown started: the highest it was seen at """
 
 
+class MatrixState(BaseModel):
+    """ Which keys of the switch matrix are held, read about 20 times a second while a tab asks for it """
+    state: Literal["testing", "locked", "unsupported", "disconnected"]
+    """ testing: `pressed` is what is held now; locked: Vial firmware shows nothing until the keyboard is unlocked;
+    unsupported: this keyboard can't tell (KeyboardModel.matrixTester); disconnected: no keyboard """
+    pressed: list[MatrixPosition]
+
+
 class Event(BaseModel):
-    """ What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed """
-    type: Literal["connected", "disconnected", "reloaded", "unlock"]
+    """ What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed; and,
+    to a tab that asked for it ({"type": "matrix", "watch": true}), the keys held, at every change """
+    type: Literal["connected", "disconnected", "reloaded", "unlock", "matrix"]
     unlock: Optional[UnlockState] = None
     """ with "unlock": the new state; sent at every change, and with each reading of the countdown """
+    matrix: Optional[MatrixState] = None
+    """ with "matrix": the keys held now """
 
 
 class LayoutOptions(BaseModel):
@@ -486,6 +497,13 @@ class LightingIn(Request):
 class SimulatorConnection(Request):
     """ Fake mode only: whether the simulated keyboard is plugged in """
     connected: bool
+
+
+class SimulatorPress(Request):
+    """ Fake mode only: a key of the simulated keyboard's matrix is pressed, or let go """
+    row: Byte
+    col: Byte
+    pressed: bool
 
 
 class SimulatorUnlock(Request):

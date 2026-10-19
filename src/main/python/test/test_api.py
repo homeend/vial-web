@@ -379,6 +379,7 @@ def test_simulator_controls_need_the_session(tmp_path):
     with TestClient(app, base_url=BASE) as c:
         assert c.put("/api/simulator/connection", json={"connected": False}).status_code == 401
         assert c.put("/api/simulator/unlock", json={"keysHeld": True}).status_code == 401
+        assert c.put("/api/simulator/matrix", json={"row": 0, "col": 0, "pressed": True}).status_code == 401
 
 
 def test_simulator_controls_do_not_exist_for_real_keyboards(tmp_path):
@@ -390,6 +391,8 @@ def test_simulator_controls_do_not_exist_for_real_keyboards(tmp_path):
         assert "/api/simulator/connection" not in c.get("/openapi.json").text
         assert c.put("/api/simulator/unlock", json={"keysHeld": True}).status_code in (404, 405)
         assert "/api/simulator/unlock" not in c.get("/openapi.json").text
+        assert c.put("/api/simulator/matrix", json={"row": 0, "col": 0, "pressed": True}).status_code in (404, 405)
+        assert "/api/simulator/matrix" not in c.get("/openapi.json").text
 
 
 def test_the_simulator_unlock_hook_before_the_simulated_keyboard_is_made(tmp_path):

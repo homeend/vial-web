@@ -1,4 +1,5 @@
-""" The matrix tester (the keys held), against the simulated keyboard """
+""" The matrix tester (the keys held, read while a tab watches), against the simulated keyboard """
+import asyncio
 import time
 
 import pytest
@@ -7,13 +8,17 @@ from fastapi.testclient import TestClient
 import transport
 from protocol.constants import CMD_VIA_GET_KEYBOARD_VALUE, VIA_SWITCH_MATRIX_STATE
 from protocol.unlock_hook import set_unlock_handler
-from server.app import create_app
+from server.app import MatrixWatcher, create_app
 from server.device import DeviceManager, FakeBackend, MatrixReading, has_matrix_tester, matrix_pressed, \
     require_unlocked
 from server.names import NamesStore
-from simulator.corne import make_corne
+from simulator.corne import UNLOCK_KEYS, make_corne
 from simulator.virtual_keyboard import VirtualKeyboard
-from test.test_api import BASE, PORT, TOKEN
+from test.test_api import BASE, EVENTS, ORIGIN, PORT, TOKEN
+from test.test_api_server import pause, wait_until
+
+INTERVAL = 0.03
+GAP = 0.015
 
 
 @pytest.fixture(autouse=True)
@@ -53,13 +58,31 @@ def matrix_requests(vk):
 
 @pytest.fixture
 def served(tmp_path):
-    """ (client with a session cookie, manager) serving a Corne """
+    """ (client with a session cookie, manager) serving a Corne; the matrix is read every 30 ms while watched """
     manager = connected()
     app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0,
-                     unlock_interval=0.01)
+                     unlock_interval=0.01, matrix_interval=INTERVAL, matrix_gap=GAP)
     with TestClient(app, base_url=BASE) as client:
         assert client.get("/?token=" + TOKEN, follow_redirects=False).status_code == 303
         yield client, manager
+
+
+def matrix_events(ws, until):
+    """ The "matrix" states sent up to the first that `until` takes """
+    seen = []
+    while True:
+        event = ws.receive_json()
+        if event["type"] != "matrix":
+            continue
+        seen.append(event["matrix"])
+        if until(event["matrix"]):
+            return seen
+
+
+def press(client, row, col, pressed=True):
+    response = client.put("/api/simulator/matrix", json={"row": row, "col": col, "pressed": pressed})
+    assert response.status_code == 200
+    return response.json()
 
 
 # ---------- reading the matrix ----------
@@ -111,3 +134,210 @@ def test_keyboards_that_cant_tell():
 def test_the_model_says_whether_the_matrix_tester_works(served):
     client, manager = served
     assert client.get("/api/keyboard").json()["matrixTester"] is True
+
+
+# ---------- watching it ----------
+
+def test_a_tab_watching_gets_the_keys_held_at_every_change(served):
+    client, manager = served
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        assert ws.receive_json() == {"type": "connected"}
+        ws.send_json({"type": "matrix", "watch": True})
+        assert matrix_events(ws, lambda m: True) == [{"state": "testing", "pressed": []}]
+        assert press(client, 0, 0) == {"pressed": [[0, 0]]}
+        assert matrix_events(ws, lambda m: m["pressed"])[-1] == {"state": "testing", "pressed": [{"row": 0, "col": 0}]}
+        press(client, 4, 5)
+        press(client, 0, 0, False)
+        states = matrix_events(ws, lambda m: m["pressed"] == [{"row": 4, "col": 5}])
+        assert all(m["state"] == "testing" for m in states)
+        press(client, 4, 5, False)
+        assert matrix_events(ws, lambda m: not m["pressed"])
+        ws.send_json({"type": "matrix", "watch": False})
+        assert wait_until(lambda: client.app.state.matrix.task is None)
+
+
+def test_reading_stops_when_no_tab_watches(served):
+    client, manager = served
+    watcher = client.app.state.matrix
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        ws.receive_json()
+        ws.send_json({"type": "matrix", "watch": True})
+        matrix_events(ws, lambda m: True)
+        assert watcher.task is not None
+    # the tab closed: no more readings
+    assert wait_until(lambda: watcher.task is None)
+    times = matrix_requests(manager.backend.virtual)
+    pause(INTERVAL * 5)
+    assert times == []
+
+
+def test_two_tabs_share_one_reader_and_a_late_one_gets_the_last_reading(served):
+    client, manager = served
+    watcher = client.app.state.matrix
+    press(client, 1, 1)
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as first, \
+            client.websocket_connect(EVENTS, headers=ORIGIN) as second:
+        first.receive_json()
+        second.receive_json()
+        first.send_json({"type": "matrix", "watch": True})
+        assert matrix_events(first, lambda m: True)[-1]["pressed"] == [{"row": 1, "col": 1}]
+        task = watcher.task
+        second.send_json({"type": "matrix", "watch": True})
+        assert matrix_events(second, lambda m: True) == [{"state": "testing", "pressed": [{"row": 1, "col": 1}]}]
+        assert watcher.task is task
+        first.send_json({"type": "matrix", "watch": False})
+        pause(INTERVAL * 3)
+        assert watcher.task is task  # the second still watches
+    press(client, 1, 1, False)
+
+
+def test_messages_that_arent_asking_to_watch_are_ignored(served):
+    client, manager = served
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        ws.receive_json()
+        for text in ["not json", "[1]", '{"type": "matrix"}', '{"type": "matrix", "watch": 1}', '{"type": "x"}']:
+            ws.send_text(text)
+        pause(INTERVAL * 3)
+        assert client.app.state.matrix.task is None
+        assert client.get("/api/session").status_code == 200
+
+
+def test_readings_are_paced(served):
+    client, manager = served
+    times = matrix_requests(manager.backend.virtual)
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        ws.receive_json()
+        ws.send_json({"type": "matrix", "watch": True})
+        pause(INTERVAL * 12)
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    assert len(gaps) >= 5
+    # about every INTERVAL, never back to back
+    assert min(gaps) > INTERVAL * 0.7, gaps
+
+
+def test_readings_leave_the_keyboard_alone_for_a_while_even_when_slow(tmp_path):
+    manager = connected()
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0,
+                     matrix_interval=0.01, matrix_gap=0.05)
+    poll = manager.poll_matrix
+
+    def slow_poll():
+        pause(0.03)  # longer than the interval
+        return poll()
+    manager.poll_matrix = slow_poll
+    times = matrix_requests(manager.backend.virtual)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN)
+        with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "matrix", "watch": True})
+            pause(0.5)
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    assert gaps and min(gaps) > 0.05 + 0.03 * 0.7, gaps
+
+
+def test_edits_are_not_held_up_while_the_matrix_is_read(served):
+    client, manager = served
+    readings = []
+    poll = manager.poll_matrix
+
+    def counting_poll():
+        readings.append(True)
+        return poll()
+    manager.poll_matrix = counting_poll
+    slowest = 0
+    edits = 0
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        ws.receive_json()
+        ws.send_json({"type": "matrix", "watch": True})
+        matrix_events(ws, lambda m: True)
+        until = time.monotonic() + INTERVAL * 10
+        while time.monotonic() < until:
+            started = time.monotonic()
+            assert client.put("/api/keymap/0/0/0", json={"code": ["KC_A", "KC_TAB"][edits % 2]}).status_code == 200
+            slowest = max(slowest, time.monotonic() - started)
+            edits += 1
+    assert len(readings) >= 5 and edits >= 10
+    # an edit waits at most for one reading to end
+    assert slowest < 0.5, slowest
+
+
+def test_a_locked_keyboard_says_so_then_shows_the_keys_once_unlocked(tmp_path):
+    manager = connected(locked_corne)
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0,
+                     unlock_interval=0.01, matrix_interval=INTERVAL, matrix_gap=GAP)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN)
+        with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+            ws.receive_json()
+            ws.send_json({"type": "matrix", "watch": True})
+            assert matrix_events(ws, lambda m: True) == [{"state": "locked", "pressed": []}]
+            # the unlock runs (the countdown is read meanwhile), then the keys show
+            client.put("/api/simulator/unlock", json={"keysHeld": True})
+            client.post("/api/unlock/start")
+            states = matrix_events(ws, lambda m: m["state"] == "testing")
+            # the unlock keys are held: they show
+            assert states[-1]["pressed"] == [{"row": r, "col": c} for r, c in sorted(UNLOCK_KEYS)]
+            client.post("/api/lock")
+            assert matrix_events(ws, lambda m: m["state"] == "locked")[-1] == {"state": "locked", "pressed": []}
+
+
+def test_an_unplugged_keyboard_is_reported_and_followed_again_when_back(served):
+    client, manager = served
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        ws.receive_json()
+        ws.send_json({"type": "matrix", "watch": True})
+        matrix_events(ws, lambda m: True)
+        client.put("/api/simulator/connection", json={"connected": False})
+        manager.check()
+        assert matrix_events(ws, lambda m: m["state"] == "disconnected")[-1] == {"state": "disconnected", "pressed": []}
+        client.put("/api/simulator/connection", json={"connected": True})
+        manager.check()
+        assert matrix_events(ws, lambda m: m["state"] == "testing")
+
+
+def test_a_failed_reading_is_logged_once_and_reading_goes_on(served, caplog):
+    client, manager = served
+    poll = manager.poll_matrix
+    failures = []
+
+    def failing_poll():
+        if len(failures) < 3:
+            failures.append(True)
+            raise RuntimeError("failed to communicate with the device")
+        return poll()
+    manager.poll_matrix = failing_poll
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        ws.receive_json()
+        ws.send_json({"type": "matrix", "watch": True})
+        assert matrix_events(ws, lambda m: True) == [{"state": "testing", "pressed": []}]
+    assert [r.message for r in caplog.records].count(
+        "reading the switch matrix failed: failed to communicate with the device") == 1
+
+
+def test_stopping_the_server_while_watched_leaves_no_task():
+    manager = connected()
+    sent = []
+
+    async def send(ws, event):
+        sent.append(event)
+
+    async def watch_then_stop():
+        watcher = MatrixWatcher(manager, send, INTERVAL, GAP)
+        await watcher.watch("tab")
+        task = watcher.task
+        await asyncio.sleep(INTERVAL * 3)
+        await watcher.shutdown()
+        await watcher.watch("another tab")  # nothing starts once stopping
+        return watcher, task
+    watcher, task = asyncio.run(watch_then_stop())
+    assert task.done() and watcher.task is None
+    assert sent == [{"type": "matrix", "matrix": {"state": "testing", "pressed": []}}]
+
+
+def test_the_simulator_hook_presses_and_lets_go(served):
+    client, manager = served
+    assert press(client, 2, 3) == {"pressed": [[2, 3]]}
+    assert manager.backend.virtual.pressed == {(2, 3)}
+    assert press(client, 2, 3, False) == {"pressed": []}
+    assert client.put("/api/simulator/matrix", json={"row": 256, "col": 0, "pressed": True}).status_code == 422

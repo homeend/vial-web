@@ -1,40 +1,61 @@
-// Live events from the server: the keyboard was plugged in, unplugged, read again, or its unlock state changed.
+// Live events from the server: the keyboard was plugged in, unplugged, read again, or its unlock state changed; and,
+// while the page asks for them, the keys held (the matrix tester).
 import type { ServerEvent } from "./types";
 
 export type { ServerEvent };
 export type LinkState = "connecting" | "open" | "closed";
 
+/** What the page can ask the server for on the events link */
+export type ClientMessage = { type: "matrix"; watch: boolean };
+
+/** The events link: close() ends it for good; send() asks the server for something, if the link is open (a link
+ * opened again starts with nothing asked: whoever asked asks again when it opens) */
+export interface EventsLink {
+  close(): void;
+  send(message: ClientMessage): void;
+}
+
 const RETRY_FIRST_MS = 500;
 const RETRY_MAX_MS = 5000;
 
-const EVENTS: Record<ServerEvent["type"], true> = { connected: true, disconnected: true, reloaded: true, unlock: true };
+const EVENTS: Record<ServerEvent["type"], true> = {
+  connected: true, disconnected: true, reloaded: true, unlock: true, matrix: true,
+};
 
-/** An event of a known type; an "unlock" one must carry the unlock state */
+/** An event of a known type; an "unlock" one must carry the unlock state, a "matrix" one the keys held */
 function isServerEvent(frame: unknown): frame is ServerEvent {
-  const { type, unlock } = (frame ?? {}) as { type?: unknown; unlock?: unknown };
+  const { type, unlock, matrix } = (frame ?? {}) as { type?: unknown; unlock?: unknown; matrix?: unknown };
   if (typeof type !== "string" || !Object.hasOwn(EVENTS, type)) return false;
-  return type !== "unlock" || (typeof unlock === "object" && unlock !== null);
+  if (type === "unlock") return typeof unlock === "object" && unlock !== null;
+  if (type === "matrix") {
+    const pressed = (matrix as { pressed?: unknown } | null)?.pressed;
+    return typeof matrix === "object" && matrix !== null && Array.isArray(pressed);
+  }
+  return true;
 }
 
-/** Keeps a WebSocket to /api/events open, reconnecting when it drops. Returns a function that closes it for good. */
+/** Keeps a WebSocket to /api/events open, reconnecting when it drops */
 export function connectEvents(
   onEvent: (event: ServerEvent) => void,
   onLink: (state: LinkState) => void,
-): () => void {
+): EventsLink {
   let socket: WebSocket | null = null;
   let retry = RETRY_FIRST_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  let open = false;
 
-  function open() {
+  function connect() {
     onLink("connecting");
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-    socket = new WebSocket(`${scheme}//${location.host}/api/events`);
-    socket.onopen = () => {
+    const current = new WebSocket(`${scheme}//${location.host}/api/events`);
+    socket = current;
+    current.onopen = () => {
       retry = RETRY_FIRST_MS;
+      open = true;
       onLink("open");
     };
-    socket.onmessage = (message) => {
+    current.onmessage = (message) => {
       let frame: unknown;
       try {
         frame = JSON.parse(String(message.data));
@@ -43,19 +64,25 @@ export function connectEvents(
       }
       if (isServerEvent(frame)) onEvent(frame);
     };
-    socket.onclose = () => {
+    current.onclose = () => {
       socket = null;
+      open = false;
       if (stopped) return;
       onLink("closed");
-      timer = setTimeout(open, retry);
+      timer = setTimeout(connect, retry);
       retry = Math.min(retry * 2, RETRY_MAX_MS);
     };
   }
 
-  open();
-  return () => {
-    stopped = true;
-    clearTimeout(timer);
-    socket?.close();
+  connect();
+  return {
+    close() {
+      stopped = true;
+      clearTimeout(timer);
+      socket?.close();
+    },
+    send(message) {
+      if (open && socket) socket.send(JSON.stringify(message));
+    },
   };
 }

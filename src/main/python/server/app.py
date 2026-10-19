@@ -2,6 +2,7 @@
 """ The local web server: security checks, API routes, live events and the built UI. """
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import secrets
@@ -24,6 +25,12 @@ MAX_LAYOUT_FILE = 1024 * 1024
 """ largest .vil upload, in bytes """
 UNLOCK_POLL_INTERVAL = 0.2
 """ seconds between two readings of the unlock countdown, as Qt's unlocker """
+MATRIX_POLL_INTERVAL = 0.05
+""" seconds from one reading of the switch matrix to the next while a tab watches it: 20 a second (Qt's tester reads
+it every 20 ms, and the unlock state as well each time) """
+MATRIX_POLL_GAP = 0.02
+""" seconds the keyboard is left alone at least after each reading of the matrix, however long that took: other
+requests (edits, the unlock countdown) take the device lock in between """
 SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": "frame-ancestors 'none'",
@@ -134,6 +141,89 @@ class EventHub:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
+class MatrixWatcher:
+    """ Reads the switch matrix every `interval` seconds while at least one tab watches it, and sends each tab what is
+    held whenever that changes (a tab that starts watching gets the last reading at once). One task reads it, and stops
+    when no tab watches any more. After each reading the keyboard is left alone for at least `gap` seconds, so that
+    other requests get the device lock between two readings. `send(ws, event)` sends to one tab; a tab it drops is no
+    longer watching. """
+
+    def __init__(self, manager, send, interval, gap):
+        self.manager = manager
+        self.send = send
+        self.interval = interval
+        self.gap = gap
+        self.watchers = set()
+        self.task = None
+        self.last = None
+        """ the last reading sent (schemas.MatrixState), while the task runs """
+        self.stopping = False
+        self.failing = False
+        """ the last reading failed: the next failure isn't logged again """
+
+    async def watch(self, ws):
+        """ The tab starts watching (again: nothing changes); nothing once the server is stopping """
+        if ws in self.watchers or self.stopping:
+            return
+        self.watchers.add(ws)
+        if self.last is not None:
+            await self._send_to([ws], self.last)
+        if self.task is None:
+            self.task = asyncio.get_running_loop().create_task(self._read())
+
+    def unwatch(self, ws):
+        """ The tab stops watching, or has gone; the task stops before its next reading once none watches """
+        self.watchers.discard(ws)
+
+    async def shutdown(self):
+        """ The server is stopping: cancel the task, and start none from now on """
+        self.stopping = True
+        self.watchers.clear()
+        self.last = None
+        task, self.task = self.task, None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    def _reading(self):
+        """ One reading, as the tabs get it, or None when it failed (run in a worker thread: the device lock may be
+        held for a while) """
+        try:
+            reading = self.manager.poll_matrix()
+        except NotConnected:
+            return schemas.MatrixState(state="disconnected", pressed=[])
+        except Exception as e:
+            # the keyboard didn't answer this time: the tabs keep what they have
+            if not self.failing:
+                log.warning("reading the switch matrix failed: %s", e)
+            self.failing = True
+            return None
+        self.failing = False
+        return schemas.MatrixState(state=reading.state,
+                                   pressed=[schemas.MatrixPosition(row=r, col=c) for r, c in reading.pressed])
+
+    async def _read(self):
+        me = asyncio.current_task()
+        loop = asyncio.get_running_loop()
+        try:
+            while self.watchers and self.task is me and not self.stopping:
+                started = loop.time()
+                state = await asyncio.to_thread(self._reading)
+                if state is not None and state != self.last and self.task is me:
+                    self.last = state
+                    await self._send_to(list(self.watchers), state)
+                await asyncio.sleep(max(self.interval - (loop.time() - started), self.gap))
+        finally:
+            if self.task is me:
+                self.task = None
+                self.last = None
+
+    async def _send_to(self, tabs, state):
+        event = {"type": "matrix", "matrix": state.model_dump()}
+        await asyncio.gather(*(self.send(ws, event) for ws in tabs))
+
+
 def unlock_model(state):
     """ device.UnlockState -> schemas.UnlockState """
     return schemas.UnlockState(state=state.state, keys=[schemas.MatrixPosition(row=r, col=c) for r, c in state.keys],
@@ -202,12 +292,14 @@ class UnlockFollower:
 
 
 def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone=None,
-               poll_interval=1.0, close_grace=3.0, instance_id=None, unlock_interval=UNLOCK_POLL_INTERVAL):
+               poll_interval=1.0, close_grace=3.0, instance_id=None, unlock_interval=UNLOCK_POLL_INTERVAL,
+               matrix_interval=MATRIX_POLL_INTERVAL, matrix_gap=MATRIX_POLL_GAP):
     """
     manager: DeviceManager; names: NamesStore; token: session secret; port: the port the server listens on
     static_dir: built UI (web/dist) or None for a placeholder page
     on_all_clients_gone: called once the last UI tab has been closed for close_grace seconds
     poll_interval: seconds between hot-plug checks (0: none); unlock_interval: between readings of an unlock countdown
+    matrix_interval, matrix_gap: the matrix tester's readings (MatrixWatcher)
     """
     allowed_hosts = {"127.0.0.1:{}".format(port), "localhost:{}".format(port)}
     allowed_origins = {"http://" + h for h in allowed_hosts}
@@ -229,6 +321,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             follower.start()
 
     follower = UnlockFollower(manager, broadcast_events, unlock_interval)
+
+    async def send_to_watcher(ws, event):
+        await hub._send(ws, event)
+        if ws not in hub.clients:  # dropped: it no longer watches either
+            matrix.unwatch(ws)
+
+    matrix = MatrixWatcher(manager, send_to_watcher, matrix_interval, matrix_gap)
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
@@ -255,12 +354,14 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
             await follower.shutdown()
+            await matrix.shutdown()
             await hub.shutdown()
 
     app = FastAPI(title="Vial", lifespan=lifespan)
     app.state.hub = hub
     app.state.manager = manager
     app.state.unlock_follower = follower
+    app.state.matrix = matrix
 
     def openapi():
         # WebSocket messages have no place in OpenAPI's paths: the event shape is added as a component, so the UI's
@@ -572,11 +673,25 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         try:
             await ws.send_json({"type": "connected" if manager.connected else "disconnected"})
             while True:
-                await ws.receive_text()
+                await on_message(ws, await ws.receive_text())
         except WebSocketDisconnect:
             pass
         finally:
+            matrix.unwatch(ws)
             await hub.remove(ws)
+
+    async def on_message(ws, text):
+        """ What a tab asks for: {"type": "matrix", "watch": true} (or false) to get the keys held, or not. Anything
+        else is ignored. """
+        try:
+            message = json.loads(text)
+        except (ValueError, RecursionError):
+            return
+        if isinstance(message, dict) and message.get("type") == "matrix" and isinstance(message.get("watch"), bool):
+            if message["watch"]:
+                await matrix.watch(ws)
+            else:
+                matrix.unwatch(ws)
 
     if manager.backend.fake:
         # for UI tests: unplug and replug the simulated keyboard. Never exists for real keyboards.
@@ -585,6 +700,17 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             with manager.lock:
                 manager.backend.set_connected(body.connected)
             return {"connected": body.connected}
+
+        # for UI tests: a key of the simulated keyboard's matrix is pressed or let go (the matrix tester shows it). Never
+        # exists for real keyboards.
+        @app.put("/api/simulator/matrix", include_in_schema=False)
+        def set_simulator_press(body: schemas.SimulatorPress):
+            with manager.lock:
+                virtual = manager.backend.virtual
+                if virtual is None:  # nothing has looked for the keyboard yet
+                    raise NotConnected("no simulated keyboard yet")
+                (virtual.press if body.pressed else virtual.release)(body.row, body.col)
+                return {"pressed": sorted(virtual.pressed)}
 
         # for UI tests: the user holds the simulated keyboard's unlock keys, or lets go of them; or it is locked, as
         # plugging it in again would. Never exists for real keyboards.

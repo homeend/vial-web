@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connectEvents, type LinkState, type ServerEvent } from "./events";
+import { connectEvents, type EventsLink, type LinkState, type ServerEvent } from "./events";
 
 /** Stands in for the browser's WebSocket: the test opens, closes and sends on it by hand */
 class FakeSocket {
@@ -27,8 +27,11 @@ class FakeSocket {
     this.onopen?.();
   }
 
+  /** What the page sent */
+  sent: string[] = [];
+
   /** The server sent a frame */
-  send(data: string): void {
+  deliver(data: string): void {
     if (!this.closed) this.onmessage?.({ data });
   }
 
@@ -39,6 +42,11 @@ class FakeSocket {
     this.onclose?.();
   }
 
+  /** Called by the page */
+  send(data: string): void {
+    this.sent.push(data);
+  }
+
   /** Called by the page; like the browser, it ends with a close event */
   close(): void {
     this.drop();
@@ -47,10 +55,11 @@ class FakeSocket {
 
 let events: ServerEvent[];
 let links: LinkState[];
-let stop: (() => void) | undefined;
+let link: EventsLink | undefined;
+const stop = () => link?.close();
 
 function connect(): void {
-  stop = connectEvents((event) => events.push(event), (state) => links.push(state));
+  link = connectEvents((event) => events.push(event), (state) => links.push(state));
 }
 
 beforeEach(() => {
@@ -58,13 +67,13 @@ beforeEach(() => {
   FakeSocket.all = [];
   events = [];
   links = [];
-  stop = undefined;
+  link = undefined;
   vi.stubGlobal("WebSocket", FakeSocket);
   vi.stubGlobal("location", { protocol: "http:", host: "127.0.0.1:8000" });
 });
 
 afterEach(() => {
-  stop?.();
+  stop();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -89,10 +98,10 @@ describe("connectEvents", () => {
     connect();
     FakeSocket.latest.accept();
     for (const type of ["connected", "disconnected", "reloaded"]) {
-      FakeSocket.latest.send(JSON.stringify({ type }));
+      FakeSocket.latest.deliver(JSON.stringify({ type }));
     }
     const unlock = { state: "unlocking", keys: [{ row: 0, col: 0 }], remaining: 3, total: 50 };
-    FakeSocket.latest.send(JSON.stringify({ type: "unlock", unlock }));
+    FakeSocket.latest.deliver(JSON.stringify({ type: "unlock", unlock }));
     expect(events).toEqual([{ type: "connected" }, { type: "disconnected" }, { type: "reloaded" },
       { type: "unlock", unlock }]);
   });
@@ -103,18 +112,18 @@ describe("connectEvents", () => {
     const frames = [{ type: "toString" }, { type: "constructor" }, { type: "other" }, { type: 1 }, {}, { type: "unlock" },
       { type: "unlock", unlock: null }];
     for (const frame of frames) {
-      FakeSocket.latest.send(JSON.stringify(frame));
+      FakeSocket.latest.deliver(JSON.stringify(frame));
     }
-    FakeSocket.latest.send("null");
-    FakeSocket.latest.send("42");
+    FakeSocket.latest.deliver("null");
+    FakeSocket.latest.deliver("42");
     expect(events).toEqual([]);
   });
 
   it("ignores frames that aren't JSON and keeps listening", () => {
     connect();
     FakeSocket.latest.accept();
-    expect(() => FakeSocket.latest.send("not json {")).not.toThrow();
-    FakeSocket.latest.send(JSON.stringify({ type: "reloaded" }));
+    expect(() => FakeSocket.latest.deliver("not json {")).not.toThrow();
+    FakeSocket.latest.deliver(JSON.stringify({ type: "reloaded" }));
     expect(events).toEqual([{ type: "reloaded" }]);
     expect(FakeSocket.all).toHaveLength(1);
   });
@@ -155,7 +164,7 @@ describe("connectEvents", () => {
     expect(vi.getTimerCount()).toBe(0);
     vi.advanceTimersByTime(60_000);
     for (const socket of FakeSocket.all) {
-      socket.send(JSON.stringify({ type: "reloaded" }));
+      socket.deliver(JSON.stringify({ type: "reloaded" }));
       socket.drop();
     }
     vi.advanceTimersByTime(60_000);
@@ -167,7 +176,7 @@ describe("connectEvents", () => {
 
   it("stops for good while connecting", () => {
     connect();
-    stop?.();
+    stop();
     expect(FakeSocket.all).toHaveLength(1);
     expectSilenceAfterStop();
     expect(FakeSocket.all).toHaveLength(1);
@@ -176,7 +185,7 @@ describe("connectEvents", () => {
   it("stops for good while open", () => {
     connect();
     FakeSocket.latest.accept();
-    stop?.();
+    stop();
     expectSilenceAfterStop();
     expect(FakeSocket.all).toHaveLength(1);
   });
@@ -185,7 +194,7 @@ describe("connectEvents", () => {
     connect();
     FakeSocket.latest.drop();
     expect(vi.getTimerCount()).toBe(1);
-    stop?.();
+    stop();
     expectSilenceAfterStop();
     expect(FakeSocket.all).toHaveLength(1);
   });
@@ -196,9 +205,38 @@ describe("connectEvents", () => {
     const socket = FakeSocket.latest;
     // A browser fires the close event later; simulate a socket whose close() does nothing yet
     socket.close = () => {};
-    stop?.();
+    stop();
     socket.close = FakeSocket.prototype.close;
     socket.drop();
     expectSilenceAfterStop();
+  });
+});
+
+describe("the matrix tester on the events link", () => {
+  it("passes on the keys held, and ignores a matrix event without them", () => {
+    connect();
+    FakeSocket.latest.accept();
+    const matrix = { state: "testing", pressed: [{ row: 1, col: 2 }] };
+    FakeSocket.latest.deliver(JSON.stringify({ type: "matrix", matrix }));
+    for (const frame of [{ type: "matrix" }, { type: "matrix", matrix: null }, { type: "matrix", matrix: {} }]) {
+      FakeSocket.latest.deliver(JSON.stringify(frame));
+    }
+    expect(events).toEqual([{ type: "matrix", matrix }]);
+  });
+
+  it("sends what the page asks for only while the link is open", () => {
+    connect();
+    link!.send({ type: "matrix", watch: true });
+    expect(FakeSocket.latest.sent).toEqual([]);
+    FakeSocket.latest.accept();
+    link!.send({ type: "matrix", watch: true });
+    expect(FakeSocket.latest.sent).toEqual(['{"type":"matrix","watch":true}']);
+    FakeSocket.latest.drop();
+    link!.send({ type: "matrix", watch: false });
+    vi.advanceTimersByTime(500);
+    // a new link: nothing is sent again by itself
+    expect(FakeSocket.all).toHaveLength(2);
+    FakeSocket.latest.accept();
+    expect(FakeSocket.latest.sent).toEqual([]);
   });
 });

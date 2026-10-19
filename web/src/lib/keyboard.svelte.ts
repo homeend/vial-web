@@ -4,7 +4,7 @@ import { untrack } from "svelte";
 import { api } from "../api/api";
 import { DEFAULT_LANGUAGE, setRequestLanguage } from "../api/client";
 import { ApiError, causeMessage, failureMessage } from "../api/errors";
-import { connectEvents, type LinkState, type ServerEvent } from "../api/events";
+import { connectEvents, type EventsLink, type LinkState, type ServerEvent } from "../api/events";
 import type {
   AltRepeatKeyIn, KeyboardLanguage, KeyboardModel, KeycodeCategory, KeyOverrideIn, MacroActionIn, Named, QmkSetting,
   Session, TapDanceIn,
@@ -82,6 +82,7 @@ export class KeyboardStore {
   #opening = false;
   /** the language list, or null when it couldn't be read */
   #languageList: Promise<KeyboardLanguage[] | null> = Promise.resolve(null);
+  #link: EventsLink | null = null;
 
   /** Load the language list, then follow the server's events (which start with the keyboard's state) */
   start(): () => void {
@@ -96,7 +97,12 @@ export class KeyboardStore {
         },
         () => null,
       );
-      return connectEvents((event) => this.#onEvent(event), (state) => this.#onLink(state));
+      const link = connectEvents((event) => this.#onEvent(event), (state) => this.#onLink(state));
+      this.#link = link;
+      return () => {
+        link.close();
+        if (this.#link === link) this.#link = null;
+      };
     });
   }
 

@@ -24,7 +24,7 @@ vi.mock("../api/api", () => ({
     lock: vi.fn(),
   },
 }));
-vi.mock("../api/events", () => ({ connectEvents: vi.fn(() => () => undefined) }));
+vi.mock("../api/events", () => ({ connectEvents: vi.fn(() => ({ close: vi.fn(), send: vi.fn() })) }));
 vi.mock("../api/client", () => ({ DEFAULT_LANGUAGE: "en-us", setRequestLanguage: vi.fn() }));
 
 const { api } = await import("../api/api");
@@ -104,8 +104,12 @@ function started() {
   const store = new KeyboardStore();
   store.start();
   const [onEvent, onLink] = vi.mocked(connectEvents).mock.calls.at(-1)!;
+  const events = vi.mocked(connectEvents).mock.results.at(-1)!.value as { send: ReturnType<typeof vi.fn> };
   onLink("open");
-  return { store, emit: (type: ServerEvent["type"]) => onEvent({ type, unlock: null }), send: onEvent, link: onLink };
+  // the server leaves out what an event doesn't carry
+  const send = (event: Pick<ServerEvent, "type"> & Partial<ServerEvent>) => onEvent({ unlock: null, matrix: null, ...event });
+  return { store, emit: (type: ServerEvent["type"]) => send({ type }), send, link: onLink,
+    sent: events.send };
 }
 
 /** A started store that has loaded model("KC_A") and can edit */
