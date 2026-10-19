@@ -44,6 +44,13 @@ describe("macro sizes", () => {
     expect(stepBytes(keys("up", SHIFT, CTRL_C, ENTER), 6)).toBe(3 + 4 + 3);
   });
 
+  it("take two bytes for the KC_ keycodes that aren't basic ones (the test models know which)", () => {
+    expect(stepBytes(keys("tap", described("KC_A")), 6)).toBe(3);
+    expect(stepBytes(keys("tap", described("KC_GESC")), 6)).toBe(4);
+    expect(stepBytes(keys("tap", described("KC_EXLM")), 6)).toBe(4);
+    expect(stepBytes(keys("tap", described("KC_LSPO")), 6)).toBe(4);
+  });
+
   it("count text read from the keyboard a byte a character, as the keyboard stores it", () => {
     // bytes C5 BC (UTF-8 for "ż" written by another tool) come back from the keyboard as two characters
     expect(stepBytes(text("Å¼"), 6)).toBe(2);

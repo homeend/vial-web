@@ -13,11 +13,19 @@ function label(code: string): string {
   return LABELS[name] ?? name;
 }
 
-/** Roughly the value the keyboard stores: what matters is that plain KC_ keycodes are under 256 (one byte in a macro)
- * and the others aren't */
+/** KC_ names that aren't basic keycodes: shifted symbols (LSFT(...), 0x02xx in protocol 6) and the quantum keys
+ * (Grave Escape, Space Cadet, Auto Shift: 0x7Cxx) */
+const SHIFTED_KC = /^KC_(TILD|EXLM|AT|HASH|DLR|PERC|CIRC|AMPR|ASTR|LPRN|RPRN|UNDS|PLUS|LCBR|RCBR|PIPE|COLN|DQUO|LT|GT|QUES)$/;
+const QUANTUM_KC = /^KC_(GESC|LSPO|RSPC|LCPO|RCPC|LAPO|RAPC|SFTENT|ASDN|ASUP|ASRP|ASON|ASOFF|ASTG)$/;
+
+/** Roughly the value the keyboard stores (protocol 6): not the real number, but on the right side of 256, which is
+ * what matters (a macro step takes one byte for a keycode under 256, two for the others). Basic KC_ keycodes are
+ * under 256; the shifted and quantum KC_ ones above aren't, nor is anything else. */
 function valueOf(code: string): number {
   if (code === "KC_NO") return 0;
   if (code === "KC_TRNS") return 1;
+  if (SHIFTED_KC.test(code)) return 0x0200;
+  if (QUANTUM_KC.test(code)) return 0x7c00;
   return /^KC_\w+$/.test(code) ? 0x04 : 0x5200;
 }
 
