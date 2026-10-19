@@ -16,4 +16,7 @@ export const api = {
     request("put", "/api/tap-dance/{index}", { params: { index }, body }),
   setLayerName: (index: number, name: string) =>
     request("put", "/api/names/{kind}/{index}", { params: { kind: "layers", index }, body: { name } }),
+  unlockStart: () => request("post", "/api/unlock/start"),
+  unlockCancel: () => request("post", "/api/unlock/cancel"),
+  lock: () => request("post", "/api/lock"),
 };
