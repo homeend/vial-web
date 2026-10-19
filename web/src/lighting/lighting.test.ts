@@ -235,18 +235,10 @@ describe("restorePatches", () => {
 /** A clock the test moves by hand */
 function fakeClock() {
   let now = 0;
-  const timers: { at: number; run: () => void; id: number }[] = [];
-  let ids = 0;
+  const timers: { at: number; run: () => void }[] = [];
   const clock: Clock = {
     now: () => now,
-    setTimeout: (run, ms) => {
-      timers.push({ at: now + ms, run, id: ++ids });
-      return ids;
-    },
-    clearTimeout: (id) => {
-      const i = timers.findIndex((t) => t.id === id);
-      if (i >= 0) timers.splice(i, 1);
-    },
+    setTimeout: (run, ms) => timers.push({ at: now + ms, run }),
   };
   return {
     clock,
@@ -290,6 +282,8 @@ describe("LatestWriter", () => {
     w.push({ a: 3 });
     expect(writes).toHaveLength(1);
     advance(150);
+    // still one: no second write while the first is on its way, however long it takes
+    expect(writes).toHaveLength(1);
     writes[0].done();
     await flush();
     expect(writes.map((x) => x.value)).toEqual([{ a: 1 }, { a: 3, b: 5 }]);
@@ -329,10 +323,11 @@ describe("LatestWriter", () => {
 
   it("sends a burst of slider moves as a handful of writes, the last value last", async () => {
     const { w, writes, advance } = writer(100);
+    // 256 moves 4 ms apart: 1024 ms
     for (let v = 0; v <= 255; v++) {
       w.push({ v });
       advance(4);
-      // each write takes 30 ms
+      // the write on its way is done before the next move (in no time on the test's clock)
       if (writes.length && !("ended" in writes.at(-1)!)) {
         const last = writes.at(-1)!;
         Object.assign(last, { ended: true });
@@ -348,7 +343,26 @@ describe("LatestWriter", () => {
     await flush();
     for (const x of writes) x.done();
     await flush();
-    expect(writes.length).toBeLessThan(20);
+    // at most one write starts every 100 ms (11 in 1024 ms), then the last value
+    expect(writes.length).toBeLessThanOrEqual(12);
     expect(writes.at(-1)!.value).toEqual({ v: 255 });
+  });
+
+  it("goes on after a write that throws at once", async () => {
+    const { clock, advance } = fakeClock();
+    const sent: number[] = [];
+    const w = new LatestWriter<number>((value) => {
+      sent.push(value);
+      if (value === 1) throw new Error("no");
+      return Promise.resolve();
+    }, (_, b) => b, 100, () => undefined, clock);
+    w.push(1);
+    expect(w.busy).toBe(true);
+    await flush();
+    expect(w.busy).toBe(false);
+    advance(100);
+    w.push(2);
+    await w.idle();
+    expect(sent).toEqual([1, 2]);
   });
 });

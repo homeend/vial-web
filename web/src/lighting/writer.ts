@@ -1,16 +1,17 @@
 // Sending changes that come quickly (a slider dragged) without flooding the keyboard: one write at a time, at most one
 // every `gapMs`; changes made meanwhile are merged, so the latest value of each always reaches the keyboard last.
+//
+// A value pushed is sent even if the page that pushed it has gone meanwhile (there is nothing to stop it): the last
+// change made still reaches the keyboard, and the page made anew shows what it replied.
 
 export interface Clock {
   now(): number;
   setTimeout(run: () => void, ms: number): unknown;
-  clearTimeout(timer: unknown): void;
 }
 
 const realClock: Clock = {
   now: () => performance.now(),
   setTimeout: (run, ms) => setTimeout(run, ms),
-  clearTimeout: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
 };
 
 export class LatestWriter<T> {
@@ -26,7 +27,8 @@ export class LatestWriter<T> {
   readonly #clock: Clock;
 
   /**
-   * write: sends one value (a failure is the writer's to report: the next value is sent all the same)
+   * write: sends one value (a failure, rejected or thrown, is the writer's to report: the next value is sent all the
+   *   same)
    * merge: one value with the changes of a newer one put over it
    * gapMs: the least time from the start of one write to the start of the next
    * onBusy: told whenever `busy` changes
@@ -78,7 +80,13 @@ export class LatestWriter<T> {
     this.#pending = null;
     this.#writing = true;
     this.#lastStart = this.#clock.now();
-    void this.#write(value).catch(() => undefined).finally(() => {
+    let written: Promise<unknown>;
+    try {
+      written = this.#write(value);
+    } catch (error) {
+      written = Promise.reject(error);
+    }
+    void written.catch(() => undefined).finally(() => {
       this.#writing = false;
       this.#schedule();
       if (!this.busy) {
