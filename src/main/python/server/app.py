@@ -324,9 +324,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.exception_handler(KeyboardRefused)
     async def refused(request, exc):
-        # it answered: the message says what it refused
+        # it answered, and can't take the change: the page shows the message (a 502 would read "didn't respond")
         log.warning("%s", exc)
-        return JSONResponse({"detail": str(exc)}, status_code=502)
+        return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(RuntimeError)
     async def device_error(request, exc):

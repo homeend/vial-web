@@ -174,8 +174,8 @@ def test_a_setting_the_keyboard_rejects_keeps_its_value(client, virtual, monkeyp
         return real(msg)
     monkeypatch.setattr(virtual, "_vial", refuse_settings)
     response = client.put("/api/qmk-settings/7", json={"value": 300})
-    # the keyboard answered: it refused, which isn't "didn't respond"
-    assert response.status_code == 502
+    # the keyboard answered: it can't take the change (the page shows a 422's message; a 502 reads "didn't respond")
+    assert response.status_code == 422
     assert response.json()["detail"] == "the keyboard rejected setting 7 (Tapping Term)"
     settings = {s["qsid"]: s["value"] for s in client.get("/api/keyboard").json()["settings"]}
     assert settings[7] == 200
