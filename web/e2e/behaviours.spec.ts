@@ -340,3 +340,26 @@ test("the top bar locks and unlocks the keyboard; a cancelled unlock can be take
     await unlockAgain(app);
   }
 });
+
+test.describe("screenshots of the behaviour pages", () => {
+  for (const [width, height] of [[800, 900], [1280, 800], [2560, 1440], [1920, 950]]) {
+    test(`${width} x ${height}: no sideways scroll, at most 860 px wide, nothing off the bottom`, async ({ app }) => {
+      await app.setViewportSize({ width, height });
+      for (const [name, id] of [["Tap dance", "tap-dance"], ["Combos", "combos"], ["Macros", "macros"]] as const) {
+        await openSection(app, name);
+        const overflow = await app.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        expect(overflow).toBeLessThanOrEqual(0);
+        const page = (await app.locator(".page.list").boundingBox())!;
+        expect(page.width).toBeLessThanOrEqual(860);
+        await pageShots(app, `${id}-${width}x${height}`);
+      }
+      // the picker, opened from a card, fits the window
+      await openSection(app, "Tap dance");
+      await tapDanceCard(app, 0).getByRole("button", { name: /^Tap, then hold:/ }).click();
+      const picker = app.getByRole("dialog", { name: "Choose a keycode" });
+      await expect(picker).toBeVisible();
+      await expectInWindow(app, picker);
+      await picker.getByRole("button", { name: "Close" }).click();
+    });
+  }
+});

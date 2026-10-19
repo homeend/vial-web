@@ -33,6 +33,11 @@ its lock, log and names out of your user folders. With `--fake`, `--layers N` (1
 simulated keyboard N layers (the sample keymap fills the first four, the others are empty), and
 `--definition FILE` simulates another keyboard.
 
+The simulated Corne starts unlocked, as nobody can hold its keys. Its unlock keys are the outermost
+keys of both top rows (Tab and Backspace). A fake server has a test hook for them:
+`PUT /api/simulator/unlock` with `{"locked": true}` locks the keyboard, and `{"keysHeld": true}`
+(or `false`) holds its unlock keys down (or lets go); the e2e tests unlock it that way.
+
 ## Scripts
 
 | Script | What it does |
@@ -69,10 +74,11 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | Folder | What |
 |---|---|
 | `src/api/` | Typed HTTP client, error messages, WebSocket events, generated schema types |
-| `src/lib/` | The keyboard store (loaded model, connection, edits), toasts, and the theme (System, Light, Dark) |
+| `src/lib/` | The keyboard store (loaded model, connection, edits), unlocking, the section shown (the address's `#combos/2`), toasts, and the theme (System, Light, Dark) |
 | `src/keyboard/` | Drawing any keyboard from its geometry; key labels |
 | `src/analysis/` | Pure functions over the loaded model: how each layer is reached, combo keys, tap dance and macro usage, finding a character or key, and the phrases for them |
 | `src/keymap/` | Keymap Edit and Overview views: layer tabs, Inspector, hold editor, keyboard navigation, layer cards, find box |
+| `src/behaviours/` | The Tap dance, Combos and Macros pages: their cards, the combo key chooser, the macro step editor and recorder, and the plain-language sentences |
 | `src/picker/` | Keycode picker: search, categories, any-keycode entry |
-| `src/shell/` | Top bar, navigation, banners, toasts |
-| `src/ui/` | Small shared controls |
+| `src/shell/` | Top bar (with the Lock/Unlock control), navigation, banners, toasts, the unlock dialog |
+| `src/ui/` | Small shared controls, and the name dialog (layers, tap dances, macros) |
