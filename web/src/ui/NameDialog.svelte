@@ -25,7 +25,7 @@
     subject: NameSubject | null;
     /** resolves to whether it worked: the dialog then closes, or stays open with what was typed (a toast says why) */
     onsave: (name: string) => Promise<boolean>;
-    /** closed, saved or not: whatever opened it gets the focus back */
+    /** closed, saved or not: the caller gives the focus back to whatever opened it */
     onclose: () => void;
   }
 
@@ -37,15 +37,19 @@
   let saving = $state(false);
   /** what the dialog is open for: kept while it closes */
   let shown = $state<NameSubject | null>(null);
+  /** counts the openings, so a save that ends after the dialog was closed or opened again is ignored */
+  let opened = 0;
   const uid = $props.id();
 
   $effect(() => {
     if (!dialog) return;
-    if (subject !== null && !dialog.open) {
+    // opened, or switched straight to something else (say the address changed while it was open)
+    if (subject !== null && (!dialog.open || subject.title !== shown?.title)) {
+      opened++;
       shown = subject;
       draft = subject.text;
       saving = false;
-      dialog.showModal();
+      if (!dialog.open) dialog.showModal();
       void tick().then(() => input?.select());
     } else if (subject === null && dialog.open) {
       dialog.close();
@@ -56,9 +60,11 @@
     event.preventDefault();
     if (shown === null || saving) return;
     saving = true;
+    const opening = opened;
     const done = await onsave(draft.trim());
+    if (opening !== opened || !dialog?.open) return;
     saving = false;
-    if (done) dialog?.close();
+    if (done) dialog.close();
     else void tick().then(() => input?.focus());
   }
 </script>
@@ -67,6 +73,10 @@
   bind:this={dialog}
   class="name-dialog"
   aria-labelledby="{uid}-title"
+  oncancel={(event) => {
+    // Esc waits for a save under way, as Cancel does
+    if (saving) event.preventDefault();
+  }}
   onclose={() => {
     if (shown !== null) onclose();
     shown = null;
@@ -92,7 +102,7 @@
       <span class="count" class:full={draft.length >= NAME_MAX}>{draft.length} / {NAME_MAX}</span>
     </p>
     <div class="buttons">
-      <Button onclick={() => dialog?.close()}>Cancel</Button>
+      <Button onclick={() => dialog?.close()} disabled={saving}>Cancel</Button>
       <Button variant="primary" type="submit" disabled={saving}>Save</Button>
     </div>
   </form>
