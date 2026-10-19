@@ -183,9 +183,30 @@ class Named(BaseModel):
     customName: bool
 
 
+class MatrixPosition(BaseModel):
+    row: int
+    col: int
+
+
+class UnlockState(BaseModel):
+    """ Whether the keyboard is unlocked, and how far an unlock has got """
+    state: Literal["locked", "unlocking", "cancelled", "unlocked"]
+    """ unlocking: the keyboard waits for its unlock keys to be held, and Vial follows its countdown; cancelled: Vial
+    stopped following, but the keyboard keeps waiting (it can't be called off) and takes no changes until it is unlocked
+    or plugged in again """
+    keys: list[MatrixPosition]
+    """ the keys to hold, while unlocking or cancelled """
+    remaining: int
+    """ the keyboard's countdown: how many more polls it wants every key held for (0 before the first poll) """
+    total: int
+    """ where the countdown started: the highest it was seen at """
+
+
 class Event(BaseModel):
-    """ What /api/events sends: the keyboard was plugged in, unplugged, or read again """
-    type: Literal["connected", "disconnected", "reloaded"]
+    """ What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed """
+    type: Literal["connected", "disconnected", "reloaded", "unlock"]
+    unlock: Optional[UnlockState] = None
+    """ with "unlock": the new state; sent at every change, and with each reading of the countdown """
 
 
 class LayoutOptions(BaseModel):
@@ -221,6 +242,8 @@ class Session(BaseModel):
     fake: bool
     device: Optional[str] = None
     error: Optional[str] = None
+    unlock: UnlockState
+    """ a keyboard that is unlocking while not connected waits for an unlock started earlier, before it is read """
 
 
 class CatalogueKeycode(Described):
@@ -359,6 +382,13 @@ class LightingIn(Request):
 class SimulatorConnection(Request):
     """ Fake mode only: whether the simulated keyboard is plugged in """
     connected: bool
+
+
+class SimulatorUnlock(Request):
+    """ Fake mode only: the user holds the simulated keyboard's unlock keys (or lets go of them), or it is locked """
+    keysHeld: Optional[bool] = None
+    locked: Optional[bool] = None
+    """ true: lock it, as plugging it in again would """
 
 
 class NameIn(Request):

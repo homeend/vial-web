@@ -16,11 +16,14 @@ def test_dump_openapi_writes_the_schema_without_qt_hidapi_or_a_server(tmp_path):
     keycodes = schema["paths"]["/api/keycodes"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
     assert keycodes == {"type": "array", "items": {"$ref": "#/components/schemas/KeycodeCategory"},
                         "title": "Response Keycodes Api Keycodes Get"}
-    assert "/api/simulator/connection" not in schema["paths"]  # a test aid of fake mode, not part of the API
+    # test aids of fake mode, not part of the API
+    assert "/api/simulator/connection" not in schema["paths"] and "/api/simulator/unlock" not in schema["paths"]
+    assert {"/api/unlock/start", "/api/unlock/cancel", "/api/lock"} <= set(schema["paths"])
     assert "/" not in schema["paths"]  # the page, not the API
     # what /api/events sends (WebSockets have no place in OpenAPI's paths)
     event = schema["components"]["schemas"]["Event"]
-    assert set(event["properties"]["type"]["enum"]) == {"connected", "disconnected", "reloaded"}
+    assert set(event["properties"]["type"]["enum"]) == {"connected", "disconnected", "reloaded", "unlock"}
+    assert "UnlockState" in schema["components"]["schemas"]
     options = schema["paths"]["/api/layout-options"]["put"]["responses"]["200"]["content"]["application/json"]
     assert options["schema"] == {"$ref": "#/components/schemas/LayoutOptionsValue"}
     named = schema["paths"]["/api/names/{kind}/{index}"]["put"]["responses"]["200"]["content"]["application/json"]

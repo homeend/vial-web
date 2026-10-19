@@ -91,13 +91,18 @@ describe("connectEvents", () => {
     for (const type of ["connected", "disconnected", "reloaded"]) {
       FakeSocket.latest.send(JSON.stringify({ type }));
     }
-    expect(events).toEqual(["connected", "disconnected", "reloaded"]);
+    const unlock = { state: "unlocking", keys: [{ row: 0, col: 0 }], remaining: 3, total: 50 };
+    FakeSocket.latest.send(JSON.stringify({ type: "unlock", unlock }));
+    expect(events).toEqual([{ type: "connected" }, { type: "disconnected" }, { type: "reloaded" },
+      { type: "unlock", unlock }]);
   });
 
   it("ignores events of unknown type", () => {
     connect();
     FakeSocket.latest.accept();
-    for (const frame of [{ type: "toString" }, { type: "constructor" }, { type: "other" }, { type: 1 }, {}]) {
+    const frames = [{ type: "toString" }, { type: "constructor" }, { type: "other" }, { type: 1 }, {}, { type: "unlock" },
+      { type: "unlock", unlock: null }];
+    for (const frame of frames) {
       FakeSocket.latest.send(JSON.stringify(frame));
     }
     FakeSocket.latest.send("null");
@@ -110,7 +115,7 @@ describe("connectEvents", () => {
     FakeSocket.latest.accept();
     expect(() => FakeSocket.latest.send("not json {")).not.toThrow();
     FakeSocket.latest.send(JSON.stringify({ type: "reloaded" }));
-    expect(events).toEqual(["reloaded"]);
+    expect(events).toEqual([{ type: "reloaded" }]);
     expect(FakeSocket.all).toHaveLength(1);
   });
 

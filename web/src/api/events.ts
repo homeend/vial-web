@@ -1,4 +1,4 @@
-// Live events from the server: the keyboard was plugged in, unplugged, or read again.
+// Live events from the server: the keyboard was plugged in, unplugged, read again, or its unlock state changed.
 import type { ServerEvent } from "./types";
 
 export type { ServerEvent };
@@ -7,10 +7,13 @@ export type LinkState = "connecting" | "open" | "closed";
 const RETRY_FIRST_MS = 500;
 const RETRY_MAX_MS = 5000;
 
-const EVENTS: Record<ServerEvent, true> = { connected: true, disconnected: true, reloaded: true };
+const EVENTS: Record<ServerEvent["type"], true> = { connected: true, disconnected: true, reloaded: true, unlock: true };
 
-function isServerEvent(type: unknown): type is ServerEvent {
-  return typeof type === "string" && Object.hasOwn(EVENTS, type);
+/** An event of a known type; an "unlock" one must carry the unlock state */
+function isServerEvent(frame: unknown): frame is ServerEvent {
+  const { type, unlock } = (frame ?? {}) as { type?: unknown; unlock?: unknown };
+  if (typeof type !== "string" || !Object.hasOwn(EVENTS, type)) return false;
+  return type !== "unlock" || (typeof unlock === "object" && unlock !== null);
 }
 
 /** Keeps a WebSocket to /api/events open, reconnecting when it drops. Returns a function that closes it for good. */
@@ -38,8 +41,7 @@ export function connectEvents(
       } catch {
         return; // not JSON: not an event
       }
-      const type = (frame as { type?: unknown } | null)?.type;
-      if (isServerEvent(type)) onEvent(type);
+      if (isServerEvent(frame)) onEvent(frame);
     };
     socket.onclose = () => {
       socket = null;

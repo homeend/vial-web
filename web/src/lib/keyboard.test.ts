@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
-import type { Described, KeyboardLanguage, KeyboardModel } from "../api/types";
+import type { Described, KeyboardLanguage, KeyboardModel, ServerEvent } from "../api/types";
 
 vi.mock("../api/api", () => ({
   api: {
@@ -91,7 +91,7 @@ function started() {
   store.start();
   const [onEvent, onLink] = vi.mocked(connectEvents).mock.calls.at(-1)!;
   onLink("open");
-  return { store, emit: onEvent };
+  return { store, emit: (type: ServerEvent["type"]) => onEvent({ type, unlock: null }), send: onEvent };
 }
 
 /** A started store that has loaded model("KC_A") and can edit */

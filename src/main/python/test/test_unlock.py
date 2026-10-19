@@ -1,17 +1,23 @@
-""" Unlocking the keyboard: the device manager follows the protocol as Qt's unlocker does, against the simulated Corne
-(unlock keys: Tab at row 0 column 0, Backspace at row 4 column 0) """
+""" Unlocking the keyboard: the device manager follows the protocol as Qt's unlocker does, and the API lets the UI run
+it, against the simulated Corne (unlock keys: Tab at row 0 column 0, Backspace at row 4 column 0) """
 import pytest
+from fastapi.testclient import TestClient
 
 import transport
 from protocol.keyboard_comm import Keyboard
 from protocol.unlock_hook import request_unlock, set_unlock_handler
+from server.app import create_app
 from server.device import DeviceManager, FakeBackend, KeyboardLocked, NotConnected, UnlockState, require_unlocked
+from server.names import NamesStore
 from simulator.corne import UNLOCK_KEYS, make_corne
 from simulator.device import SimulatedHidDevice
+from test.test_api import BASE, EVENTS, ORIGIN, PORT, TOKEN
+from test.test_api_server import wait_until
 
 COUNTDOWN = 3
 """ the simulated keyboards here count down from 3, so that a few polls unlock them """
 KEYS = tuple(UNLOCK_KEYS)
+STEPS = [{"type": "text", "text": "hi"}]
 
 
 def locked_corne(**kwargs):
@@ -188,3 +194,109 @@ def test_unplugging_a_keyboard_that_waits_for_its_unlock_ends_it():
     assert m.check() == ["unlock"]
     assert m.unlock_state() == UnlockState("locked")
     assert m.status().title is None
+
+
+# ---------- API ----------
+
+@pytest.fixture
+def api(tmp_path):
+    """ (client with a session cookie, manager) of a locked Corne; the countdown is read every 10 ms """
+    manager = DeviceManager(FakeBackend(locked_corne))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0,
+                     unlock_interval=0.01)
+    with TestClient(app, base_url=BASE) as client:
+        assert client.get("/?token=" + TOKEN, follow_redirects=False).status_code == 303
+        yield client, manager
+
+
+def unlock_events(ws, until):
+    """ The "unlock" events up to the first whose state is `until` """
+    seen = []
+    while True:
+        event = ws.receive_json()
+        if event["type"] != "unlock":
+            continue
+        seen.append(event["unlock"])
+        if event["unlock"]["state"] == until:
+            return seen
+
+
+def test_session_and_model_say_whether_the_keyboard_is_unlocked(api):
+    client, manager = api
+    assert client.get("/api/session").json()["unlock"] == {"state": "locked", "keys": [], "remaining": 0, "total": 0}
+    assert client.get("/api/keyboard").json()["unlocked"] is False
+
+
+def test_a_macro_change_is_refused_while_locked_then_saved_once_unlocked(api):
+    client, manager = api
+    body = {"items": [STEPS] + [[]] * 15}
+    refused = client.put("/api/macros", json=body)
+    assert refused.status_code == 423
+    assert refused.json()["detail"] == "the keyboard is locked: unlock it to make this change"
+
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        assert ws.receive_json() == {"type": "connected"}
+        started = client.post("/api/unlock/start").json()
+        assert started == {"state": "unlocking", "keys": [{"row": 0, "col": 0}, {"row": 4, "col": 0}],
+                           "remaining": 0, "total": 0}
+        # the countdown is read until the keys are held all through it
+        progress = unlock_events(ws, "unlocking")
+        assert progress[0]["state"] == "unlocking"
+        assert client.put("/api/macros", json=body).status_code == 423  # still waiting
+        manager.backend.virtual.hold_unlock_keys(True)
+        states = unlock_events(ws, "unlocked")
+        assert [s["remaining"] for s in states if s["state"] == "unlocking" and s["remaining"] < COUNTDOWN]
+        assert states[-1] == {"state": "unlocked", "keys": [], "remaining": 0, "total": 0}
+
+    assert client.get("/api/session").json()["unlock"]["state"] == "unlocked"
+    saved = client.put("/api/macros", json=body)
+    assert saved.status_code == 200
+    assert saved.json()["items"][0]["actions"] == [{"type": "text", "text": "hi", "keys": [], "delay": None}]
+
+
+def test_cancel_and_lock(api):
+    client, manager = api
+    client.post("/api/unlock/start")
+    assert client.post("/api/unlock/cancel").json()["state"] == "cancelled"
+    manager.backend.virtual.hold_unlock_keys(True)
+    assert manager.backend.virtual.unlock_counter == COUNTDOWN  # nothing reads the countdown any more
+    assert client.post("/api/lock").status_code == 423  # the keyboard still waits for its unlock keys
+    # started again and finished
+    assert client.post("/api/unlock/start").json()["state"] == "unlocking"
+    assert wait_until(lambda: client.get("/api/session").json()["unlock"]["state"] == "unlocked")
+    assert client.post("/api/lock").json() == {"state": "locked", "keys": [], "remaining": 0, "total": 0}
+    assert not manager.backend.virtual.unlocked
+
+
+def test_the_simulator_hook_holds_the_keys_and_locks_the_keyboard(tmp_path):
+    manager = DeviceManager(FakeBackend(lambda: make_corne()))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0,
+                     unlock_interval=0.01)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN)
+        assert client.get("/api/session").json()["unlock"]["state"] == "unlocked"
+        assert client.put("/api/simulator/unlock", json={"locked": True}).json()["state"] == "locked"
+        assert not manager.unlocked
+        assert client.put("/api/simulator/unlock", json={"keysHeld": True}).status_code == 200
+        assert manager.backend.virtual.pressed == set(UNLOCK_KEYS)
+        client.post("/api/unlock/start")
+        assert wait_until(lambda: client.get("/api/session").json()["unlock"]["state"] == "unlocked", timeout=5)
+        client.put("/api/simulator/unlock", json={"keysHeld": False})
+        assert manager.backend.virtual.pressed == set()
+
+
+def test_an_interrupted_unlock_is_followed_from_the_start(tmp_path):
+    manager = DeviceManager(FakeBackend(interrupted_corne))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0,
+                     unlock_interval=0.01)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN)
+        session = client.get("/api/session").json()
+        assert (session["status"], session["unlock"]["state"]) == ("disconnected", "unlocking")
+        assert client.get("/api/keyboard").status_code == 503
+        manager.backend.virtual.hold_unlock_keys(True)
+        assert wait_until(lambda: client.get("/api/session").json()["status"] == "connected")
+        assert client.get("/api/keyboard").json()["unlocked"] is True

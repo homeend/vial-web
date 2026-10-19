@@ -70,7 +70,8 @@ export class KeyboardStore {
   }
 
   #onEvent(event: ServerEvent): void {
-    this.connected = event !== "disconnected";
+    if (event.type === "unlock") return; // the unlock state: the unlock dialog follows it
+    this.connected = event.type !== "disconnected";
     this.stale = true;
     if (this.connected) {
       void this.load();

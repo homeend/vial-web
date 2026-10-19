@@ -21,6 +21,8 @@ log = logging.getLogger(__name__)
 
 MAX_LAYOUT_FILE = 1024 * 1024
 """ largest .vil upload, in bytes """
+UNLOCK_POLL_INTERVAL = 0.2
+""" seconds between two readings of the unlock countdown, as Qt's unlocker """
 SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": "frame-ancestors 'none'",
@@ -125,18 +127,75 @@ class EventHub:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
+def unlock_model(state):
+    """ device.UnlockState -> schemas.UnlockState """
+    return schemas.UnlockState(state=state.state, keys=[schemas.MatrixPosition(row=r, col=c) for r, c in state.keys],
+                               remaining=state.remaining, total=state.total)
+
+
 def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone=None,
-               poll_interval=1.0, close_grace=3.0, instance_id=None):
+               poll_interval=1.0, close_grace=3.0, instance_id=None, unlock_interval=UNLOCK_POLL_INTERVAL):
     """
     manager: DeviceManager; names: NamesStore; token: session secret; port: the port the server listens on
     static_dir: built UI (web/dist) or None for a placeholder page
     on_all_clients_gone: called once the last UI tab has been closed for close_grace seconds
+    poll_interval: seconds between hot-plug checks (0: none); unlock_interval: between readings of an unlock countdown
     """
     allowed_hosts = {"127.0.0.1:{}".format(port), "localhost:{}".format(port)}
     allowed_origins = {"http://" + h for h in allowed_hosts}
     hub = EventHub(on_all_clients_gone, close_grace)
     instance_id = instance_id or secrets.token_hex(8)
     cookie = cookie_name(port)
+
+    following = {"task": None}
+    """ the task reading an unlock's countdown, while there is one """
+
+    async def broadcast_events(events, progress=False):
+        """ Send the device manager's events to every tab, an "unlock" one with the unlock state. progress: send the
+        unlock state even if it didn't change (a new reading of the countdown). An unlock to follow is followed. """
+        # read in a thread: the device lock may be held for a while
+        state = await asyncio.to_thread(manager.unlock_state)
+        unlock = {"type": "unlock", "unlock": unlock_model(state).model_dump()}
+        for event in events:
+            await hub.broadcast(unlock if event == "unlock" else {"type": event})
+        if progress and "unlock" not in events:
+            await hub.broadcast(unlock)
+        if state.state == "unlocking":
+            follow_unlock()
+
+    async def follow():
+        """ Read the countdown of the unlock being followed until it ends, as Qt's unlocker does """
+        try:
+            while True:
+                await asyncio.sleep(unlock_interval)
+                try:
+                    state = await asyncio.to_thread(manager.poll_unlock)
+                except NotConnected:
+                    state = None
+                except Exception:
+                    log.exception("reading the unlock countdown failed")
+                    state = await asyncio.to_thread(manager.cancel_unlock)
+                events = await asyncio.to_thread(manager.take_events)
+                if state is None or state.state != "unlocking":
+                    following["task"] = None  # done: an unlock started from here on is followed anew
+                await broadcast_events(events, progress=state is not None)
+                if state is None or state.state != "unlocking":
+                    return
+        finally:
+            if following["task"] is asyncio.current_task():
+                following["task"] = None
+
+    def follow_unlock():
+        """ Follow the unlock's countdown, unless that is being done already """
+        if following["task"] is None:
+            following["task"] = asyncio.get_running_loop().create_task(follow())
+
+    async def stop_following():
+        task, following["task"] = following["task"], None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
@@ -148,13 +207,16 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
                 except Exception:
                     log.exception("checking for the keyboard failed")
                     continue
-                for event in events:
-                    await hub.broadcast({"type": event})
+                await broadcast_events(events)
         task = app.state.poll_task = asyncio.create_task(poll()) if poll_interval else None
+        # a keyboard found waiting for an unlock started earlier: that is finished first
+        if (await asyncio.to_thread(manager.unlock_state)).state == "unlocking":
+            follow_unlock()
         try:
             yield
         finally:
             await hub.shutdown()
+            await stop_following()
             if task:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -170,7 +232,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         if app.openapi_schema is None:
             schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
             components = schema.setdefault("components", {}).setdefault("schemas", {})
-            components["Event"] = schemas.Event.model_json_schema(ref_template="#/components/schemas/{model}")
+            event = schemas.Event.model_json_schema(ref_template="#/components/schemas/{model}")
+            # the models it is made of are components like any other (the routes use them too)
+            for name, definition in event.pop("$defs", {}).items():
+                components.setdefault(name, definition)
+            components["Event"] = event
             app.openapi_schema = schema
         return app.openapi_schema
     app.openapi = openapi
@@ -237,6 +303,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         with keyboard_language(languages.overrides(lang)):
             return manager.run(fn)
 
+    def read(fn, lang=languages.DEFAULT):
+        """ run(), for what only reads what was loaded: it works while the keyboard waits for its unlock keys too """
+        with keyboard_language(languages.overrides(lang)):
+            return manager.read(fn)
+
     def offline(fn, lang=languages.DEFAULT):
         """ fn() for what needs no keyboard (the keycode tables are those of the last keyboard read, or the
         defaults before the first): under the device lock, as a keyboard being read rebuilds those tables """
@@ -265,9 +336,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.get("/api/session", response_model=schemas.Session)
     def session():
-        status = manager.status()
+        with manager.lock:  # read together
+            status = manager.status()
+            unlock = unlock_model(manager.unlock_state())
         return schemas.Session(status="connected" if status.connected else "disconnected",
-                               fake=manager.backend.fake, device=status.title, error=status.error)
+                               fake=manager.backend.fake, device=status.title, error=status.error, unlock=unlock)
 
     @app.get("/api/keyboard-languages", response_model=list[schemas.KeyboardLanguage])
     def keyboard_languages():
@@ -275,7 +348,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.get("/api/keyboard", response_model=schemas.KeyboardModel)
     def keyboard(lang: Lang = languages.DEFAULT):
-        return run(lambda kb: model.build(kb, names_for(kb), manager.unlocked), lang)
+        return read(lambda kb: model.build(kb, names_for(kb), manager.unlocked), lang)
 
     @app.post("/api/reload", response_model=schemas.KeyboardModel)
     async def reload(lang: Lang = languages.DEFAULT):
@@ -353,7 +426,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.get("/api/names", response_model=schemas.Names)
     def get_names():
-        return run(lambda kb: names_for(kb))
+        return read(lambda kb: names_for(kb))
 
     @app.put("/api/names/{kind}/{index}", response_model=schemas.Named)
     def set_name(kind: Literal["layers", "tapDance", "macros"], index: int, body: schemas.NameIn,
@@ -362,11 +435,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             edits.check_name(kb, kind, index)
             stored = names.set(model.uid_of(kb), kind, index, body.name)
             return model.display_name(kb, stored, kind, index)
-        return run(do, lang)
+        return read(do, lang)
 
     @app.get("/api/layout-file")
     def download_layout():
-        data = run(lambda kb: kb.save_layout())
+        data = read(lambda kb: kb.save_layout())
         return Response(data, media_type="application/json",
                         headers={"Content-Disposition": 'attachment; filename="keyboard.vil"'})
 
@@ -405,6 +478,30 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         await hub.broadcast({"type": "reloaded"})
         return result
 
+    @app.post("/api/unlock/start", response_model=schemas.UnlockState)
+    async def start_unlock():
+        """ Start unlocking the keyboard: the user then holds its unlock keys until the countdown ends, which "unlock"
+        events follow. An unlocked keyboard stays as it is. """
+        state = await asyncio.to_thread(manager.start_unlock)
+        await broadcast_events(await asyncio.to_thread(manager.take_events))
+        return unlock_model(state)
+
+    @app.post("/api/unlock/cancel", response_model=schemas.UnlockState)
+    async def cancel_unlock():
+        """ Stop following an unlock. The keyboard keeps waiting for its unlock keys (it can't be called off) and takes
+        no changes until it is unlocked or plugged in again. """
+        await stop_following()
+        state = await asyncio.to_thread(manager.cancel_unlock)
+        await broadcast_events(await asyncio.to_thread(manager.take_events))
+        return unlock_model(state)
+
+    @app.post("/api/lock", response_model=schemas.UnlockState)
+    async def lock_keyboard():
+        """ Lock the keyboard again """
+        state = await asyncio.to_thread(manager.lock_keyboard)
+        await broadcast_events(await asyncio.to_thread(manager.take_events))
+        return unlock_model(state)
+
     @app.websocket("/api/events")
     async def events(ws: WebSocket):
         if ws.headers.get("host") not in allowed_hosts or \
@@ -429,6 +526,22 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             with manager.lock:
                 manager.backend.set_connected(body.connected)
             return {"connected": body.connected}
+
+        # for UI tests: the user holds the simulated keyboard's unlock keys, or lets go of them; or it is locked, as
+        # plugging it in again would. Never exists for real keyboards.
+        @app.put("/api/simulator/unlock", include_in_schema=False)
+        async def set_simulator_unlock(body: schemas.SimulatorUnlock):
+            def change():
+                with manager.lock:
+                    if body.keysHeld is not None:
+                        manager.backend.virtual.hold_unlock_keys(body.keysHeld)
+                    if body.locked:
+                        manager.backend.virtual.unlocked = False
+                        manager.read_unlocked()
+                    return manager.unlock_state()
+            state = await asyncio.to_thread(change)
+            await broadcast_events(await asyncio.to_thread(manager.take_events))
+            return unlock_model(state)
 
     if static_dir and os.path.isdir(static_dir):
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="ui")

@@ -117,7 +117,8 @@ def test_foreign_host_and_origin_are_refused(client):
 
 def test_session_and_keyboard(client):
     assert client.get("/api/session").json() == \
-        {"status": "connected", "fake": True, "device": "Simulated: Simulated Corne", "error": None}
+        {"status": "connected", "fake": True, "device": "Simulated: Simulated Corne", "error": None,
+         "unlock": {"state": "unlocked", "keys": [], "remaining": 0, "total": 0}}
     kb = client.get("/api/keyboard").json()
     assert (kb["name"], len(kb["layers"]), len(kb["keys"])) == ("Simulated Corne", 4, 42)
 

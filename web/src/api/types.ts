@@ -20,5 +20,7 @@ export type TapDance = Schemas["TapDance"];
 export type TapDanceIn = Schemas["TapDanceIn"];
 export type Legend = Schemas["Legend"];
 export type Named = Schemas["Named"];
+export type UnlockState = Schemas["UnlockState"];
+export type MatrixPosition = Schemas["MatrixPosition"];
 /** what /api/events sends */
-export type ServerEvent = Schemas["Event"]["type"];
+export type ServerEvent = Schemas["Event"];

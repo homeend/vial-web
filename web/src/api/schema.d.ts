@@ -376,6 +376,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/unlock/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Unlock
+         * @description Start unlocking the keyboard: the user then holds its unlock keys until the countdown ends, which "unlock"
+         *     events follow. An unlocked keyboard stays as it is.
+         */
+        post: operations["start_unlock_api_unlock_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/unlock/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Unlock
+         * @description Stop following an unlock. The keyboard keeps waiting for its unlock keys (it can't be called off) and takes
+         *     no changes until it is unlocked or plugged in again.
+         */
+        post: operations["cancel_unlock_api_unlock_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lock Keyboard
+         * @description Lock the keyboard again
+         */
+        post: operations["lock_keyboard_api_lock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -780,6 +842,13 @@ export interface components {
             /** Items */
             items: components["schemas"]["MacroActionIn"][][];
         };
+        /** MatrixPosition */
+        MatrixPosition: {
+            /** Row */
+            row: number;
+            /** Col */
+            col: number;
+        };
         /** NameIn */
         NameIn: {
             /** Name */
@@ -868,6 +937,7 @@ export interface components {
             device?: string | null;
             /** Error */
             error?: string | null;
+            unlock: components["schemas"]["UnlockState"];
         };
         /** SetKeycode */
         SetKeycode: {
@@ -912,6 +982,23 @@ export interface components {
             /** Tappingterm */
             tappingTerm: number;
         };
+        /**
+         * UnlockState
+         * @description Whether the keyboard is unlocked, and how far an unlock has got
+         */
+        UnlockState: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "locked" | "unlocking" | "cancelled" | "unlocked";
+            /** Keys */
+            keys: components["schemas"]["MatrixPosition"][];
+            /** Remaining */
+            remaining: number;
+            /** Total */
+            total: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -949,14 +1036,16 @@ export interface components {
         };
         /**
          * Event
-         * @description What /api/events sends: the keyboard was plugged in, unplugged, or read again
+         * @description What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed
          */
         Event: {
             /**
              * Type
              * @enum {string}
              */
-            type: "connected" | "disconnected" | "reloaded";
+            type: "connected" | "disconnected" | "reloaded" | "unlock";
+            /** @default null */
+            unlock: components["schemas"]["UnlockState"] | null;
         };
     };
     responses: never;
@@ -1675,6 +1764,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_unlock_api_unlock_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnlockState"];
+                };
+            };
+        };
+    };
+    cancel_unlock_api_unlock_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnlockState"];
+                };
+            };
+        };
+    };
+    lock_keyboard_api_lock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnlockState"];
                 };
             };
         };
