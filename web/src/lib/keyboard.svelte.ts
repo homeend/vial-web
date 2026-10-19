@@ -54,8 +54,11 @@ export class KeyboardStore {
   canEdit = $derived(this.model !== null && !this.stale && this.connected && this.link === "open");
 
   #loads = 0;
-  /** "connected" and "disconnected" events so far: once it changes, the keyboard may not be the one it was */
+  /** keyboards plugged in or unplugged so far ("connected" and "disconnected" events, and loads that found another
+   * keyboard): once it changes, the keyboard may not be the one it was */
   #plugs = 0;
+  /** the events link (re)opened, and its first event hasn't come yet */
+  #opening = false;
   /** the language list, or null when it couldn't be read */
   #languageList: Promise<KeyboardLanguage[] | null> = Promise.resolve(null);
 
@@ -72,8 +75,13 @@ export class KeyboardStore {
         },
         () => null,
       );
-      return connectEvents((event) => this.#onEvent(event), (state) => (this.link = state));
+      return connectEvents((event) => this.#onEvent(event), (state) => this.#onLink(state));
     });
+  }
+
+  #onLink(state: LinkState): void {
+    this.link = state;
+    if (state === "open") this.#opening = true;
   }
 
   #onEvent(event: ServerEvent): void {
@@ -81,7 +89,12 @@ export class KeyboardStore {
       if (event.unlock) this.unlock.update(event.unlock);
       return;
     }
-    if (event.type !== "reloaded") this.#plugs++;
+    // the server's first event on a link (re)opened says how the keyboard is: a "connected" there, when it was
+    // connected already, is no plug, unless the load it brings finds another keyboard (see load)
+    const opening = this.#opening;
+    this.#opening = false;
+    const unchanged = event.type === "reloaded" || (opening && event.type === "connected" && this.connected);
+    if (!unchanged) this.#plugs++;
     this.connected = event.type !== "disconnected";
     this.stale = true;
     if (this.connected) {
@@ -102,6 +115,9 @@ export class KeyboardStore {
     try {
       const [session, model, catalogue] = await Promise.all([api.session(), api.keyboard(), api.keycodes()]);
       if (load !== this.#loads) return;
+      // another keyboard (plugged in while the events link was down, say): before the session is used, as an unlock
+      // it ends tells those waiting for it
+      if (this.model !== null && model.uid !== this.model.uid) this.#plugs++;
       this.#useSession(session);
       this.model = model;
       this.catalogue = catalogue;

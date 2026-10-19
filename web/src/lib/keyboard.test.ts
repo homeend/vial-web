@@ -100,7 +100,7 @@ function started() {
   store.start();
   const [onEvent, onLink] = vi.mocked(connectEvents).mock.calls.at(-1)!;
   onLink("open");
-  return { store, emit: (type: ServerEvent["type"]) => onEvent({ type, unlock: null }), send: onEvent };
+  return { store, emit: (type: ServerEvent["type"]) => onEvent({ type, unlock: null }), send: onEvent, link: onLink };
 }
 
 /** A started store that has loaded model("KC_A") and can edit */
@@ -495,7 +495,7 @@ describe("a locked keyboard", () => {
 
   it.each([
     [["disconnected", "connected"]],
-    [["connected"]], // the events link was down while the first one was unplugged
+    [["connected"]], // a keyboard plugged in, on a link that stayed open
   ] as const)("sends nothing to another, unlocked keyboard plugged in meanwhile (%j)", async (events) => {
     const { store, emit, saving } = await waitingForUnlock();
     mocked.session.mockResolvedValue({ fake: true, unlock: UNLOCKED } as never);
@@ -505,6 +505,47 @@ describe("a locked keyboard", () => {
     expect(await saving).toBe(false);
     expect(mocked.setMacros).toHaveBeenCalledTimes(1);
     expect(toasts.items.map((t) => t.message)).toEqual([NOT_UNLOCKED]);
+  });
+
+  it("sends the change again when the events link comes back to the same keyboard", async () => {
+    // the server's first event on the new link says "connected": the keyboard is still there, not plugged in again
+    const { store, send, emit, link, saving } = await waitingForUnlock();
+    mocked.session.mockResolvedValue({ fake: true, unlock: UNLOCKING } as never);
+    link("closed");
+    link("open");
+    emit("connected");
+    await settle();
+    expect(store.canEdit).toBe(true);
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await saving).toBe(true);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(2);
+    expect(toasts.items).toEqual([]);
+  });
+
+  it("sends nothing to another keyboard found when the events link comes back", async () => {
+    // plugged in while the link was down: only its model tells
+    const { store, emit, link, saving } = await waitingForUnlock();
+    mocked.keyboard.mockResolvedValue({ ...model("KC_A"), uid: "another" });
+    mocked.session.mockResolvedValue({ fake: true, unlock: UNLOCKED } as never);
+    link("closed");
+    link("open");
+    emit("connected");
+    await settle();
+    expect(store.pending).toBe(0);
+    expect(await saving).toBe(false);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(1);
+    expect(toasts.items.map((t) => t.message)).toEqual([NOT_UNLOCKED]);
+  });
+
+  it("fails the change when the events link comes back to no keyboard", async () => {
+    const { store, emit, link, saving } = await waitingForUnlock();
+    link("closed");
+    link("open");
+    emit("disconnected");
+    await settle();
+    expect(store.pending).toBe(0);
+    expect(await saving).toBe(false);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(1);
   });
 
   it("sends the change again after a reload while it waited for its unlock", async () => {
