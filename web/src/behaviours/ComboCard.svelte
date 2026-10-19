@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import type { Combo, Described, KeyboardModel } from "../api/types";
   import type { Placement } from "../keyboard/geometry";
   import { keyFace, type Names } from "../keyboard/labels";
   import Button from "../ui/Button.svelte";
   import ComboKeys from "./ComboKeys.svelte";
   import EntryHead from "./EntryHead.svelte";
-  import { MAX_COMBO_KEYS } from "./members";
+  import { MAX_COMBO_KEYS, membersOf } from "./members";
 
   interface Props {
     combo: Combo;
@@ -18,6 +19,9 @@
     sentence: string;
     notes: string[];
     canEdit: boolean;
+    /** a change is being saved: the controls keep the focus, but take nothing until it is done */
+    busy: boolean;
+    /** the card opened from elsewhere: drawn out for a moment (the highlight fades) */
     target: boolean;
     /** being edited: the keycodes and output chosen so far */
     draft: { members: Described[]; output: Described } | null;
@@ -34,14 +38,33 @@
   }
 
   let {
-    combo, model, placement, names, colour, sentence, notes, canEdit, target, draft, problem, onedit, onchoose, onremove,
-    onaddbycode, onpickoutput, onsave, oncancel, onclear,
+    combo, model, placement, names, colour, sentence, notes, canEdit, busy, target, draft, problem, onedit, onchoose,
+    onremove, onaddbycode, onpickoutput, onsave, oncancel, onclear,
   }: Props = $props();
 
   const headingId = $derived(`combo-${combo.index}-title`);
-  const members = $derived(draft ? draft.members : combo.keys.filter((k) => k.kind !== "none"));
+  // the keycodes the firmware reads: up to the first empty slot
+  const members = $derived(draft ? draft.members : membersOf(combo));
+  // a keycode listed twice (the editor lists each once) never gives two chips the same key
+  const chips = $derived(members.map((m, i) => ({
+    m, key: members.findIndex((other) => other.code === m.code) === i ? m.code : `${m.code}#${i}`,
+  })));
   const output = $derived(draft ? draft.output : combo.output);
   const outputFace = $derived(keyFace(output, names));
+  const outputText = $derived(output.kind === "none" ? "nothing" : outputFace.main || output.code);
+  /** a combo of no keys never fires: it isn't saved (Remove the combo clears it) */
+  const noKeys = $derived(draft !== null && draft.members.length === 0);
+  let chipList = $state<HTMLUListElement>();
+
+  /** Takes a keycode out. Its chip goes: the focus goes to the chip now in its place, or the one before, or (none is
+   * left) Add by keycode */
+  async function removeChip(code: string, at: number) {
+    if (busy) return;
+    onremove(code);
+    await tick();
+    const buttons = chipList?.querySelectorAll<HTMLElement>("button.remove") ?? [];
+    (buttons[Math.min(at, buttons.length - 1)] ?? document.getElementById(`combo-${combo.index}-add`))?.focus();
+  }
 </script>
 
 <article class="card" class:target class:editing={draft !== null} id="combo-{combo.index}" aria-labelledby={headingId}
@@ -49,7 +72,7 @@
   <EntryHead id="Combo {combo.index}" {headingId} name={null} tone="combo" {canEdit}>
     {#snippet actions()}
       {#if !draft}
-        <Button size="sm" disabled={!canEdit} onclick={onedit}>Edit</Button>
+        <Button size="sm" disabled={!canEdit} aria-disabled={busy || undefined} onclick={onedit}>Edit</Button>
       {/if}
     {/snippet}
   </EntryHead>
@@ -62,44 +85,50 @@
         Click keys to add them to the combo, or click them again to take them out (at most {MAX_COMBO_KEYS}). Arrow keys
         move between them.
       </p>
-      <div class="board" aria-describedby="combo-{combo.index}-hint">
-        <ComboKeys {model} {placement} {names} {members} {colour} choosing {onchoose} maxUnit={44} />
+      <div class="board">
+        <ComboKeys {model} {placement} {names} {members} {colour} choosing {onchoose} maxUnit={44}
+          label="Keys of combo {combo.index}" describedby="combo-{combo.index}-hint" />
       </div>
       <p class="problem" role="status">{problem ?? ""}</p>
       <div class="parts">
         <div class="part">
           <span class="part-label">Keys</span>
-          <ul class="chips">
-            {#each members as m (m.code)}
+          <ul class="chips" bind:this={chipList}>
+            {#each chips as { m, key }, i (key)}
               <li>
                 <span class="chip">{m.tap || m.code}</span>
                 <button type="button" class="remove" aria-label="Take {m.tap || m.code} out of the combo"
-                  onclick={() => onremove(m.code)}>
+                  aria-disabled={busy || undefined} onclick={() => void removeChip(m.code, i)}>
                   <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
                 </button>
               </li>
             {/each}
           </ul>
-          <Button size="sm" disabled={members.length >= MAX_COMBO_KEYS} onclick={onaddbycode}>Add by keycode…</Button>
+          <Button id="combo-{combo.index}-add" size="sm" disabled={members.length >= MAX_COMBO_KEYS}
+            aria-disabled={busy || undefined} onclick={onaddbycode}>Add by keycode…</Button>
         </div>
         <div class="part">
           <span class="part-label">Output</span>
-          <span class="out tone-{outputFace.tone}" data-tone={outputFace.tone}>{output.kind === "none" ? "nothing" : outputFace.main || output.code}</span>
-          <Button size="sm" onclick={onpickoutput}>Change output…</Button>
+          <span class="out tone-{outputFace.tone}" data-tone={outputFace.tone} title={outputText}>{outputText}</span>
+          <Button size="sm" aria-disabled={busy || undefined} onclick={onpickoutput}>Change output…</Button>
         </div>
       </div>
       <div class="buttons">
-        <Button variant="danger" disabled={!canEdit} onclick={onclear}>Remove the combo</Button>
+        <Button variant="danger" disabled={!canEdit} aria-disabled={busy || undefined} onclick={onclear}>
+          Remove the combo
+        </Button>
         <span class="spacer"></span>
-        <Button onclick={oncancel}>Cancel</Button>
-        <Button variant="primary" disabled={!canEdit} onclick={onsave}>Save</Button>
+        {#if noKeys}<span class="needs" id="combo-{combo.index}-needs">Choose at least one key</span>{/if}
+        <Button aria-disabled={busy || undefined} onclick={oncancel}>Cancel</Button>
+        <Button variant="primary" disabled={!canEdit || noKeys} aria-disabled={busy || undefined}
+          aria-describedby={noKeys ? `combo-${combo.index}-needs` : undefined} onclick={onsave}>Save</Button>
       </div>
     </div>
   {:else}
     <div class="row">
       <ComboKeys {model} {placement} {names} {members} {colour} label="Keys of combo {combo.index}: {sentence}" />
       <span class="arrow" aria-hidden="true">→</span>
-      <span class="out tone-{outputFace.tone}" data-tone={outputFace.tone}>{output.kind === "none" ? "nothing" : outputFace.main || output.code}</span>
+      <span class="out tone-{outputFace.tone}" data-tone={outputFace.tone} title={outputText}>{outputText}</span>
     </div>
     {#if notes.length > 0}
       <ul class="notes">
@@ -123,8 +152,16 @@
     scroll-margin-top: 80px;
   }
 
+  /* the card opened from elsewhere is drawn out for a moment, then fades back to the others' look */
   .card.target {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--colour) 55%, transparent), var(--shadow);
+    animation: target 2.4s ease-in;
+  }
+
+  @keyframes target {
+    0%,
+    50% {
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--colour) 55%, transparent), var(--shadow);
+    }
   }
 
   .sentence {
@@ -259,6 +296,10 @@
     color: var(--danger);
   }
 
+  .remove[aria-disabled="true"] {
+    cursor: progress;
+  }
+
   .remove svg {
     width: 11px;
     height: 11px;
@@ -275,5 +316,11 @@
 
   .spacer {
     flex: 1;
+  }
+
+  .needs {
+    align-self: center;
+    color: var(--text-3);
+    font-size: 12.5px;
   }
 </style>

@@ -17,6 +17,8 @@
     layer: number;
     selection: KeyRef;
     canEdit: boolean;
+    /** a change is being saved: the buttons keep the focus, but take nothing until it is done */
+    busy: boolean;
     /** the combos the key is part of on the layer */
     comboUses: ComboUse[];
     /** each combo's colour (a palette index), by combo index */
@@ -30,8 +32,8 @@
   }
 
   let {
-    model, names, layer, selection, canEdit, comboUses, comboColours, onopencombo, onchangekey, onsetcode, ontapdance,
-    onjump,
+    model, names, layer, selection, canEdit, busy, comboUses, comboColours, onopencombo, onchangekey, onsetcode,
+    ontapdance, onjump,
   }: Props = $props();
 
   let editingHold = $state(false);
@@ -77,7 +79,15 @@
   );
 
   async function applyHold(code: string) {
+    if (busy) return;
     if (await onsetcode(code, "Changing the hold action")) editingHold = false;
+  }
+
+  /** Runs a button's action, unless a change is still being saved */
+  function unlessBusy(run: () => unknown) {
+    return () => {
+      if (!busy) void run();
+    };
   }
 </script>
 
@@ -120,7 +130,9 @@
   {/if}
 
   <div class="buttons">
-    <Button variant="primary" disabled={!canEdit} onclick={onchangekey}>Change key</Button>
+    <Button variant="primary" disabled={!canEdit} aria-disabled={busy || undefined} onclick={unlessBusy(onchangekey)}>
+      Change key
+    </Button>
     {#if tapCode}
       <Button
         disabled={!canEdit}
@@ -131,19 +143,22 @@
         Change hold
       </Button>
     {/if}
-    <Button disabled={!canEdit || current.kind === "transparent"} onclick={() => onsetcode("KC_TRNS", "Making the key transparent")}>
+    <Button disabled={!canEdit || current.kind === "transparent"} aria-disabled={busy || undefined}
+      onclick={unlessBusy(() => onsetcode("KC_TRNS", "Making the key transparent"))}>
       Make transparent
     </Button>
-    <Button disabled={!canEdit || current.kind === "none"} onclick={() => onsetcode("KC_NO", "Clearing the key")}>
+    <Button disabled={!canEdit || current.kind === "none"} aria-disabled={busy || undefined}
+      onclick={unlessBusy(() => onsetcode("KC_NO", "Clearing the key"))}>
       Clear
     </Button>
     {#if selection.kind === "key" && current.kind !== "tap-dance"}
       <Button
         disabled={!canEdit || freeSlot === null || emptyKey}
+        aria-disabled={busy || undefined}
         title={emptyKey
           ? "An empty or transparent key has no action to put in a tap dance"
           : freeSlot === null ? "Every tap dance is already in use" : `Uses tap dance ${freeSlot}`}
-        onclick={ontapdance}
+        onclick={unlessBusy(ontapdance)}
       >
         Turn into tap dance
       </Button>
@@ -157,6 +172,7 @@
         tap={tapCode}
         layers={model.layers}
         disabled={!canEdit}
+        {busy}
         onapply={applyHold}
         oncancel={() => (editingHold = false)}
       />

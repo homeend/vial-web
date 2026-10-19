@@ -16,6 +16,8 @@
     found?: boolean;
     /** drawn faintly: a knob that doesn't matter here */
     faded?: boolean;
+    /** a knob to choose (pressed) or not: aria-pressed says this instead of whether it is selected */
+    chosen?: boolean;
     /** a knob to click; otherwise only a picture (the keyboard as a whole is labelled) */
     interactive?: boolean;
     /** a small knob showing its main legend only, as large as it fits */
@@ -24,8 +26,8 @@
   }
 
   let {
-    item, face, u, selected, label, focusable, found = false, faded = false, interactive = true, compact = false,
-    onselect,
+    item, face, u, selected, label, focusable, found = false, faded = false, chosen, interactive = true,
+    compact = false, onselect,
   }: Props = $props();
 
   const clockwise = $derived(item.geometry.direction === 1);
@@ -75,7 +77,7 @@
     {style}
     aria-label={label}
     title={label}
-    aria-pressed={selected}
+    aria-pressed={chosen ?? selected}
     tabindex={focusable ? 0 : -1}
     data-ref={refId(item)}
     onclick={onselect}

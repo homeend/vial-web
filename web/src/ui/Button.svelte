@@ -70,4 +70,9 @@
     opacity: 0.45;
     cursor: not-allowed;
   }
+
+  /* enabled, keeping the focus, but taking nothing while a change is saved */
+  .btn[aria-disabled="true"]:not(:disabled) {
+    cursor: progress;
+  }
 </style>

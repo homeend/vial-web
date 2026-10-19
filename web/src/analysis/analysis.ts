@@ -3,7 +3,7 @@
 import type { KeyboardModel } from "../api/types";
 import type { Placement } from "../keyboard/geometry";
 import { refId, type KeyRef } from "../keyboard/refs";
-import { codesOn, comboColours, comboMarksOn, combosOf, type ComboInfo } from "./combos";
+import { codesOn, COMBO_COLOURS, comboColours, comboMarksOn, combosOf, type ComboInfo } from "./combos";
 import { positionNames } from "./positions";
 import { layerReach, type LayerReach } from "./reach";
 import { unusedOf, usageOf, type Unused, type Usage } from "./usage";
@@ -46,5 +46,5 @@ export function analyse(model: KeyboardModel, placement: Placement): Analysis {
 export function comboMarksOf(analysis: Pick<Analysis, "comboMarks" | "comboColours">, placement: Placement, layer: number):
   { combos: number[][]; colours: number[][] } {
   const combos = placement.items.map((item) => analysis.comboMarks[layer]?.get(refId(item)) ?? []);
-  return { combos, colours: combos.map((list) => list.map((i) => analysis.comboColours.get(i) ?? 0)) };
+  return { combos, colours: combos.map((list) => list.map((i) => analysis.comboColours.get(i) ?? i % COMBO_COLOURS)) };
 }

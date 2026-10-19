@@ -13,11 +13,13 @@
     tap: string;
     layers: Layer[];
     disabled: boolean;
+    /** a change is being saved: Apply keeps the focus, but takes nothing until it is done */
+    busy?: boolean;
     onapply: (code: string) => void;
     oncancel: () => void;
   }
 
-  let { current, tap, layers, disabled, onapply, oncancel }: Props = $props();
+  let { current, tap, layers, disabled, busy = false, onapply, oncancel }: Props = $props();
 
   // the form starts from the key's hold action; it is remade for another key
   const initial = untrack(() => holdOf(current));
@@ -65,7 +67,7 @@
   });
 
   function apply() {
-    if (preview && !disabled) onapply(preview.code);
+    if (preview && !disabled && !busy) onapply(preview.code);
   }
 
   function toggle(mod: Mod) {
@@ -122,7 +124,9 @@
   </p>
 
   <div class="buttons">
-    <Button variant="primary" size="sm" type="submit" disabled={disabled || !preview}>Apply</Button>
+    <Button variant="primary" size="sm" type="submit" disabled={disabled || !preview} aria-disabled={busy || undefined}>
+      Apply
+    </Button>
     <Button variant="ghost" size="sm" onclick={oncancel}>Cancel</Button>
   </div>
 </form>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ComboUse } from "../analysis/combos";
+  import { COMBO_COLOURS, type ComboUse } from "../analysis/combos";
   import { comboUseLabel, missingPartners } from "../analysis/phrases";
   import type { Names } from "../keyboard/labels";
   import SectionTitle from "../ui/SectionTitle.svelte";
@@ -23,8 +23,8 @@
   const firing = $derived(entries.filter((e) => e.missing === null).length);
 </script>
 
-<section class="combos" aria-labelledby="combos-title">
-  <SectionTitle id="combos-title">Combos with this key</SectionTitle>
+<section class="combos" aria-labelledby="key-combos-title">
+  <SectionTitle id="key-combos-title">Combos with this key</SectionTitle>
   {#if through && firing > 0}
     <p class="through">
       It falls through to the base layer's key, so {firing === entries.length ? "these combos still fire"
@@ -33,7 +33,7 @@
   {/if}
   <ul>
     {#each entries as { use, missing } (use.combo.index)}
-      <li style="--colour: var(--combo-{colours.get(use.combo.index) ?? 0})">
+      <li style="--colour: var(--combo-{colours.get(use.combo.index) ?? use.combo.index % COMBO_COLOURS})">
         <button type="button" title="Open combo {use.combo.index} on the Combos page" onclick={() => onopen(use.combo.index)}>
           <span class="what">{comboUseLabel(use, names)}</span>
           <span class="detail">Combo {use.combo.index}{missing ? ` · ${missing}` : ""}</span>

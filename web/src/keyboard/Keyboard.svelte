@@ -32,11 +32,17 @@
     faded?: boolean[];
     /** keys to choose: whether each is chosen (its aria-pressed), aligned with placement.items */
     chosen?: boolean[];
+    /** the key reached with Tab, when it isn't the selected one (a cursor shown only while the keys have the focus) */
+    tabStop?: number;
+    /** what the keys are called, for screen readers */
+    label?: string;
+    /** the id of what says how to use the keys */
+    describedby?: string;
   }
 
   let {
     placement, faces, labels, selected, onselect, maxUnit = 72, combos = [], interactive = true, compact = false,
-    highlights = [], rings = [], faded = [], chosen,
+    highlights = [], rings = [], faded = [], chosen, tabStop, label = "Keyboard", describedby,
   }: Props = $props();
 
   let width = $state(0);
@@ -45,15 +51,18 @@
 
   const knobs = $derived(encoderKnobs(placement));
 
-  // reached with Tab: the selected key, or the first one when none is (or the selection is not on this board)
-  const focusIndex = $derived(selected >= 0 && selected < placement.items.length ? selected : 0);
+  // reached with Tab: the one asked for, else the selected key, or the first one when none is (or the selection is not
+  // on this board)
+  const inRange = (i: number | undefined): i is number => i !== undefined && i >= 0 && i < placement.items.length;
+  const focusIndex = $derived(inRange(tabStop) ? tabStop : inRange(selected) ? selected : 0);
 </script>
 
 <div class="keyboard" bind:clientWidth={width} aria-hidden={interactive ? undefined : "true"}>
   <div
     class="plate"
     role={interactive ? "group" : undefined}
-    aria-label={interactive ? "Keyboard" : undefined}
+    aria-label={interactive ? label : undefined}
+    aria-describedby={interactive ? describedby : undefined}
     style="width: {placement.width * u}px; height: {placement.height * u}px"
   >
     {#if u > 0}
@@ -71,7 +80,8 @@
             chosen={chosen?.[i]} {interactive} {compact} onselect={() => onselect(i)} />
         {:else}
           <Encoder {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
-            found={highlights[i] ?? false} faded={faded[i] ?? false} {interactive} {compact} onselect={() => onselect(i)} />
+            found={highlights[i] ?? false} faded={faded[i] ?? false} chosen={chosen?.[i]} {interactive} {compact}
+            onselect={() => onselect(i)} />
         {/if}
       {/each}
     {/if}

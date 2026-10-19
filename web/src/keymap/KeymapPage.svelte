@@ -127,9 +127,10 @@
     return selection ? keyboard.setCode(layer, selection, code, action) : Promise.resolve(false);
   }
 
-  /** Runs an action of the Inspector. Its buttons are disabled meanwhile, and the one pressed may go away: the
-   * focus would fall to the page. The selected key gets it back: when it fell, or when the action worked and the
-   * focus is still where it started (not somewhere the user moved it meanwhile). */
+  /** Runs an action of the Inspector. Its buttons take nothing meanwhile (they stay enabled, keeping the focus), and
+   * the one pressed may go away or be disabled once it is done: the focus would fall to the page. The selected key
+   * gets it back: when it fell, or when the action worked and the focus is still where it started (not somewhere the
+   * user moved it meanwhile). */
   async function fromInspector(run: () => Promise<boolean>): Promise<boolean> {
     const origin = document.activeElement;
     const done = await run();
@@ -253,7 +254,8 @@
             {names}
             {layer}
             {selection}
-            canEdit={keyboard.canEdit && keyboard.pending === 0}
+            canEdit={keyboard.canEdit}
+            busy={keyboard.pending > 0}
             {comboUses}
             comboColours={analysis.comboColours}
             onopencombo={(index) => router.go("combos", index)}

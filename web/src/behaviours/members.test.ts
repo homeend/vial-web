@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { described } from "../analysis/testing";
-import { isSet, MAX_COMBO_KEYS, memberProblem, membersOf, toggleMember } from "./members";
+import { distinctMembers, isSet, MAX_COMBO_KEYS, memberProblem, membersOf, toggleMember } from "./members";
 
 const codes = (list: { code: string }[]) => list.map((d) => d.code);
 
@@ -41,6 +41,12 @@ describe("a combo's members", () => {
   it("end at the first empty slot, as the firmware reads them", () => {
     expect(codes(membersOf({ ...combo, keys: ["KC_K", "KC_NO", "KC_Y", "KC_NO"].map(described) }))).toEqual(["KC_K"]);
     expect(membersOf({ ...combo, keys: ["KC_NO", "KC_K", "KC_Y", "KC_NO"].map(described) })).toEqual([]);
+  });
+
+  it("list each keycode once: a combo saved elsewhere may list one twice", () => {
+    const twice = ["KC_K", "KC_Y", "KC_K", "KC_Y"].map(described);
+    expect(codes(distinctMembers(twice))).toEqual(["KC_K", "KC_Y"]);
+    expect(codes(distinctMembers(membersOf(combo)))).toEqual(["KC_K", "KC_Y"]);
   });
 
   it("make it set up, as an output does", () => {

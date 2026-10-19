@@ -23,15 +23,20 @@
     /** a key clicked while choosing: its keycode on the base layer */
     onchoose?: (d: Described) => void;
     maxUnit?: number;
-    /** what the picture is called, for screen readers (choosing, the keys say it themselves) */
+    /** what the picture is called, or (choosing) the group of keys, for screen readers */
     label?: string;
+    /** choosing: the id of what says how to choose the keys */
+    describedby?: string;
   }
 
-  let { model, placement, names, members, colour, choosing = false, onchoose, maxUnit = 24, label = "" }: Props = $props();
+  let {
+    model, placement, names, members, colour, choosing = false, onchoose, maxUnit = 24, label = "", describedby,
+  }: Props = $props();
 
   let root = $state<HTMLDivElement>();
+  /** the key the arrow keys move from: the one Tab reaches, so that the focus comes back to it */
   let cursor = $state(0);
-  /** the keys have the focus: the one the arrow keys move from is outlined */
+  /** the keys have the focus: the cursor is outlined */
   let focused = $state(false);
 
   const codes = $derived(new Set(members.map((m) => m.code)));
@@ -50,6 +55,14 @@
     const state = isMember[i] ? "in the combo" : usable[i] ? "not in the combo" : "can't be in a combo";
     return `${keyLabel(actions[i], names, `${what.toLowerCase()} ${where}`)} · ${state}`;
   }));
+
+  /** The focus came to the keys (a click, Tab): the key it is on is the cursor */
+  function focusIn(event: FocusEvent) {
+    focused = true;
+    const ref = event.target instanceof HTMLElement ? event.target.getAttribute("data-ref") : null;
+    const index = ref === null ? -1 : placement.items.findIndex((item) => refId(item) === ref);
+    if (index >= 0) cursor = index;
+  }
 
   function choose(index: number) {
     cursor = index;
@@ -77,11 +90,11 @@
     class="keys choosing"
     bind:this={root}
     {onkeydown}
-    onfocusin={() => (focused = true)}
+    onfocusin={focusIn}
     onfocusout={(e) => (focused = root?.contains(e.relatedTarget as Node | null) ?? false)}
   >
     <Keyboard {placement} {faces} {labels} {rings} {faded} chosen={isMember} selected={focused ? cursor : -1}
-      onselect={choose} {maxUnit} />
+      tabStop={cursor} onselect={choose} {maxUnit} {label} {describedby} />
   </div>
 {:else}
   <div class="keys" role="img" aria-label={label}>

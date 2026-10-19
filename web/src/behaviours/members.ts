@@ -26,6 +26,12 @@ export function membersOf(combo: Combo): Described[] {
   return end === -1 ? combo.keys : combo.keys.slice(0, end);
 }
 
+/** The keycodes with each one once, where it first comes: a combo saved elsewhere may list one twice, and the editor
+ * lists each keycode once (so saving the combo puts it right) */
+export function distinctMembers(members: Described[]): Described[] {
+  return members.filter((m, i) => members.findIndex((other) => other.code === m.code) === i);
+}
+
 /** Whether a combo is set up: it has a keycode or an output. A combo with an output and no keycode counts: it gets a
  * card and counts in the navigation, as there is something in it to see and change. The analysis (combosOf in
  * analysis/combos.ts) goes by keycodes only: such a combo has no keys to mark and never fires. */
