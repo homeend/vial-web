@@ -261,7 +261,12 @@ export class KeyboardStore {
     const model = this.model;
     if (!model || !this.canEdit) return Promise.resolve(false);
     return this.#edit(action, model, async () => {
+      const plugs = this.#plugs;
       for (const { qsid, value } of values) {
+        // the rest were chosen for the keyboard that went: not for another one
+        if (this.#plugs !== plugs) {
+          throw new ApiError(409, "another keyboard was plugged in; the settings not yet saved were left as they were");
+        }
         const set = await api.setSetting(qsid, value);
         const at = model.settings.findIndex((s) => s.qsid === set.qsid);
         if (at >= 0) model.settings[at] = set;

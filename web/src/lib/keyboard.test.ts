@@ -457,6 +457,19 @@ describe("key overrides, alt-repeat keys, QMK settings and layout files", () => 
       "Saving the settings failed: setting 22 must be a number from 0 to 255"]);
   });
 
+  it("stop saving QMK settings when another keyboard is plugged in meanwhile", async () => {
+    const { store, emit } = await loaded();
+    store.model!.settings = [{ qsid: 7, value: 200 }, { qsid: 22, value: 0 }];
+    mocked.setSetting.mockImplementationOnce(async () => {
+      emit("connected"); // another keyboard, while the first setting's reply is on its way
+      return { qsid: 7, value: 250 };
+    });
+    expect(await store.setSettings([{ qsid: 7, value: 250 }, { qsid: 22, value: 5 }])).toBe(false);
+    expect(mocked.setSetting.mock.calls).toEqual([[7, 250]]);
+    expect(toasts.items.map((t) => t.message)).toEqual([
+      "Saving the settings failed: another keyboard was plugged in; the settings not yet saved were left as they were"]);
+  });
+
   it("reset the QMK settings to what the keyboard says they are now", async () => {
     const { store } = await loaded();
     store.model!.settings = [{ qsid: 7, value: 250 }];
@@ -472,6 +485,19 @@ describe("key overrides, alt-repeat keys, QMK settings and layout files", () => 
     expect(await store.loadLayoutFile("{}")).toBe(true);
     expect(mocked.loadLayoutFile).toHaveBeenCalledWith("{}");
     expect(store.model!.layers[0].keys[0].code).toBe("KC_Z");
+  });
+
+  it("load a layout file: the reply isn't installed when a load replaced the model meanwhile; the keyboard is read again", async () => {
+    const { store } = await loaded();
+    const newer = model("KC_B");
+    mocked.loadLayoutFile.mockImplementationOnce(async () => {
+      store.model = newer; // a load landed while the file was being written
+      return model("KC_Z");
+    });
+    mocked.keyboard.mockClear();
+    expect(await store.loadLayoutFile("{}")).toBe(true);
+    expect(store.model).toBe(newer);
+    expect(mocked.keyboard).toHaveBeenCalledTimes(1);
   });
 
   it("load a layout file a locked keyboard refused once it is unlocked: the whole file again", async () => {
