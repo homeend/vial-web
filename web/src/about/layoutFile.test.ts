@@ -104,6 +104,16 @@ describe("previewSections", () => {
       model: { ...model, layoutOptions: options } });
     expect(sections[0].items).toEqual(["Split Backspace: off → on"]);
   });
+
+  it("names a change in bits no layout option covers, so the section stays", () => {
+    const options = { value: 0, labels: ["Split Backspace", ["Bottom row", "6.25U", "7U", "Split"]] as (string | string[])[] };
+    // the options take bits 0-2: bit 3 and up belong to none (the server writes them all the same)
+    expect(layoutOptionChanges(options, 0b0001, 0b1001)).toEqual(["other bits: 0 → 8"]);
+    expect(layoutOptionChanges(options, 0b0000, 0b1100)).toEqual(["Split Backspace: off → on", "other bits: 0 → 8"]);
+    const sections = previewSections(preview({ layoutOptions: { before: 1, after: 9 } }), { ...ctx,
+      model: { ...model, layoutOptions: options } });
+    expect(sections.map((s) => [s.title, s.count, s.items])).toEqual([["Layout options", 1, ["other bits: 0 → 8"]]]);
+  });
 });
 
 describe("shortAction", () => {

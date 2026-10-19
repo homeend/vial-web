@@ -62,17 +62,31 @@ function encoderPlace(ctx: PreviewContext, encoder: number, direction: number): 
   return placed ?? `encoder ${encoder}, ${direction === 1 ? "clockwise" : "counter-clockwise"}`;
 }
 
-/** Each layout option whose choice differs: "Split Backspace: off → on", "Bottom row: 6.25U → 7U" */
+/** How many values the layout options' bits hold together: the bits above belong to no option (the bit widths of
+ * layoutChoices) */
+function coveredValues(options: LayoutOptions): number {
+  return options.labels.reduce<number>((n, label) => {
+    const count = typeof label === "string" ? 2 : label.length - 1;
+    return n * 2 ** (count <= 2 ? 1 : (count - 1).toString(2).length);
+  }, 1);
+}
+
+/** Each layout option whose choice differs: "Split Backspace: off → on", "Bottom row: 6.25U → 7U"; and "other bits:
+ * 0 → 8" when bits no option covers differ (the server writes them too) */
 export function layoutOptionChanges(options: LayoutOptions | null | undefined, before: number, after: number): string[] {
   if (!options) return [`${before} → ${after}`];
   const was = layoutChoices({ ...options, value: before });
   const now = layoutChoices({ ...options, value: after });
-  return options.labels.flatMap((label, i) => {
+  const changes = options.labels.flatMap((label, i) => {
     if (was[i] === now[i]) return [];
     const name = typeof label === "string" ? label : label[0];
     const choice = (c: number) => (typeof label === "string" ? (c ? "on" : "off") : (label[c + 1] ?? `choice ${c}`));
     return [`${name}: ${choice(was[i])} → ${choice(now[i])}`];
   });
+  const covered = coveredValues(options);
+  const other = (value: number) => value - (value % covered);
+  if (other(before) !== other(after)) changes.push(`other bits: ${other(before)} → ${other(after)}`);
+  return changes;
 }
 
 function section(id: PreviewSection["id"], title: string, items: string[], summary: string | null = null,
