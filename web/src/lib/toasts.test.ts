@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SHOW_MS, Toasts } from "./toasts.svelte";
+import { ACTION_SHOW_MS, SHOW_MS, Toasts } from "./toasts.svelte";
 
 let toasts: Toasts;
 
@@ -99,11 +99,26 @@ describe("toasts that say something went well", () => {
     expect(messages()).toEqual([]);
   });
 
+  it("stay longer when they offer an action, and wait while they are read", () => {
+    expect(ACTION_SHOW_MS).toBeGreaterThanOrEqual(15_000);
+    toasts.info("swapped", { label: "Undo", run: () => true });
+    const [{ id }] = toasts.items;
+    vi.advanceTimersByTime(ACTION_SHOW_MS - 1);
+    expect(messages()).toEqual(["swapped"]);
+    toasts.hold(id, "hover", true);
+    vi.advanceTimersByTime(ACTION_SHOW_MS * 2);
+    toasts.hold(id, "hover", false);
+    vi.advanceTimersByTime(ACTION_SHOW_MS - 1);
+    expect(messages()).toEqual(["swapped"]);
+    vi.advanceTimersByTime(1);
+    expect(messages()).toEqual([]);
+  });
+
   it("don't run the action of a toast that has gone", async () => {
     const run = vi.fn(() => true);
     toasts.info("swapped", { label: "Undo", run });
     const [{ id }] = toasts.items;
-    vi.advanceTimersByTime(SHOW_MS);
+    vi.advanceTimersByTime(ACTION_SHOW_MS);
     await toasts.act(id);
     expect(run).not.toHaveBeenCalled();
   });

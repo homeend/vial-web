@@ -1,6 +1,7 @@
 // Short messages in the corner: mostly why an edit failed; some say what was done, with an action (Undo).
-// One rule for all of them: a toast goes away SHOW_MS after it appears, except while the pointer is on it or focus
-// is in it; when both have left, it gets the full SHOW_MS again. Dismissing it removes it at once.
+// One rule for all of them: a toast goes away SHOW_MS after it appears (ACTION_SHOW_MS with an action, to have time to
+// use it), except while the pointer is on it or focus is in it; when both have left, it gets the full time again.
+// Dismissing it removes it at once.
 
 /** A button on a toast. run resolves to whether it did what it says: the toast then goes, else it stays (to try
  * again). */
@@ -20,6 +21,7 @@ export interface Toast {
 export type HoldReason = "hover" | "focus";
 
 export const SHOW_MS = 7000;
+export const ACTION_SHOW_MS = 15_000;
 
 export class Toasts {
   items = $state<Toast[]>([]);
@@ -76,7 +78,8 @@ export class Toasts {
   }
 
   #countDown(id: number): void {
-    this.#timers.set(id, setTimeout(() => this.dismiss(id), SHOW_MS));
+    const time = this.items.find((t) => t.id === id)?.action ? ACTION_SHOW_MS : SHOW_MS;
+    this.#timers.set(id, setTimeout(() => this.dismiss(id), time));
   }
 }
 

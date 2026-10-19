@@ -742,16 +742,62 @@ describe("moving keycodes between keys", () => {
     expect(store.pending).toBe(0);
   });
 
-  it("says which key kept its change when putting it back fails too", async () => {
+  it("says which key kept its change, by what it does now, when putting it back fails too", async () => {
     const { store, codes } = await twoKeys();
-    mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => described(code))
+    mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => ({ ...described(code), tap: "A" }))
       .mockRejectedValue(new ApiError(502));
     expect(await store.setCodes(0, swap, ACTION)).toBe(false);
     expect(codes()).toEqual(["KC_A", "KC_A"]);
     expect(messages()).toEqual([
-      "Swapping the keys failed: The keyboard didn't respond. The key at row 0, column 1 is now KC_A: putting it " +
-        "back failed too.",
+      "Swapping the keys failed: The keyboard didn't respond. The key at row 0, column 1 is now A: putting it back " +
+        "failed too.",
     ]);
+  });
+
+  it("names the keys as the caller does", async () => {
+    const { store } = await twoKeys();
+    mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => described(code))
+      .mockRejectedValueOnce(new ApiError(502));
+    const place = (ref: { index: number }) => ["left top row, 1st from the outside", "left top row, 2nd from the outside"][ref.index];
+    expect(await store.setCodes(0, swap, ACTION, place)).toBe(false);
+    expect(messages()).toEqual([
+      "Swapping the keys failed: The keyboard didn't respond. Left top row, 2nd from the outside was put back as it was.",
+    ]);
+  });
+
+  it("says the first key was already changed when the keyboard was unplugged before the second: nothing is put back", async () => {
+    const { store, emit, codes } = await twoKeys();
+    const second = deferred<Described>();
+    mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => ({ ...described(code), tap: "A" }))
+      .mockReturnValueOnce(second.promise);
+    const moving = store.setCodes(0, swap, ACTION);
+    await settle();
+    emit("disconnected");
+    second.reject(new ApiError(503));
+    expect(await moving).toBe(false);
+    expect(sent()).toEqual(["0:0,1=KC_A", "0:0,0=KC_B"]);
+    expect(codes()).toEqual(["KC_A", "KC_A"]);
+    expect(messages()).toEqual([
+      "Swapping the keys failed: The keyboard isn't connected. The key at row 0, column 1 was already changed to A: " +
+        "it wasn't put back, as the keyboard was unplugged or replaced.",
+    ]);
+  });
+
+  it("writes the bootloader key first; nothing is written when the unlock is refused", async () => {
+    const { store, codes } = await twoKeys();
+    // KC_A dragged onto QK_BOOT, swapped: QK_BOOT goes where KC_A was, which a locked keyboard refuses
+    store.model!.layers[0].keys[1] = described("QK_BOOT");
+    const bootSwap = [{ ref: B, code: "KC_A", was: "QK_BOOT" }, { ref: A, code: "QK_BOOT", was: "KC_A" }];
+    mocked.setKey.mockRejectedValueOnce(new ApiError(423, "the keyboard is locked"));
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    mocked.unlockCancel.mockResolvedValueOnce({ ...UNLOCKING, state: "cancelled" });
+    const moving = store.setCodes(0, bootSwap, ACTION);
+    await settle();
+    await store.unlock.cancel();
+    expect(await moving).toBe(false);
+    expect(sent()).toEqual(["0:0,0=QK_BOOT"]);
+    expect(codes()).toEqual(["KC_A", "QK_BOOT"]);
+    expect(messages()).toEqual(["Swapping the keys failed: The keyboard is locked, and it wasn't unlocked."]);
   });
 
   it("writes nothing more, and puts nothing back, when the first key can't be written", async () => {

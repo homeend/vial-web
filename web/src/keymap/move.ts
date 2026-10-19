@@ -6,14 +6,15 @@ import { actionAt, refId, type KeyRef } from "../keyboard/refs";
 
 export type MoveKind = "replace" | "swap";
 
-/** How far (px) a mouse or pen press moves before it drags the key rather than clicks it */
+/** How far (px) a mouse press moves before it drags the key rather than clicks it */
 export const DRAG_THRESHOLD = 6;
-/** How long (ms) a finger holds a key still before it can drag it: moving sooner scrolls the page */
+/** How long (ms) a finger or pen holds a key still before it can drag it: moving sooner scrolls the page, as a pen
+ * pans the page as a finger does */
 export const LONG_PRESS_MS = 350;
-/** How far (px) a finger may wander while it holds a key, before it is taken as scrolling */
+/** How far (px) a finger or pen may wander while it holds a key, before it is taken as scrolling */
 export const TOUCH_SLOP = 10;
 
-/** Where and when a press on a key started, and whether by a finger */
+/** Where and when a press on a key started, and whether by a finger or pen (touch) rather than a mouse */
 export interface Press {
   x: number;
   y: number;
@@ -21,9 +22,9 @@ export interface Press {
   touch: boolean;
 }
 
-/** What a press is once the pointer is at (x, y) at a time: still a click ("press"), a drag, or a finger scrolling the
- * page (given up). A mouse or pen drags once it has moved DRAG_THRESHOLD; a finger must first hold the key still for
- * LONG_PRESS_MS (wandering TOUCH_SLOP at most), so that a swipe across the keyboard still scrolls. */
+/** What a press is once the pointer is at (x, y) at a time: still a click ("press"), a drag, or a finger or pen
+ * scrolling the page (given up). A mouse drags once it has moved DRAG_THRESHOLD; a finger or pen must first hold the
+ * key still for LONG_PRESS_MS (wandering TOUCH_SLOP at most), so that a swipe across the keyboard still scrolls. */
 export function pressState(press: Press, x: number, y: number, time: number): "press" | "drag" | "scroll" {
   const moved = Math.hypot(x - press.x, y - press.y);
   if (press.touch && time - press.time < LONG_PRESS_MS) return moved > TOUCH_SLOP ? "scroll" : "press";
@@ -56,6 +57,17 @@ export function movePlan(kind: MoveKind, source: KeyCode, target: KeyCode): Chan
   const changes = [{ ref: target.ref, code: source.code, was: target.code }];
   if (kind === "swap") changes.push({ ref: source.ref, code: target.code, was: source.code });
   return changes.filter((c) => c.code !== c.was);
+}
+
+/** The keycode whose writing needs an unlocked keyboard, wherever it goes: the firmware refuses it while locked. The
+ * server's rule (protocol set_key and set_encoder, edits._needs_unlock): writing RESET_KEYCODE where it isn't yet. */
+export const UNLOCK_KEYCODE = "QK_BOOT";
+
+/** The changes in the order to write them: those a locked keyboard refuses first, so that a refusal (and an unlock
+ * that doesn't happen) comes before anything is written; the others in their order */
+export function unlockFirst(changes: Change[]): Change[] {
+  const needs = (c: Change) => c.code === UNLOCK_KEYCODE && c.was !== UNLOCK_KEYCODE;
+  return [...changes.filter(needs), ...changes.filter((c) => !needs(c))];
 }
 
 /** What puts changes back: each key to what it was, the last one first */

@@ -2,14 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { Described, KeyboardModel } from "../api/types";
 import {
   DRAG_THRESHOLD, dropTarget, LONG_PRESS_MS, MENU_GAP, menuPlace, moveDone, movePlan, pickHint, pressState,
-  stillApplies, TOUCH_SLOP, undoOf, type Press,
+  stillApplies, TOUCH_SLOP, undoOf, unlockFirst, type Press,
 } from "./move";
 
 const mouse: Press = { x: 100, y: 100, time: 0, touch: false };
+/** a finger or a pen: both hold the key before they drag it */
 const finger: Press = { ...mouse, touch: true };
 
 describe("pressState", () => {
-  it("keeps a mouse or pen press a click until it moves the threshold, in any direction", () => {
+  it("keeps a mouse press a click until it moves the threshold, in any direction", () => {
     expect(pressState(mouse, 100, 100, 5000)).toBe("press");
     expect(pressState(mouse, 100 + DRAG_THRESHOLD - 1, 100, 10)).toBe("press");
     expect(pressState(mouse, 100 + DRAG_THRESHOLD, 100, 10)).toBe("drag");
@@ -19,14 +20,14 @@ describe("pressState", () => {
     expect(pressState(mouse, 104, 104, 10)).toBe("press");
   });
 
-  it("lets a finger that moves before it has held the key long enough scroll the page", () => {
+  it("lets a finger or pen that moves before it has held the key long enough scroll the page", () => {
     expect(pressState(finger, 100 + TOUCH_SLOP + 1, 100, LONG_PRESS_MS - 1)).toBe("scroll");
     expect(pressState(finger, 100, 100 + TOUCH_SLOP + 1, 10)).toBe("scroll");
     // a little wandering is still holding the key
     expect(pressState(finger, 100 + TOUCH_SLOP, 100, 10)).toBe("press");
   });
 
-  it("drags with a finger once it has held the key long enough", () => {
+  it("drags with a finger or pen once it has held the key long enough", () => {
     expect(pressState(finger, 100, 100, LONG_PRESS_MS)).toBe("press");
     expect(pressState(finger, 100 + DRAG_THRESHOLD, 100, LONG_PRESS_MS)).toBe("drag");
     expect(pressState(finger, 300, 300, LONG_PRESS_MS + 500)).toBe("drag");
@@ -82,6 +83,20 @@ describe("movePlan", () => {
     const same = { ...target, code: "KC_A" };
     expect(movePlan("replace", source, same)).toEqual([]);
     expect(movePlan("swap", source, same)).toEqual([]);
+  });
+
+  it("writes the bootloader key first: a locked keyboard refuses it before anything else is written", () => {
+    const boot = { ...target, code: "QK_BOOT" };
+    const swap = movePlan("swap", source, boot);
+    expect(unlockFirst(swap)).toEqual([
+      { ref: source.ref, code: "QK_BOOT", was: "KC_A" },
+      { ref: target.ref, code: "KC_A", was: "QK_BOOT" },
+    ]);
+    // undone too: the bootloader key goes back first
+    expect(undoOf(swap)[0].code).toBe("KC_A");
+    expect(unlockFirst(undoOf(swap))[0]).toEqual({ ref: target.ref, code: "QK_BOOT", was: "KC_A" });
+    // otherwise in their order
+    expect(unlockFirst(movePlan("swap", source, target))).toEqual(movePlan("swap", source, target));
   });
 
   it("is undone by writing what was there, the last change first", () => {

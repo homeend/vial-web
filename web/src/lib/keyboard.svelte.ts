@@ -9,8 +9,9 @@ import type {
   AltRepeatKeyIn, KeyboardLanguage, KeyboardModel, KeycodeCategory, KeyOverrideIn, MacroActionIn, Named, QmkSetting,
   Session, TapDanceIn,
 } from "../api/types";
+import { keyTitle, namesOf } from "../keyboard/labels";
 import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
-import type { Change } from "../keymap/move";
+import { unlockFirst, type Change } from "../keymap/move";
 import { freeTapDance } from "../keymap/tapdance";
 import { toasts } from "./toasts.svelte";
 import { LOCKED, Unlocker, type UnlockOutcome } from "./unlock.svelte";
@@ -32,6 +33,14 @@ function saveLanguage(lang: string): void {
     // not remembered (private window): still used until the page is closed
   }
 }
+
+/** "the key at row 1, column 2", "encoder 0, clockwise": a key named by where it is in the matrix */
+function defaultPlace(model: KeyboardModel, ref: KeyRef): string {
+  const { what, where } = whereIs(model, ref);
+  return ref.kind === "key" ? `the key at ${where}` : `${what.toLowerCase()}, ${where}`;
+}
+
+const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** Whether a key or encoder direction has a matrix position (or encoder and direction) to write to */
 function hasPosition(model: KeyboardModel, ref: KeyRef): boolean {
@@ -190,29 +199,43 @@ export class KeyboardStore {
   }
 
   /** Set several keycodes on a layer, one after another (a swap: both keys), as one change: busy until all are
-   * written. A locked keyboard is unlocked for the one it refused, and the rest are written. When one can't be
-   * written, those written before it are put back, last first; the failure's message says so, or names each key that
-   * kept its change. Returns whether all were written. */
-  async setCodes(layer: number, changes: Change[], action: string): Promise<boolean> {
+   * written. Those a locked keyboard refuses (the bootloader key) go first, so that nothing is written when it isn't
+   * unlocked for them; a locked keyboard is unlocked for the one it refused, and the rest are written. When one can't
+   * be written, those written before it are put back, last first (not on a keyboard unplugged or replaced meanwhile);
+   * the failure's message says so, or names each key that kept its change, by placeOf (where the key is, "row 1,
+   * column 2" by default) and what it does now. Returns whether all were written. */
+  async setCodes(
+    layer: number, changes: Change[], action: string, placeOf?: (ref: KeyRef) => string,
+  ): Promise<boolean> {
     const model = this.model;
     if (!model || !this.canEdit) return false;
     if (!changes.every((c) => hasPosition(model, c.ref))) return this.#noPosition(action);
+    const ordered = unlockFirst(changes);
     const written: Change[] = [];
     const write = async () => {
-      for (const change of changes.slice(written.length)) {
+      for (const change of ordered.slice(written.length)) {
         await this.#writeCode(model, layer, change.ref, change.code);
         written.push(change);
       }
     };
-    const putBack = async () => {
+    const place = (ref: KeyRef) => capitalised(placeOf ? placeOf(ref) : defaultPlace(model, ref));
+    const now = (ref: KeyRef) => {
+      const action = actionAt(model, layer, ref);
+      return action ? keyTitle(action, namesOf(model)) : "nothing";
+    };
+    const putBack = async (sameKeyboard: boolean) => {
+      if (!sameKeyboard) {
+        return written.map((c) =>
+          `${place(c.ref)} was already changed to ${now(c.ref)}: it wasn't put back, as the keyboard was unplugged ` +
+            "or replaced.").join(" ");
+      }
       const notes: string[] = [];
       for (const change of [...written].reverse()) {
-        const { where } = whereIs(model, change.ref);
         try {
           await this.#writeCode(model, layer, change.ref, change.was);
-          notes.push(`The key at ${where} was put back as it was.`);
+          notes.push(`${place(change.ref)} was put back as it was.`);
         } catch {
-          notes.push(`The key at ${where} is now ${change.code}: putting it back failed too.`);
+          notes.push(`${place(change.ref)} is now ${now(change.ref)}: putting it back failed too.`);
         }
       }
       return notes.join(" ");
@@ -373,15 +396,17 @@ export class KeyboardStore {
   /** Runs write, which puts the keyboard's reply into model. A change refused because the keyboard is locked unlocks
    * it (the user holds its unlock keys) and is sent again, once, unless the keyboard was unplugged or another one
    * plugged in meanwhile: the change was for the one that went. When it fails, putBack (if given) undoes what write
-   * got done on the same keyboard, and says what it did: that follows the failure's message. */
+   * got done, unless the keyboard was unplugged or replaced meanwhile (sameKeyboard), and says what it did or why it
+   * didn't: that follows the failure's message. */
   async #edit(
-    action: string, model: KeyboardModel, write: () => Promise<void>, putBack?: () => Promise<string>,
+    action: string, model: KeyboardModel, write: () => Promise<void>,
+    putBack?: (sameKeyboard: boolean) => Promise<string>,
   ): Promise<boolean> {
     this.pending++;
     const loads = this.#loads;
     const plugs = this.#plugs;
     const fail = async (message: string) => {
-      const note = putBack && this.#plugs === plugs ? await putBack() : "";
+      const note = putBack ? await putBack(this.#plugs === plugs) : "";
       toasts.error(note ? `${message} ${note}` : message);
       return false;
     };
