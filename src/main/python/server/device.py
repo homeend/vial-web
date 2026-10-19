@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ Finds and opens the keyboard, keeps it loaded, and serializes all access to it. """
 import logging
+import struct
 import threading
 import time
 from collections import namedtuple
+from dataclasses import dataclass
 
+from protocol.constants import CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_KEYBOARD_ID
 from protocol.keyboard_comm import Keyboard
 from simulator.device import SimulatedHidDevice
 
@@ -33,10 +36,48 @@ class DeviceIOError(RuntimeError):
 
 
 def require_unlocked(keyboard):
-    """ Unlock handler for the server: the web UI can't run the unlock flow yet, so refuse instead """
+    """ Unlock handler for the server (protocol.unlock_hook). The protocol calls it before a security-sensitive write
+    (a macro, QK_BOOT). Unlocking needs the user to hold keys, which the UI asks for, so a locked keyboard refuses the
+    write (KeyboardLocked, 423): the UI then unlocks it (POST /api/unlock/start) and sends the change again. """
     if keyboard.get_unlock_status() != 1:
-        raise KeyboardLocked("the keyboard is locked; unlock it in the Qt app to change security-sensitive keys")
+        raise KeyboardLocked("the keyboard is locked: unlock it to make this change")
     return True
+
+
+def interrupted_unlock_keys(keyboard):
+    """ The unlock keys, if the keyboard is still waiting for an unlock started earlier (by a Vial closed meanwhile),
+    else None. Asked before anything else is read: while it waits, the keyboard answers only its identity and unlock
+    requests, and sends every other request back unanswered. """
+    data = keyboard.usb_send(keyboard.dev, struct.pack("BB", CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_KEYBOARD_ID),
+                             retries=20)
+    # what the unlock requests check, as Keyboard.reload_layout sets it
+    keyboard.vial_protocol = struct.unpack("<I", data[0:4])[0]
+    return keyboard.get_unlock_keys() if keyboard.get_unlock_in_progress() else None
+
+
+@dataclass(frozen=True)
+class UnlockState:
+    """ Whether the keyboard is unlocked, and how far an unlock has got (schemas.UnlockState) """
+    state: str
+    """ "locked", "unlocking", "cancelled" (no longer followed, but the keyboard still waits for its keys) or
+    "unlocked" """
+    keys: tuple = ()
+    """ (row, col) of each key to hold, while unlocking or cancelled """
+    remaining: int = 0
+    """ the keyboard's countdown: polls with every key held that it still wants (0 before the first poll) """
+    total: int = 0
+    """ where the countdown started: the highest it was seen at """
+
+
+@dataclass
+class _Unlock:
+    """ An unlock the keyboard is waiting for: it takes no other request until it is unlocked or plugged in again """
+    keys: list
+    remaining: int = 0
+    total: int = 0
+    following: bool = True
+    """ polled (unlock_poll) until done; False once cancelled """
+
 
 
 class CheckedDevice:
@@ -150,7 +191,7 @@ def candidate_key(candidate):
 
 class DeviceManager:
     """
-    Owns the open keyboard. All access goes through run() (or reload()), which hold the device lock.
+    Owns the open keyboard. All access goes through run() or read() (or reload()), which hold the device lock.
 
     check() is the hot-plug poll (about once a second) and the one place where the connection is repaired:
     - an unplugged keyboard is closed ("disconnected");
@@ -161,6 +202,14 @@ class DeviceManager:
     - a keyboard whose presence can't be checked (the backend raises) is kept as it is;
     - with no keyboard, the first one found is opened and loaded ("connected"). One that fails to load is not tried
       again for RETRY_FIRST seconds, doubling up to RETRY_MAX, unless it is unplugged and plugged back in.
+
+    Unlocking works as Qt's unlocker does: start_unlock() sends unlock_start, then poll_unlock() (called about every
+    200 ms while the state is "unlocking") reads the keyboard's countdown, which runs while the user holds the unlock
+    keys, until it is unlocked. While the keyboard waits for its unlock keys it answers nothing else, so run() refuses
+    every request then (KeyboardLocked); read() still works. A keyboard found waiting for an unlock started earlier (by
+    a Vial closed meanwhile) is opened but not read: that unlock is finished first, as Qt does, then the keyboard is
+    read ("connected"). The unlock state changing (started, done, cancelled, locked) is an "unlock" event; the readings
+    of the countdown are not events, whoever follows the unlock (the server app) sends them on.
     """
 
     def __init__(self, backend, clock=time.monotonic):
@@ -174,6 +223,10 @@ class DeviceManager:
         self.title = None
         self.error = None
         self.unlocked = False
+        self.unlocking = None
+        """ _Unlock while the keyboard waits for its unlock keys """
+        self.waiting = None
+        """ the Keyboard opened but not read yet, while an unlock started earlier is finished first """
         self.pending_events = []
         self.failures = {}
         """ candidate key -> (failed attempts, clock time of the next attempt) """
@@ -212,12 +265,17 @@ class DeviceManager:
                 if wait_after_failures and key in self.failures and self.clock() < self.failures[key][1]:
                     continue
                 dev = None
+                unlocked = False
                 try:
                     dev, title = self.backend.open(candidate)
                     handle = CheckedDevice(dev)
                     keyboard = Keyboard(handle)
-                    keyboard.reload()
-                    unlocked = keyboard.get_unlock_status() == 1
+                    unlock_keys = interrupted_unlock_keys(keyboard)
+                    if unlock_keys is not None:
+                        keyboard.unlock_start()  # as Qt's unlocker does for every unlock
+                    else:
+                        keyboard.reload()
+                        unlocked = keyboard.get_unlock_status() == 1
                 except Exception as e:
                     log.warning("could not load keyboard %s: %s", candidate, e)
                     self.error = str(e) or e.__class__.__name__
@@ -226,9 +284,14 @@ class DeviceManager:
                         self._close_device(dev)
                     continue
                 self.failures.pop(key, None)
-                self.keyboard, self.device, self.handle = keyboard, dev, handle
-                self.candidate, self.title = candidate, title
-                self.unlocked, self.error = unlocked, None
+                self.device, self.handle, self.candidate, self.title, self.error = dev, handle, candidate, title, None
+                if unlock_keys is not None:
+                    log.info("%s is waiting to be unlocked: finishing that before reading it", title)
+                    self.waiting = keyboard
+                    self.unlocking = _Unlock(unlock_keys)
+                    self.pending_events.append("unlock")
+                    return False
+                self.keyboard, self.unlocked = keyboard, unlocked
                 log.info("connected to %s", title)
                 return True
             return False
@@ -247,7 +310,7 @@ class DeviceManager:
         with self.lock:
             try:
                 self.run(do_reload)
-            except NotConnected:
+            except (NotConnected, KeyboardLocked):
                 raise
             except Exception as e:
                 log.warning("could not reload the keyboard: %s", e)
@@ -257,38 +320,168 @@ class DeviceManager:
                 raise
 
     def run(self, fn):
-        """ Call fn(keyboard) while holding the device lock """
+        """ Call fn(keyboard) while holding the device lock. Refused while the keyboard waits for its unlock keys. """
         with self.lock:
             if self.keyboard is None:
                 raise NotConnected("no keyboard connected")
+            if self.unlocking is not None:
+                raise KeyboardLocked("the keyboard is waiting for its unlock keys: it takes no changes until it is "
+                                     "unlocked")
             try:
-                return fn(self.keyboard)
-            except (OSError, RuntimeError) as e:
-                if isinstance(e, (NotConnected, KeyboardLocked)) or self._present() is not False:
-                    # still plugged in (or the backend can't tell): if the handle itself stopped working, later
-                    # requests fail at once until check() reopens it
-                    if self.handle is not None and not self.handle.healthy:
-                        self.handle.broken = True
-                    raise
-                self._close()
-                self.pending_events.append("disconnected")
-                raise NotConnected("keyboard disconnected") from e
+                return self._io(self.keyboard, fn)
+            except KeyboardLocked:
+                # the unlock handler found it locked
+                if self.unlocked:
+                    self.unlocked = False
+                    self.pending_events.append("unlock")
+                raise
+
+    def read(self, fn):
+        """ Call fn(keyboard) while holding the device lock, for what only reads what was loaded (no device I/O): it
+        works while the keyboard waits for its unlock keys too """
+        with self.lock:
+            if self.keyboard is None:
+                raise NotConnected("no keyboard connected")
+            return fn(self.keyboard)
+
+    def _io(self, keyboard, fn):
+        """ fn(keyboard), the lock held; a failure that means the keyboard is gone closes it (NotConnected) """
+        try:
+            return fn(keyboard)
+        except (OSError, RuntimeError) as e:
+            if isinstance(e, (NotConnected, KeyboardLocked)) or self._present() is not False:
+                # still plugged in (or the backend can't tell): if the handle itself stopped working, later
+                # requests fail at once until check() reopens it
+                if self.handle is not None and not self.handle.healthy:
+                    self.handle.broken = True
+                raise
+            self._close_reporting()
+            raise NotConnected("keyboard disconnected") from e
+
+    # ---------- unlocking ----------
+
+    def unlock_state(self):
+        """ UnlockState of the keyboard """
+        with self.lock:
+            u = self.unlocking
+            if u is not None:
+                return UnlockState("unlocking" if u.following else "cancelled", tuple(u.keys), u.remaining, u.total)
+            return UnlockState("unlocked" if self.unlocked else "locked")
+
+    def _unlock_target(self):
+        """ The keyboard an unlock talks to: the loaded one, or one waiting to be read until it is unlocked """
+        keyboard = self.keyboard or self.waiting
+        if keyboard is None:
+            raise NotConnected("no keyboard connected")
+        return keyboard
+
+    def start_unlock(self):
+        """ Start unlocking as Qt's unlocker does: unlock_start, after which poll_unlock() follows the countdown. A
+        cancelled unlock is followed again (the keyboard starts its countdown over). An unlocked keyboard is left
+        alone. Returns unlock_state(). """
+        with self.lock:
+            keyboard = self._unlock_target()
+            if self.unlocking is None:
+                if self._io(keyboard, lambda kb: kb.get_unlock_status()) == 1:
+                    self.unlocked = True
+                    return self.unlock_state()
+                keys = self._io(keyboard, lambda kb: kb.get_unlock_keys())
+            else:
+                keys = self.unlocking.keys
+            self._io(keyboard, lambda kb: kb.unlock_start())
+            self.unlocking = _Unlock(keys)
+            self.pending_events.append("unlock")
+            return self.unlock_state()
+
+    def poll_unlock(self):
+        """ One poll of the unlock being followed: the keyboard counts down while every unlock key is held, and starts
+        again when one is let go. Once it is unlocked, a keyboard that waited for that is read ("connected").
+        Returns unlock_state(). """
+        with self.lock:
+            u = self.unlocking
+            if u is None or not u.following:
+                return self.unlock_state()
+            data = self._io(self._unlock_target(), lambda kb: kb.unlock_poll())
+            unlocked, in_progress, counter = data[0], data[1], data[2]
+            u.remaining, u.total = counter, max(u.total, counter)
+            if unlocked == 1 or not in_progress:
+                self.unlocking = None
+                self.unlocked = unlocked == 1
+                self.pending_events.append("unlock")
+                if self.waiting is not None:
+                    self._read_waiting()
+            return self.unlock_state()
+
+    def _read_waiting(self):
+        """ Read the keyboard that waited for its unlock, now that it answers again """
+        keyboard, self.waiting = self.waiting, None
+        try:
+            keyboard.reload()
+        except Exception as e:
+            log.warning("could not load keyboard %s: %s", self.candidate, e)
+            self._failed(candidate_key(self.candidate))
+            self._close()
+            self.error = str(e) or e.__class__.__name__
+            return
+        self.keyboard = keyboard
+        log.info("connected to %s", self.title)
+        self.pending_events.append("connected")
+
+    def cancel_unlock(self):
+        """ Stop following the unlock. The keyboard can't be told to stop waiting for its unlock keys: it takes no
+        changes until it is unlocked (start_unlock again) or plugged in again. Returns unlock_state(). """
+        with self.lock:
+            if self.unlocking is not None and self.unlocking.following:
+                self.unlocking.following = False
+                self.pending_events.append("unlock")
+            return self.unlock_state()
+
+    def lock_keyboard(self):
+        """ Lock the keyboard again (Qt's Security > Lock). Returns unlock_state(). """
+        with self.lock:
+            def lock(kb):
+                kb.lock()
+                return kb.get_unlock_status() == 1
+            self.unlocked = self.run(lock)
+            self.pending_events.append("unlock")
+            return self.unlock_state()
+
+    def read_unlocked(self):
+        """ Ask the keyboard whether it is unlocked: it may have been locked meanwhile. Returns unlock_state(). """
+        with self.lock:
+            unlocked = self.run(lambda kb: kb.get_unlock_status()) == 1
+            if unlocked != self.unlocked:
+                self.unlocked = unlocked
+                self.pending_events.append("unlock")
+            return self.unlock_state()
+
+    # ---------- hot-plug ----------
 
     def check(self):
         """ Hot-plug poll, called about once a second. Returns the events since the last call. """
         with self.lock:
-            if self.keyboard is not None:
+            if self.device is not None:
                 if self._present() is False:
-                    self._close()
-                    self.pending_events.append("disconnected")
+                    self._close_reporting()
                 elif not self.handle.healthy:
                     log.warning("%s stopped answering; reopening it", self.title)
-                    self._close()
-                    self.pending_events.append("disconnected")
-            if self.keyboard is None and self._connect(wait_after_failures=True):
+                    self._close_reporting()
+            if self.device is None and self._connect(wait_after_failures=True):
                 self.pending_events.append("connected")
+            return self.take_events()
+
+    def take_events(self):
+        """ The events since the last call, in order: "connected", "disconnected", "unlock" """
+        with self.lock:
             events, self.pending_events = self.pending_events, []
             return events
+
+    def _close_reporting(self):
+        """ Close the keyboard, with the event that says so: "disconnected" for a loaded one; "unlock" for one that
+        waited for its unlock (the UI never had it), whose unlock is over """
+        was_loaded = self.keyboard is not None
+        self._close()
+        self.pending_events.append("disconnected" if was_loaded else "unlock")
 
     def _present(self):
         """ Whether the open keyboard is still plugged in, or None when the backend can't tell (it raised). Unknown
@@ -318,5 +511,8 @@ class DeviceManager:
     def _close(self):
         if self.device is not None:
             self._close_device(self.device)
-        self.keyboard = self.device = self.handle = self.candidate = self.title = None
+        self.keyboard = self.device = self.handle = self.candidate = self.title = self.waiting = None
+        self.unlocking = None
         self.unlocked = False
+
+
