@@ -39,8 +39,21 @@ describe("behaviourCounts", () => {
     const model = simulatedCorne();
     expect(model.tapDance.filter(tapDanceIsSet)).toHaveLength(2);
     expect(model.macros.items.filter(macroIsSet)).toHaveLength(2);
-    expect(behaviourCounts(model)).toEqual({ tapDance: 2, combos: 2, macros: 2 });
-    expect(behaviourCounts(corne({ layers: [] }))).toEqual({ tapDance: null, combos: null, macros: null });
+    expect(behaviourCounts(model)).toEqual({ tapDance: 2, combos: 2, macros: 2, keyOverrides: null, altRepeat: null });
+    expect(behaviourCounts(corne({ layers: [] }))).toEqual({
+      tapDance: null, combos: null, macros: null, keyOverrides: null, altRepeat: null,
+    });
+  });
+
+  it("count the key overrides and alt-repeat keys set up", () => {
+    const model = corne({
+      layers: [],
+      keyOverrides: [{ trigger: "KC_BSPC", replacement: "KC_DEL" }, { trigger: "KC_A", replacement: "KC_B" }],
+      altRepeatKeys: [{ keycode: "KC_LEFT", altKeycode: "KC_RGHT" }, { keycode: "KC_NO", altKeycode: "KC_NO" }],
+    });
+    model.keyOverrides[1] = { ...model.keyOverrides[1], trigger: model.altRepeatKeys[1].keycode,
+      replacement: model.altRepeatKeys[1].keycode, layers: 0, enabled: false };
+    expect(behaviourCounts(model)).toMatchObject({ keyOverrides: 1, altRepeat: 1 });
   });
 
   it("go by the entries the keyboard lists, as tap dances and combos do", () => {
