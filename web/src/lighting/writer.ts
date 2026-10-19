@@ -56,6 +56,17 @@ export class LatestWriter<T> {
     if (!was) this.#onBusy(true);
   }
 
+  /** Send values one after the other, each pushed once everything before it is written, so none is merged with the
+   * next (a value pushed meanwhile from elsewhere may still be merged with one of them); resolves once the last is
+   * written. A value that fails doesn't stop the next one. */
+  async pushInTurn(values: readonly T[]): Promise<void> {
+    for (const value of values) {
+      if (this.busy) await this.idle();
+      this.push(value);
+    }
+    await this.idle();
+  }
+
   /** Resolves once everything pushed so far has been written (at once if nothing is) */
   idle(): Promise<void> {
     if (!this.busy) return Promise.resolve();

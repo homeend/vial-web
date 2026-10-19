@@ -348,6 +348,43 @@ describe("LatestWriter", () => {
     expect(writes.at(-1)!.value).toEqual({ v: 255 });
   });
 
+  it("sends values in turn, each once the one before is written, not merged", async () => {
+    const { w, writes, busy, advance } = writer(100);
+    const done = vi.fn();
+    void w.pushInTurn([{ a: 1, b: 1 }, { a: 2 }]).then(done);
+    expect(writes.map((x) => x.value)).toEqual([{ a: 1, b: 1 }]);
+    writes[0].done();
+    await flush();
+    // the second waits for the gap, then goes alone
+    expect(writes).toHaveLength(1);
+    advance(100);
+    await flush();
+    expect(writes.map((x) => x.value)).toEqual([{ a: 1, b: 1 }, { a: 2 }]);
+    expect(done).not.toHaveBeenCalled();
+    writes[1].done();
+    await flush();
+    expect(done).toHaveBeenCalled();
+    expect(w.busy).toBe(false);
+    // idle for a moment between the two: whoever waits for all of them waits for `pushInTurn`
+    expect(busy).toEqual([true, false, true, false]);
+  });
+
+  it("sends values in turn after what is on its way, and goes on after a failed one", async () => {
+    const { w, writes } = writer(0);
+    w.push({ c: 3 });
+    const all = w.pushInTurn([{ a: 1 }, { a: 2 }]);
+    // the first value waits for the write on its way
+    expect(writes).toHaveLength(1);
+    writes[0].done();
+    await flush();
+    expect(writes.map((x) => x.value)).toEqual([{ c: 3 }, { a: 1 }]);
+    writes[1].fail();
+    await flush();
+    expect(writes.map((x) => x.value)).toEqual([{ c: 3 }, { a: 1 }, { a: 2 }]);
+    writes[2].done();
+    await expect(all).resolves.toBeUndefined();
+  });
+
   it("goes on after a write that throws at once", async () => {
     const { clock, advance } = fakeClock();
     const sent: number[] = [];
