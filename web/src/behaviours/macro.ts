@@ -1,6 +1,9 @@
 // Macros as steps: what each step says, how many bytes of the keyboard's macro memory it takes, and editing them.
 // The sizes follow the protocol's encoding (src/main/python/macro/macro_action.py): the keyboard stores all macros in
-// one buffer, each ended by a 0 byte.
+// one buffer, each ended by a 0 byte. Two cases where the server's count can differ: a damaged buffer read from the
+// keyboard (unknown actions are skipped when it is read, so the steps re-encode shorter than the raw bytes; the server
+// still refuses a save that doesn't fit), and keycodes of 256 or more before protocol 2, which Qt's encoder writes
+// without a prefix that old firmware can read (counted as it writes them).
 import type { Described, MacroAction, MacroActionIn } from "../api/types";
 
 export type Step = MacroAction;
@@ -31,7 +34,8 @@ export function stepBytes(step: Step, vialProtocol: number): number {
   const advanced = vialProtocol >= ADVANCED_MACROS;
   switch (step.type) {
     case "text":
-      return new TextEncoder().encode(step.text ?? "").length;
+      // one byte a character: typed text is ASCII, and text read from the keyboard comes one character a byte
+      return (step.text ?? "").length;
     case "delay":
       return 4;
     default:

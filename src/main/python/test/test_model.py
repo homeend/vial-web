@@ -44,6 +44,9 @@ def test_build_macros_settings_lighting(corne_keyboard):
     virtual, kb = corne_keyboard
     result = model.build(kb, NO_NAMES, unlocked=False)
     assert (result.macros.count, result.macros.memory, result.macros.used) == (16, 900, len(kb.macro))
+    # 13 + 1 and 20 + 1 bytes for its two macros, 1 for each of the 14 empty ones: web/src/behaviours/macro.test.ts counts
+    # the same 49 from the steps
+    assert result.macros.used == 49
     first = result.macros.items[0]
     assert first.name == "git status"
     assert [a.type for a in first.actions] == ["text", "tap"]

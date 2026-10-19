@@ -33,6 +33,20 @@ describe("macro sizes", () => {
   it("have no prefix byte before protocol 2", () => {
     expect(stepBytes(keys("tap", ENTER), 1)).toBe(2);
     expect(stepBytes(keys("tap", CTRL_C), 1)).toBe(3);
+    expect(stepBytes(keys("down", ENTER, CTRL_C), 0)).toBe(5);
+  });
+
+  it("take two bytes for a keycode from 256 on, multiples of 256 included, and one a key in every step kind", () => {
+    expect(stepBytes(keys("tap", key("0xff", 0xff, "x")), 6)).toBe(3);
+    expect(stepBytes(keys("tap", key("LCTL(KC_NO)", 0x100, "Ctrl")), 6)).toBe(4);
+    expect(stepBytes(keys("tap", key("LSFT(KC_NO)", 0x200, "Shift")), 6)).toBe(4);
+    expect(stepBytes(keys("down", SHIFT, CTRL_C), 6)).toBe(3 + 4);
+    expect(stepBytes(keys("up", SHIFT, CTRL_C, ENTER), 6)).toBe(3 + 4 + 3);
+  });
+
+  it("count text read from the keyboard a byte a character, as the keyboard stores it", () => {
+    // bytes C5 BC (UTF-8 for "ż" written by another tool) come back from the keyboard as two characters
+    expect(stepBytes(text("Å¼"), 6)).toBe(2);
   });
 
   it("add up as the server counts the macro memory: a 0 byte ends each macro", () => {
