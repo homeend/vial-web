@@ -146,7 +146,9 @@ def make_corne(layers=len(LAYERS)):
         # ko_make_basic(MOD_MASK_SHIFT, KC_ESC, KC_TILD) would, but only there
         key_overrides=[(encode("KC_BSPC"), encode("KC_DEL"), 0xFFFF, 0x02, 0, 0x02, ko_options_enabled),
                        (encode("KC_ESC"), encode("LSFT(KC_GRV)"), 0x0001, 0x22, 0, 0x22, ko_options_enabled)] +
-                      [(0, 0, 0, 0, 0, 0, 0)] * 2,
+                      # the rest as the firmware's reset leaves them (vial-qmk dynamic_keymap.c): every layer and the
+                      # three start options, switched off, no keys
+                      [(0, 0, 0xFFFF, 0, 0, 0, 0x07)] * 2,
         # Shift+Left then Alt Repeat gives Shift+Right, and the other way round
         alt_repeat_keys=[(encode("KC_LEFT"), encode("KC_RGHT"), 0x02, ark_options)] + [(0, 0, 0, 0)] * 3,
         # 22-24 are the separate Permissive Hold / Hold On Other Key Press / Retro Tapping settings. The legacy

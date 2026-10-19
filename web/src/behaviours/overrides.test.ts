@@ -88,13 +88,23 @@ describe("layer masks", () => {
 });
 
 describe("key overrides", () => {
-  it("is set up when anything in it isn't empty; the first one that isn't is free", () => {
+  it("is set up when it has a key or modifiers; the first one that isn't is free", () => {
     const empty = { ...clearedKeyOverride(NONE), index: 1 };
     const set = { ...override(), index: 0 };
     expect([set, empty].map(keyOverrideIsSet)).toEqual([true, false]);
-    expect(keyOverrideIsSet({ ...empty, layers: 1 })).toBe(true);
     expect(freeKeyOverride([set, empty])).toBe(1);
     expect(freeKeyOverride([set])).toBeNull();
+    // a keyboard's own empty entries (vial-qmk dynamic_keymap.c reset): every layer and the three start options,
+    // switched off — layers and options alone set nothing up
+    const reset = { ...empty, index: 2, layers: 0xffff, options: KO_ACTIVATIONS };
+    expect(keyOverrideIsSet(reset)).toBe(false);
+    expect(freeKeyOverride([set, reset])).toBe(2);
+    expect(keyOverrideIsSet({ ...reset, options: KO_ACTIVATIONS | KO_ENABLED })).toBe(false);
+    // a key or a modifier is something set up
+    expect(keyOverrideIsSet({ ...reset, replacement: described("KC_DEL") })).toBe(true);
+    expect(keyOverrideIsSet({ ...reset, triggerMods: 0x02 })).toBe(true);
+    expect(keyOverrideIsSet({ ...reset, negativeModMask: 0x01 })).toBe(true);
+    expect(keyOverrideIsSet({ ...reset, suppressedMods: 0x02 })).toBe(true);
   });
 
   it("starts a new one on every layer, switched on, started all three ways", () => {

@@ -29,6 +29,9 @@ test("a new key override: trigger, replacement, modifiers, an option and layers,
   try {
     await openSection(app, "Key overrides");
     await expect(app).toHaveTitle("Key overrides · Vial");
+    // the keyboard's own empty entries (every layer and the start options, switched off, no keys) aren't set up:
+    // only the two that are show, and the first empty one is free
+    await expect(app.locator("article.behaviour-card")).toHaveCount(2);
     await app.getByRole("button", { name: "New key override" }).click();
     await expect(app).toHaveURL(/#key-overrides\/2$/);
     const card = app.locator("#key-override-2");

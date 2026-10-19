@@ -122,9 +122,11 @@ const AR_OPTION_BITS = ALT_REPEAT_OPTIONS.reduce((all, o) => all | o.bit, 0);
 /** A key override as it is edited: the model's, enabled kept apart from the other options */
 export type KeyOverrideDraft = Omit<KeyOverride, "index">;
 
+/** Whether a key override is set up: it has a key or modifiers. Layers and options alone are not: a keyboard's own
+ * empty entries hold every layer and the three start options, switched off (vial-qmk dynamic_keymap.c reset). */
 export function keyOverrideIsSet(o: KeyOverride): boolean {
-  return o.trigger.value !== 0 || o.replacement.value !== 0 || o.layers !== 0 || o.triggerMods !== 0 ||
-    o.negativeModMask !== 0 || o.suppressedMods !== 0 || o.options !== 0;
+  return o.trigger.value !== 0 || o.replacement.value !== 0 || o.triggerMods !== 0 ||
+    o.negativeModMask !== 0 || o.suppressedMods !== 0;
 }
 
 /** The first key override that isn't set up, or null */
