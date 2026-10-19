@@ -1,0 +1,112 @@
+<script lang="ts">
+  import { untrack } from "svelte";
+  import type { KeyboardModel } from "../api/types";
+  import PageHeader from "../behaviours/PageHeader.svelte";
+  import { keyboard } from "../lib/keyboard.svelte";
+  import Button from "../ui/Button.svelte";
+  import SaveBar from "../ui/SaveBar.svelte";
+  import BacklightCard from "./BacklightCard.svelte";
+  import {
+    lightingKinds, mergePatch, patchRequest, restorePatch, sameLighting, withPatch, type LightingPatch,
+  } from "./lighting";
+  import RgbLightCard from "./RgbLightCard.svelte";
+  import { lightingBaseline as baseline } from "./state.svelte";
+  import VialRgbCard from "./VialRgbCard.svelte";
+  import { LatestWriter } from "./writer";
+
+  interface Props {
+    model: KeyboardModel;
+  }
+
+  let { model }: Props = $props();
+
+  /** the least time from one change sent to the next: a slider dragged sends about 12 a second */
+  const WRITE_GAP_MS = 80;
+
+  const canEdit = $derived(keyboard.canEdit);
+  /** the changes not yet confirmed by the keyboard: shown meanwhile, then what it confirmed is */
+  let draft = $state<LightingPatch>({});
+  /** changes are on their way */
+  let sending = $state(false);
+  const writer = new LatestWriter<LightingPatch>(
+    (patch) => keyboard.setLighting(patchRequest(patch, model.lighting)),
+    mergePatch,
+    WRITE_GAP_MS,
+    (busy) => {
+      sending = busy;
+      if (!busy) draft = {};
+    },
+  );
+  /** Save or Undo are being done: they take nothing more meanwhile (the focus stays on them) */
+  const busy = $derived(sending || keyboard.pending > 0);
+
+  const shown = $derived(withPatch(model.lighting, draft));
+  const kinds = $derived(lightingKinds(model.lighting));
+
+  // what the keyboard showed when this page first showed it, or what was saved here since (for this keyboard)
+  untrack(() => baseline.follow(model.uid, model.lighting));
+  $effect.pre(() => {
+    const [uid, lighting] = [model.uid, model.lighting];
+    untrack(() => baseline.follow(uid, lighting));
+  });
+  const changed = $derived(baseline.lighting !== null && !sameLighting(model.lighting, baseline.lighting));
+
+  function change(patch: LightingPatch) {
+    if (!canEdit) return;
+    draft = mergePatch(draft, patch);
+    writer.push(patch);
+  }
+
+  /** nothing to save: what the keyboard shows was saved here */
+  const saved = $derived(baseline.saved && !changed);
+
+  async function save() {
+    if (busy || saved || !canEdit) return;
+    await writer.idle();
+    if (await keyboard.saveLighting()) baseline.save(model.lighting);
+  }
+
+  function undo() {
+    if (busy || !changed || !baseline.lighting) return;
+    change(restorePatch(baseline.lighting));
+  }
+
+  const status = $derived(sending ? "Sending the change to the keyboard…"
+    : changed ? "The keyboard shows changes not saved: unplugged, it goes back to the lighting saved before."
+    : baseline.saved ? "Saved: the keyboard keeps this lighting when it is unplugged."
+    : "No changes since this page first showed the keyboard's lighting.");
+</script>
+
+<section class="page" aria-labelledby="lighting-title">
+  <PageHeader
+    id="lighting-title"
+    title="Lighting"
+    description="This keyboard's {kinds.join(' and ')}. Only what its firmware has is shown."
+    note="Changes show on the keyboard at once, and it keeps them only once you Save: unplugged before that, it goes back to the lighting it had saved. Undo puts back the lighting saved here last, or what it showed when this page first opened."
+  />
+
+  {#if shown.vialrgb}
+    <VialRgbCard value={shown.vialrgb} disabled={!canEdit} onchange={change} />
+  {/if}
+  {#if shown.rgblight}
+    <RgbLightCard value={shown.rgblight} disabled={!canEdit} onchange={change} />
+  {/if}
+  {#if shown.backlight}
+    <BacklightCard value={shown.backlight} disabled={!canEdit} onchange={change} />
+  {/if}
+
+  <SaveBar {status}>
+    <Button class={!changed ? "idle" : undefined} aria-disabled={busy || !changed || undefined} disabled={!canEdit}
+      onclick={undo}>Undo</Button>
+    <!-- what the keyboard shows may not be what it keeps until it is saved here once -->
+    <Button class={saved ? "idle" : undefined} variant="primary" disabled={!canEdit}
+      aria-disabled={busy || saved || undefined} onclick={() => void save()}>Save</Button>
+  </SaveBar>
+</section>
+
+<style>
+  .page {
+    display: grid;
+    gap: 14px;
+  }
+</style>
