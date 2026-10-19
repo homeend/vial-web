@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import {
-  altRepeatAt, expect, keyOverrideAt, openSection, restoreAll, setAltRepeat, setKeyOverride, test,
+  altRepeatAt, api, expect, keyOverrideAt, openSection, restoreAll, setAltRepeat, setKeyOverride, test,
 } from "./fixtures";
 
 // The Key overrides and Alt-repeat pages: each entry is edited in a draft and saved with Save. Every test puts back
@@ -8,6 +8,11 @@ import {
 
 const EMPTY_OVERRIDE = { trigger: "KC_NO", replacement: "KC_NO", layers: 0, triggerMods: 0, negativeModMask: 0,
   suppressedMods: 0, options: 0 };
+
+/** Makes the app read the keyboard again, after a change made through the API */
+async function reread(page: Page) {
+  expect((await api(page).post("/api/reload")).ok()).toBe(true);
+}
 
 /** The picker's any-keycode box: type a keycode and use it */
 async function pickAnyKeycode(page: Page, code: string) {
@@ -56,8 +61,8 @@ test("a new key override: trigger, replacement, modifiers, an option and layers,
     await expect(card.getByRole("heading", { name: "KO 2" })).toBeFocused();
     expect(await keyOverrideAt(app, 2)).toEqual({ trigger: "KC_A", replacement: "KC_B", layers: 0b100,
       triggerMods: 0b101, negativeModMask: 0, suppressedMods: 0, options: 0x8f });
-    await expect(app.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: /^Key overrides/ }))
-      .toContainText("3");
+    await expect(app.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: /^Key overrides/ })
+      .locator("em")).toHaveText("3");
 
     // edited again: switched off, then removed
     await card.getByRole("button", { name: "Edit" }).click();
@@ -67,13 +72,13 @@ test("a new key override: trigger, replacement, modifiers, an option and layers,
     expect((await keyOverrideAt(app, 2)).options).toBe(0x0f);
     await card.getByRole("button", { name: "Edit" }).click();
     await card.getByRole("button", { name: "Remove" }).click();
-    expect(await keyOverrideAt(app, 2)).toEqual(EMPTY_OVERRIDE);
+    await expect.poll(() => keyOverrideAt(app, 2)).toEqual(EMPTY_OVERRIDE);
   } finally {
     await setKeyOverride(app, 2, before);
   }
 });
 
-test("a key override on no layer, or with nothing to start it, says it never works; Cancel keeps it", async ({ app }) => {
+test("a key override put on no layer says it never works; Cancel keeps it as it was", async ({ app }) => {
   const before = await keyOverrideAt(app, 1);
   await openSection(app, "Key overrides");
   const card = app.locator("#key-override-1");
@@ -84,6 +89,35 @@ test("a key override on no layer, or with nothing to start it, says it never wor
   await expect(card.locator(".problems")).toHaveCount(0);
   await expect(card.getByRole("heading", { name: "KO 1" })).toBeFocused();
   expect(await keyOverrideAt(app, 1)).toEqual(before);
+});
+
+test("a new key override cancelled: its card and its address go, the focus goes to New", async ({ app }) => {
+  const before = await keyOverrideAt(app, 2);
+  await openSection(app, "Key overrides");
+  const add = app.getByRole("button", { name: "New key override" });
+  await add.click();
+  await expect(app).toHaveURL(/#key-overrides\/2$/);
+  const card = app.locator("#key-override-2");
+  await expect(card).toHaveClass(/editing/);
+  await card.getByRole("button", { name: "Cancel" }).click();
+  await expect(card).toHaveCount(0);
+  await expect(app).toHaveURL(/#key-overrides$/);
+  await expect(add).toBeFocused();
+  expect(await keyOverrideAt(app, 2)).toEqual(before);
+});
+
+test("a key override with no trigger, on the keyboard, says it starts on every key press", async ({ app }) => {
+  const before = await keyOverrideAt(app, 2);
+  try {
+    await setKeyOverride(app, 2, { ...EMPTY_OVERRIDE, replacement: "KC_DEL", layers: 0b1, options: 0x87 });
+    await reread(app);
+    await openSection(app, "Key overrides");
+    const card = app.locator("#key-override-2");
+    await expect(card.locator(".problems")).toHaveText(
+      "With no trigger key and no trigger modifiers, it starts on every key press on its layers.");
+  } finally {
+    await setKeyOverride(app, 2, before);
+  }
 });
 
 test("a key override's address opens and highlights its card", async ({ app }) => {
@@ -116,5 +150,37 @@ test("an alt-repeat key is edited and saved", async ({ app }) => {
     expect(await altRepeatAt(app, 0)).toEqual({ keycode: "KC_LEFT", altKeycode: "KC_HOME", allowedMods: 0, options: 0x0c });
   } finally {
     await restoreAll(() => setAltRepeat(app, 0, before));
+  }
+});
+
+test("a new alt-repeat key cancelled: its card and its address go, the focus goes to New", async ({ app }) => {
+  const before = await altRepeatAt(app, 1);
+  await openSection(app, "Alt-repeat");
+  const add = app.getByRole("button", { name: "New alt-repeat key" });
+  await add.click();
+  await expect(app).toHaveURL(/#alt-repeat\/1$/);
+  const card = app.locator("#alt-repeat-1");
+  await expect(card).toHaveClass(/editing/);
+  await card.getByRole("button", { name: "Cancel" }).click();
+  await expect(card).toHaveCount(0);
+  await expect(app).toHaveURL(/#alt-repeat$/);
+  await expect(add).toBeFocused();
+  expect(await altRepeatAt(app, 1)).toEqual(before);
+});
+
+test("alt-repeat keys with no last key, on the keyboard, say what they do", async ({ app }) => {
+  const before = [await altRepeatAt(app, 1), await altRepeatAt(app, 2)];
+  try {
+    // enabled (bit 3) and Default to this alt key (bit 0)
+    await setAltRepeat(app, 1, { keycode: "KC_NO", altKeycode: "KC_HOME", allowedMods: 0, options: 0x09 });
+    // enabled, and Both ways (bit 1)
+    await setAltRepeat(app, 2, { keycode: "KC_NO", altKeycode: "KC_END", allowedMods: 0, options: 0x0a });
+    await reread(app);
+    await openSection(app, "Alt-repeat");
+    await expect(app.locator("#alt-repeat-1 .sentence")).toHaveText("After any key without modifiers that no " +
+      "alt-repeat key covers, Alt Repeat sends Home, instead of the firmware's own pairs.");
+    await expect(app.locator("#alt-repeat-2 .sentence")).toHaveText("No last key: after End, Alt Repeat sends nothing.");
+  } finally {
+    await restoreAll(() => setAltRepeat(app, 1, before[0]), () => setAltRepeat(app, 2, before[1]));
   }
 });

@@ -54,18 +54,28 @@ test("a saved layout loaded back shows what changes, and confirming puts it back
 });
 
 test("another keyboard's file, or a broken one, is refused with a clear error", async ({ app }, info) => {
-  await openSection(app, "Keyboard");
-  const saved = await saveLayout(app, info.outputPath("mine.vil"));
-  // another keyboard's ID (the file's own is 64 bits, more than a JavaScript number keeps: it is replaced as text)
-  writeFileSync(info.outputPath("other.vil"), readFileSync(saved, "utf-8").replace(/"uid": \d+/, '"uid": 4660'));
-  await chooseFile(app, info.outputPath("other.vil"));
-  await expect(app.getByRole("alert")).toHaveText(
-    "other.vil can't be loaded: this layout file is for another keyboard (ID 0000000000001234), not this one (ID 5EEDC0DE00420042)");
+  const key = await keyIndex(app, 0, 0);
+  const before = await codeAt(app, 0, key);
+  try {
+    await openSection(app, "Keyboard");
+    const saved = await saveLayout(app, info.outputPath("mine.vil"));
+    // the file would change a key, were it loaded
+    await setCodeAt(app, 0, key, "KC_Z");
+    // another keyboard's ID (the file's own is 64 bits, more than a JavaScript number keeps: it is replaced as text)
+    writeFileSync(info.outputPath("other.vil"), readFileSync(saved, "utf-8").replace(/"uid": \d+/, '"uid": 4660'));
+    await chooseFile(app, info.outputPath("other.vil"));
+    await expect(app.getByRole("alert")).toHaveText(
+      "other.vil can't be loaded: this layout file is for another keyboard (ID 0000000000001234), not this one (ID 5EEDC0DE00420042)");
+    await expect(app.getByRole("group", { name: /^Load / })).toHaveCount(0);
+    expect(await codeAt(app, 0, key)).toBe("KC_Z");
 
-  writeFileSync(info.outputPath("broken.vil"), "{ not json");
-  await chooseFile(app, info.outputPath("broken.vil"));
-  await expect(app.getByRole("alert")).toContainText("broken.vil can't be loaded: not a valid Vial layout file");
-  await expect(app.getByRole("group", { name: /^Load / })).toHaveCount(0);
+    writeFileSync(info.outputPath("broken.vil"), "{ not json");
+    await chooseFile(app, info.outputPath("broken.vil"));
+    await expect(app.getByRole("alert")).toContainText("broken.vil can't be loaded: not a valid Vial layout file");
+    await expect(app.getByRole("group", { name: /^Load / })).toHaveCount(0);
+  } finally {
+    await setCodeAt(app, 0, key, before);
+  }
 });
 
 test("a file that changes the macros, loaded on a locked keyboard, asks to unlock it first", async ({ app }, info) => {
