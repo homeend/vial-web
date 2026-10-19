@@ -33,6 +33,10 @@ async function pageShots(page: Page, name: string) {
   await screenshots(page, name, { fullPage: true });
 }
 
+/** How far the page reaches past the window's width (its scroll bar left out): above 0, it scrolls sideways */
+const sidewaysScroll = (page: Page) =>
+  page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
 /** The element ends inside the window: nothing to scroll to */
 async function expectInWindow(page: Page, element: Locator) {
   const box = (await element.boundingBox())!;
@@ -346,13 +350,31 @@ test("the top bar locks and unlocks the keyboard; a cancelled unlock can be take
   }
 });
 
+test("375 px wide (a phone): the list pages don't scroll sideways, nor do the editors", async ({ app }) => {
+  await app.setViewportSize({ width: 375, height: 812 });
+  const overflow = () => sidewaysScroll(app);
+  for (const name of ["Tap dance", "Combos", "Macros"] as const) {
+    await openSection(app, name);
+    expect(await overflow(), name).toBeLessThanOrEqual(0);
+  }
+  await macroCard(app, 1).getByRole("button", { name: "Edit" }).click();
+  await expect(macroCard(app, 1).getByRole("group", { name: "Add a step" })).toBeVisible();
+  expect(await overflow(), "the macro editor").toBeLessThanOrEqual(0);
+  await macroCard(app, 1).getByRole("button", { name: "Cancel" }).click();
+  await openSection(app, "Combos");
+  await comboCard(app, 0).getByRole("button", { name: "Edit" }).click();
+  await expect(comboCard(app, 0).getByRole("group", { name: "Keys of combo 0" })).toBeVisible();
+  expect(await overflow(), "the combo editor").toBeLessThanOrEqual(0);
+  await comboCard(app, 0).getByRole("button", { name: "Cancel" }).click();
+});
+
 test.describe("screenshots of the behaviour pages", () => {
   for (const [width, height] of [[800, 900], [1280, 800], [2560, 1440], [1920, 950]]) {
     test(`${width} x ${height}: no sideways scroll, at most 860 px wide, nothing off the bottom`, async ({ app }) => {
       await app.setViewportSize({ width, height });
       for (const [name, id] of [["Tap dance", "tap-dance"], ["Combos", "combos"], ["Macros", "macros"]] as const) {
         await openSection(app, name);
-        const overflow = await app.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        const overflow = await sidewaysScroll(app);
         expect(overflow).toBeLessThanOrEqual(0);
         const page = (await app.locator(".page.list").boundingBox())!;
         expect(page.width).toBeLessThanOrEqual(860);

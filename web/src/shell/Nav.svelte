@@ -80,6 +80,18 @@
     opacity: 0.7;
   }
 
+  /* a phone: the four sections fit on one row, or wrap onto a second one rather than widen the page */
+  @media (max-width: 600px) {
+    ul {
+      flex-wrap: wrap;
+    }
+
+    button {
+      gap: 8px;
+      padding: 8px 10px;
+    }
+  }
+
   @media (min-width: 1000px) {
     .nav {
       position: sticky;
