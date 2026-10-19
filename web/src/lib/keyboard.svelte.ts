@@ -275,10 +275,15 @@ export class KeyboardStore {
     });
   }
 
-  /** Put every QMK setting back to the firmware's default */
+  /** Put every QMK setting back to the firmware's default. Its confirmation stays open while the keyboard is read
+   * again, and its button with it: a refusal then says why, as nothing else would. */
   resetSettings(): Promise<boolean> {
     const model = this.model;
-    if (!model || !this.canEdit) return Promise.resolve(false);
+    if (!model) return Promise.resolve(false);
+    if (!this.canEdit) {
+      toasts.error("Resetting the settings failed: the keyboard can't be changed just now.");
+      return Promise.resolve(false);
+    }
     return this.#edit("Resetting the settings", model, async () => {
       model.settings = await api.resetSettings();
     });

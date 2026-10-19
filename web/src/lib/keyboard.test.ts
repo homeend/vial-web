@@ -478,6 +478,18 @@ describe("key overrides, alt-repeat keys, QMK settings and layout files", () => 
     expect(store.model!.settings).toEqual([{ qsid: 7, value: 200 }]);
   });
 
+  it("say why the QMK settings weren't reset when the keyboard can't be changed just now", async () => {
+    const { store, emit } = await loaded();
+    // read again (a change made elsewhere): nothing can be changed until it is
+    mocked.keyboard.mockReturnValue(new Promise(() => undefined));
+    emit("reloaded");
+    expect(store.canEdit).toBe(false);
+    expect(await store.resetSettings()).toBe(false);
+    expect(mocked.resetSettings).not.toHaveBeenCalled();
+    expect(toasts.items.map((t) => t.message)).toEqual([
+      "Resetting the settings failed: the keyboard can't be changed just now."]);
+  });
+
   it("load a layout file: the model is the keyboard's reply", async () => {
     const { store } = await loaded();
     const after = model("KC_Z");
