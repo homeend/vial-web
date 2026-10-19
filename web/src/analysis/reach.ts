@@ -6,7 +6,7 @@
 import type { Described, KeyboardModel, LayerAction } from "../api/types";
 import type { Placement } from "../keyboard/geometry";
 import { refId, type KeyRef } from "../keyboard/refs";
-import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
+import { isHeldSlot, slotCanBeHeld, tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
 import { codesOn, comboLayers, combosOf, type ComboInfo } from "./combos";
 import { effectiveAt } from "./effective";
 
@@ -53,7 +53,8 @@ interface Target {
 }
 
 /** The layers a keycode reaches: a layer key or layer-tap's own layer, or each layer in a tap dance's slots. Layers the
- * keyboard doesn't have are left out. */
+ * keyboard doesn't have are left out. A slot the firmware never keeps held (see slotCanBeHeld: Double tap, and Tap
+ * once Hold is set) is only ever tapped, as a key on an encoder is (see tappedAction). */
 export function layerTargets(model: Pick<KeyboardModel, "layers" | "tapDance">, d: Described): Target[] {
   if ((d.kind === "layer" || d.kind === "layer-tap") && isLayer(model, d.layer) && d.layerAction) {
     return [{ layer: d.layer, action: d.layerAction, slot: null }];
@@ -61,10 +62,13 @@ export function layerTargets(model: Pick<KeyboardModel, "layers" | "tapDance">, 
   if (d.kind !== "tap-dance" || d.index == null) return [];
   const td = model.tapDance[d.index];
   if (!td) return [];
-  return tapDanceSlots(td).flatMap(({ label, action }) =>
-    (action.kind === "layer" || action.kind === "layer-tap") && isLayer(model, action.layer) && action.layerAction
-      ? [{ layer: action.layer, action: action.layerAction, slot: { tapDance: td.index, slot: label } }]
-      : []);
+  return tapDanceSlots(td).flatMap(({ label, action }) => {
+    if ((action.kind !== "layer" && action.kind !== "layer-tap") || !isLayer(model, action.layer) || !action.layerAction) {
+      return [];
+    }
+    const pressed = slotCanBeHeld(td, label) ? action.layerAction : tappedAction(action.layerAction);
+    return pressed ? [{ layer: action.layer, action: pressed, slot: { tapDance: td.index, slot: label } }] : [];
+  });
 }
 
 /** How many quick taps of a TT key toggle its layer: the firmware's TAPPING_TOGGLE, 5 unless the keyboard's firmware
@@ -76,9 +80,16 @@ export const TAPPING_TOGGLE = 5;
  * toggles (after TAPPING_TOGGLE quick turns; wayLabel says so). One-shot layers work as on a key.
  * null: never reached that way. */
 function tapped(target: Target): Target | null {
-  if (target.slot && (target.slot.slot === "Hold" || target.slot.slot === "Tap, then hold")) return null;
-  if (target.action === "while held" || target.action === "while held, with modifiers") return null;
-  return target.action === "hold, or tap to toggle" ? { ...target, action: "toggle" } : target;
+  if (target.slot && isHeldSlot(target.slot.slot)) return null;
+  const action = tappedAction(target.action);
+  return action ? { ...target, action } : null;
+}
+
+/** What a layer key does when it is only tapped, never held: a layer held while the key is down is never on (null),
+ * and TT only toggles */
+function tappedAction(action: LayerAction): LayerAction | null {
+  if (action === "while held" || action === "while held, with modifiers") return null;
+  return action === "hold, or tap to toggle" ? "toggle" : action;
 }
 
 type Model = Pick<KeyboardModel, "layers" | "tapDance" | "combos">;
@@ -131,6 +142,7 @@ function triLayerWays(keys: FnKey[]): { target: number; way: Way }[] {
  * - Tri-layer keys: FN_MO13 and FN_MO23 held together turn on layer 3 (see triLayerWays).
  * - LM (a layer with modifiers) counts as a key held for its layer.
  * - Encoder directions are only ever tapped: they never hold a layer (see tapped).
+ * - A tap dance's Double tap slot, and its Tap slot once Hold is set, are only ever tapped too (see layerTargets).
  * - Layer 0 is where the keyboard starts. A layer is reachable when a way to it works on a reachable layer; DF (a new
  *   default layer) counts like any other way.
  */

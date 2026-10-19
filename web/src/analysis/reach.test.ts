@@ -44,6 +44,24 @@ describe("layerTargets", () => {
     ]);
   });
 
+  it("holds a layer from Tap only while Hold is empty, and never from Double tap, where TT only toggles", () => {
+    // as the firmware's on_dance_finished: holding runs Hold when it is set, and Double tap is let go at once
+    const slots = corne({
+      layers: blank(4),
+      tapDances: [["MO(1)", "KC_NO", "LM(2, MOD_LSFT)", "KC_NO"], ["MO(1)", "KC_TRNS", "TT(2)", "KC_NO"],
+        ["TT(3)", "KC_A", "LT2(KC_NO)", "KC_NO"]],
+    });
+    expect(layerTargets(slots, described("TD(0)"))).toEqual([
+      { layer: 1, action: "while held", slot: { tapDance: 0, slot: "Tap" } },
+    ]);
+    expect(layerTargets(slots, described("TD(1)"))).toEqual([
+      { layer: 2, action: "toggle", slot: { tapDance: 1, slot: "Double tap" } },
+    ]);
+    expect(layerTargets(slots, described("TD(2)"))).toEqual([
+      { layer: 3, action: "toggle", slot: { tapDance: 2, slot: "Tap" } },
+    ]);
+  });
+
   it("leaves out layers the keyboard doesn't have, and tap dances it doesn't have", () => {
     expect(layerTargets(model, described("MO(4)"))).toEqual([]);
     expect(layerTargets(model, described("TD(1)"))).toEqual([]);
@@ -267,6 +285,20 @@ describe("layerReach", () => {
       ["encoder 5 on 0: one-shot from 0,1,2,4"],
       ["encoder 3 on 0 TD 0 Double tap: toggle from 0,1,2,3"],
     ]);
+  });
+
+  it("doesn't reach a layer held from a tap dance's Tap once its Hold is set, nor from its Double tap", () => {
+    const layers = reach({
+      layers: [layer({ [AT.leftOuterThumb]: "TD(0)", [AT.rightOuterThumb]: "TD(1)" }, "KC_NO"), ...blank(3)],
+      tapDances: [["MO(1)", "KC_LSFT", "MO(2)", "KC_NO"], ["MO(3)", "KC_NO", "KC_NO", "KC_NO"]],
+    });
+    expect(layers.map((l) => l.ways.map(brief))).toEqual([
+      ["default"],
+      [],
+      [],
+      [`key ${AT.rightOuterThumb} on 0 TD 1 Tap: while held from 0,1,2`],
+    ]);
+    expect(layers.map((l) => l.reachable)).toEqual([true, false, false, true]);
   });
 
   it("never pairs a tri-layer key on an encoder with one on a key: the encoder's layer is never held", () => {

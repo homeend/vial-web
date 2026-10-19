@@ -17,6 +17,9 @@ const model = corne({
     ["KC_NO", "MO(1)", "KC_NO", "KC_NO"],
     ["MO(1)", "KC_NO", "LM(2, MOD_LSFT)", "TT(3)"],
     ["TT(1)", "TT(2)", "LT3(KC_NO)", "LT1(KC_SPC)"],
+    ["MO(1)", "KC_A", "KC_NO", "KC_NO"],
+    ["LM(1, MOD_LSFT)", "KC_TRNS", "MO(2)", "KC_NO"],
+    ["TT(1)", "KC_NO", "TT(2)", "KC_NO"],
   ],
 });
 const names = namesOf(model);
@@ -25,7 +28,8 @@ describe("tapDanceSentence", () => {
   it("says what each way of pressing does, leaving out the empty ones", () => {
     expect(tapDanceSentence(model.tapDance[0], names)).toBe("Tap for Tab, double-tap for Caps Lock.");
     expect(tapDanceSentence(model.tapDance[1], names)).toBe(
-      "Tap for Esc, hold for LCTL, double-tap and hold for Layer 2, tap then hold to toggle Layer 3.");
+      "Tap for Esc, hold for LCTL, double-tap for Layer 2, which does nothing: a double tap isn't held, " +
+      "tap then hold to toggle Layer 3.");
   });
 
   it("leaves out transparent slots: there is no layer below a tap dance to fall through to", () => {
@@ -41,15 +45,27 @@ describe("tapDanceSentence", () => {
     expect(tapDanceSentence(model.tapDance[5], names)).toBe("Hold for Layer 1.");
   });
 
-  it("says a layer held from a tapped slot needs the key held after the last tap", () => {
+  it("says a layer held from Tap needs the key held after the tap, and one held from Double tap does nothing", () => {
+    // the firmware lets go of Double tap at once; a double tap and hold runs Tap, then hold (or Tap and Hold) instead
     expect(tapDanceSentence(model.tapDance[6], names)).toBe(
-      "Tap and hold for Layer 1, double-tap and hold for Layer 2 with Shift, tap then hold for Layer 3.");
+      "Tap and hold for Layer 1, double-tap for Layer 2 with Shift, which does nothing: a double tap isn't held, " +
+      "tap then hold for Layer 3.");
   });
 
-  it("says a hold-or-toggle key in a held slot is held, and a layer-tap with nothing to tap holds its layer", () => {
+  it("says a layer held from Tap does nothing once Hold is set, transparent too: holding the key runs Hold", () => {
+    expect(tapDanceSentence(model.tapDance[8], names)).toBe(
+      "Tap for Layer 1, which does nothing: holding the key runs Hold instead, hold for A.");
+    expect(tapDanceSentence(model.tapDance[9], names)).toBe(
+      "Tap for Layer 1 with Shift, which does nothing: holding the key runs Hold instead, " +
+      "double-tap for Layer 2, which does nothing: a double tap isn't held.");
+  });
+
+  it("says a hold-or-toggle key in a held slot is held, and only toggles in a slot that is never held", () => {
     expect(tapDanceSentence(model.tapDance[7], names)).toBe(
-      "Tap to hold or toggle Layer 1, hold for Layer 2, double-tap and hold for Layer 3, " +
+      "Tap to toggle Layer 1, hold for Layer 2, double-tap for Layer 3, which does nothing: a double tap isn't held, " +
       "tap then hold for Space (hold: Layer 1).");
+    // Tap is held too while Hold is empty
+    expect(tapDanceSentence(model.tapDance[10], names)).toBe("Tap to hold or toggle Layer 1, double-tap to toggle Layer 2.");
   });
 
   it("says when a slot's layer is one the keyboard doesn't have, given the keyboard", () => {
@@ -102,7 +118,7 @@ describe("comboSentence", () => {
     layers: [layer({ [AT.grid(2, 9)]: "KC_K", [AT.grid(2, 10)]: "KC_Y", [AT.leftInnerThumb]: "MO(5)",
       [AT.rightOuterThumb]: "OSL(3)" }, "KC_NO"), ...Array.from({ length: 5 }, () => layer({}))],
     tapDances: [["KC_A", "MO(1)", "KC_NO", "KC_NO"], ["MO(1)", "MO(2)", "TG(3)", "TT(4)"],
-      ["MO(1)", "KC_NO", "KC_NO", "KC_NO"]],
+      ["MO(1)", "KC_NO", "KC_NO", "KC_NO"], ["MO(1)", "KC_A", "TT(2)", "KC_NO"]],
     combos: [
       { keys: ["KC_K", "KC_Y"], output: "KC_ESC" },
       { keys: ["MO(5)", "OSL(3)"], output: "MO(2)" },
@@ -124,6 +140,7 @@ describe("comboSentence", () => {
       { keys: ["KC_K"], output: "LT1(KC_SPC)" },
       { keys: ["KC_K"], output: "LT1(KC_NO)" },
       { keys: ["KC_K", "KC_Y"], output: "M0" },
+      { keys: ["KC_K", "KC_Y"], output: "TD(3)" },
     ],
   });
   const placement = placeKeyboard(combos);
@@ -158,8 +175,10 @@ describe("comboSentence", () => {
 
   it("says a layer held from a tapped slot of a tap dance output needs a hold, and what each slot does", () => {
     expect(sentence(12)).toBe("Press K + Y together for tap dance 2, which reaches Layer 1 when tapped and held.");
-    expect(sentence(11)).toBe("Press K + Y together for tap dance 1, which reaches Layer 1 when tapped and held, " +
-      "reaches Layer 2 when held, toggles Layer 3 when double-tapped and reaches Layer 4 when tapped then held.");
+    // tap dance 1's Hold is set, so Tap is never held: its MO(1) reaches nothing
+    expect(sentence(11)).toBe("Press K + Y together for tap dance 1, which reaches Layer 2 when held, " +
+      "toggles Layer 3 when double-tapped and reaches Layer 4 when tapped then held.");
+    expect(sentence(20)).toBe("Press K + Y together for tap dance 3, which toggles Layer 2 when double-tapped.");
   });
 
   it("says when the output's layer is one the keyboard doesn't have", () => {

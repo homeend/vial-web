@@ -3,7 +3,7 @@
 import type { Described, KeyboardModel, LayerAction, TapDance } from "../api/types";
 import { actionSummary, type Names } from "../keyboard/labels";
 import { refId } from "../keyboard/refs";
-import type { SlotLabel } from "../keymap/tapdance";
+import { isHeldSlot, type SlotLabel } from "../keymap/tapdance";
 import { repeatedCodes, type ComboUse } from "./combos";
 import type { Found, How } from "./find";
 import { TAPPING_TOGGLE, type LayerReach, type ViaSlot, type Way } from "./reach";
@@ -119,11 +119,6 @@ export function andList(items: string[]): string {
   return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-/** Whether pressing a tap dance slot this way keeps the key held (so a layer held in it stays on) */
-function isHeld(slot: SlotLabel): boolean {
-  return slot === "Hold" || slot === "Tap, then hold";
-}
-
 /** The layer key a way runs: the key's own, or the one in the tap dance slot it goes through */
 function layerKeyOf(way: Way, ctx: PhraseContext): Described | undefined {
   const via = way.via;
@@ -137,7 +132,7 @@ function layerKeyOf(way: Way, ctx: PhraseContext): Described | undefined {
  * holds the layer */
 function actionOf(way: Way): LayerAction {
   const via = way.via;
-  const held = (via.type === "key" || via.type === "combo") && via.slot !== null && isHeld(via.slot.slot);
+  const held = (via.type === "key" || via.type === "combo") && via.slot !== null && isHeldSlot(via.slot.slot);
   return held && way.action === "hold, or tap to toggle" ? "while held" : way.action;
 }
 
@@ -166,16 +161,17 @@ export function wayLabel(way: Way, ctx: PhraseContext): string {
     return `hold both Fn keys${from} (${places.join(" and ")})`;
   }
   if (via.type === "combo") {
-    // "combo: J + K, held", "combo: J + K, tapped then held"; a layer held from another slot: "tapped and held"
-    const purpose = PURPOSES[actionOf(way)] || (via.slot && !isHeld(via.slot.slot) ? " and held" : "");
+    // "combo: J + K, held", "combo: J + K, tapped then held"; a layer held from Tap (Hold empty): "tapped and held"
+    const purpose = PURPOSES[actionOf(way)] || (via.slot && !isHeldSlot(via.slot.slot) ? " and held" : "");
     const slot = via.slot ? `, ${PARTICIPLES[via.slot.slot]}` : "";
     return `combo: ${comboName(via.combo.members, ctx.names)}${slot}${purpose}${mods}${from}`;
   }
   const name = via.slot?.slot === "Tap" ? null : tapName(via.action, ctx.model);
   const place = ctx.positions.get(refId(via.ref)) ?? "a key";
   if (via.slot) {
-    // "hold Tab", "tap then hold Tab": holding the slot is holding the layer; other gestures say what they do
-    const purpose = PURPOSES[actionOf(way)] || (isHeld(via.slot.slot) ? "" : " and hold");
+    // "hold Tab", "tap then hold Tab": holding the slot is holding the layer; other gestures say what they do. A layer
+    // held comes from no other slot but Tap, and only while Hold is empty (layerTargets): "tap and hold".
+    const purpose = PURPOSES[actionOf(way)] || (isHeldSlot(via.slot.slot) ? "" : " and hold");
     const gesture = GESTURES[via.slot.slot];
     return name ? `${gesture} ${name}${purpose}${mods}${from}` : `${gesture}${purpose}${mods}${from} (${place})`;
   }

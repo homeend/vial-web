@@ -154,12 +154,13 @@ describe("wayLabel and wayDetail", () => {
       ["tap then hold Tab"],
       ["tap for a one-shot (right inner thumb)"],
       ["tap then hold to switch (right inner thumb)"],
-      ["double-tap and hold (right inner thumb)"],
+      // MO(6) in Double tap: let go at once, it never holds the layer
+      [],
     ]);
     expect(details[2]).toEqual(["tap dance 0, double tap · from Base"]);
   });
 
-  it('say "hold" for a hold-or-toggle key in a held tap dance slot: holding it holds the layer', () => {
+  it('say "hold" for a hold-or-toggle key in a held tap dance slot, and "toggle" in one that is never held', () => {
     const { labels } = of({
       layers: [layer({ [AT.leftOuterThumb]: "TD(0)", 0: "KC_J", 1: "KC_K" }, "KC_NO"),
         ...Array.from({ length: 4 }, () => layer({}, "KC_NO"))],
@@ -167,7 +168,7 @@ describe("wayLabel and wayDetail", () => {
       combos: [{ keys: ["KC_J", "KC_K"], output: "TD(1)" }],
     });
     expect(labels.slice(1)).toEqual([
-      ["hold Tab"], ["double-tap Tab to hold or toggle"], ["tap then hold Tab"], ["combo: J + K, held"],
+      ["hold Tab"], ["double-tap Tab to toggle"], ["tap then hold Tab"], ["combo: J + K, held"],
     ]);
   });
 
@@ -206,15 +207,26 @@ describe("wayLabel and wayDetail", () => {
     expect(labels[1]).toEqual(["hold Space", "combo: Space (hold: Layer 1) + OSL(3) with Ctrl"]);
   });
 
-  it("say that a combo's tap dance is tapped and held, or double-tapped and held, for a layer held in that slot", () => {
+  it("say that a combo's tap dance is tapped and held for a layer held in Tap, and never held from Double tap", () => {
     const { labels } = of({
       layers: [layer({ 0: "KC_J", 1: "KC_K" }, "KC_NO"), layer({}), layer({}), layer({})],
       tapDances: [["MO(1)", "KC_NO", "MO(2)", "MO(3)"]],
       combos: [{ keys: ["KC_J", "KC_K"], output: "TD(0)" }],
     });
     expect(labels.slice(1)).toEqual([
-      ["combo: J + K, tapped and held"], ["combo: J + K, double-tapped and held"], ["combo: J + K, tapped then held"],
+      ["combo: J + K, tapped and held"], [], ["combo: J + K, tapped then held"],
     ]);
+  });
+
+  it("say a layer held from Tap is reached by tapping and holding the key only while Hold is empty", () => {
+    const keys = { [AT.leftOuterThumb]: "TD(0)", [AT.rightOuterThumb]: "TD(1)" };
+    const { labels, reach } = of({
+      layers: [layer(keys, "KC_NO"), layer({}, "KC_NO"), layer({}, "KC_NO")],
+      // TD(0)'s Hold is empty; TD(1)'s runs A instead of holding Tap
+      tapDances: [["MO(1)", "KC_NO", "KC_NO", "KC_NO"], ["MO(2)", "KC_A", "KC_NO", "KC_NO"]],
+    });
+    expect(labels.slice(1)).toEqual([["tap and hold (left outer thumb)"], []]);
+    expect(reach[2].reachable).toBe(false);
   });
 
   it("say where a way works when it doesn't work on the base layer", () => {

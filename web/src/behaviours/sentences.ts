@@ -7,7 +7,7 @@ import type { Use } from "../analysis/usage";
 import type { Described, KeyboardModel, LayerAction, TapDance } from "../api/types";
 import { actionSummary, layerLabel, type Names } from "../keyboard/labels";
 import { refId, type KeyRef } from "../keyboard/refs";
-import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
+import { isHeldSlot, slotCanBeHeld, tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
 
 /** How a tap dance slot is pressed, at the start of a sentence's part: "double-tap for Caps Lock" */
 const GESTURES: Record<SlotLabel, string> = {
@@ -37,11 +37,6 @@ const LAYER_WAYS: Record<LayerAction, string> = {
   "while held, with modifiers": ", while held",
 };
 
-/** Whether pressing a tap dance slot this way keeps the key held, so a layer held in it stays on (as in phrases.ts) */
-function isHeld(slot: SlotLabel): boolean {
-  return slot === "Hold" || slot === "Tap, then hold";
-}
-
 /** Whether a keycode does nothing in a tap dance slot or as a combo's output: empty, or transparent (QMK has no layer
  * below a tap dance or a combo for it to fall through to) */
 function doesNothing(d: Described): boolean {
@@ -56,11 +51,12 @@ function holdsLayer(d: Described): boolean {
 }
 
 /** What a layer key in a tap dance slot does, as that slot presses it: a hold-or-toggle key (TT) in a held slot is
- * held, so it just holds the layer (as actionOf in phrases.ts) */
-function asPressed(d: Described, slot: SlotLabel): Described {
-  return isHeld(slot) && d.kind === "layer" && d.layerAction === "hold, or tap to toggle"
-    ? { ...d, layerAction: "while held" }
-    : d;
+ * held, so it just holds the layer (as actionOf in phrases.ts); in a slot that is never held (slotCanBeHeld) it is
+ * only tapped, so it just toggles it (as layerTargets in reach.ts) */
+function asPressed(d: Described, td: TapDance, slot: SlotLabel): Described {
+  if (d.kind !== "layer" || d.layerAction !== "hold, or tap to toggle") return d;
+  if (isHeldSlot(slot)) return { ...d, layerAction: "while held" };
+  return slotCanBeHeld(td, slot) ? d : { ...d, layerAction: "toggle" };
 }
 
 /** Whether a layer number is one of the keyboard's layers (a keycode can name one the keyboard doesn't have) */
@@ -121,13 +117,24 @@ function capitalised(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** Why a layer held while its key is down is never on from a tap dance slot the firmware never keeps held */
+const NEVER_HELD: Partial<Record<SlotLabel, string>> = {
+  Tap: "which does nothing: holding the key runs Hold instead",
+  "Double tap": "which does nothing: a double tap isn't held",
+};
+
 /** A way of pressing a tap dance, and what it does: "double-tap for Caps Lock". A layer held from a tapped slot is on
- * only while the key stays down after the last tap: "tap and hold for Layer 1" (as wayLabel in phrases.ts). */
-function slotPhrase(slot: SlotLabel, d: Described, names: Names, model?: Pick<KeyboardModel, "layers">): string {
-  const pressed = asPressed(d, slot);
-  const hold = holdsLayer(pressed) && !isHeld(slot) ? " and hold" : "";
+ * only while the key stays down after the last tap: "tap and hold for Layer 1" (as wayLabel in phrases.ts); from a
+ * slot the firmware never keeps held (slotCanBeHeld), never: "double-tap for Layer 1, which does nothing: …". */
+function slotPhrase(td: TapDance, slot: SlotLabel, d: Described, names: Names,
+  model?: Pick<KeyboardModel, "layers">): string {
+  const pressed = asPressed(d, td, slot);
+  const holds = holdsLayer(pressed);
+  const held = slotCanBeHeld(td, slot);
+  const hold = holds && held && !isHeldSlot(slot) ? " and hold" : "";
   const missing = model && (d.kind === "layer" || d.kind === "layer-tap") && d.layer != null && !hasLayer(model, d.layer);
-  return `${GESTURES[slot]}${hold} ${outcome(pressed, names)}${missing ? ", which this keyboard doesn't have" : ""}`;
+  const note = missing ? ", which this keyboard doesn't have" : holds && !held ? `, ${NEVER_HELD[slot]}` : "";
+  return `${GESTURES[slot]}${hold} ${outcome(pressed, names)}${note}`;
 }
 
 /** "Tap for Tab, double-tap for Caps Lock." Empty and transparent slots are left out. Given the keyboard, a slot's
@@ -135,7 +142,7 @@ function slotPhrase(slot: SlotLabel, d: Described, names: Names, model?: Pick<Ke
 export function tapDanceSentence(td: TapDance, names: Names, model?: Pick<KeyboardModel, "layers">): string {
   const parts = tapDanceSlots(td)
     .filter((slot) => !doesNothing(slot.action))
-    .map((slot) => slotPhrase(slot.label, slot.action, names, model));
+    .map((slot) => slotPhrase(td, slot.label, slot.action, names, model));
   return parts.length === 0 ? "Does nothing yet: choose what each way of pressing it does." : `${capitalised(parts.join(", "))}.`;
 }
 
@@ -155,13 +162,13 @@ function tapDanceReach(model: Pick<KeyboardModel, "layers" | "tapDance">, output
     const slot = t.slot?.slot;
     const td = t.slot ? model.tapDance[t.slot.tapDance] : undefined;
     const d = td && slot ? tapDanceSlots(td).find((s) => s.label === slot)?.action : undefined;
-    if (!slot || !d) return [];
-    const action = isHeld(slot) && t.action === "hold, or tap to toggle" ? "while held" : t.action;
+    if (!slot || !td || !d) return [];
+    const action = isHeldSlot(slot) && t.action === "hold, or tap to toggle" ? "while held" : t.action;
     if (action === "while held" || action === "while held, with modifiers") {
       const mods = action === "while held, with modifiers" && d.hold ? ` with ${d.hold}` : "";
-      return [`reaches ${layerLabel(t.layer, names)}${mods} when ${PARTICIPLES[slot]}${isHeld(slot) ? "" : " and held"}`];
+      return [`reaches ${layerLabel(t.layer, names)}${mods} when ${PARTICIPLES[slot]}${isHeldSlot(slot) ? "" : " and held"}`];
     }
-    return [`${thirdPerson(outcome(d, names))} when ${PARTICIPLES[slot]}`];
+    return [`${thirdPerson(outcome(asPressed(d, td, slot), names))} when ${PARTICIPLES[slot]}`];
   });
 }
 

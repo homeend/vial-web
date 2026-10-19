@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Described, KeyboardModel, TapDance } from "../api/types";
-import { freeTapDance, tapDanceSlots } from "./tapdance";
+import { freeTapDance, isHeldSlot, slotCanBeHeld, tapDanceSlots } from "./tapdance";
 
 const none: Described = {
   code: "KC_NO", value: 0, kind: "none", tap: "", legend: { main: "" }, hold: null, layer: null, layerAction: null, index: null,
@@ -93,5 +93,31 @@ describe("tapDanceSlots", () => {
     expect(tapDanceSlots(entry).map((s) => [s.label, s.action.code])).toEqual([
       ["Tap", "KC_TAB"], ["Hold", "KC_NO"], ["Double tap", "KC_CAPSLOCK"], ["Tap, then hold", "KC_NO"],
     ]);
+  });
+});
+
+describe("slotCanBeHeld", () => {
+  const trns: Described = { ...none, code: "KC_TRNS", value: 1, kind: "transparent" };
+  const slots = (entry: TapDance) => tapDanceSlots(entry).map((s) => slotCanBeHeld(entry, s.label));
+
+  it("holds Hold and Tap, then hold by their own way of pressing", () => {
+    expect([isHeldSlot("Tap"), isHeldSlot("Hold"), isHeldSlot("Double tap"), isHeldSlot("Tap, then hold")])
+      .toEqual([false, true, false, true]);
+    expect(slots({ ...td(0, tab), hold: tab, tapHold: tab })).toEqual([false, true, false, true]);
+  });
+
+  it("holds Tap when the key is held, while Hold is empty", () => {
+    expect(slots(td(0, tab))).toEqual([true, true, false, true]);
+    // Double tap and Tap, then hold don't change it: only Hold runs instead
+    expect(slots({ ...td(0, tab), doubleTap: tab, tapHold: tab })).toEqual([true, true, false, true]);
+  });
+
+  it("never holds Tap once Hold is set, even to a transparent key (the firmware runs any keycode but KC_NO)", () => {
+    expect(slotCanBeHeld({ ...td(0, tab), hold: tab }, "Tap")).toBe(false);
+    expect(slotCanBeHeld({ ...td(0, tab), hold: trns }, "Tap")).toBe(false);
+  });
+
+  it("never holds Double tap: it is let go at once, and a double tap and hold runs another slot", () => {
+    expect(slotCanBeHeld({ ...td(0, tab), doubleTap: tab }, "Double tap")).toBe(false);
   });
 });

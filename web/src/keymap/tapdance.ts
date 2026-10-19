@@ -32,6 +32,28 @@ export function freeTapDance(model: Model): number | null {
 /** The four ways of pressing a tap dance key */
 export type SlotLabel = "Tap" | "Hold" | "Double tap" | "Tap, then hold";
 
+/** Whether a slot's own way of pressing ends with the key held: Hold, and Tap, then hold */
+export function isHeldSlot(slot: SlotLabel): boolean {
+  return slot === "Hold" || slot === "Tap, then hold";
+}
+
+/** Whether some way of pressing a tap dance keeps a slot's keycode down while the key stays held, so that a layer it
+ * holds while held (MO, LM, a layer-tap with nothing to tap) is on. As vial-qmk's on_dance_finished (vial.c) runs
+ * them:
+ * - Hold, and Tap, then hold: by their own way of pressing.
+ * - Tap: by tapping and holding the key (one press, held), but only while Hold is empty: holding runs Hold when it is
+ *   set (any keycode, transparent too). A plain tap presses Tap and lets it go at once. A double tap and hold with
+ *   Tap, then hold empty taps Tap, then holds Hold, or Tap when Hold is empty: no other way.
+ * - Double tap: never. It runs once the key is let go after the second tap, and is let go at once; a double tap and
+ *   hold runs Tap, then hold (or the above), never Double tap.
+ * Another key pressed while the tap dance key is still down, before its tapping term ends, holds Tap too (after one
+ * press, or tapped then held after two), whatever Hold is: that isn't counted, as it isn't a way of pressing it one
+ * chooses. */
+export function slotCanBeHeld(td: TapDance, slot: SlotLabel): boolean {
+  if (isHeldSlot(slot)) return true;
+  return slot === "Tap" && td.hold.kind === "none";
+}
+
 /** The four ways of pressing a tap dance key, and what each does */
 export function tapDanceSlots(td: TapDance): { label: SlotLabel; action: Described }[] {
   return [
