@@ -379,7 +379,7 @@ def main(argv=None):
 def run(args, sock):
     from protocol.unlock_hook import set_unlock_handler
     from server import model
-    from server.device import DeviceManager, require_unlocked
+    from server.device import SAFE_UNLOCK_POLL_GAP, DeviceManager, require_unlocked
 
     set_unlock_handler(require_unlocked)
     try:
@@ -387,7 +387,7 @@ def run(args, sock):
     except Exception as e:
         print("could not load the keyboard definition {}: {}".format(args.definition, e), file=sys.stderr)
         return 1
-    manager = DeviceManager(backend)
+    manager = DeviceManager(backend, unlock_poll_gap=SAFE_UNLOCK_POLL_GAP)
     try:
         manager.connect()
         if args.layout:

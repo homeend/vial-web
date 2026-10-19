@@ -20,6 +20,11 @@ RETRY_MAX = 30.0
 PRESENT_ERROR_LOG_INTERVAL = 60.0
 """ a backend that keeps failing to tell whether the keyboard is plugged in is logged at most this often (seconds) """
 
+SAFE_UNLOCK_POLL_GAP = 0.15
+""" seconds the real app's device manager leaves at least between two unlock requests (unlock_start, unlock_poll).
+The firmware (vial-qmk quantum/vial.c) counts down only on a poll that comes more than 100 ms after the unlock start or
+its last count-down: any sooner poll starts the countdown over, so polls that come too fast never unlock it. """
+
 Status = namedtuple("Status", "connected title unlocked error")
 
 
@@ -77,7 +82,6 @@ class _Unlock:
     total: int = 0
     following: bool = True
     """ polled (unlock_poll) until done; False once cancelled """
-
 
 
 class CheckedDevice:
@@ -209,12 +213,20 @@ class DeviceManager:
     every request then (KeyboardLocked); read() still works. A keyboard found waiting for an unlock started earlier (by
     a Vial closed meanwhile) is opened but not read: that unlock is finished first, as Qt does, then the keyboard is
     read ("connected"). The unlock state changing (started, done, cancelled, locked) is an "unlock" event; the readings
-    of the countdown are not events, whoever follows the unlock (the server app) sends them on.
+    of the countdown are not events, whoever follows the unlock (the server app) sends them on. Unplugging a loaded
+    keyboard mid-unlock ends the unlock with only a "disconnected" event, no "unlock" one: the UI must close its unlock
+    dialog on that. (A keyboard that waited to be read is reported with an "unlock" event, as the UI never had it.)
+
+    unlock_poll_gap: seconds poll_unlock() leaves at least between two unlock requests it sends (0: none; the real app
+    uses SAFE_UNLOCK_POLL_GAP), so that polls that come too fast can't keep the firmware from counting down.
     """
 
-    def __init__(self, backend, clock=time.monotonic):
+    def __init__(self, backend, clock=time.monotonic, unlock_poll_gap=0.0):
         self.backend = backend
         self.clock = clock
+        self.unlock_poll_gap = unlock_poll_gap
+        self.unlock_sent = None
+        """ clock time of the last unlock_start or unlock_poll sent """
         self.lock = threading.RLock()
         self.keyboard = None
         self.device = None
@@ -273,6 +285,7 @@ class DeviceManager:
                     unlock_keys = interrupted_unlock_keys(keyboard)
                     if unlock_keys is not None:
                         keyboard.unlock_start()  # as Qt's unlocker does for every unlock
+                        self.unlock_sent = self.clock()
                     else:
                         keyboard.reload()
                         unlocked = keyboard.get_unlock_status() == 1
@@ -370,16 +383,20 @@ class DeviceManager:
 
     def _unlock_target(self):
         """ The keyboard an unlock talks to: the loaded one, or one waiting to be read until it is unlocked """
-        keyboard = self.keyboard or self.waiting
-        if keyboard is None:
-            raise NotConnected("no keyboard connected")
-        return keyboard
+        if self.keyboard is not None:
+            return self.keyboard
+        if self.waiting is not None:
+            return self.waiting
+        raise NotConnected("no keyboard connected")
 
     def start_unlock(self):
-        """ Start unlocking as Qt's unlocker does: unlock_start, after which poll_unlock() follows the countdown. A
-        cancelled unlock is followed again (the keyboard starts its countdown over). An unlocked keyboard is left
-        alone. Returns unlock_state(). """
+        """ Start unlocking as Qt's unlocker does: unlock_start, after which poll_unlock() follows the countdown. An
+        unlock being followed already (started from another tab) is left to run: starting it again would start its
+        countdown over. A cancelled unlock is followed again (the keyboard starts its countdown over). An unlocked
+        keyboard is left alone. Returns unlock_state(). """
         with self.lock:
+            if self.unlocking is not None and self.unlocking.following:
+                return self.unlock_state()
             keyboard = self._unlock_target()
             if self.unlocking is None:
                 if self._io(keyboard, lambda kb: kb.get_unlock_status()) == 1:
@@ -389,22 +406,34 @@ class DeviceManager:
             else:
                 keys = self.unlocking.keys
             self._io(keyboard, lambda kb: kb.unlock_start())
+            self.unlock_sent = self.clock()
             self.unlocking = _Unlock(keys)
             self.pending_events.append("unlock")
             return self.unlock_state()
 
     def poll_unlock(self):
         """ One poll of the unlock being followed: the keyboard counts down while every unlock key is held, and starts
-        again when one is let go. Once it is unlocked, a keyboard that waited for that is read ("connected").
+        again when one is let go. The unlock is over when the keyboard says it is no longer in progress (an unlocked
+        keyboard that was sent unlock_start still waits for its keys until its countdown ends). Once it is unlocked, a
+        keyboard that waited for that is read ("connected"). Unplugging the keyboard ends the unlock too, with only a
+        "disconnected" event for a loaded keyboard.
+
+        The firmware counts down only on a poll more than 100 ms after the unlock start or its last count-down, and
+        starts over on any sooner poll, so polls must come slower than that. A poll within unlock_poll_gap seconds of
+        the last unlock request sent sends nothing (two followers polling at once can't stall the countdown).
+
         Returns unlock_state(). """
         with self.lock:
             u = self.unlocking
             if u is None or not u.following:
                 return self.unlock_state()
+            if self.unlock_sent is not None and self.clock() - self.unlock_sent < self.unlock_poll_gap:
+                return self.unlock_state()
             data = self._io(self._unlock_target(), lambda kb: kb.unlock_poll())
+            self.unlock_sent = self.clock()
             unlocked, in_progress, counter = data[0], data[1], data[2]
             u.remaining, u.total = counter, max(u.total, counter)
-            if unlocked == 1 or not in_progress:
+            if not in_progress:
                 self.unlocking = None
                 self.unlocked = unlocked == 1
                 self.pending_events.append("unlock")
@@ -437,18 +466,24 @@ class DeviceManager:
             return self.unlock_state()
 
     def lock_keyboard(self):
-        """ Lock the keyboard again (Qt's Security > Lock). Returns unlock_state(). """
+        """ Lock the keyboard again (Qt's Security > Lock); an "unlock" event if that changed it. Refused while the
+        keyboard waits for its unlock keys (KeyboardLocked). Returns unlock_state(). """
         with self.lock:
             def lock(kb):
                 kb.lock()
                 return kb.get_unlock_status() == 1
-            self.unlocked = self.run(lock)
-            self.pending_events.append("unlock")
+            unlocked = self.run(lock)
+            if unlocked != self.unlocked:
+                self.unlocked = unlocked
+                self.pending_events.append("unlock")
             return self.unlock_state()
 
     def read_unlocked(self):
-        """ Ask the keyboard whether it is unlocked: it may have been locked meanwhile. Returns unlock_state(). """
+        """ Ask the keyboard whether it is unlocked: it may have been locked meanwhile. During an unlock the keyboard
+        is not asked: the unlock's own state is returned. Returns unlock_state(). """
         with self.lock:
+            if self.unlocking is not None:
+                return self.unlock_state()
             unlocked = self.run(lambda kb: kb.get_unlock_status()) == 1
             if unlocked != self.unlocked:
                 self.unlocked = unlocked
@@ -512,7 +547,5 @@ class DeviceManager:
         if self.device is not None:
             self._close_device(self.device)
         self.keyboard = self.device = self.handle = self.candidate = self.title = self.waiting = None
-        self.unlocking = None
+        self.unlocking = self.unlock_sent = None
         self.unlocked = False
-
-
