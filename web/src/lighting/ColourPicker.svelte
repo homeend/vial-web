@@ -7,17 +7,19 @@
     hue: number;
     saturation: number;
     disabled: boolean;
+    /** the ids of more text about the colour (what the keyboard does with it) */
+    describedby?: string;
     onchange: (colour: { hue: number; saturation: number }) => void;
   }
 
-  let { hue, saturation, disabled, onchange }: Props = $props();
+  let { hue, saturation, disabled, describedby, onchange }: Props = $props();
   const uid = $props.id();
 
   /** the colour at full brightness: the swatch, what the browser's picker starts from, and what it sets */
   const full = $derived(rgbToHex(hsvToRgb(hue, saturation, 255)));
 </script>
 
-<fieldset class="colour" aria-describedby="{uid}-help">
+<fieldset class="colour" aria-describedby="{uid}-help{describedby ? ` ${describedby}` : ''}">
   <legend>Colour</legend>
   <!-- the browser's own colour picker is the swatch: a click opens it -->
   <label class="pick">

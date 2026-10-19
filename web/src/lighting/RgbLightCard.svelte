@@ -19,20 +19,23 @@
   const uid = $props.id();
 
   const note = $derived(rgbLightNote(value.effect));
+  /** the note on what the keyboard ignores goes with the colour and the brightness too */
+  const noteId = $derived(note ? `${uid}-note` : undefined);
   const choices = $derived(rgbLightChoices(value.effect).map((c) => ({ value: String(c.value), label: c.label })));
 </script>
 
 <LightingCard title="RGB light" about="QMK's RGB light (often underglow): an effect, its colour and its brightness.">
   <SelectField label="Effect" value={String(value.effect)} {choices} {disabled}
-    describedby="{uid}-numbers{note ? ` ${uid}-note` : ''}"
+    describedby="{uid}-numbers{noteId ? ` ${noteId}` : ''}"
     onchange={(effect) => onchange({ rgblight: { effect: Number(effect) } })} />
   {#if note}<p class="note" id="{uid}-note">{note}</p>{/if}
   <p class="note" id="{uid}-numbers">
     These are Vial's names for the effects' numbers. A keyboard built with only some effects numbers the rest
     differently, so a name may start another effect.
   </p>
-  <ColourPicker hue={value.hue} saturation={value.saturation} {disabled}
+  <ColourPicker hue={value.hue} saturation={value.saturation} {disabled} describedby={noteId}
     onchange={(c) => onchange({ rgblight: { hue: c.hue, saturation: c.saturation } })} />
   <Slider label="Brightness" value={value.brightness} max={255} valueText={percent(value.brightness)} {disabled}
-    track={brightnessTrack(value.hue, value.saturation)} oninput={(brightness) => onchange({ rgblight: { brightness } })} />
+    track={brightnessTrack(value.hue, value.saturation)} describedby={noteId}
+    oninput={(brightness) => onchange({ rgblight: { brightness } })} />
 </LightingCard>
