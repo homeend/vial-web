@@ -96,6 +96,17 @@
   }
 
   let confirming = $state(false);
+
+  /** the Save bar's height: the window keeps that much room at its bottom when it scrolls a field into view (the
+   * focus moved there with Tab), so the bar never covers the field. scroll-padding on the root element applies to the
+   * window's scrolling, in Firefox and Chromium alike. */
+  let barHeight = $state(0);
+  $effect(() => {
+    if (barHeight === 0) return;
+    const root = document.documentElement;
+    root.style.scrollPaddingBottom = `${barHeight + 12}px`;
+    return () => root.style.removeProperty("scroll-padding-bottom");
+  });
 </script>
 
 <section class="page" aria-labelledby="settings-title">
@@ -151,7 +162,7 @@
       </section>
     {/each}
 
-    <div class="savebar">
+    <div class="savebar" bind:clientHeight={barHeight}>
       <span class="status" role="status">
         {#if blocked}
           A number can't be saved: see the field marked in red.
