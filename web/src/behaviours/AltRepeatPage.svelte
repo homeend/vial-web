@@ -84,7 +84,9 @@
     const index = draft.index;
     if (await keyboard.setAltRepeatKey(index, altRepeatRequest(value), action)) {
       if (draft?.index === index) draft = null;
-      if (!altRepeatIsSet(model.altRepeatKeys[index])) opened = opened.filter((i) => i !== index);
+      // another keyboard may be plugged in meanwhile: it may have no such entry
+      const now = model.altRepeatKeys[index];
+      if (!now || !altRepeatIsSet(now)) opened = opened.filter((i) => i !== index);
       await focusCard(index);
     }
   }
@@ -93,7 +95,12 @@
     if (!draft || busy) return;
     const index = draft.index;
     draft = null;
-    if (!altRepeatIsSet(model.altRepeatKeys[index])) opened = opened.filter((i) => i !== index);
+    // a new one, never saved: its card goes, and so does the address naming it (New set it), so the focus goes to
+    // the New button
+    if (!altRepeatIsSet(model.altRepeatKeys[index])) {
+      opened = opened.filter((i) => i !== index);
+      if (index === item) router.go("alt-repeat", null, { replace: true });
+    }
     void focusCard(index);
   }
 

@@ -87,7 +87,9 @@
     if (await keyboard.setKeyOverride(index, keyOverrideRequest(value), action)) {
       if (draft?.index === index) draft = null;
       // removed: its card goes, unless the address names it
-      if (!keyOverrideIsSet(model.keyOverrides[index])) opened = opened.filter((i) => i !== index);
+      // another keyboard may be plugged in meanwhile: it may have no such entry
+      const now = model.keyOverrides[index];
+      if (!now || !keyOverrideIsSet(now)) opened = opened.filter((i) => i !== index);
       await focusCard(index);
     }
   }
@@ -96,8 +98,12 @@
     if (!draft || busy) return;
     const index = draft.index;
     draft = null;
-    // a new one, never saved: its card goes
-    if (!keyOverrideIsSet(model.keyOverrides[index])) opened = opened.filter((i) => i !== index);
+    // a new one, never saved: its card goes, and so does the address naming it (New set it), so the focus goes to
+    // the New button
+    if (!keyOverrideIsSet(model.keyOverrides[index])) {
+      opened = opened.filter((i) => i !== index);
+      if (index === item) router.go("key-overrides", null, { replace: true });
+    }
     void focusCard(index);
   }
 
