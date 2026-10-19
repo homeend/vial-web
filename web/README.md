@@ -3,6 +3,8 @@
 Svelte 5 (runes only) + TypeScript, built with Vite. `npm run build` writes `web/dist`, which
 `vial_web.py` serves; without `dist` it shows a placeholder page.
 
+Where each tab, menu and dialog of the Qt app lives here, or why it is left out: `docs/parity.md`.
+
 ## Setup
 
 Node 24 and npm 11. Every dependency is pinned to an exact version (`.npmrc` has `save-exact`).
@@ -31,7 +33,9 @@ python vial_web.py --fake        # open the printed link; reload the page after 
 `--fake` runs a simulated keyboard and never touches real hardware. Add `--data-dir DIR` to keep
 its lock, log and names out of your user folders. With `--fake`, `--layers N` (1 to 32) gives the
 simulated keyboard N layers (the sample keymap fills the first four, the others are empty),
-`--definition FILE` simulates another keyboard, and `--layout FILE` loads a `.vil` layout into it.
+`--definition FILE` simulates another keyboard, `--layout FILE` loads a `.vil` layout into it, and
+`--lighting KIND` gives it other lighting (`none`, `qmk_backlight`, `qmk_rgblight`,
+`qmk_backlight_rgblight` or `vialrgb`; the sample Corne has VialRGB).
 
 The simulated Corne starts unlocked, as nobody can hold its keys. Its unlock keys are the outermost
 keys of both top rows (Tab and Backspace). A fake server has test hooks for the e2e tests, which
@@ -43,7 +47,10 @@ exist for no real keyboard and are left out of the OpenAPI schema (so of `schema
   (`POST /api/unlock/start`, or Unlock in the UI). It answers an error until the simulated keyboard
   has first been looked for.
 - `PUT /api/simulator/connection` with `{"connected": false}` (or `true`) unplugs the keyboard
-  (or plugs it back in).
+  (or plugs it back in). Plugged in again, it starts with the lighting it last saved, and out of its
+  bootloader, as a real keyboard does.
+- `PUT /api/simulator/matrix` with `{"row": 0, "col": 1, "pressed": true}` (or `false`) presses a key
+  of its matrix (or lets go of it): the matrix tester shows it.
 
 `--fake` keeps the firmware's unlock timing: the countdown (50 steps) only goes down on a poll that
 comes more than 100 ms after the start or the last step (a sooner one starts it over), and the
@@ -72,8 +79,9 @@ CI runs `npm run check:api`.
 ## End-to-end tests
 
 `e2e/servers.ts` starts `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
-default Corne; `e2e/fixtures/macropad.vial.json` with encoders; and the Corne with `--layers 8`, as the
-owner's keyboard has), reads the links with the session token from their output and stops them. Each
+default Corne, with VialRGB; `e2e/fixtures/macropad.vial.json` with encoders, a layout option and no
+lighting; the Corne with `--layers 8`, as the owner's keyboard has; and the Corne with
+`--lighting qmk_backlight_rgblight`), reads the links with the session token from their output and stops them. Each
 Playwright worker starts the ones its tests use (fixtures in `e2e/fixtures.ts`) and stops them when it ends. Screenshots, each in the
 light and the dark theme (`*-light.png`, `*-dark.png`), go to `e2e/screenshots/` (not committed); a
 full-page one is taken from the top, with the sticky top bar and macro editor footer drawn where they are in the
@@ -92,6 +100,11 @@ page.
 | `layoutfile` | Saving the layout, loading it back with its preview; another keyboard's file and a broken one; a file with macros on a locked keyboard |
 | `feature-pages` | The Key overrides, Alt-repeat, Settings and Keyboard pages at four window sizes and at 375 px, their editors and dialogs in a 1080p window |
 | `navigation` | The address and the back button, page titles, the focus, what the Keymap keeps while another page shows |
+| `lighting` | The Lighting page: VialRGB, QMK RGB light and backlight changed, undone and saved (a replug tells what was kept), a slider dragged, a keyboard without lighting |
+| `layout` | The Layout page on the macropad: an option changed, every drawing following |
+| `matrix` | The matrix tester: unlocking first, keys pressed through the test hook, keys typed doing nothing meanwhile |
+| `bootloader` | Reboot to bootloader: the confirmation, the unlock, the keyboard shown gone and back |
+| `p5b-pages` | The Lighting, Layout, Matrix tester and Keyboard pages at five window sizes, in both themes |
 
 The tests run in parallel: half the cores by default, or `E2E_WORKERS=<n> npx playwright test`
 (`E2E_WORKERS=1` runs them one after another). A worker runs its tests one at a time on its own servers,
@@ -108,13 +121,16 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | Folder | What |
 |---|---|
 | `src/api/` | Typed HTTP client, error messages, WebSocket events, generated schema types |
-| `src/lib/` | The keyboard store (loaded model, connection, edits), unlocking, the section shown (the address's `#combos/2`), toasts, and the theme (System, Light, Dark) |
-| `src/keyboard/` | Drawing any keyboard from its geometry; key labels; combo marks on keys (`marks.ts`: underlines and dots) |
+| `src/lib/` | The keyboard store (loaded model, connection, edits, the keys held for the matrix tester), unlocking, keys doing nothing on the page (`keyGuard.ts`), the section shown (the address's `#combos/2`), toasts, and the theme (System, Light, Dark) |
+| `src/keyboard/` | Drawing any keyboard from its geometry (and the layout options' choices, `geometry.ts`); key labels; combo marks on keys (`marks.ts`: underlines and dots) |
+| `src/layout/` | The Layout page: the keyboard's layout options |
+| `src/lighting/` | The Lighting page: effects by name, colours, changes sent without flooding the keyboard (`writer.ts`), Save and Undo |
+| `src/matrix/` | The Matrix tester page: the keys held and pressed, the switch matrix |
 | `src/analysis/` | Pure functions over the loaded model: how each layer is reached, combo marks and colours (`comboMarksOn`, `comboColours`), tap dance and macro usage, finding a character or key, and the phrases for them |
 | `src/keymap/` | Keymap Edit and Overview views: layer tabs, Inspector, hold editor, keyboard navigation, moving a key onto another (a drag and its drop menu, or Copy and Swap in the Inspector), layer cards, find box; what the page keeps while another one shows (`state.svelte.ts`) |
 | `src/behaviours/` | The Tap dance, Combos, Macros, Key overrides and Alt-repeat pages: their cards and editors, the combo key chooser, the macro step editor and recorder, the modifier, layer and option controls, and the plain-language sentences |
 | `src/settings/` | The QMK settings form (Settings): the groups `qmk_settings.json` defines, what changed, Save, Undo and Reset; what the page keeps while another one shows (`state.svelte.ts`) |
-| `src/about/` | The Keyboard page: what the keyboard is (Qt's About keyboard), and saving and loading `.vil` layout files with a preview of what changes |
+| `src/about/` | The Keyboard page: what the keyboard is (Qt's About keyboard), saving and loading `.vil` layout files with a preview of what changes, and reboot to bootloader |
 | `src/picker/` | Keycode picker: search, categories, any-keycode entry |
 | `src/shell/` | Top bar (with the Lock/Unlock control), navigation, banners, toasts, the unlock dialog |
-| `src/ui/` | Small shared controls (a switch), the name dialog (layers, tap dances, macros) and a confirmation dialog |
+| `src/ui/` | Small shared controls (a switch, a list, a slider, the Save bar), the name dialog (layers, tap dances, macros) and a confirmation dialog |
