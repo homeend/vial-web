@@ -231,3 +231,25 @@ export async function simulatorUnlock(page: Page, change: { keysHeld?: boolean; 
 export async function unlockState(page: Page): Promise<string> {
   return (await (await page.request.get(serverUrl(page, "/api/session"))).json()).unlock.state;
 }
+
+/** Locks the keyboard from the top bar and starts unlocking it there: the unlock dialog shows */
+export async function openUnlockDialog(page: Page) {
+  await page.getByRole("button", { name: "Keyboard unlocked: lock it" }).click();
+  await page.getByRole("button", { name: "Keyboard locked: unlock it" }).click();
+  const dialog = page.getByRole("dialog", { name: "Unlock the keyboard" });
+  await expect(dialog).toBeVisible();
+  expect(await unlockState(page)).toBe("unlocking");
+  return dialog;
+}
+
+/** Lets go of the unlock keys, and unlocks the simulated keyboard again if it isn't (the fake server keeps the
+ * firmware's timing: about 10 s) */
+export async function unlockAgain(page: Page): Promise<void> {
+  await simulatorUnlock(page, { keysHeld: false });
+  if ((await unlockState(page)) === "unlocked") return;
+  // the simulator counts down while the keys are held
+  await simulatorUnlock(page, { keysHeld: true });
+  await page.request.post(serverUrl(page, "/api/unlock/start"));
+  await expect.poll(() => unlockState(page), { timeout: 20_000 }).toBe("unlocked");
+  await simulatorUnlock(page, { keysHeld: false });
+}

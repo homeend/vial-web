@@ -1,5 +1,5 @@
 import type { Page, Route } from "@playwright/test";
-import { expect, macrosOf, serverUrl, setMacros, test } from "./fixtures";
+import { expect, macrosOf, openUnlockDialog, serverUrl, setMacros, simulatorUnlock, test, unlockAgain } from "./fixtures";
 
 // Editing a macro: where the focus goes, a save that is slow or fails, a long macro, the memory the page counts, and
 // recording keys. The server is shared by every test: each test that changes the macros puts them back, in its
@@ -264,6 +264,43 @@ test("recording forgets modifiers let go out of the window's sight, and reads Ca
     await card.getByRole("button", { name: "Cancel" }).click();
     expect(await macrosOf(app)).toEqual(before);
   } finally {
+    await setMacros(app, before);
+  }
+});
+
+test("recording stops when the unlock dialog opens: the unlock keys typed meanwhile aren't recorded", async ({ app }) => {
+  // the unlock keys are held on the keyboard in use, which types them into the page (the Corne's are Tab and
+  // Backspace): the dialog takes them, and the recorder, listening since before it opened, mustn't see them
+  test.setTimeout(60_000);
+  const before = await macrosOf(app);
+  try {
+    await openMacros(app);
+    const card = macroCard(app, 0);
+    await card.getByRole("button", { name: "Edit" }).click();
+    await card.getByRole("button", { name: "Record from keyboard" }).click();
+    await app.keyboard.type("a");
+    await expect(card.locator(".so-far")).toHaveText("“a”");
+
+    const dialog = await openUnlockDialog(app);
+    await app.keyboard.down("Tab");
+    await app.keyboard.down("Backspace");
+    await app.keyboard.press("x");
+    await expect(dialog).toBeVisible();
+    await simulatorUnlock(app, { keysHeld: true });
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+    await app.keyboard.up("Backspace");
+    await app.keyboard.up("Tab");
+
+    await expect(card).toContainText("Recording stopped for the unlock, whose keys type into this page. 1 step recorded.");
+    await expect(card.getByRole("button", { name: "Record from keyboard" })).toBeVisible();
+    await expect(card.locator(".steps > li")).toHaveCount(before[0].length + 1);
+    await expect(card.getByLabel(`Step ${before[0].length + 1}: the text to type`)).toHaveValue("a");
+    await card.getByRole("button", { name: "Cancel" }).click();
+    expect(await macrosOf(app)).toEqual(before);
+  } finally {
+    await app.keyboard.up("Backspace");
+    await app.keyboard.up("Tab");
+    await unlockAgain(app);
     await setMacros(app, before);
   }
 });

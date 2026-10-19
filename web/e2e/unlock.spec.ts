@@ -1,36 +1,14 @@
-import type { Page } from "@playwright/test";
-import { expect, serverUrl, simulatorUnlock, test, unlockState } from "./fixtures";
+import { expect, openUnlockDialog, simulatorUnlock, test, unlockAgain, unlockState } from "./fixtures";
 
 // The unlock dialog, as the owner uses it on the real keyboard: its unlock keys are held for about 10 s (the fake
 // server keeps the firmware's timing), on the keyboard that types into this page. The server is shared by every test:
 // each one leaves the simulated keyboard unlocked, as the server started.
 
-/** Lets go of the unlock keys, and unlocks the simulated keyboard again if it isn't */
-async function unlockAgain(page: Page) {
-  await simulatorUnlock(page, { keysHeld: false });
-  if ((await unlockState(page)) === "unlocked") return;
-  // the simulator counts down while the keys are held
-  await simulatorUnlock(page, { keysHeld: true });
-  await page.request.post(serverUrl(page, "/api/unlock/start"));
-  await expect.poll(() => unlockState(page), { timeout: 20_000 }).toBe("unlocked");
-  await simulatorUnlock(page, { keysHeld: false });
-}
-
-/** Locks the keyboard from the top bar and starts unlocking it there: the dialog shows */
-async function openDialog(page: Page) {
-  await page.getByRole("button", { name: "Keyboard unlocked: lock it" }).click();
-  await page.getByRole("button", { name: "Keyboard locked: unlock it" }).click();
-  const dialog = page.getByRole("dialog", { name: "Unlock the keyboard" });
-  await expect(dialog).toBeVisible();
-  expect(await unlockState(page)).toBe("unlocking");
-  return dialog;
-}
-
 test("the unlock dialog takes no key presses, and keys still held once it closes press nothing", async ({ app }) => {
   test.setTimeout(60_000);
   await app.setViewportSize({ width: 1920, height: 950 });
   try {
-    const dialog = await openDialog(app);
+    const dialog = await openUnlockDialog(app);
     await expect(dialog.locator(".where"))
       .toHaveText("The keys at row 0, column 0 and row 4, column 0 of the keyboard's matrix.");
     const box = (await dialog.boundingBox())!;
@@ -87,7 +65,7 @@ test("the unlock dialog takes no key presses, and keys still held once it closes
 test("the unlock dialog says when cancelling fails, and can be closed then", async ({ app }) => {
   test.setTimeout(60_000);
   try {
-    const dialog = await openDialog(app);
+    const dialog = await openUnlockDialog(app);
     // closed by the browser rather than by the page, it shows again while the keyboard waits
     await dialog.evaluate((d: HTMLDialogElement) => d.close());
     await expect(dialog).toBeVisible();

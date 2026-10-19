@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { Described } from "../api/types";
+  import { keyboard } from "../lib/keyboard.svelte";
   import Button from "../ui/Button.svelte";
   import {
     changeKind, macroBytes, moveStep, newStep, parseDelay, STEP_KINDS, stepBytes, stepProblem, STEPS_MAX, type Step,
@@ -136,7 +137,7 @@
 
   /** Record from keyboard and Stop recording: one button, which keeps the focus */
   function toggleRecording() {
-    if (busy || finishing) return;
+    if (busy || finishing || keyboard.unlock.open) return;
     if (recording) {
       void stopRecording();
       return;
@@ -147,7 +148,8 @@
     recordNote = null;
   }
 
-  async function stopRecording() {
+  /** `why`: said first, when the recording was stopped for the user rather than by them */
+  async function stopRecording(why = "") {
     const done = recording;
     if (!done) return;
     recording = null;
@@ -157,17 +159,17 @@
         ? { type: "text", text: r.text, keys: [], delay: null }
         : { type: "tap", text: null, keys: [await describe(r.code)], delay: null }));
       steps.push(...made);
-      recordNote = `${made.length} ${made.length === 1 ? "step" : "steps"} recorded` +
+      recordNote = `${why}${made.length} ${made.length === 1 ? "step" : "steps"} recorded` +
         (done.skipped > 0 ? `; ${done.skipped} ${done.skipped === 1 ? "key has" : "keys have"} no keycode here` : "") + ".";
     } catch {
-      recordNote = "The keys recorded couldn't all be read: nothing was added.";
+      recordNote = `${why}The keys recorded couldn't all be read: nothing was added.`;
     } finally {
       finishing = false;
     }
   }
 
   function onkeydown(event: KeyboardEvent) {
-    if (!recording) return;
+    if (!recording || keyboard.unlock.open) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.key === "Escape") {
@@ -184,7 +186,7 @@
   }
 
   function onkeyup(event: KeyboardEvent) {
-    if (!recording) return;
+    if (!recording || keyboard.unlock.open) return;
     event.preventDefault();
     recording.keyup({ code: event.code });
   }
@@ -193,6 +195,15 @@
   function forgetHeld() {
     recording?.releaseAll();
   }
+
+  // The unlock dialog takes every key while it shows: the keyboard's unlock keys, held on the keyboard in use, type
+  // into this page and are no part of the macro. Recording stops when it opens; until then (and for any key on its way)
+  // the keys are left to the dialog, whose listeners come after these ones.
+  $effect(() => {
+    if (recording && keyboard.unlock.open) {
+      untrack(() => void stopRecording("Recording stopped for the unlock, whose keys type into this page. "));
+    }
+  });
 
   // while recording, every key typed into the window is the macro's (before anything else on the page sees it)
   $effect(() => {

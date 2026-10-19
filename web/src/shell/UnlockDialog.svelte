@@ -61,7 +61,8 @@
     if (event.type === "keydown" && showing) pressed.add(code);
     else if (event.type === "keyup") pressed.delete(code);
     event.preventDefault();
-    // nothing else sees them, not even other listeners on the window (the macro recorder)
+    // nothing else sees them, not even listeners on the window added after these ones. The macro recorder's, added
+    // before them when a recording started first, leaves the keys alone while the dialog shows (it stops recording).
     event.stopImmediatePropagation();
     if (!showing && pressed.size === 0) unguard();
   }
