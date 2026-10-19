@@ -283,6 +283,25 @@ export function altRepeatSentence(a: AltRepeatDraft, names: Names): string {
   return `After ${after}, Alt Repeat ${sends}${back}.${fallback}`;
 }
 
+/** What an alt-repeat key on the keyboard does, said of it, never the editor's prompt for a last key: its sentence
+ * when it can be saved. With no last key, one that goes both ways answers its alt key with its own empty key (Alt
+ * Repeat sends nothing after the alt key); a default one with no alt key answers every key no entry covers with
+ * KC_NO (vial.c get_alt_repeat_key_keycode_user), so Alt Repeat sends nothing after them, and QMK's own pairs aren't
+ * used (repeat_key.c get_alt_repeat_key_keycode); any other does nothing. */
+export function altRepeatDescription(a: AltRepeatDraft, names: Names): string {
+  if (altRepeatReady(a)) return altRepeatSentence(a, names);
+  const mods = modNames(a.allowedMods, (a.options & ALT_REPEAT_OPTIONS[2].bit) !== 0);
+  if (a.options & ALT_REPEAT_OPTIONS[1].bit && a.altKeycode.kind !== "none") {
+    return `No last key: after ${keyName(a.altKeycode, names)}${mods.length > 0 ? heldPhrase(mods) : ""}, Alt Repeat ` +
+      "sends nothing.";
+  }
+  if (a.options & ALT_REPEAT_OPTIONS[0].bit) {
+    return `No last key and no alt key: after any key${heldPhrase(mods)} that no alt-repeat key covers, Alt Repeat ` +
+      "sends nothing, instead of the firmware's own pairs.";
+  }
+  return "No last key, so it does nothing.";
+}
+
 /** Whether a keycode is on a key, in a tap dance or as a combo's output: somewhere it can be pressed */
 export function pressable(code: string, model: {
   layers: { keys: Described[]; encoders: Described[] }[];

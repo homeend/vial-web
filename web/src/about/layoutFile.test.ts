@@ -117,6 +117,12 @@ describe("previewSections", () => {
       altRepeatKeys: [
         { before: ark, after: { ...ark, keycode: described("KC_NO") } },
         { before: ark, after: { ...ark, index: 1, keycode: described("KC_NO"), options: 0x0a } },
+        // a default alt key with no alt key answers every key no entry covers with nothing (vial.c
+        // get_alt_repeat_key_keycode_user returns KC_NO, so QMK's own pairs aren't used)
+        { before: ark, after: { ...ark, index: 2, keycode: described("KC_NO"), altKeycode: described("KC_NO"),
+          options: 0x09 } },
+        { before: ark, after: { ...ark, index: 3, keycode: described("KC_NO"), altKeycode: described("KC_NO"),
+          allowedMods: 0x02, options: 0x09 } },
       ],
     }), ctx);
     expect(sections.map((s) => [s.title, s.items])).toEqual([
@@ -128,14 +134,18 @@ describe("previewSections", () => {
       ["Key overrides", [
         "Key override 0: Left Shift + BSPC sends DEL, on every layer. Not while Left Ctrl is held. Left Shift is " +
           "hidden from the computer while it works. Starts only: when the trigger key goes down.",
-        "Key override 1: With no trigger key and no trigger modifiers, it starts on every key press on its layers. " +
-          "Left Shift is hidden from the computer while it works.",
+        "Key override 1: With no trigger key and no trigger modifiers, it starts on every key press on its layers, " +
+          "and sends DEL. Left Shift is hidden from the computer while it works.",
         "Key override 2: No trigger key or modifiers. Left Shift is hidden from the computer while it works. " +
           "Switched off.",
       ]],
       ["Alt-repeat keys", [
         "Alt-repeat key 0: No last key, so it does nothing.",
         "Alt-repeat key 1: No last key: after RGHT, Alt Repeat sends nothing.",
+        "Alt-repeat key 2: No last key and no alt key: after any key without modifiers that no alt-repeat key " +
+          "covers, Alt Repeat sends nothing, instead of the firmware's own pairs.",
+        "Alt-repeat key 3: No last key and no alt key: after any key (alone, or with Left Shift) that no alt-repeat " +
+          "key covers, Alt Repeat sends nothing, instead of the firmware's own pairs.",
       ]],
     ]);
   });

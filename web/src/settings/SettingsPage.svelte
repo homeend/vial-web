@@ -8,7 +8,7 @@
   import ConfirmDialog from "../ui/ConfirmDialog.svelte";
   import { settingDefinitions } from "./definitions";
   import {
-    changeCount, changed, fieldChanged, groupChanges, numberProblem, settingGroups, valuesOf, withBit,
+    changeCount, changed, fieldChanged, groupChanges, numberProblem, settingGroups, valuesOf, type Values,
   } from "./qmkSettings";
   import SettingRow from "./SettingRow.svelte";
   import { settingsEdits as kept } from "./state.svelte";
@@ -39,15 +39,21 @@
   const groups = $derived(definitions ? settingGroups(definitions, model.settings) : []);
   /** what the keyboard holds */
   const held = $derived(valuesOf(model.settings));
-  // the changes not saved yet: kept while another page shows, for this keyboard only (another one starts over)
-  untrack(() => kept.follow(model.uid));
-  $effect.pre(() => kept.follow(model.uid));
-  /** the values changed in the form, by qsid (a boolean changes a bit of its setting's value) */
-  const edits = $derived(kept.edits);
+  // the changes not saved yet: kept while another page shows, for this keyboard only (another one starts over), each
+  // put over what the keyboard holds now; those it holds already (a layout file loaded, the keyboard read again) go
+  function follow(uid: string, now: Values) {
+    kept.follow(uid);
+    kept.settle(now);
+  }
+  untrack(() => follow(model.uid, held));
+  $effect.pre(() => {
+    const [uid, now] = [model.uid, held];
+    untrack(() => follow(uid, now));
+  });
   /** what the number boxes hold while it isn't the value: being typed, or not a number they take */
   const texts = $derived(kept.texts);
-  /** the form: what the keyboard holds, with the changes made here */
-  const form = $derived(new Map([...held, ...Object.entries(edits).map(([q, v]) => [Number(q), v] as const)]));
+  /** the form: what the keyboard holds, with the changes made here put over it */
+  const form = $derived(kept.form(held));
   const changes = $derived(changed(held, form));
   const problems = $derived(groups.flatMap((g) => g.fields)
     .filter((f) => f.type === "integer" && texts[f.qsid] !== undefined)
@@ -59,8 +65,7 @@
 
   function toggle(field: SettingField, on: boolean) {
     if (busy) return;
-    const value = form.get(field.qsid);
-    if (value !== undefined) kept.edits[field.qsid] = withBit(field, value, on);
+    kept.toggle(field, on, held.get(field.qsid));
   }
 
   function type(field: SettingField, text: string) {
@@ -74,12 +79,9 @@
 
   async function save() {
     if (busy || blocked || changes.length === 0) return;
-    const sent = changes;
-    await keyboard.setSettings(sent);
+    await keyboard.setSettings(changes);
     // what the keyboard took is what it holds now: those changes are done (a failed one stays, and says so)
-    for (const { qsid, value } of sent) {
-      if (held.get(qsid) === value && kept.edits[qsid] === value) kept.forget(qsid);
-    }
+    kept.settle(held);
   }
 
   let confirming = $state(false);
@@ -137,8 +139,7 @@
               {value}
               text={field.type === "integer" ? (texts[field.qsid] ?? null) : null}
               problem={field.type === "integer" ? (problems.find((p) => p.qsid === field.qsid)?.problem ?? null) : null}
-              changed={fieldChanged(field, held, form) && !(field.type === "integer" && texts[field.qsid] !== undefined &&
-                problems.some((p) => p.qsid === field.qsid))}
+              changed={fieldChanged(field, held, form)}
               disabled={!canEdit}
               {busy}
               ontoggle={(on) => toggle(field, on)}

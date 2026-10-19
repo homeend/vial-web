@@ -55,7 +55,7 @@
     {#if removable}
       <Button variant="danger" disabled={!canSave} aria-disabled={busy || undefined} onclick={onremove}>Remove</Button>
     {/if}
-    {#if notReady}<span class="needs" id="alt-repeat-{index}-needs">Choose the last key, or turn on Default to this alt key</span>{/if}
+    {#if notReady}<span class="needs" id="alt-repeat-{index}-needs">Choose the last key, or turn on Default to this alt key and choose the alt key</span>{/if}
     <Button aria-disabled={busy || undefined} onclick={oncancel}>Cancel</Button>
     <Button variant="primary" disabled={!canSave || notReady} aria-disabled={busy || undefined}
       aria-describedby={notReady ? `alt-repeat-${index}-needs` : undefined} onclick={onsave}>Save</Button>

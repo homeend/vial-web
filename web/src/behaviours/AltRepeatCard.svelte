@@ -5,7 +5,7 @@
   import Button from "../ui/Button.svelte";
   import EntryHead from "./EntryHead.svelte";
   import {
-    ALT_REPEAT_OPTIONS, altRepeatIsSet, altRepeatSentence, type AltRepeatDraft,
+    ALT_REPEAT_OPTIONS, altRepeatDescription, altRepeatIsSet, altRepeatSentence, type AltRepeatDraft,
   } from "./overrides";
   import { replayed } from "./target.svelte";
 
@@ -28,7 +28,8 @@
 
   const headingId = $derived(`alt-repeat-${entry.index}-title`);
   const shown = $derived<AltRepeatDraft>(draft ?? entry);
-  const sentence = $derived(altRepeatSentence(shown, names));
+  /** the draft's, which asks for what it needs before it can be saved; or what the one on the keyboard does */
+  const sentence = $derived(draft ? altRepeatSentence(draft, names) : altRepeatDescription(entry, names));
   const isNew = $derived(!altRepeatIsSet(entry));
   /** the options set, by their labels */
   const options = $derived(ALT_REPEAT_OPTIONS.filter((o) => shown.options & o.bit).map((o) => o.label));

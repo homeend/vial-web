@@ -10,8 +10,8 @@ import { refId } from "../keyboard/refs";
 import { tapDanceIsSet } from "../behaviours/entries";
 import { isSet as comboIsSet } from "../behaviours/members";
 import {
-  ALT_REPEAT_OPTIONS, altRepeatIsSet, altRepeatReady, altRepeatSentence, keyOverrideDetails, keyOverrideIsSet,
-  keyOverrideProblems, keyOverrideSentence,
+  altRepeatDescription, altRepeatIsSet, keyOverrideDetails, keyOverrideIsSet, keyOverrideProblems,
+  keyOverrideSentence,
 } from "../behaviours/overrides";
 import { tapDanceSentence } from "../behaviours/sentences";
 import { settingChanges } from "../settings/qmkSettings";
@@ -112,24 +112,21 @@ function tapDanceText(before: TapDance, after: TapDance, ctx: PreviewContext): s
 function keyOverrideText(o: KeyOverride, layerCount: number, names: Names): string {
   const problems = keyOverrideProblems(o, layerCount);
   const ready = o.trigger.kind !== "none" || o.triggerMods !== 0;
-  // with no trigger, the problem that it starts on every key press (when it is on) says what it does
+  // with no trigger, the problem that it starts on every key press (when it is on) says what it does, and what it
+  // sends then
   const everyPress = ready ? -1 : problems.findIndex((p) => p.startsWith("With no trigger"));
+  const sends = o.replacement.kind === "none" ? "nothing" : memberName(o.replacement, names);
   const opener = ready ? keyOverrideSentence(o, layerCount, names)
-    : everyPress >= 0 ? problems.splice(everyPress, 1)[0] : "No trigger key or modifiers.";
+    : everyPress >= 0 ? `${problems.splice(everyPress, 1)[0].replace(/\.$/, "")}, and sends ${sends}.`
+    : "No trigger key or modifiers.";
   const parts = [opener, ...keyOverrideDetails(o).map((d) => `${d}.`), ...problems];
   if (!o.enabled) parts.push("Switched off.");
   return parts.join(" ");
 }
 
-/** An alt-repeat key after loading: what it does, said of it (not the editor's prompt for a last key). One with no
- * last key that isn't a default alt key only answers its alt key, with nothing, when it goes both ways. */
+/** An alt-repeat key after loading: what it does, said of it (not the editor's prompt for a last key) */
 function altRepeatText(a: AltRepeatKey, names: Names): string {
-  const off = a.enabled ? "" : " Switched off.";
-  if (altRepeatReady(a)) return `${altRepeatSentence(a, names)}${off}`;
-  const back = (a.options & ALT_REPEAT_OPTIONS[1].bit) !== 0 && a.altKeycode.kind !== "none";
-  return back
-    ? `No last key: after ${memberName(a.altKeycode, names)}, Alt Repeat sends nothing.${off}`
-    : `No last key, so it does nothing.${off}`;
+  return `${altRepeatDescription(a, names)}${a.enabled ? "" : " Switched off."}`;
 }
 
 function layerCounts(layers: number[], names: Names): string {

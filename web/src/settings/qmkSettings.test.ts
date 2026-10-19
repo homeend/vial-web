@@ -98,4 +98,16 @@ describe("changes", () => {
     expect(settingChanges(DEFINITIONS, 30, 1, 2)).toEqual(["Setting 30: 1 → 2"]);
     expect(settingChanges(null, 7, 1, 2)).toEqual(["Setting 7: 1 → 2"]);
   });
+
+  it("tell the bits no field covers too, when they change with fields", () => {
+    // bits 0, 1 and 7 of 21 have fields; bit 2 has none
+    expect(settingChanges(DEFINITIONS, 21, 0b1, 0b110)).toEqual([
+      "Swap Caps Lock and Left Control: on → off", "Treat Caps Lock as Control: off → on",
+      "Setting 21, bits no field covers: 0 → 4",
+    ]);
+    // only those: the whole value
+    expect(settingChanges(DEFINITIONS, 21, 0b1, 0b101)).toEqual(["Setting 21: 1 → 5"]);
+    // a number covers all of its setting
+    expect(settingChanges(DEFINITIONS, 7, 200, 250)).toEqual(["Tapping Term: 200 → 250"]);
+  });
 });

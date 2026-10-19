@@ -23,18 +23,29 @@ export function valuesOf(settings: QmkSetting[]): Map<number, number> {
   return new Map(settings.map((s) => [s.qsid, s.value]));
 }
 
-function bitOf(field: SettingField): number {
-  return 2 ** (field.bit ?? 0);
+/** The bit of its setting a boolean field is: one with no bit of its own is bit 0 */
+export function bitOf(field: SettingField): number {
+  return field.bit ?? 0;
+}
+
+/** Whether a bit is on in a value (settings are up to 32 bits wide: arithmetic, not JavaScript's signed bit operators) */
+export function bitIsOn(value: number, bit: number): boolean {
+  return Math.floor(value / 2 ** bit) % 2 === 1;
+}
+
+/** The value with a bit switched on or off; the other bits stay */
+export function withBitAt(value: number, bit: number, on: boolean): number {
+  return bitIsOn(value, bit) === on ? value : on ? value + 2 ** bit : value - 2 ** bit;
 }
 
 /** Whether a boolean field is on in its setting's value */
 export function isOn(field: SettingField, value: number): boolean {
-  return Math.floor(value / bitOf(field)) % 2 === 1;
+  return bitIsOn(value, bitOf(field));
 }
 
 /** The setting's value with a boolean field switched on or off; its other bits stay */
 export function withBit(field: SettingField, value: number, on: boolean): number {
-  return isOn(field, value) === on ? value : on ? value + bitOf(field) : value - bitOf(field);
+  return withBitAt(value, bitOf(field), on);
 }
 
 /** Why a number typed into an integer field can't be saved, or null. What the keyboard holds is always fine (firmware
@@ -78,9 +89,16 @@ export function fieldText(field: SettingField, value: number): string {
   return field.type === "boolean" ? (isOn(field, value) ? "on" : "off") : String(value);
 }
 
+/** The part of a value in bits no field covers: all of it with no fields, none of it with a number field */
+function uncovered(fields: SettingField[], value: number): number {
+  if (fields.some((f) => f.type === "integer")) return 0;
+  const bits = new Set(fields.map(bitOf));
+  return [...bits].reduce((rest, bit) => withBitAt(rest, bit, false), value);
+}
+
 /** The changes from one value of a setting to another, field by field: "Tapping Term: 200 → 250", "Swap Caps Lock and
- * Left Control: off → on"; "Setting 30: 1 → 2" for one the definitions don't have, or when only bits no field covers
- * change */
+ * Left Control: off → on", and "Setting 21, bits no field covers: 0 → 4" when those change too (the value is written
+ * whole); "Setting 30: 1 → 2" for one the definitions don't have, or when only bits no field covers change */
 export function settingChanges(definitions: SettingsDefinitions | null, qsid: number, before: number,
   after: number): string[] {
   const whole = before === after ? [] : [`Setting ${qsid}: ${before} → ${after}`];
@@ -88,5 +106,8 @@ export function settingChanges(definitions: SettingsDefinitions | null, qsid: nu
   const changes = fields
     .filter((f) => fieldText(f, before) !== fieldText(f, after))
     .map((f) => `${f.title}: ${fieldText(f, before)} → ${fieldText(f, after)}`);
-  return changes.length > 0 ? changes : whole;
+  if (changes.length === 0) return whole;
+  const [was, now] = [uncovered(fields, before), uncovered(fields, after)];
+  if (was !== now) changes.push(`Setting ${qsid}, bits no field covers: ${was} → ${now}`);
+  return changes;
 }

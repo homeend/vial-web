@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { corne, described, layer } from "../analysis/testing";
 import { namesOf } from "../keyboard/labels";
 import {
-  allLayers, altRepeatIsSet, altRepeatReady, altRepeatRequest, altRepeatSentence, AR_ENABLED, clearedKeyOverride,
+  allLayers, altRepeatDescription, altRepeatIsSet, altRepeatReady, altRepeatRequest, altRepeatSentence, AR_ENABLED, clearedKeyOverride,
   freeAltRepeat, freeKeyOverride, keyOverrideDetails, keyOverrideIsSet, keyOverrideProblems, keyOverrideRequest,
   keyOverrideSentence, KO_ACTIVATIONS, KO_ENABLED, layerPhrase, layersIn, modBit, modNames, newAltRepeat,
   newKeyOverride, orList, pressable, toggled, type AltRepeatDraft, type KeyOverrideDraft,
@@ -246,6 +246,30 @@ describe("alt-repeat keys", () => {
     expect(altRepeatSentence(altRepeat({ keycode: NONE, allowedMods: LCTL, options: AR_ENABLED | 0x03 }), names))
       .toBe("After any key (alone, or with Left Ctrl) that no alt-repeat key covers, Alt Repeat sends RIGHT, instead " +
         "of the firmware's own pairs. After RIGHT (alone, or with Left Ctrl), it sends nothing.");
+  });
+});
+
+describe("an alt-repeat key on the keyboard", () => {
+  it("says what it does as the editor does, when it can be saved", () => {
+    expect(altRepeatDescription(altRepeat(), names)).toBe("After LEFT, Alt Repeat sends RIGHT.");
+    expect(altRepeatDescription(altRepeat({ keycode: NONE, options: AR_ENABLED | 0x01 }), names))
+      .toBe(altRepeatSentence(altRepeat({ keycode: NONE, options: AR_ENABLED | 0x01 }), names));
+  });
+
+  it("with no last key, says what it does rather than ask for one", () => {
+    // both ways: the alt key is answered with the entry's own key, KC_NO
+    expect(altRepeatDescription(altRepeat({ keycode: NONE, options: AR_ENABLED | 0x02 }), names))
+      .toBe("No last key: after RIGHT, Alt Repeat sends nothing.");
+    expect(altRepeatDescription(altRepeat({ keycode: NONE, allowedMods: LCTL, options: AR_ENABLED | 0x02 }), names))
+      .toBe("No last key: after RIGHT (alone, or with Left Ctrl), Alt Repeat sends nothing.");
+    // a default alt key with no alt key: KC_NO for every key no entry covers (vial.c
+    // get_alt_repeat_key_keycode_user), so QMK's own pairs aren't used (repeat_key.c get_alt_repeat_key_keycode)
+    expect(altRepeatDescription(altRepeat({ keycode: NONE, altKeycode: NONE, options: AR_ENABLED | 0x01 }), names))
+      .toBe("No last key and no alt key: after any key without modifiers that no alt-repeat key covers, Alt Repeat " +
+        "sends nothing, instead of the firmware's own pairs.");
+    expect(altRepeatDescription(altRepeat({ keycode: NONE }), names)).toBe("No last key, so it does nothing.");
+    expect(altRepeatDescription(altRepeat({ keycode: NONE, altKeycode: NONE, options: AR_ENABLED | 0x02 }), names))
+      .toBe("No last key, so it does nothing.");
   });
 });
 

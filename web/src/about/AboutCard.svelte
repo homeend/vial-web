@@ -28,6 +28,11 @@
   }
 
   $effect(() => () => clearTimeout(timer));
+
+  /** A fact in a sentence: "the name", "the protocols", but "the Keyboard ID" */
+  function factName(label: string): string {
+    return `the ${label === "Keyboard ID" ? label : label.toLowerCase()}`;
+  }
 </script>
 
 <section class="card" aria-labelledby="about-title">
@@ -41,13 +46,14 @@
         <h3>{group.title}</h3>
         <dl>
           {#each group.facts as fact (fact.label)}
+            {@const what = factName(fact.label)}
             <div class="fact">
               <dt>{fact.label}</dt>
               <dd>
                 <span class="value" class:code={fact.code} title={fact.value}>{fact.value}</span>
                 {#if fact.copy}
-                  <button type="button" class="copy" aria-label="Copy the {fact.label}" title="Copy"
-                    onclick={() => void copy(fact.value, `the ${fact.label}`)}>
+                  <button type="button" class="copy" aria-label="Copy {what}" title="Copy"
+                    onclick={() => void copy(fact.value, what)}>
                     <svg viewBox="0 0 16 16" aria-hidden="true">
                       <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" /><path d="M10.5 3.5v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" />
                     </svg>
