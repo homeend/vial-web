@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { corne, described, layer } from "../analysis/testing";
 import { namesOf } from "../keyboard/labels";
 import {
-  allLayers, altRepeatDescription, altRepeatIsSet, altRepeatReady, altRepeatRequest, altRepeatSentence, AR_ENABLED, clearedKeyOverride,
+  allLayers, altRepeatDescription, altRepeatIsSet, altRepeatProblems, altRepeatReady, altRepeatRequest, altRepeatSentence, AR_ENABLED, clearedKeyOverride,
   freeAltRepeat, freeKeyOverride, keyOverrideDetails, keyOverrideIsSet, keyOverrideProblems, keyOverrideRequest,
   keyOverrideSentence, KO_ACTIVATIONS, KO_ENABLED, layerPhrase, layersIn, modBit, modNames, newAltRepeat,
   newKeyOverride, orList, pressable, toggled, type AltRepeatDraft, type KeyOverrideDraft,
@@ -246,6 +246,43 @@ describe("alt-repeat keys", () => {
     expect(altRepeatSentence(altRepeat({ keycode: NONE, allowedMods: LCTL, options: AR_ENABLED | 0x03 }), names))
       .toBe("After any key (alone, or with Left Ctrl) that no alt-repeat key covers, Alt Repeat sends RIGHT, instead " +
         "of the firmware's own pairs. After RIGHT (alone, or with Left Ctrl), it sends nothing.");
+  });
+});
+
+describe("alt-repeat problems", () => {
+  /** RSFT(KC_RGHT) and the like: a key with modifiers, as the server describes it (its value is the keycode) */
+  const withMods = (code: string, value: number) => ({ ...described("KC_RGHT"), code, value });
+  const altKey = "Right-hand modifiers on the alt key aren't sent: the keyboard sends the key without them, or " +
+    "nothing. Left-hand ones work.";
+  const lastKey = "Right-hand modifiers on the last key aren't sent back after the alt key: the keyboard sends the " +
+    "key without them, or nothing. Left-hand ones work.";
+
+  it("has none for plain keys, or keys with left-hand modifiers", () => {
+    expect(altRepeatProblems(altRepeat())).toEqual([]);
+    expect(altRepeatProblems(altRepeat({ altKeycode: withMods("LSFT(KC_RGHT)", 0x024f) }))).toEqual([]);
+    expect(altRepeatProblems(altRepeat({ keycode: withMods("LCTL(KC_LEFT)", 0x0150), options: AR_ENABLED | 0x02 })))
+      .toEqual([]);
+  });
+
+  it("says an alt key's right-hand modifiers aren't sent", () => {
+    // vial.c sends (alt_required_mods << 8) | alt_keycode with 8-bit mods: RSFT(KC_RGHT) becomes 0x204F, outside the
+    // keys with modifiers (QK_MODS, up to 0x1FFF)
+    expect(altRepeatProblems(altRepeat({ altKeycode: withMods("RSFT(KC_RGHT)", 0x124f) }))).toEqual([altKey]);
+    expect(altRepeatProblems(altRepeat({ altKeycode: withMods("RCTL(KC_RGHT)", 0x114f) }))).toEqual([altKey]);
+    // as a default alt key too
+    expect(altRepeatProblems(altRepeat({ keycode: NONE, altKeycode: withMods("RALT(KC_RGHT)", 0x144f),
+      options: AR_ENABLED | 0x01 }))).toEqual([altKey]);
+    // switched off, it sends nothing anyway
+    expect(altRepeatProblems(altRepeat({ altKeycode: withMods("RSFT(KC_RGHT)", 0x124f), enabled: false })))
+      .toEqual([]);
+  });
+
+  it("says a last key's right-hand modifiers aren't sent back, only both ways", () => {
+    const last = withMods("RSFT(KC_LEFT)", 0x1250);
+    expect(altRepeatProblems(altRepeat({ keycode: last }))).toEqual([]);
+    expect(altRepeatProblems(altRepeat({ keycode: last, options: AR_ENABLED | 0x02 }))).toEqual([lastKey]);
+    // with no alt key, there is nothing to go back from
+    expect(altRepeatProblems(altRepeat({ keycode: last, altKeycode: NONE, options: AR_ENABLED | 0x02 }))).toEqual([]);
   });
 });
 

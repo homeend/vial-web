@@ -283,6 +283,27 @@ export function altRepeatSentence(a: AltRepeatDraft, names: Names): string {
   return `After ${after}, Alt Repeat ${sends}${back}.${fallback}`;
 }
 
+/** A key with right-hand modifiers: in QK_MODS (0x0100..0x1FFF), with the right-hand bit (0x1000) and a modifier */
+function rightHandMods(d: Described): boolean {
+  return d.value >= 0x1000 && d.value <= 0x1fff && (d.value & 0x0f00) !== 0;
+}
+
+/** What it can't do as chosen, or nothing. The firmware keeps a key's modifiers in 8 bits (vial.c unpack_mods5) and
+ * sends `(mods << 8) | key` (get_alt_repeat_key_keycode_user): right-hand modifiers (the high 4 bits) land outside the
+ * keys with modifiers (QK_MODS, up to 0x1FFF). Right Ctrl becomes a key without modifiers; the others a mod-tap,
+ * layer-tap or Unicode keycode, which with no tap sends nothing. That is the alt key, and with Both ways the last key,
+ * sent back after the alt key. A switched-off one sends nothing at all. */
+export function altRepeatProblems(a: AltRepeatDraft): string[] {
+  if (!a.enabled) return [];
+  const problems: string[] = [];
+  const result = "the keyboard sends the key without them, or nothing. Left-hand ones work.";
+  if (rightHandMods(a.altKeycode)) problems.push(`Right-hand modifiers on the alt key aren't sent: ${result}`);
+  if (a.options & ALT_REPEAT_OPTIONS[1].bit && a.altKeycode.kind !== "none" && rightHandMods(a.keycode)) {
+    problems.push(`Right-hand modifiers on the last key aren't sent back after the alt key: ${result}`);
+  }
+  return problems;
+}
+
 /** What an alt-repeat key on the keyboard does, said of it, never the editor's prompt for a last key: its sentence
  * when it can be saved. With no last key, one that goes both ways answers its alt key with its own empty key (Alt
  * Repeat sends nothing after the alt key); a default one with no alt key answers every key no entry covers with

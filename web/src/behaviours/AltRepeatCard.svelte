@@ -5,7 +5,8 @@
   import Button from "../ui/Button.svelte";
   import EntryHead from "./EntryHead.svelte";
   import {
-    ALT_REPEAT_OPTIONS, altRepeatDescription, altRepeatIsSet, altRepeatSentence, type AltRepeatDraft,
+    ALT_REPEAT_OPTIONS, altRepeatDescription, altRepeatIsSet, altRepeatProblems, altRepeatSentence,
+    type AltRepeatDraft,
   } from "./overrides";
   import { replayed } from "./target.svelte";
 
@@ -31,6 +32,8 @@
   /** the draft's, which asks for what it needs before it can be saved; or what the one on the keyboard does */
   const sentence = $derived(draft ? altRepeatSentence(draft, names) : altRepeatDescription(entry, names));
   const isNew = $derived(!altRepeatIsSet(entry));
+  /** what it can't do as chosen: not for an empty one not being edited */
+  const problems = $derived(isNew && draft === null ? [] : altRepeatProblems(shown));
   /** the options set, by their labels */
   const options = $derived(ALT_REPEAT_OPTIONS.filter((o) => shown.options & o.bit).map((o) => o.label));
 
@@ -76,6 +79,11 @@
     {#if options.length > 0}
       <p class="details">{options.join(" · ")}</p>
     {/if}
+  {/if}
+  {#if problems.length > 0}
+    <ul class="problems" aria-label="Problems">
+      {#each problems as problem (problem)}<li>{problem}</li>{/each}
+    </ul>
   {/if}
 </article>
 
@@ -141,6 +149,17 @@
   .details {
     margin: 0;
     color: var(--text-3);
+    font-size: 12.5px;
+  }
+
+  .problems {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 6px 10px 6px 26px;
+    border-radius: 8px;
+    background: var(--warning-weak);
+    color: var(--warning-text);
     font-size: 12.5px;
   }
 </style>
