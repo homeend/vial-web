@@ -32,15 +32,17 @@ function serverOf(
 }
 
 /** The page, opened from a server's link, with the keyboard drawn: `app` shows the simulated Corne, `macropad` the
- * simulated macropad with encoders, `eightLayers` the simulated Corne with 8 layers (4-7 empty). `corneUrl` is the
- * simulated Corne's link, for a test that opens it itself. */
+ * simulated macropad with encoders, `eightLayers` the simulated Corne with 8 layers (4-7 empty), `qmkLighting` the
+ * simulated Corne with QMK's RGB light and backlight. `corneUrl` is the simulated Corne's link, for a test that opens
+ * it itself. */
 export const test = base.extend<
-  { app: Page; macropad: Page; eightLayers: Page },
-  { corneUrl: string; macropadUrl: string; eightLayersUrl: string }
+  { app: Page; macropad: Page; eightLayers: Page; qmkLighting: Page },
+  { corneUrl: string; macropadUrl: string; eightLayersUrl: string; qmkLightingUrl: string }
 >({
   corneUrl: serverOf(SERVERS.corne),
   macropadUrl: serverOf(SERVERS.macropad),
   eightLayersUrl: serverOf(SERVERS.eightLayers),
+  qmkLightingUrl: serverOf(SERVERS.qmkLighting),
   app: async ({ page, corneUrl }, use) => {
     await use(await open(page, corneUrl));
   },
@@ -49,6 +51,9 @@ export const test = base.extend<
   },
   eightLayers: async ({ page, eightLayersUrl }, use) => {
     await use(await open(page, eightLayersUrl));
+  },
+  qmkLighting: async ({ page, qmkLightingUrl }, use) => {
+    await use(await open(page, qmkLightingUrl));
   },
 });
 
@@ -326,6 +331,26 @@ export async function setSettings(page: Page, settings: Record<number, number>):
   for (const [qsid, value] of Object.entries(settings)) {
     if (now[Number(qsid)] !== value) await put(page, `/api/qmk-settings/${qsid}`, { value });
   }
+}
+
+/** The keyboard's lighting, as the server reports it */
+export async function lightingOf(page: Page) {
+  return (await keyboardModel(page)).lighting;
+}
+
+/** Changes the lighting through the API (shown, not saved): tests put back what they changed */
+export async function setLighting(page: Page, body: unknown): Promise<void> {
+  await put(page, "/api/lighting", body);
+}
+
+/** The fake server's test hook: a key of the simulated keyboard's matrix is pressed, or let go */
+export async function pressKey(page: Page, row: number, col: number, pressed = true): Promise<void> {
+  await put(page, "/api/simulator/matrix", { row, col, pressed });
+}
+
+/** The fake server's test hook: the simulated keyboard is plugged in, or unplugged */
+export async function plugIn(page: Page, connected: boolean): Promise<void> {
+  await put(page, "/api/simulator/connection", { connected });
 }
 
 /** Shows a section from the navigation and waits for its heading */
