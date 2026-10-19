@@ -3,6 +3,7 @@
   import type { KeyboardModel } from "../api/types";
   import PageHeader from "../behaviours/PageHeader.svelte";
   import AboutCard from "./AboutCard.svelte";
+  import BootloaderCard from "./BootloaderCard.svelte";
   import LayoutFileCard from "./LayoutFileCard.svelte";
 
   interface Props {
@@ -17,10 +18,11 @@
   <PageHeader
     id="keyboard-title"
     title="Keyboard"
-    description="What the keyboard is and what its firmware can do, and its layout saved to a file or loaded from one."
+    description="What the keyboard is and what its firmware can do, its layout saved to a file or loaded from one, and a restart into its bootloader to flash it."
   />
   <LayoutFileCard {model} {analysis} />
   <AboutCard {model} />
+  <BootloaderCard />
 </section>
 
 <style>
