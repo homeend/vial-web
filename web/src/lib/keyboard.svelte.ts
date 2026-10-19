@@ -102,8 +102,8 @@ export class KeyboardStore {
     } else {
       this.#loads++; // a load in flight is for the keyboard that went away
       this.loadError = null;
-      // the server says "disconnected" only for a loaded keyboard: an unlock it ran is over, even if the session
-      // can't be read
+      // the server says "disconnected" only for a loaded keyboard, or for one it couldn't read once it was unlocked
+      // (the session says why): an unlock it ran is over, even if the session can't be read
       this.unlock.update(LOCKED);
       api.session().then((s) => this.#useSession(s), () => undefined);
     }

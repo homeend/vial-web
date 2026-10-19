@@ -415,7 +415,7 @@ class DeviceManager:
         """ One poll of the unlock being followed: the keyboard counts down while every unlock key is held, and starts
         again when one is let go. The unlock is over when the keyboard says it is no longer in progress (an unlocked
         keyboard that was sent unlock_start still waits for its keys until its countdown ends). Once it is unlocked, a
-        keyboard that waited for that is read ("connected"). Unplugging the keyboard ends the unlock too, with only a
+        keyboard that waited for that is read ("connected", or "disconnected" when that fails). Unplugging the keyboard ends the unlock too, with only a
         "disconnected" event for a loaded keyboard.
 
         The firmware counts down only on a poll more than 100 ms after the unlock start or its last count-down, and
@@ -442,7 +442,8 @@ class DeviceManager:
             return self.unlock_state()
 
     def _read_waiting(self):
-        """ Read the keyboard that waited for its unlock, now that it answers again """
+        """ Read the keyboard that waited for its unlock, now that it answers again ("connected"). If that fails, it
+        is closed with a "disconnected" event, so that the UI, which waited for it, reads the error in the status. """
         keyboard, self.waiting = self.waiting, None
         try:
             keyboard.reload()
@@ -451,6 +452,7 @@ class DeviceManager:
             self._failed(candidate_key(self.candidate))
             self._close()
             self.error = str(e) or e.__class__.__name__
+            self.pending_events.append("disconnected")
             return
         self.keyboard = keyboard
         log.info("connected to %s", self.title)

@@ -195,6 +195,24 @@ def test_an_interrupted_unlock_is_finished_on_connect_before_the_keyboard_is_rea
     assert m.run(lambda kb: kb.layout[(0, 0, 0)]) == "KC_TAB"
 
 
+def test_a_keyboard_that_cant_be_read_once_unlocked_is_reported_gone_with_why():
+    m = DeviceManager(FakeBackend(interrupted_corne))
+    m.connect()
+    m.take_events()
+
+    def fail():
+        raise OSError("read failed")
+    m.waiting.reload = fail
+    m.backend.virtual.hold_unlock_keys(True)
+    for _ in range(COUNTDOWN):
+        m.poll_unlock()
+    assert not m.connected
+    assert m.unlock_state() == UnlockState("locked")
+    # the UI reads the session again on "disconnected", which says why
+    assert m.take_events() == ["unlock", "disconnected"]
+    assert m.status() == (False, None, False, "read failed")
+
+
 def test_unplugging_a_keyboard_that_waits_for_its_unlock_ends_it():
     m = DeviceManager(FakeBackend(interrupted_corne))
     m.connect()
