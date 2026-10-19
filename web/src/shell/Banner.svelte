@@ -17,6 +17,7 @@
 </script>
 
 <!-- danger interrupts (the keyboard is unplugged, or couldn't be read); warning waits its turn -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex (the check can't tell: it is -1 or none, never in the Tab order) -->
 <div class="banner {tone}" role={tone === "danger" ? "alert" : "status"} {id} tabindex={id ? -1 : undefined}>
   <svg viewBox="0 0 20 20" aria-hidden="true">
     <path d="M10 3l8 14H2z" />
