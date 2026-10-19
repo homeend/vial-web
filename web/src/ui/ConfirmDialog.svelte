@@ -39,8 +39,13 @@
   async function confirm() {
     if (working) return;
     working = true;
-    const done = await onconfirm();
-    working = false;
+    let done = false;
+    try {
+      done = await onconfirm();
+    } finally {
+      // a rejected onconfirm leaves it open, and usable again
+      working = false;
+    }
     if (done) dialog?.close();
   }
 </script>

@@ -11,6 +11,7 @@
     changeCount, changed, fieldChanged, groupChanges, numberProblem, settingGroups, valuesOf, withBit,
   } from "./qmkSettings";
   import SettingRow from "./SettingRow.svelte";
+  import { settingsEdits as kept } from "./state.svelte";
 
   interface Props {
     model: KeyboardModel;
@@ -38,10 +39,13 @@
   const groups = $derived(definitions ? settingGroups(definitions, model.settings) : []);
   /** what the keyboard holds */
   const held = $derived(valuesOf(model.settings));
+  // the changes not saved yet: kept while another page shows, for this keyboard only (another one starts over)
+  untrack(() => kept.follow(model.uid));
+  $effect.pre(() => kept.follow(model.uid));
   /** the values changed in the form, by qsid (a boolean changes a bit of its setting's value) */
-  let edits = $state<Record<number, number>>({});
+  const edits = $derived(kept.edits);
   /** what the number boxes hold while it isn't the value: being typed, or not a number they take */
-  let texts = $state<Record<number, string>>({});
+  const texts = $derived(kept.texts);
   /** the form: what the keyboard holds, with the changes made here */
   const form = $derived(new Map([...held, ...Object.entries(edits).map(([q, v]) => [Number(q), v] as const)]));
   const changes = $derived(changed(held, form));
@@ -53,33 +57,19 @@
   /** nothing to undo */
   const idle = $derived(changes.length === 0 && Object.keys(texts).length === 0);
 
-  // another keyboard: the changes were for the one before
-  let shownUid = untrack(() => model.uid);
-  $effect.pre(() => {
-    const uid = model.uid;
-    untrack(() => {
-      if (uid === shownUid) return;
-      shownUid = uid;
-      edits = {};
-      texts = {};
-    });
-  });
-
   function toggle(field: SettingField, on: boolean) {
     if (busy) return;
     const value = form.get(field.qsid);
-    if (value !== undefined) edits[field.qsid] = withBit(field, value, on);
+    if (value !== undefined) kept.edits[field.qsid] = withBit(field, value, on);
   }
 
   function type(field: SettingField, text: string) {
-    texts[field.qsid] = text;
-    if (numberProblem(field, text, held.get(field.qsid)) === null) edits[field.qsid] = Number(text);
+    kept.type(field, text, held.get(field.qsid));
   }
 
   function undo() {
     if (busy) return;
-    edits = {};
-    texts = {};
+    kept.clear();
   }
 
   async function save() {
@@ -88,10 +78,7 @@
     await keyboard.setSettings(sent);
     // what the keyboard took is what it holds now: those changes are done (a failed one stays, and says so)
     for (const { qsid, value } of sent) {
-      if (held.get(qsid) === value && edits[qsid] === value) {
-        delete edits[qsid];
-        delete texts[qsid];
-      }
+      if (held.get(qsid) === value && kept.edits[qsid] === value) kept.forget(qsid);
     }
   }
 
@@ -190,10 +177,7 @@
   danger
   onconfirm={async () => {
     const done = await keyboard.resetSettings();
-    if (done) {
-      edits = {};
-      texts = {};
-    }
+    if (done) kept.clear();
     return done;
   }}
   onclose={() => {
