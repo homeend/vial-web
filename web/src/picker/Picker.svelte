@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import type { CatalogueKeycode, KeycodeCategory } from "../api/types";
+  import type { CatalogueKeycode, Described, KeycodeCategory } from "../api/types";
   import { keyFace, type Names } from "../keyboard/labels";
   import AnyKeycode from "./AnyKeycode.svelte";
   import { searchKeycodes, searchTemplates } from "./search";
@@ -14,7 +14,8 @@
     /** the keycode the key has now */
     current: string;
     names: Names;
-    onpick: (code: string) => void;
+    /** the keycode picked, and what it is */
+    onpick: (code: string, described: Described) => void;
   }
 
   let { open = $bindable(), subject, categories, current, names, onpick }: Props = $props();
@@ -50,9 +51,9 @@
   /** a click closes the picker only if it started on the backdrop too: a drag out of the panel doesn't */
   let pressedOnBackdrop = false;
 
-  function pick(code: string) {
+  function pick(code: string, described: Described) {
     open = false;
-    onpick(code);
+    onpick(code, described);
   }
 
   function useTemplate(template: string) {
@@ -72,7 +73,7 @@
       // the top result; an empty search has none (a double or held Enter on opening must not fill a template)
       if (!results) return;
       event.preventDefault();
-      if (results?.[0]) pick(results[0].code);
+      if (results?.[0]) pick(results[0].code, results[0]);
       else if (templates[0]) useTemplate(templates[0]);
     } else if (event.key === "ArrowDown") {
       const first = gridArea?.querySelector<HTMLButtonElement>("button");
@@ -180,7 +181,7 @@
             title={k.description ? `${k.code}: ${k.description}` : k.code}
             aria-label="{k.tap || k.code} ({k.code})"
             aria-describedby={k.description ? `picker-description-${i}` : undefined}
-            onclick={() => pick(k.code)}
+            onclick={() => pick(k.code, k)}
           >
             {#if face.altGr}<span class="alt-gr">{face.altGr}</span>{/if}
             {#if face.shifted}<span class="kc-shifted">{face.shifted}</span>{/if}

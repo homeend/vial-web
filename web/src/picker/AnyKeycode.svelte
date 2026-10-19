@@ -8,7 +8,8 @@
   interface Props {
     /** the expression typed so far; a template click fills it in */
     value: string;
-    onpick: (code: string) => void;
+    /** the keycode, and what it is */
+    onpick: (code: string, described: Described) => void;
   }
 
   let { value = $bindable(), onpick }: Props = $props();
@@ -55,7 +56,7 @@
 
   function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (result) onpick(result.code);
+    if (result) onpick(result.code, result);
   }
 </script>
 

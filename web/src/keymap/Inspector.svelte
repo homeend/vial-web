@@ -21,6 +21,8 @@
     comboUses: ComboUse[];
     /** each combo's colour (a palette index), by combo index */
     comboColours: Map<number, number>;
+    /** open a combo's card on the Combos page */
+    onopencombo: (index: number) => void;
     onchangekey: () => void;
     onsetcode: (code: string, action: string) => Promise<boolean>;
     ontapdance: () => void;
@@ -28,7 +30,8 @@
   }
 
   let {
-    model, names, layer, selection, canEdit, comboUses, comboColours, onchangekey, onsetcode, ontapdance, onjump,
+    model, names, layer, selection, canEdit, comboUses, comboColours, onopencombo, onchangekey, onsetcode, ontapdance,
+    onjump,
   }: Props = $props();
 
   let editingHold = $state(false);
@@ -82,7 +85,7 @@
   <header>
     <KeyCap {face} size={68} round={selection.kind === "encoder"} />
     <div class="heading">
-      <h2>{keyTitle(current, names)}</h2>
+      <h2 title={keyTitle(current, names)}>{keyTitle(current, names)}</h2>
       <p class="position" title={position}>{position}</p>
     </div>
   </header>
@@ -183,7 +186,8 @@
   {/if}
 
   {#if comboUses.length > 0}
-    <ComboList uses={comboUses} {names} colours={comboColours} through={current.kind === "transparent"} />
+    <ComboList uses={comboUses} {names} colours={comboColours} through={current.kind === "transparent"}
+      onopen={onopencombo} />
   {/if}
 </aside>
 
@@ -214,8 +218,14 @@
     min-width: 0;
   }
 
+  /* a long tap dance or macro name is cut short after two lines; the tooltip has all of it */
   h2 {
+    display: -webkit-box;
     margin: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     font-size: 17px;
     line-height: 1.25;
     letter-spacing: -0.01em;

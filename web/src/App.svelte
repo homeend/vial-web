@@ -1,5 +1,6 @@
 <script lang="ts">
   import { analyse } from "./analysis/analysis";
+  import CombosPage from "./behaviours/CombosPage.svelte";
   import { behaviourCounts } from "./behaviours/entries";
   import TapDancePage from "./behaviours/TapDancePage.svelte";
   import { placeKeyboard } from "./keyboard/geometry";
@@ -30,6 +31,7 @@
     if (!model) return list;
     const counts = behaviourCounts(model);
     if (counts.tapDance !== null) list.push({ id: "tap-dance", label: "Tap dance", count: counts.tapDance });
+    if (counts.combos !== null) list.push({ id: "combos", label: "Combos", count: counts.combos });
     return list;
   });
   // a section this keyboard doesn't have shows the keymap
@@ -103,6 +105,8 @@
       <div class="page" class:list={section !== "keymap"} class:blocked inert={blocked}>
         {#if section === "tap-dance"}
           <TapDancePage model={keyboard.model} {analysis} item={router.route.item} />
+        {:else if section === "combos"}
+          <CombosPage model={keyboard.model} {placement} {analysis} item={router.route.item} />
         {:else}
           <KeymapPage model={keyboard.model} {placement} {analysis} />
         {/if}

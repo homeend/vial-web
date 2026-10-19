@@ -12,9 +12,11 @@
     colours: Map<number, number>;
     /** the key is transparent: the combos are those of the key below, which it falls through to */
     through?: boolean;
+    /** open the combo's card on the Combos page */
+    onopen: (index: number) => void;
   }
 
-  let { uses, names, colours, through = false }: Props = $props();
+  let { uses, names, colours, through = false, onopen }: Props = $props();
 
   const entries = $derived(uses.map((use) => ({ use, missing: missingPartners(use, names) })));
   // a transparent key lets the combos of the key below through: those that can fire at all
@@ -32,8 +34,10 @@
   <ul>
     {#each entries as { use, missing } (use.combo.index)}
       <li style="--colour: var(--combo-{colours.get(use.combo.index) ?? 0})">
-        <span class="what">{comboUseLabel(use, names)}</span>
-        <span class="detail">Combo {use.combo.index}{missing ? ` · ${missing}` : ""}</span>
+        <button type="button" title="Open combo {use.combo.index} on the Combos page" onclick={() => onopen(use.combo.index)}>
+          <span class="what">{comboUseLabel(use, names)}</span>
+          <span class="detail">Combo {use.combo.index}{missing ? ` · ${missing}` : ""}</span>
+        </button>
       </li>
     {/each}
   </ul>
@@ -48,17 +52,27 @@
 
   ul {
     display: grid;
-    gap: 6px;
+    gap: 4px;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
-  li {
+  button {
     display: grid;
     gap: 1px;
-    padding-left: 10px;
+    width: 100%;
+    padding: 4px 8px 4px 10px;
+    border: 0;
     border-left: 3px solid var(--colour);
+    border-radius: 0 8px 8px 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  button:hover {
+    background: var(--surface-2);
   }
 
   .what {

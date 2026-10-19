@@ -1,7 +1,11 @@
-import type { Page } from "@playwright/test";
-import { expect, keyIndex, setTapDance, simulatorUnlock, tapDanceAt, test, unlockState } from "./fixtures";
+import type { Locator, Page } from "@playwright/test";
+import {
+  comboAt, expect, keyIndex, screenshots, setCombo, setTapDance, simulatorUnlock, tapDanceAt, test, unlockState,
+} from "./fixtures";
 
 // The server is shared by every test: a test that changes a tap dance, a combo or a macro puts it back in its `finally`
+
+const EMPTY_COMBO = { keys: ["KC_NO", "KC_NO", "KC_NO", "KC_NO"], output: "KC_NO" };
 
 async function openSection(page: Page, name: "Tap dance" | "Combos" | "Macros") {
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: new RegExp(`^${name}`) }).click();
@@ -9,6 +13,7 @@ async function openSection(page: Page, name: "Tap dance" | "Combos" | "Macros") 
 }
 
 const tapDanceCard = (page: Page, index: number) => page.locator(`#tap-dance-${index}`);
+const comboCard = (page: Page, index: number) => page.locator(`#combo-${index}`);
 
 /** The picker's any-keycode box: type a keycode and use it */
 async function pickAnyKeycode(page: Page, code: string) {
@@ -18,6 +23,12 @@ async function pickAnyKeycode(page: Page, code: string) {
   await expect(picker.locator("#any-keycode-result")).toContainText(code);
   await picker.getByRole("button", { name: "Use", exact: true }).click();
   await expect(picker).toBeHidden();
+}
+
+/** A full-page screenshot from the top: the sticky top bar is drawn where the page was scrolled to */
+async function pageShots(page: Page, name: string) {
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await screenshots(page, name, { fullPage: true });
 }
 
 /** Lets go of the unlock keys, and unlocks the simulated keyboard again if it isn't, as the server started */
@@ -30,6 +41,18 @@ async function unlockAgain(page: Page) {
   await expect.poll(() => unlockState(page), { timeout: 20_000 }).toBe("unlocked");
   await simulatorUnlock(page, { keysHeld: false });
 }
+
+/** The computed fill of an SVG shape */
+const fillOf = (shape: Locator) => shape.evaluate((e) => getComputedStyle(e).fill);
+/** A combo colour as the page computes it */
+const comboColour = (page: Page, colour: number) => page.evaluate((c) => {
+  const probe = document.createElement("i");
+  probe.style.color = `var(--combo-${c})`;
+  document.body.append(probe);
+  const value = getComputedStyle(probe).color;
+  probe.remove();
+  return value;
+}, colour);
 
 test.describe("tap dance", () => {
   test("a slot is changed with the picker, and \"used on\" goes to the key", async ({ app }) => {
@@ -96,6 +119,95 @@ test.describe("tap dance", () => {
     } finally {
       await app.request.put(new URL("/api/keymap/0/0/2", app.url()).toString(), { data: { code: "KC_L" } });
       await setTapDance(app, 2, before);
+    }
+  });
+});
+
+test.describe("combos", () => {
+  test("a combo made by clicking its keys is marked on them", async ({ app }) => {
+    try {
+      await openSection(app, "Combos");
+      await app.getByRole("button", { name: "New combo" }).click();
+      await expect(app).toHaveURL(/#combos\/2$/);
+      const card = comboCard(app, 2);
+      const l = card.locator(`[data-ref="key:${await keyIndex(app, 0, 2)}"]`);
+      const r = card.locator(`[data-ref="key:${await keyIndex(app, 0, 3)}"]`);
+      await l.click();
+      await r.click();
+      await expect(l).toHaveAttribute("aria-pressed", "true");
+      await expect(r).toHaveAccessibleName(/· in the combo$/);
+      await expect(card).toContainText("Press L + R together: it does nothing yet.");
+      // clicking a chosen key takes it out; the arrow keys move between keys
+      await r.click();
+      await expect(r).toHaveAttribute("aria-pressed", "false");
+      await r.press("Enter");
+      await expect(r).toHaveAttribute("aria-pressed", "true");
+      await pageShots(app, "combo-editor");
+      await card.getByRole("button", { name: "Change output…" }).click();
+      await pickAnyKeycode(app, "KC_TAB");
+      await card.getByRole("button", { name: "Save" }).click();
+      await expect(card.getByRole("button", { name: "Edit" })).toBeVisible();
+      expect(await comboAt(app, 2)).toEqual({ keys: ["KC_L", "KC_R", "KC_NO", "KC_NO"], output: "KC_TAB" });
+      await expect(card).toContainText("Press L + R together for Tab.");
+      await expect(card.locator(".key.ringed")).toHaveCount(2);
+
+      // the keymap marks them in the combo's colour: the third combo on the base layer, the third colour
+      await app.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: /^Keymap/ }).click();
+      const key = app.locator(`[data-ref="key:${await keyIndex(app, 0, 2)}"]`);
+      await expect(key).toHaveAccessibleName(/· in combo 2$/);
+      expect(await fillOf(key.locator(".combo-mark"))).toBe(await comboColour(app, 2));
+    } finally {
+      await setCombo(app, 2, EMPTY_COMBO);
+    }
+  });
+
+  test("a combo's card opens from the Inspector", async ({ app }) => {
+    await app.locator(`[data-ref="key:${await keyIndex(app, 6, 2)}"]`).click(); // K
+    await app.getByRole("region", { name: "Combos with this key" }).getByRole("button", { name: /with Y → Esc/ }).click();
+    await expect(app).toHaveURL(/#combos\/0$/);
+    await expect(comboCard(app, 0)).toHaveClass(/\btarget\b/);
+    await expect(comboCard(app, 0).getByRole("heading", { level: 2 })).toBeFocused();
+    await expect(comboCard(app, 0)).toContainText("Press K + Y together for Esc.");
+    // the reload keeps the page
+    await app.reload();
+    await expect(app.getByRole("heading", { level: 1, name: "Combos" })).toBeVisible();
+  });
+
+  test("a combo of two layer keys says which layer it reaches", async ({ app }) => {
+    const before = await comboAt(app, 2);
+    try {
+      await setCombo(app, 2, { keys: ["LT1(KC_SPC)", "OSL(3)", "KC_NO", "KC_NO"], output: "MO(2)" });
+      await app.reload();
+      await openSection(app, "Combos");
+      await expect(comboCard(app, 2)).toContainText(
+        "Press Space (hold: Layer 1) + OSL(3) together → reaches Layer 2, while held.");
+    } finally {
+      await setCombo(app, 2, before);
+    }
+  });
+
+  test("two combos sharing a key: dots in both colours on it, an underline in its own on each other key", async ({ app }) => {
+    const before = await comboAt(app, 2);
+    try {
+      await setCombo(app, 2, { keys: ["KC_K", "KC_L", "KC_NO", "KC_NO"], output: "KC_X" });
+      await app.reload();
+      await expect(app.locator("button.key").first()).toBeVisible();
+      const k = app.locator(`[data-ref="key:${await keyIndex(app, 6, 2)}"]`);
+      const y = app.locator(`[data-ref="key:${await keyIndex(app, 6, 1)}"]`);
+      const l = app.locator(`[data-ref="key:${await keyIndex(app, 0, 2)}"]`);
+      await expect(k).toHaveAccessibleName(/· in combos 0 and 2$/);
+      const dots = k.locator(".combo-dot");
+      await expect(dots).toHaveCount(2);
+      const [first, second] = [await fillOf(dots.nth(0)), await fillOf(dots.nth(1))];
+      expect(first).not.toBe(second);
+      expect(first).toBe(await comboColour(app, 0));
+      expect(second).toBe(await comboColour(app, 2));
+      await expect(k.locator(".combo-mark")).toHaveCount(0);
+      expect(await fillOf(y.locator(".combo-mark"))).toBe(first);
+      expect(await fillOf(l.locator(".combo-mark"))).toBe(second);
+      await screenshots(app, "combo-dots");
+    } finally {
+      await setCombo(app, 2, before);
     }
   });
 });

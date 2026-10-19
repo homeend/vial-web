@@ -256,6 +256,7 @@
             canEdit={keyboard.canEdit && keyboard.pending === 0}
             {comboUses}
             comboColours={analysis.comboColours}
+            onopencombo={(index) => router.go("combos", index)}
             onchangekey={() => (pickerOpen = true)}
             onsetcode={(code, action) => fromInspector(() => setCode(code, action))}
             ontapdance={() => fromInspector(turnIntoTapDance)}
