@@ -21,7 +21,7 @@ export function toggleMember(members: Described[], d: Described): { members: Des
 
 /** A combo's keycodes: the firmware reads them up to the first empty slot (KC_NO ends the list), so keycodes after a
  * gap (a combo saved that way elsewhere) never count */
-export function membersOf(combo: Combo): Described[] {
+export function membersOf(combo: Pick<Combo, "keys">): Described[] {
   const end = combo.keys.findIndex((k) => k.kind === "none");
   return end === -1 ? combo.keys : combo.keys.slice(0, end);
 }

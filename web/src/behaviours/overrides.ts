@@ -3,6 +3,7 @@
 import type { AltRepeatKey, AltRepeatKeyIn, Described, KeyOverride, KeyOverrideIn } from "../api/types";
 import { andList, memberName } from "../analysis/phrases";
 import type { Names } from "../keyboard/labels";
+import { membersOf } from "./members";
 
 /** KC_NO, as the server describes it: an empty trigger, replacement or key */
 export const NO_KEY: Described = {
@@ -58,11 +59,15 @@ export function layersIn(mask: number, count: number): number[] {
 }
 
 /** Where a layer mask applies, after the action: "on every layer", "on Base only", "on Base and Layer 2", "on no
- * layer". Bits of layers the keyboard doesn't have don't count. */
+ * layer". Bits of layers the keyboard doesn't have don't count; on a keyboard with more than 16 layers, all 16 bits
+ * are "on layers 0 to 15" (the firmware never matches the layers above). */
 export function layerPhrase(mask: number, count: number, names: Names): string {
   const layers = layersIn(mask, count);
   if (layers.length === 0) return "on no layer";
-  if (layers.length === Math.min(count, MASK_LAYERS)) return count > 1 ? "on every layer" : `on ${names.layer(0)}`;
+  if (layers.length === Math.min(count, MASK_LAYERS)) {
+    if (count > MASK_LAYERS) return `on layers 0 to ${MASK_LAYERS - 1}`;
+    return count > 1 ? "on every layer" : `on ${names.layer(0)}`;
+  }
   if (layers.length === 1) return `on ${names.layer(layers[0])} only`;
   return `on ${andList(layers.map((l) => names.layer(l)))}`;
 }
@@ -184,12 +189,23 @@ export function keyOverrideDetails(o: KeyOverrideDraft): string[] {
   return details;
 }
 
-/** Why it can never work, or nothing */
+/** The highest keycode the firmware can send as a replacement: QK_MODS_MAX, a key of the basic range with modifiers.
+ * It sends the replacement with register_code(uint8_t), so anything above loses its high byte or sends nothing. */
+const KO_REPLACEMENT_MAX = 0x1fff;
+
+/** Why it can never work or does what the owner wouldn't want, or nothing. With no way to start it chosen, the
+ * firmware uses all three (process_key_override.c check_activation_event): that is no problem. */
 export function keyOverrideProblems(o: KeyOverrideDraft, layerCount: number): string[] {
   const problems: string[] = [];
-  if (o.trigger.kind === "none" && o.triggerMods === 0) problems.push("It has no trigger key and no trigger modifiers, so it never works.");
-  if (layersIn(o.layers, layerCount).length === 0) problems.push("It is on no layer of this keyboard, so it never works.");
-  if ((o.options & KO_ACTIVATIONS) === 0) problems.push("None of the three ways to start it is on, so it never starts.");
+  const onLayers = layersIn(o.layers, layerCount).length > 0;
+  // a KC_NO trigger needs no key down, and no trigger modifiers match any: every key press starts it
+  if (o.trigger.kind === "none" && o.triggerMods === 0 && o.enabled && onLayers) {
+    problems.push("With no trigger key and no trigger modifiers, it starts on every key press on its layers.");
+  }
+  if (!onLayers) problems.push("It is on no layer of this keyboard, so it never works.");
+  if (o.replacement.value > KO_REPLACEMENT_MAX) {
+    problems.push("The keyboard can only send a plain key (with modifiers) as the replacement.");
+  }
   return problems;
 }
 
@@ -221,16 +237,20 @@ export function altRepeatRequest(a: AltRepeatDraft): AltRepeatKeyIn {
 }
 
 /** "After Left, Alt Repeat sends Right.", "After Left (alone, or with Left Shift), Alt Repeat sends Right, and the
- * other way round." */
+ * other way round." The default alt key (vial.c get_alt_repeat_key_keycode_user) is also sent after any last key
+ * that no entry matches, held with only the allowed modifiers; that doesn't look at the entry's own key. */
 export function altRepeatSentence(a: AltRepeatDraft, names: Names): string {
-  if (a.keycode.kind === "none") return "No key chosen yet: choose the last key, and what Alt Repeat sends after it.";
+  const isDefault = (a.options & ALT_REPEAT_OPTIONS[0].bit) !== 0;
+  if (a.keycode.kind === "none" && !(isDefault && a.altKeycode.kind !== "none")) {
+    return "No key chosen yet: choose the last key, and what Alt Repeat sends after it.";
+  }
   const mods = modNames(a.allowedMods, (a.options & ALT_REPEAT_OPTIONS[2].bit) !== 0);
-  const after = mods.length > 0 ? `${keyName(a.keycode, names)} (alone, or with ${orList(mods)})` : keyName(a.keycode, names);
+  const held = mods.length > 0 ? ` (alone, or with ${orList(mods)})` : " without modifiers";
   const sends = a.altKeycode.kind === "none" ? "sends nothing" : `sends ${keyName(a.altKeycode, names)}`;
+  if (a.keycode.kind === "none") return `After any key${held} that no alt-repeat key covers, Alt Repeat ${sends}.`;
+  const after = mods.length > 0 ? `${keyName(a.keycode, names)}${held}` : keyName(a.keycode, names);
   const back = a.options & ALT_REPEAT_OPTIONS[1].bit && a.altKeycode.kind !== "none" ? ", and the other way round" : "";
-  // the default alt key: the firmware also sends it after any last key no entry matches
-  const fallback = a.options & ALT_REPEAT_OPTIONS[0].bit && a.altKeycode.kind !== "none"
-    ? ` After any other key that no alt-repeat key covers, it sends ${keyName(a.altKeycode, names)} too.` : "";
+  const fallback = isDefault ? ` After any other key${held} that no alt-repeat key covers, it ${sends} too.` : "";
   return `After ${after}, Alt Repeat ${sends}${back}.${fallback}`;
 }
 
@@ -242,5 +262,5 @@ export function pressable(code: string, model: {
 }): boolean {
   return model.layers.some((l) => l.keys.some((k) => k.code === code) || l.encoders.some((k) => k.code === code)) ||
     model.tapDance.some((td) => [td.tap, td.hold, td.doubleTap, td.tapHold].some((d) => d.code === code)) ||
-    model.combos.some((c) => c.keys.some((k) => k.kind !== "none") && c.output.code === code);
+    model.combos.some((c) => membersOf(c).length > 0 && c.output.code === code);
 }

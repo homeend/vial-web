@@ -11,7 +11,8 @@ import {
 const model = corne({
   layers: [layer({ 0: "QK_ALT_REPEAT_KEY" }, "KC_NO"), layer({}), layer({}), layer({})],
   tapDances: [["KC_TAB", "KC_NO", "KC_CAPS", "KC_NO"]],
-  combos: [{ keys: ["KC_K", "KC_Y"], output: "KC_ESC" }, { keys: [], output: "KC_ENT" }],
+  combos: [{ keys: ["KC_K", "KC_Y"], output: "KC_ESC" }, { keys: [], output: "KC_ENT" },
+    { keys: ["KC_NO", "KC_J"], output: "KC_F1" }],
   keyOverrides: [{ trigger: "KC_BSPC", replacement: "KC_DEL" }, { trigger: "KC_NO", replacement: "KC_NO" }],
   altRepeatKeys: [{ keycode: "KC_LEFT", altKeycode: "KC_RGHT" }, { keycode: "KC_NO", altKeycode: "KC_NO" }],
 });
@@ -79,6 +80,11 @@ describe("layer masks", () => {
     expect(layerPhrase(0b0101, 4, names)).toBe("on Base and Layer 2");
     expect(layerPhrase(0b1110000, 4, names)).toBe("on no layer");
   });
+
+  it("says which layers when the keyboard has more than the mask's 16", () => {
+    expect(layerPhrase(0xffff, 16, names)).toBe("on every layer");
+    expect(layerPhrase(0xffff, 20, names)).toBe("on layers 0 to 15");
+  });
 });
 
 describe("key overrides", () => {
@@ -144,14 +150,32 @@ describe("key overrides", () => {
 
   it("says why it can never work", () => {
     expect(keyOverrideProblems(override(), 4)).toEqual([]);
-    expect(keyOverrideProblems(override({ trigger: NONE, triggerMods: 0 }), 4)).toEqual([
-      "It has no trigger key and no trigger modifiers, so it never works."]);
     expect(keyOverrideProblems(override({ trigger: NONE }), 4)).toEqual([]);
     // layers 4 and up: this keyboard has only 4
     expect(keyOverrideProblems(override({ layers: 0xfff0 }), 4)).toEqual([
       "It is on no layer of this keyboard, so it never works."]);
-    expect(keyOverrideProblems(override({ options: 0x88 }), 4)).toEqual([
-      "None of the three ways to start it is on, so it never starts."]);
+    // no way to start it chosen: the firmware uses all three (process_key_override.c check_activation_event)
+    expect(keyOverrideProblems(override({ options: 0x88 }), 4)).toEqual([]);
+    expect(keyOverrideDetails(override({ suppressedMods: 0, options: KO_ENABLED }))).toEqual([]);
+  });
+
+  it("warns that one with no trigger key and no trigger modifiers starts on every key press", () => {
+    // process_key_override.c try_activating_override: a KC_NO trigger with no modifiers to match always activates
+    expect(keyOverrideProblems(override({ trigger: NONE, triggerMods: 0 }), 4)).toEqual([
+      "With no trigger key and no trigger modifiers, it starts on every key press on its layers."]);
+    expect(keyOverrideProblems(override({ trigger: NONE, triggerMods: 0, enabled: false }), 4)).toEqual([]);
+    expect(keyOverrideProblems(override({ trigger: NONE, triggerMods: 0, layers: 0xfff0 }), 4)).toEqual([
+      "It is on no layer of this keyboard, so it never works."]);
+  });
+
+  it("says when the replacement is something the keyboard can't send", () => {
+    // the firmware sends the replacement with register_code(uint8_t): a key of the basic range, with modifiers
+    const plainOnly = "The keyboard can only send a plain key (with modifiers) as the replacement.";
+    expect(keyOverrideProblems(override({ replacement: described("KC_TILD") }), 4)).toEqual([]);
+    expect(keyOverrideProblems(override({ replacement: NONE }), 4)).toEqual([]);
+    expect(keyOverrideProblems(override({ replacement: described("MO(1)") }), 4)).toEqual([plainOnly]);
+    expect(keyOverrideProblems(override({ replacement: described("M0") }), 4)).toEqual([plainOnly]);
+    expect(keyOverrideProblems(override({ replacement: described("KC_GESC") }), 4)).toEqual([plainOnly]);
   });
 });
 
@@ -174,10 +198,26 @@ describe("alt-repeat keys", () => {
       .toBe("After LEFT (alone, or with Ctrl or Shift), Alt Repeat sends RIGHT.");
     expect(altRepeatSentence(altRepeat({ altKeycode: NONE, options: 0x0a }), names)).toBe("After LEFT, Alt Repeat sends nothing.");
     // the default alt key: also after any key no other entry covers (vial.c get_alt_repeat_key_keycode_user)
-    expect(altRepeatSentence(altRepeat({ options: AR_ENABLED | 0x01 }), names))
-      .toBe("After LEFT, Alt Repeat sends RIGHT. After any other key that no alt-repeat key covers, it sends RIGHT too.");
+    expect(altRepeatSentence(altRepeat({ options: AR_ENABLED | 0x01 }), names)).toBe("After LEFT, Alt Repeat sends " +
+      "RIGHT. After any other key without modifiers that no alt-repeat key covers, it sends RIGHT too.");
+    // only with the allowed modifiers held, or none
+    expect(altRepeatSentence(altRepeat({ allowedMods: LSFT, options: AR_ENABLED | 0x01 }), names)).toBe(
+      "After LEFT (alone, or with Left Shift), Alt Repeat sends RIGHT. After any other key (alone, or with Left Shift) " +
+      "that no alt-repeat key covers, it sends RIGHT too.");
+    // a default alt key with no alt key: Alt Repeat sends nothing after the other keys
+    expect(altRepeatSentence(altRepeat({ altKeycode: NONE, options: AR_ENABLED | 0x01 }), names)).toBe(
+      "After LEFT, Alt Repeat sends nothing. After any other key without modifiers that no alt-repeat key covers, " +
+      "it sends nothing too.");
     expect(altRepeatSentence(altRepeat({ keycode: NONE }), names))
       .toBe("No key chosen yet: choose the last key, and what Alt Repeat sends after it.");
+  });
+
+  it("says what a default alt key with no key of its own does", () => {
+    // the fallback branch of get_alt_repeat_key_keycode_user doesn't look at the entry's own key
+    expect(altRepeatSentence(altRepeat({ keycode: NONE, options: AR_ENABLED | 0x01 }), names))
+      .toBe("After any key without modifiers that no alt-repeat key covers, Alt Repeat sends RIGHT.");
+    expect(altRepeatSentence(altRepeat({ keycode: NONE, allowedMods: LCTL, options: AR_ENABLED | 0x01 }), names))
+      .toBe("After any key (alone, or with Left Ctrl) that no alt-repeat key covers, Alt Repeat sends RIGHT.");
   });
 });
 
@@ -187,6 +227,7 @@ describe("pressable", () => {
     expect(pressable("KC_CAPS", model)).toBe(true);
     expect(pressable("KC_ESC", model)).toBe(true);
     expect(pressable("KC_ENT", model)).toBe(false); // combo 1 has no keys
+    expect(pressable("KC_F1", model)).toBe(false); // combo 2 ends at its first empty slot, before KC_J
     expect(pressable("QK_REPEAT_KEY", model)).toBe(false);
   });
 });
