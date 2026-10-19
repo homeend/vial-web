@@ -3,7 +3,7 @@
   import type { Described } from "../api/types";
   import Button from "../ui/Button.svelte";
   import {
-    changeKind, DELAY_MAX, macroBytes, moveStep, newStep, STEP_KINDS, stepBytes, stepProblem, STEPS_MAX, type Step,
+    changeKind, macroBytes, moveStep, newStep, parseDelay, STEP_KINDS, stepBytes, stepProblem, STEPS_MAX, type Step,
     type StepKind,
   } from "./macro";
   import { Recording, type Recorded } from "./recorder";
@@ -21,50 +21,126 @@
     /** why it can't be saved, beyond its steps (the macro memory is full), or null */
     blocked: string | null;
     canSave: boolean;
+    /** a change is being saved: the controls keep the focus, but the steps take no change until it is done (a change
+     * made meanwhile would be lost when the save closes the editor) */
+    busy: boolean;
     onsave: () => void;
     oncancel: () => void;
   }
 
-  let { index, steps = $bindable(), vialProtocol, onpickkey, describe, blocked, canSave, onsave, oncancel }: Props =
-    $props();
+  let {
+    index, steps = $bindable(), vialProtocol, onpickkey, describe, blocked, canSave, busy, onsave, oncancel,
+  }: Props = $props();
 
   let list = $state<HTMLOListElement>();
+  let addGroup = $state<HTMLDivElement>();
   const problems = $derived(steps.map((s) => stepProblem(s, vialProtocol)));
   const bytes = $derived(macroBytes(steps, vialProtocol));
   const kinds = $derived(STEP_KINDS.filter((k) => k.kind !== "delay" || vialProtocol >= 2));
   const tooMany = $derived(steps.length > STEPS_MAX);
-  const ready = $derived(canSave && !tooMany && blocked === null && problems.every((p) => p === null));
 
-  async function focusStep(i: number, part = "select") {
+  // recording keys typed into the browser window
+  let recording = $state<Recording | null>(null);
+  /** the recording ended, and its keys are being described: the steps come once they are */
+  let finishing = $state(false);
+  /** keys are being recorded (or the recorded ones described): the other controls take nothing meanwhile */
+  const recordingNow = $derived(recording !== null || finishing);
+  /** the steps take no change */
+  const locked = $derived(busy || recordingNow);
+  const ready = $derived(canSave && !tooMany && blocked === null && !recordingNow && problems.every((p) => p === null));
+
+  /** Focuses, in step i's row, the first of the parts that is there and enabled; with no step left, the first Add
+   * button */
+  async function focusStep(i: number, ...parts: string[]) {
     await tick();
-    list?.querySelectorAll<HTMLLIElement>(":scope > li")[i]?.querySelector<HTMLElement>(part)?.focus();
+    const row = list?.querySelectorAll<HTMLLIElement>(":scope > li")[i];
+    if (!row) {
+      addGroup?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+      return;
+    }
+    for (const part of parts) {
+      const element = row.querySelector<HTMLElement>(`${part}:not(:disabled)`);
+      if (element) {
+        element.focus();
+        return;
+      }
+    }
   }
 
   function add(kind: StepKind) {
+    if (locked) return;
     steps.push(newStep(kind));
     const i = steps.length - 1;
     if (kind === "tap" || kind === "down" || kind === "up") onpickkey(i);
     else void focusStep(i, "input");
   }
 
+  function pickKey(i: number) {
+    if (!locked) onpickkey(i);
+  }
+
+  function changeStep(i: number, select: HTMLSelectElement) {
+    const step = steps[i];
+    if (!step) return;
+    // taking no change: the select shows the kind the step still is
+    if (locked) select.value = step.type;
+    else steps[i] = changeKind(step, select.value as StepKind);
+  }
+
+  /** Moves a step. The focus follows it, on the arrow used, or (at the first or last place, where that arrow is
+   * disabled) the other one */
   function move(i: number, to: number) {
+    if (locked) return;
     steps = moveStep(steps, i, to);
-    void focusStep(to, `button.${to < i ? "up" : "down"}`);
+    const [used, other] = to < i ? ["up", "down"] : ["down", "up"];
+    void focusStep(to, `button.${used}`, `button.${other}`, "select");
   }
 
+  /** Removes a step: the focus goes to the step now in its place, or the one before, or (none is left) Add */
   function remove(i: number) {
+    if (locked) return;
     steps.splice(i, 1);
-    if (steps.length > 0) void focusStep(Math.min(i, steps.length - 1));
+    void focusStep(Math.min(i, steps.length - 1), "button.remove", "select");
   }
 
-  // recording keys typed into the browser window
-  let recording = $state<Recording | null>(null);
+  /** Takes a key out of a step: the focus goes to the key now in its place, or to Add key… */
+  async function removeKey(i: number, k: number) {
+    if (locked) return;
+    steps[i]?.keys.splice(k, 1);
+    await tick();
+    const row = list?.querySelectorAll<HTMLLIElement>(":scope > li")[i];
+    (row?.querySelectorAll<HTMLElement>(".keys button")[k] ?? row?.querySelector<HTMLElement>("button.pick"))?.focus();
+  }
+
+  // a wait as typed, kept as it is while it is no number of ms ("", "-", "1.5"): the field never changes under the
+  // typing, and the step's problem says what is wrong
+  const delayTexts = new WeakMap<Step, string>();
+
+  function delayText(step: Step): string {
+    return delayTexts.get(step) ?? String(step.delay ?? 0);
+  }
+
+  function typeDelay(step: Step, input: HTMLInputElement) {
+    if (locked) {
+      input.value = delayText(step);
+      return;
+    }
+    delayTexts.set(step, input.value);
+    step.delay = parseDelay(input.value);
+  }
+
   /** what has been recorded so far: shown while recording */
   let recorded = $state<Recorded[]>([]);
   let recordedSkipped = $state(0);
   let recordNote = $state<string | null>(null);
 
-  function startRecording() {
+  /** Record from keyboard and Stop recording: one button, which keeps the focus */
+  function toggleRecording() {
+    if (busy || finishing) return;
+    if (recording) {
+      void stopRecording();
+      return;
+    }
     recording = new Recording();
     recorded = [];
     recordedSkipped = 0;
@@ -73,8 +149,9 @@
 
   async function stopRecording() {
     const done = recording;
-    recording = null;
     if (!done) return;
+    recording = null;
+    finishing = true;
     try {
       const made = await Promise.all(done.steps.map(async (r): Promise<Step> => r.type === "text"
         ? { type: "text", text: r.text, keys: [], delay: null }
@@ -84,6 +161,8 @@
         (done.skipped > 0 ? `; ${done.skipped} ${done.skipped === 1 ? "key has" : "keys have"} no keycode here` : "") + ".";
     } catch {
       recordNote = "The keys recorded couldn't all be read: nothing was added.";
+    } finally {
+      finishing = false;
     }
   }
 
@@ -95,7 +174,11 @@
       void stopRecording();
       return;
     }
-    recording.keydown({ code: event.code, key: event.key, repeat: event.repeat, altGraph: event.getModifierState("AltGraph") });
+    recording.keydown({
+      code: event.code, key: event.key, repeat: event.repeat, altGraph: event.getModifierState("AltGraph"),
+      ctrlKey: event.ctrlKey, shiftKey: event.shiftKey, altKey: event.altKey, metaKey: event.metaKey,
+      capsLock: event.getModifierState("CapsLock"),
+    });
     recorded = [...recording.steps];
     recordedSkipped = recording.skipped;
   }
@@ -106,14 +189,23 @@
     recording.keyup({ code: event.code });
   }
 
+  /** The window lost the focus (Alt+Tab, another tab): it won't see the modifiers held be let go */
+  function forgetHeld() {
+    recording?.releaseAll();
+  }
+
   // while recording, every key typed into the window is the macro's (before anything else on the page sees it)
   $effect(() => {
     if (!recording) return;
     window.addEventListener("keydown", onkeydown, true);
     window.addEventListener("keyup", onkeyup, true);
+    window.addEventListener("blur", forgetHeld);
+    document.addEventListener("visibilitychange", forgetHeld);
     return () => {
       window.removeEventListener("keydown", onkeydown, true);
       window.removeEventListener("keyup", onkeyup, true);
+      window.removeEventListener("blur", forgetHeld);
+      document.removeEventListener("visibilitychange", forgetHeld);
     };
   });
 </script>
@@ -128,7 +220,9 @@
           <select
             aria-label="Step {i + 1}: what it does"
             value={step.type}
-            onchange={(e) => (steps[i] = changeKind(step, e.currentTarget.value as StepKind))}
+            disabled={recordingNow}
+            aria-disabled={busy || undefined}
+            onchange={(e) => changeStep(i, e.currentTarget)}
           >
             {#each kinds as k (k.kind)}<option value={k.kind}>{k.label}</option>{/each}
           </select>
@@ -141,18 +235,24 @@
                 value={step.text ?? ""}
                 spellcheck="false"
                 autocomplete="off"
-                oninput={(e) => (step.text = e.currentTarget.value)}
+                disabled={recordingNow}
+                readonly={busy}
+                oninput={(e) => {
+                  if (locked) e.currentTarget.value = step.text ?? "";
+                  else step.text = e.currentTarget.value;
+                }}
               />
             {:else if step.type === "delay"}
               <label class="delay">
                 <input
-                  type="number"
-                  min="0"
-                  max={DELAY_MAX}
-                  step="10"
+                  inputmode="numeric"
                   aria-label="Step {i + 1}: how long to wait, in ms"
-                  value={step.delay ?? 0}
-                  oninput={(e) => (step.delay = e.currentTarget.valueAsNumber)}
+                  aria-invalid={problem !== null}
+                  value={delayText(step)}
+                  autocomplete="off"
+                  disabled={recordingNow}
+                  readonly={busy}
+                  oninput={(e) => typeDelay(step, e.currentTarget)}
                 />
                 <span>ms</span>
               </label>
@@ -162,25 +262,29 @@
                   <li>
                     <span class="key">{key.tap || key.code}</span>
                     <button type="button" class="icon" aria-label="Take {key.tap || key.code} out of step {i + 1}"
-                      onclick={() => step.keys.splice(k, 1)}>
+                      disabled={recordingNow} aria-disabled={busy || undefined} onclick={() => void removeKey(i, k)}>
                       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
                     </button>
                   </li>
                 {/each}
               </ul>
-              <Button size="sm" onclick={() => onpickkey(i)}>{step.keys.length === 0 ? "Choose key…" : "Add key…"}</Button>
+              <Button size="sm" class="pick" disabled={recordingNow} aria-disabled={busy || undefined}
+                onclick={() => pickKey(i)}>{step.keys.length === 0 ? "Choose key…" : "Add key…"}</Button>
             {/if}
           </div>
           <span class="bytes" title="Bytes of macro memory this step takes">{stepBytes(step, vialProtocol)} B</span>
           <div class="order">
-            <button type="button" class="icon up" aria-label="Move step {i + 1} up" disabled={i === 0} onclick={() => move(i, i - 1)}>
+            <button type="button" class="icon up" aria-label="Move step {i + 1} up" disabled={i === 0 || recordingNow}
+              aria-disabled={busy || undefined} onclick={() => move(i, i - 1)}>
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 10l4-4 4 4" /></svg>
             </button>
-            <button type="button" class="icon down" aria-label="Move step {i + 1} down" disabled={i === steps.length - 1}
+            <button type="button" class="icon down" aria-label="Move step {i + 1} down"
+              disabled={i === steps.length - 1 || recordingNow} aria-disabled={busy || undefined}
               onclick={() => move(i, i + 1)}>
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
             </button>
-            <button type="button" class="icon remove" aria-label="Remove step {i + 1}" onclick={() => remove(i)}>
+            <button type="button" class="icon remove" aria-label="Remove step {i + 1}" disabled={recordingNow}
+              aria-disabled={busy || undefined} onclick={() => remove(i)}>
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
             </button>
           </div>
@@ -192,24 +296,27 @@
     <p class="none">No steps yet: add some, or record them.</p>
   {/if}
 
-  <div class="add" role="group" aria-label="Add a step">
+  <div class="add" role="group" aria-label="Add a step" bind:this={addGroup}>
     <span class="label">Add</span>
     {#each kinds as k (k.kind)}
-      <Button size="sm" disabled={recording !== null} onclick={() => add(k.kind)}>{k.label}</Button>
-    {/each}
-    {#if recording}
-      <Button size="sm" variant="primary" onclick={() => void stopRecording()}>Stop recording</Button>
-    {:else}
-      <Button size="sm" onclick={startRecording}>
-        <span class="dot" aria-hidden="true"></span>Record from keyboard
+      <Button size="sm" disabled={recordingNow} aria-disabled={busy || undefined} onclick={() => add(k.kind)}>
+        {k.label}
       </Button>
-    {/if}
+    {/each}
+    <Button size="sm" variant={recording ? "primary" : "secondary"} aria-disabled={busy || finishing || undefined}
+      onclick={toggleRecording}>
+      {#if recording}Stop recording{:else}<span class="dot" aria-hidden="true"></span>Record from keyboard{/if}
+    </Button>
   </div>
 
   {#if recording}
     <div class="recording" role="status">
       <strong>Recording: type the keys of the macro.</strong>
-      <span>Esc or Stop recording ends it. Only this browser window hears them, never the keyboard itself.</span>
+      <span>
+        Esc or Stop recording ends it, so Esc itself can't be recorded. Only this browser window hears the keys, never
+        the keyboard itself, and the browser keeps some shortcuts for itself (Ctrl+W, Ctrl+T, Ctrl+N and Ctrl+Tab among
+        them, in Firefox and Chromium alike): those can't be recorded.
+      </span>
       {#if recorded.length > 0 || recordedSkipped > 0}
         <span class="so-far">
           {recorded.map((r) => (r.type === "text" ? `“${r.text}”` : r.code)).join(" → ")}
@@ -217,6 +324,8 @@
         </span>
       {/if}
     </div>
+  {:else if finishing}
+    <p class="note" role="status">Reading the keys recorded…</p>
   {:else if recordNote}
     <p class="note" role="status">{recordNote}</p>
   {/if}
@@ -227,8 +336,10 @@
     </span>
     {#if blocked}<span class="blocked">{blocked}</span>{/if}
     <span class="spacer"></span>
-    <Button onclick={oncancel} disabled={recording !== null}>Cancel</Button>
-    <Button variant="primary" disabled={!ready || recording !== null} onclick={onsave}>Save</Button>
+    <Button disabled={recordingNow} aria-disabled={busy || undefined} onclick={oncancel}>Cancel</Button>
+    <Button variant="primary" disabled={!ready} aria-disabled={busy || undefined} onclick={() => ready && onsave()}>
+      Save
+    </Button>
   </div>
 </div>
 
@@ -261,13 +372,19 @@
     border-color: color-mix(in srgb, var(--warning-text) 45%, var(--border));
   }
 
+  /* narrow: the number, the kind, its bytes and the arrows on a line, what it types or taps on the next */
   @media (max-width: 640px) {
     .step {
-      grid-template-columns: 22px minmax(0, 1fr) auto;
+      grid-template-columns: 22px minmax(0, 1fr) auto auto;
     }
 
     .value {
       grid-column: 1 / -1;
+      grid-row: 2;
+    }
+
+    .problem {
+      grid-row: 3;
     }
   }
 
@@ -340,6 +457,7 @@
     color: var(--text-3);
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .order {
@@ -370,6 +488,13 @@
   .icon:disabled {
     cursor: default;
     opacity: 0.35;
+  }
+
+  /* enabled, keeping the focus, but taking nothing while a change is saved */
+  .icon[aria-disabled="true"]:not(:disabled),
+  select[aria-disabled="true"],
+  input:read-only {
+    cursor: progress;
   }
 
   .icon svg {
@@ -434,11 +559,19 @@
     font-size: 12px;
   }
 
+  /* a long macro's editor reaches below the window: its size, Save and Cancel stay in sight at the window's bottom */
   .foot {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+    margin: 0 -16px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
   }
 
   .size {

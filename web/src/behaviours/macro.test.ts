@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { described } from "../analysis/testing";
 import type { Described } from "../api/types";
 import {
-  changeKind, macroBytes, macroSentence, memoryLevel, memoryUsed, moveStep, newStep, sameSteps, stepBytes, stepProblem,
-  stepRequest, stepWhat, type Step,
+  changeKind, macroBytes, macroSentence, memoryLevel, memoryUsed, moveStep, newStep, parseDelay, sameSteps, stepBytes,
+  stepProblem, stepRequest, stepWhat, type Step,
 } from "./macro";
 
 const key = (code: string, value: number, tap: string): Described => ({ ...described(code), value, tap });
@@ -88,6 +88,34 @@ describe("stepProblem", () => {
     expect(stepProblem(wait(64001), 6)).toBe("Wait 0 to 64000 ms.");
     expect(stepProblem(wait(10), 1)).toMatch(/no waits/);
     expect(stepProblem(wait(0), 6)).toBeNull();
+  });
+
+  it("wants a wait of whole milliseconds", () => {
+    expect(stepProblem(wait(1.5), 6)).toBe("Wait a whole number of ms, 0 to 64000.");
+    expect(stepProblem(wait(Number.NaN), 6)).toBe("Wait 0 to 64000 ms.");
+    expect(stepProblem({ ...wait(0), delay: null }, 6)).toBe("Wait 0 to 64000 ms.");
+  });
+
+  it("warns that firmware before protocol 2 can't play keycodes of 256 or more", () => {
+    expect(stepProblem(keys("tap", CTRL_C), 1)).toBe(
+      "This keyboard's firmware can't play Ctrl+C in a macro: press its modifier, tap the key and release it instead.");
+    expect(stepProblem(keys("down", HOME, CTRL_C), 0)).toMatch(/can't play Ctrl\+C/);
+    expect(stepProblem(keys("tap", CTRL_C), 2)).toBeNull();
+    expect(stepProblem(keys("tap", HOME), 1)).toBeNull();
+  });
+});
+
+describe("parseDelay", () => {
+  it("reads the text typed as a number, or says it is none", () => {
+    expect(parseDelay("150")).toBe(150);
+    expect(parseDelay(" 0 ")).toBe(0);
+    expect(parseDelay("1.5")).toBe(1.5);
+    expect(parseDelay("-20")).toBe(-20);
+    expect(parseDelay("")).toBeNull();
+    expect(parseDelay("  ")).toBeNull();
+    expect(parseDelay("-")).toBeNaN();
+    expect(parseDelay("1e3")).toBeNaN();
+    expect(parseDelay("12ms")).toBeNaN();
   });
 });
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { memoryLevel } from "./macro";
 
   interface Props {
@@ -12,12 +13,23 @@
 
   const level = $derived(memoryLevel(used, memory));
   const share = $derived(memory > 0 ? Math.min(1, used / memory) : 1);
+  // announced when the level changes (not at every byte typed): nothing for the level it shows first
+  const levelSaid = { ok: "The macros fit the macro memory again.", near: "The macro memory is nearly full.",
+    over: "The macros need more memory than the keyboard has." };
+  const firstLevel = memoryLevel(untrack(() => used), untrack(() => memory));
+  let announced = $state("");
+  $effect(() => {
+    const now = level;
+    untrack(() => {
+      if (announced !== "" || now !== firstLevel) announced = levelSaid[now];
+    });
+  });
 </script>
 
 <div class="memory {level}">
   <div class="text">
     <span class="title" id="macro-memory-title">Macro memory</span>
-    <span class="count" aria-live="polite">
+    <span class="count">
       {#if level === "over"}
         Needs {used} bytes, but the keyboard has {memory}: take {used - memory} out.
       {:else}
@@ -36,6 +48,7 @@
   >
     <span style="width: {share * 100}%"></span>
   </div>
+  <p class="visually-hidden" aria-live="polite">{announced}</p>
 </div>
 
 <style>

@@ -94,11 +94,27 @@ export function stepProblem(step: Step, vialProtocol: number): string | null {
     case "delay": {
       if (vialProtocol < ADVANCED_MACROS) return "This keyboard's firmware has no waits in macros.";
       const delay = step.delay ?? -1;
+      if (Number.isFinite(delay) && !Number.isInteger(delay) && delay >= 0 && delay <= DELAY_MAX) {
+        return `Wait a whole number of ms, 0 to ${DELAY_MAX}.`;
+      }
       return Number.isInteger(delay) && delay >= 0 && delay <= DELAY_MAX ? null : `Wait 0 to ${DELAY_MAX} ms.`;
     }
-    default:
-      return step.keys.length > 0 ? null : "Choose a key.";
+    default: {
+      if (step.keys.length === 0) return "Choose a key.";
+      // before protocol 2 a key action holds one byte of keycode: the firmware can't play the others
+      const wide = vialProtocol < ADVANCED_MACROS ? step.keys.find((k) => k.value >= 256) : undefined;
+      return wide ? `This keyboard's firmware can't play ${keyName(wide)} in a macro: press its modifier, tap the key ` +
+        "and release it instead." : null;
+    }
   }
+}
+
+/** The wait typed into its field, as a number (a decimal or a negative one too, for stepProblem to explain); null
+ * when nothing is typed, NaN when it isn't a number */
+export function parseDelay(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  return /^-?\d+(\.\d+)?$/.test(trimmed) ? Number(trimmed) : Number.NaN;
 }
 
 /** A new step of a kind: empty text, no keys yet, or a wait of 100 ms */

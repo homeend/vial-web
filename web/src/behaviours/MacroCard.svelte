@@ -16,6 +16,9 @@
     uses: Use[];
     vialProtocol: number;
     canEdit: boolean;
+    /** a change is being saved: Edit keeps the focus, but takes nothing until it is done */
+    busy: boolean;
+    /** the card opened from elsewhere: drawn out for a moment (the highlight fades) */
     target: boolean;
     /** the step editor, while this macro is edited */
     editor?: Snippet;
@@ -24,8 +27,9 @@
     onopenuse: (use: Use) => void;
   }
 
-  let { macro, names, positions, uses, vialProtocol, canEdit, target, editor, onedit, onrename, onopenuse }: Props =
-    $props();
+  let {
+    macro, names, positions, uses, vialProtocol, canEdit, busy, target, editor, onedit, onrename, onopenuse,
+  }: Props = $props();
 
   const headingId = $derived(`macro-${macro.index}-title`);
   const bytes = $derived(macroBytes(macro.actions, vialProtocol));
@@ -37,7 +41,7 @@
     {#snippet actions()}
       {#if !editor}
         <span class="bytes">{bytes} {bytes === 1 ? "byte" : "bytes"}</span>
-        <Button size="sm" disabled={!canEdit} onclick={onedit}>Edit</Button>
+        <Button size="sm" disabled={!canEdit} aria-disabled={busy || undefined} onclick={onedit}>Edit</Button>
       {/if}
     {/snippet}
   </EntryHead>
@@ -64,9 +68,17 @@
     scroll-margin-top: 80px;
   }
 
+  /* the card opened from elsewhere is drawn out for a moment, then fades back to the others' look */
   .card.target {
-    border-color: var(--tone-macro);
-    box-shadow: 0 0 0 1px var(--tone-macro), var(--shadow);
+    animation: target 2.4s ease-in;
+  }
+
+  @keyframes target {
+    0%,
+    50% {
+      border-color: var(--tone-macro);
+      box-shadow: 0 0 0 1px var(--tone-macro), var(--shadow);
+    }
   }
 
   .bytes {

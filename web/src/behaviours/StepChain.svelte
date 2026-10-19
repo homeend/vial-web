@@ -42,9 +42,11 @@
     background: var(--board-bg);
   }
 
-  /* an arrow between two steps */
+  /* an arrow between two steps, which screen readers don't read (the alternative text is empty; a browser without
+     it shows the arrow from the first declaration) */
   .step + .step::before {
     content: "→";
+    content: "→" / "";
     position: absolute;
     margin-left: -18px;
     color: var(--text-3);
