@@ -86,7 +86,7 @@
     id="matrix-title"
     title="Matrix tester"
     description="Press each key on the keyboard to check that it works: a key lights up while it is held, and keeps a green ring once it has been pressed."
-    note="Vial firmware tells which keys are held only while the keyboard is unlocked, so the test unlocks it first. While it runs, keys pressed do nothing on the page: click Stop testing to use them again."
+    note="Vial firmware tells which keys are held only while the keyboard is unlocked, so the test unlocks it first. While it runs, keys pressed do nothing on this page: click Stop testing to use them again."
   >
     {#snippet action()}
       <!-- one button, so that the focus stays on it when the test starts or stops -->
