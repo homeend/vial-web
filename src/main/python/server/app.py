@@ -133,6 +133,67 @@ def unlock_model(state):
                                remaining=state.remaining, total=state.total)
 
 
+class UnlockFollower:
+    """ Reads the countdown of the keyboard's unlock as Qt's unlocker does, every `interval` seconds until the unlock
+    ends, and sends the events it brings with broadcast_events(events, progress). One task does that at a time.
+
+    The task stops by itself before its next reading once it is no longer the one following (release(), a cancel) or
+    the unlock is no longer followed (manager.poll_unlock then sends nothing): events it has taken are always sent
+    first. Only shutdown() cancels it outright. """
+
+    def __init__(self, manager, broadcast_events, interval):
+        self.manager = manager
+        self.broadcast_events = broadcast_events
+        self.interval = interval
+        self.task = None
+        """ the task following the unlock, while there is one """
+        self.stopping = False
+        """ the server is stopping: nothing is followed any more """
+
+    def start(self):
+        """ Follow the unlock, unless that is being done already or the server is stopping """
+        if self.task is None and not self.stopping:
+            self.task = asyncio.get_running_loop().create_task(self._follow())
+
+    def release(self):
+        """ Stop following: the task ends before its next reading, after sending what it has read already """
+        self.task = None
+
+    async def shutdown(self):
+        """ The server is stopping: cancel the task, and start none from now on """
+        self.stopping = True
+        task, self.task = self.task, None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    async def _follow(self):
+        me = asyncio.current_task()
+        try:
+            while True:
+                await asyncio.sleep(self.interval)
+                if self.task is not me or self.stopping:
+                    return
+                try:
+                    state = await asyncio.to_thread(self.manager.poll_unlock)
+                except NotConnected:
+                    state = None
+                except Exception:
+                    log.exception("reading the unlock countdown failed")
+                    state = await asyncio.to_thread(self.manager.cancel_unlock)
+                events = await asyncio.to_thread(self.manager.take_events)
+                done = state is None or state.state != "unlocking"
+                if done and self.task is me:
+                    self.task = None  # an unlock started from here on is followed anew
+                await self.broadcast_events(events, progress=state is not None)
+                if done:
+                    return
+        finally:
+            if self.task is me:
+                self.task = None
+
+
 def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone=None,
                poll_interval=1.0, close_grace=3.0, instance_id=None, unlock_interval=UNLOCK_POLL_INTERVAL):
     """
@@ -147,9 +208,6 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     instance_id = instance_id or secrets.token_hex(8)
     cookie = cookie_name(port)
 
-    following = {"task": None}
-    """ the task reading an unlock's countdown, while there is one """
-
     async def broadcast_events(events, progress=False):
         """ Send the device manager's events to every tab, an "unlock" one with the unlock state. progress: send the
         unlock state even if it didn't change (a new reading of the countdown). An unlock to follow is followed. """
@@ -161,41 +219,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         if progress and "unlock" not in events:
             await hub.broadcast(unlock)
         if state.state == "unlocking":
-            follow_unlock()
+            follower.start()
 
-    async def follow():
-        """ Read the countdown of the unlock being followed until it ends, as Qt's unlocker does """
-        try:
-            while True:
-                await asyncio.sleep(unlock_interval)
-                try:
-                    state = await asyncio.to_thread(manager.poll_unlock)
-                except NotConnected:
-                    state = None
-                except Exception:
-                    log.exception("reading the unlock countdown failed")
-                    state = await asyncio.to_thread(manager.cancel_unlock)
-                events = await asyncio.to_thread(manager.take_events)
-                if state is None or state.state != "unlocking":
-                    following["task"] = None  # done: an unlock started from here on is followed anew
-                await broadcast_events(events, progress=state is not None)
-                if state is None or state.state != "unlocking":
-                    return
-        finally:
-            if following["task"] is asyncio.current_task():
-                following["task"] = None
-
-    def follow_unlock():
-        """ Follow the unlock's countdown, unless that is being done already """
-        if following["task"] is None:
-            following["task"] = asyncio.get_running_loop().create_task(follow())
-
-    async def stop_following():
-        task, following["task"] = following["task"], None
-        if task is not None:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+    follower = UnlockFollower(manager, broadcast_events, unlock_interval)
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
@@ -211,20 +237,23 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         task = app.state.poll_task = asyncio.create_task(poll()) if poll_interval else None
         # a keyboard found waiting for an unlock started earlier: that is finished first
         if (await asyncio.to_thread(manager.unlock_state)).state == "unlocking":
-            follow_unlock()
+            follower.start()
         try:
             yield
         finally:
-            await hub.shutdown()
-            await stop_following()
+            # the hot-plug poll first, as it starts following an unlock it sees; then nothing is followed any more
+            follower.stopping = True
             if task:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+            await follower.shutdown()
+            await hub.shutdown()
 
     app = FastAPI(title="Vial", lifespan=lifespan)
     app.state.hub = hub
     app.state.manager = manager
+    app.state.unlock_follower = follower
 
     def openapi():
         # WebSocket messages have no place in OpenAPI's paths: the event shape is added as a component, so the UI's
@@ -490,8 +519,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     async def cancel_unlock():
         """ Stop following an unlock. The keyboard keeps waiting for its unlock keys (it can't be called off) and takes
         no changes until it is unlocked or plugged in again. """
-        await stop_following()
         state = await asyncio.to_thread(manager.cancel_unlock)
+        # what is being read still reaches the tabs: the follower stops by itself
+        follower.release()
         await broadcast_events(await asyncio.to_thread(manager.take_events))
         return unlock_model(state)
 
@@ -533,10 +563,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         async def set_simulator_unlock(body: schemas.SimulatorUnlock):
             def change():
                 with manager.lock:
+                    virtual = manager.backend.virtual
+                    if virtual is None:  # nothing has looked for the keyboard yet
+                        raise NotConnected("no simulated keyboard yet")
                     if body.keysHeld is not None:
-                        manager.backend.virtual.hold_unlock_keys(body.keysHeld)
+                        virtual.hold_unlock_keys(body.keysHeld)
                     if body.locked:
-                        manager.backend.virtual.unlocked = False
+                        virtual.unlocked = False
                         manager.read_unlocked()
                     return manager.unlock_state()
             state = await asyncio.to_thread(change)

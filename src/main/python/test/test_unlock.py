@@ -1,18 +1,27 @@
 """ Unlocking the keyboard: the device manager follows the protocol as Qt's unlocker does, and the API lets the UI run
 it, against the simulated Corne (unlock keys: Tab at row 0 column 0, Backspace at row 4 column 0) """
+import json
+import threading
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
 import transport
+import vial_web
+from protocol.constants import CMD_VIA_VIAL_PREFIX, CMD_VIAL_UNLOCK_POLL
 from protocol.keyboard_comm import Keyboard
 from protocol.unlock_hook import request_unlock, set_unlock_handler
+from server import app as app_module
 from server.app import create_app
-from server.device import DeviceManager, FakeBackend, KeyboardLocked, NotConnected, UnlockState, require_unlocked
+from server.device import SAFE_UNLOCK_POLL_GAP, DeviceManager, FakeBackend, KeyboardLocked, NotConnected, \
+    UnlockState, require_unlocked
 from server.names import NamesStore
-from simulator.corne import UNLOCK_KEYS, make_corne
+from simulator.corne import UNLOCK_KEYS, definition, make_corne
 from simulator.device import SimulatedHidDevice
+from simulator.virtual_keyboard import FIRMWARE_UNLOCK_POLL_GAP
 from test.test_api import BASE, EVENTS, ORIGIN, PORT, TOKEN
-from test.test_api_server import wait_until
+from test.test_api_server import pause, wait_until
 
 COUNTDOWN = 3
 """ the simulated keyboards here count down from 3, so that a few polls unlock them """
@@ -240,7 +249,7 @@ def test_a_macro_change_is_refused_while_locked_then_saved_once_unlocked(api):
         started = client.post("/api/unlock/start").json()
         assert started == {"state": "unlocking", "keys": [{"row": 0, "col": 0}, {"row": 4, "col": 0}],
                            "remaining": 0, "total": 0}
-        # the countdown is read until the keys are held all through it
+        # the start's own "unlock" event; the countdown is then read until the keys are held all through it
         progress = unlock_events(ws, "unlocking")
         assert progress[0]["state"] == "unlocking"
         assert client.put("/api/macros", json=body).status_code == 423  # still waiting
@@ -260,6 +269,7 @@ def test_cancel_and_lock(api):
     client.post("/api/unlock/start")
     assert client.post("/api/unlock/cancel").json()["state"] == "cancelled"
     manager.backend.virtual.hold_unlock_keys(True)
+    pause(0.1)  # ten readings' worth of the countdown (every 10 ms here)
     assert manager.backend.virtual.unlock_counter == COUNTDOWN  # nothing reads the countdown any more
     assert client.post("/api/lock").status_code == 423  # the keyboard still waits for its unlock keys
     # started again and finished
@@ -300,3 +310,129 @@ def test_an_interrupted_unlock_is_followed_from_the_start(tmp_path):
         manager.backend.virtual.hold_unlock_keys(True)
         assert wait_until(lambda: client.get("/api/session").json()["status"] == "connected")
         assert client.get("/api/keyboard").json()["unlocked"] is True
+
+
+# ---------- one reader of the countdown, cancel, shutdown ----------
+
+INTERVAL = 0.05
+""" seconds between two readings of the countdown in the tests below """
+
+
+def poll_times(vk):
+    """ When the simulated keyboard is sent unlock_poll from now on (time.monotonic seconds) """
+    times = []
+    process = vk.process
+
+    def recording(msg):
+        if msg[0] == CMD_VIA_VIAL_PREFIX and msg[1] == CMD_VIAL_UNLOCK_POLL:
+            times.append(time.monotonic())
+        return process(msg)
+    vk.process = recording
+    return times
+
+
+def test_the_countdown_is_read_by_one_task_however_the_unlock_is_started(tmp_path):
+    manager = DeviceManager(FakeBackend(locked_corne))
+    manager.connect()
+    # the hot-plug poll sees the unlock too, every 10 ms
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0.01,
+                     unlock_interval=INTERVAL)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN)
+        client.post("/api/unlock/start")
+        client.post("/api/unlock/start")  # from another tab
+        client.post("/api/unlock/cancel")
+        client.post("/api/unlock/start")  # started again at once
+        client.post("/api/unlock/start")
+        pause(INTERVAL * 2)  # a reader no longer wanted has stopped by now
+        times = poll_times(manager.backend.virtual)
+        pause(INTERVAL * 8)
+        assert client.get("/api/session").json()["unlock"]["state"] == "unlocking"  # keys not held: it never ends
+    assert len(times) >= 3
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    assert min(gaps) > INTERVAL * 0.8, gaps
+
+
+def test_cancel_leaves_the_reader_to_stop_by_itself(api):
+    client, manager = api
+    follower = client.app.state.unlock_follower
+    client.post("/api/unlock/start")
+    task = follower.task
+    assert task is not None and not task.done()
+    assert client.post("/api/unlock/cancel").json()["state"] == "cancelled"
+    assert wait_until(task.done)
+    assert not task.cancelled()
+    assert follower.task is None
+
+
+def test_cancelling_as_the_unlock_ends_still_tells_every_tab_it_is_unlocked(api):
+    """ The reader has just taken the unlock's last events when the user cancels: they still reach the tabs """
+    client, manager = api
+    took_last, go_on = threading.Event(), threading.Event()
+    take_events = manager.take_events
+
+    def slow_take_events():
+        events = take_events()
+        if manager.unlocked and "unlock" in events and not took_last.is_set():
+            took_last.set()
+            go_on.wait(5)
+        return events
+    manager.take_events = slow_take_events
+
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        assert ws.receive_json() == {"type": "connected"}
+        manager.backend.virtual.hold_unlock_keys(True)
+        client.post("/api/unlock/start")
+        assert took_last.wait(5)
+        assert client.post("/api/unlock/cancel").json()["state"] == "unlocked"
+        go_on.set()
+        pause(0.2)
+        client.post("/api/lock")  # an event after which to stop reading
+        states = [s["state"] for s in unlock_events(ws, "locked")]
+    assert states[-2:] == ["unlocked", "locked"]
+
+
+def test_stopping_the_server_mid_unlock_leaves_no_task_running(tmp_path):
+    manager = DeviceManager(FakeBackend(locked_corne))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0.01,
+                     unlock_interval=0.01)
+    follower = app.state.unlock_follower
+    tasks = []
+    start = follower.start
+
+    def recording_start():
+        start()
+        if follower.task is not None:
+            tasks.append(follower.task)
+    follower.start = recording_start
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN)
+        client.post("/api/unlock/start")
+        pause(0.1)  # being read, and seen by the hot-plug poll
+        assert tasks and not tasks[-1].done()
+    assert all(task.done() for task in tasks)
+    assert follower.task is None
+    assert app.state.poll_task.done()
+
+
+# ---------- timing ----------
+
+def test_the_countdown_is_read_slowly_enough_for_the_firmware():
+    # vial-qmk quantum/vial.c counts down only on a poll more than 100 ms after the unlock start or its last
+    # count-down, and starts over on any sooner one; the device manager also leaves SAFE_UNLOCK_POLL_GAP between polls
+    assert app_module.UNLOCK_POLL_INTERVAL >= SAFE_UNLOCK_POLL_GAP
+    assert app_module.UNLOCK_POLL_INTERVAL > FIRMWARE_UNLOCK_POLL_GAP
+
+
+@pytest.mark.parametrize("with_definition", [False, True])
+def test_the_fake_keyboard_of_vial_web_counts_down_as_the_firmware_does(tmp_path, with_definition):
+    argv = ["--fake"]
+    if with_definition:
+        path = tmp_path / "vial.json"
+        path.write_text(json.dumps(definition()), encoding="utf-8")
+        argv += ["--definition", str(path)]
+    backend = vial_web.make_backend(vial_web.parse_args(argv))
+    assert backend.keyboard_factory().unlock_poll_gap == FIRMWARE_UNLOCK_POLL_GAP
+    # the tests' own simulated keyboards count down on every poll
+    assert make_corne().unlock_poll_gap == 0

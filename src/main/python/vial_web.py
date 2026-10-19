@@ -275,14 +275,21 @@ def open_running(url, args):
 def make_backend(args):
     if args.fake:
         from server.device import FakeBackend
+        from simulator.virtual_keyboard import FIRMWARE_UNLOCK_POLL_GAP
         layers = {} if args.layers is None else {"layers": args.layers}  # else the simulator's own default
+
+        def firmware_timed(vk):
+            # unlocks with the real firmware's timing (polls too soon after the last start the countdown over); the
+            # simulator's default, counting down on every poll, is for tests
+            vk.unlock_poll_gap = FIRMWARE_UNLOCK_POLL_GAP
+            return vk
         if args.definition:
             from simulator.virtual_keyboard import VirtualKeyboard
             with open(args.definition, "r", encoding="utf-8") as inf:
                 definition = json.load(inf)
-            return FakeBackend(lambda: VirtualKeyboard(definition, **layers))
+            return FakeBackend(lambda: firmware_timed(VirtualKeyboard(definition, **layers)))
         from simulator.corne import make_corne
-        return FakeBackend(lambda: make_corne(**layers))
+        return FakeBackend(lambda: firmware_timed(make_corne(**layers)))
     from server.device import HidBackend
     return HidBackend()
 
