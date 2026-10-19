@@ -1,5 +1,7 @@
 import type { Page } from "@playwright/test";
-import { expect, keyIndex, openSection, pressKey, restoreAll, simulatorUnlock, test, unlockAgain, unlockState } from "./fixtures";
+import {
+  api, expect, keyIndex, openSection, plugIn, pressKey, restoreAll, simulatorUnlock, test, unlockAgain, unlockState,
+} from "./fixtures";
 
 // The matrix tester on the simulated Corne: keys are pressed through the fake server's hook. Its unlock keys are Tab
 // (row 0, column 0) and Backspace (row 4, column 0); row 3, column 0 has no key in its layout.
@@ -7,6 +9,12 @@ import { expect, keyIndex, openSection, pressKey, restoreAll, simulatorUnlock, t
 /** The key of the drawing at a matrix position (the drawing's keys are in the model's order: placement follows it) */
 async function drawnKey(page: Page, row: number, col: number) {
   return page.locator(".board .key").nth(await keyIndex(page, row, col));
+}
+
+/** Waits for the server to have the keyboard again (the hot-plug poll notices it about once a second) */
+async function connected(page: Page): Promise<void> {
+  await expect.poll(async () => (await (await api(page).get("/api/session")).json()).status, { timeout: 10_000 })
+    .toBe("connected");
 }
 
 function cell(page: Page, row: number, col: number) {
@@ -25,7 +33,14 @@ test("a locked keyboard is unlocked, then a key lights up while held and stays m
     await simulatorUnlock(app, { keysHeld: true });
     await expect(dialog).toBeHidden({ timeout: 20_000 });
     expect(await unlockState(app)).toBe("unlocked");
+    // the unlock keys, still held, are the first keys read; let go, they go dark
+    const tab = await drawnKey(app, 0, 0);
+    const backspace = await drawnKey(app, 4, 0);
+    await expect(tab).toHaveClass(/pressed/);
+    await expect(backspace).toHaveClass(/pressed/);
     await simulatorUnlock(app, { keysHeld: false });
+    await expect(tab).not.toHaveClass(/pressed/);
+    await expect(backspace).not.toHaveClass(/pressed/);
     await expect(app.locator(".board .key.pressed")).toHaveCount(0);
 
     const w = await drawnKey(app, 0, 1);
@@ -56,6 +71,7 @@ test("a locked keyboard is unlocked, then a key lights up while held and stays m
 });
 
 test("while testing, keys typed do nothing on the page; stopped, they work again", async ({ app }) => {
+  await unlockAgain(app); // unlocked, no unlock dialog takes the focus
   await openSection(app, "Matrix tester");
   const button = app.getByRole("button", { name: "Start testing" });
   await button.focus();
@@ -75,6 +91,7 @@ test("while testing, keys typed do nothing on the page; stopped, they work again
 });
 
 test("leaving the page stops the test", async ({ app }) => {
+  await unlockAgain(app);
   await openSection(app, "Matrix tester");
   await app.getByRole("button", { name: "Start testing" }).click();
   await expect(app.getByRole("button", { name: "Stop testing" })).toBeVisible();
@@ -86,4 +103,49 @@ test("leaving the page stops the test", async ({ app }) => {
   await expect(first).not.toBeFocused();
   await openSection(app, "Matrix tester");
   await expect(app.getByRole("button", { name: "Start testing" })).toBeVisible();
+});
+
+test("unplugging the keyboard stops the test, and it stays stopped when the keyboard comes back", async ({ app }) => {
+  try {
+    await unlockAgain(app);
+    await openSection(app, "Matrix tester");
+    await app.getByRole("button", { name: "Start testing" }).click();
+    await expect(app.getByRole("button", { name: "Stop testing" })).toBeVisible();
+    await expect(app.locator(".board.testing")).toBeVisible();
+    await plugIn(app, false);
+    // the page is blocked (inert) while the keyboard is gone: the test stopped with it
+    await expect(app.locator(".page.blocked")).toBeVisible({ timeout: 10_000 });
+    await expect(app.locator(".board.testing")).toHaveCount(0);
+    await expect(app.locator(".page.blocked button", { hasText: "Start testing" })).toBeVisible();
+
+    await plugIn(app, true);
+    await expect(app.locator(".page.blocked")).toHaveCount(0, { timeout: 10_000 });
+    await connected(app);
+    await expect(app.getByRole("button", { name: "Start testing" })).toBeVisible();
+    await expect(app.locator(".board.testing")).toHaveCount(0);
+  } finally {
+    await restoreAll(() => plugIn(app, true), () => connected(app), () => unlockAgain(app));
+  }
+});
+
+test("the window losing the focus, or the tab hidden, stops the test", async ({ app }) => {
+  await unlockAgain(app);
+  await openSection(app, "Matrix tester");
+  const start = app.getByRole("button", { name: "Start testing" });
+  const stop = app.getByRole("button", { name: "Stop testing" });
+  for (const lose of [
+    () => app.evaluate(() => window.dispatchEvent(new Event("blur"))),
+    () => app.evaluate(() => document.dispatchEvent(new Event("visibilitychange"))),
+  ]) {
+    await start.click();
+    await expect(stop).toBeFocused();
+    await expect(app.locator(".board.testing")).toBeVisible();
+    await lose();
+    await expect(start).toBeFocused();
+    await expect(app.locator(".board.testing")).toHaveCount(0);
+    await expect(app.getByRole("status").filter({ hasText: "Not testing." })).toBeAttached();
+    // keys work on the page again: Tab moves the focus
+    await app.keyboard.press("Tab");
+    await expect(start).not.toBeFocused();
+  }
 });
