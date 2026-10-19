@@ -123,17 +123,19 @@ function capitalised(text: string): string {
 
 /** A way of pressing a tap dance, and what it does: "double-tap for Caps Lock". A layer held from a tapped slot is on
  * only while the key stays down after the last tap: "tap and hold for Layer 1" (as wayLabel in phrases.ts). */
-function slotPhrase(slot: SlotLabel, d: Described, names: Names): string {
+function slotPhrase(slot: SlotLabel, d: Described, names: Names, model?: Pick<KeyboardModel, "layers">): string {
   const pressed = asPressed(d, slot);
   const hold = holdsLayer(pressed) && !isHeld(slot) ? " and hold" : "";
-  return `${GESTURES[slot]}${hold} ${outcome(pressed, names)}`;
+  const missing = model && (d.kind === "layer" || d.kind === "layer-tap") && d.layer != null && !hasLayer(model, d.layer);
+  return `${GESTURES[slot]}${hold} ${outcome(pressed, names)}${missing ? ", which this keyboard doesn't have" : ""}`;
 }
 
-/** "Tap for Tab, double-tap for Caps Lock." Empty and transparent slots are left out. */
-export function tapDanceSentence(td: TapDance, names: Names): string {
+/** "Tap for Tab, double-tap for Caps Lock." Empty and transparent slots are left out. Given the keyboard, a slot's
+ * layer the keyboard doesn't have says so: "Hold for Layer 9, which this keyboard doesn't have." */
+export function tapDanceSentence(td: TapDance, names: Names, model?: Pick<KeyboardModel, "layers">): string {
   const parts = tapDanceSlots(td)
     .filter((slot) => !doesNothing(slot.action))
-    .map((slot) => slotPhrase(slot.label, slot.action, names));
+    .map((slot) => slotPhrase(slot.label, slot.action, names, model));
   return parts.length === 0 ? "Does nothing yet: choose what each way of pressing it does." : `${capitalised(parts.join(", "))}.`;
 }
 

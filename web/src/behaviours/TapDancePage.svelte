@@ -114,6 +114,7 @@
     {@const td = model.tapDance[index]}
     <TapDanceCard
       {td}
+      {model}
       {names}
       positions={analysis.positions}
       uses={analysis.usage.tapDances[index] ?? []}

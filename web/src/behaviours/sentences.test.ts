@@ -51,6 +51,24 @@ describe("tapDanceSentence", () => {
       "Tap to hold or toggle Layer 1, hold for Layer 2, double-tap and hold for Layer 3, " +
       "tap then hold for Space (hold: Layer 1).");
   });
+
+  it("says when a slot's layer is one the keyboard doesn't have, given the keyboard", () => {
+    const missing = corne({
+      layers: model.layers.map(() => layer({}, "KC_NO")),
+      tapDances: [["KC_TAB", "MO(9)", "TG(1)", "LT5(KC_SPC)"], ["KC_NO", "OSL(4)", "KC_NO", "KC_NO"],
+        ["MO(9)", "KC_NO", "KC_NO", "KC_NO"]],
+    });
+    expect(tapDanceSentence(missing.tapDance[0], names, missing)).toBe(
+      "Tap for Tab, hold for Layer 9, which this keyboard doesn't have, double-tap to toggle Layer 1, " +
+      "tap then hold for Space (hold: Layer 5), which this keyboard doesn't have.");
+    expect(tapDanceSentence(missing.tapDance[1], names, missing)).toBe(
+      "Hold for Layer 4 on the next key, which this keyboard doesn't have.");
+    expect(tapDanceSentence(missing.tapDance[2], names, missing)).toBe(
+      "Tap and hold for Layer 9, which this keyboard doesn't have.");
+    // without the keyboard, as before
+    expect(tapDanceSentence(missing.tapDance[0], names)).toBe(
+      "Tap for Tab, hold for Layer 9, double-tap to toggle Layer 1, tap then hold for Space (hold: Layer 5).");
+  });
 });
 
 describe("outcome", () => {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Use } from "../analysis/usage";
-  import type { Described, TapDance } from "../api/types";
+  import type { Described, KeyboardModel, TapDance } from "../api/types";
   import { actionSummary, keyFace, type Names } from "../keyboard/labels";
   import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
   import EntryHead from "./EntryHead.svelte";
@@ -9,6 +9,8 @@
 
   interface Props {
     td: TapDance;
+    /** the keyboard, for its layers: a slot's layer it doesn't have says so */
+    model: Pick<KeyboardModel, "layers">;
     names: Names;
     positions: Map<string, string>;
     uses: Use[];
@@ -26,14 +28,15 @@
     onopenuse: (use: Use) => void;
   }
 
-  let { td, names, positions, uses, canEdit, busy, target, onpickslot, onclearslot, onterm, onrename, onopenuse }: Props =
-    $props();
+  let {
+    td, model, names, positions, uses, canEdit, busy, target, onpickslot, onclearslot, onterm, onrename, onopenuse,
+  }: Props = $props();
 
   /** the longest tapping term the server takes (schemas.TAPPING_TERM_MAX) */
   const TERM_MAX = 10000;
 
   const slots = $derived(tapDanceSlots(td));
-  const sentence = $derived(tapDanceSentence(td, names));
+  const sentence = $derived(tapDanceSentence(td, names, model));
   const headingId = $derived(`tap-dance-${td.index}-title`);
   /** what is wrong with the tapping term typed, or what was done about it; null when nothing is */
   let termProblem = $state<string | null>(null);
