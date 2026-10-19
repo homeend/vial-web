@@ -110,12 +110,12 @@ export function comboName(members: { action: Described }[], names: Names): strin
 }
 
 /** "Base", "Layer 1, Nav" */
-function layerList(layers: number[], names: Names): string {
+export function layerList(layers: number[], names: Names): string {
   return layers.map((l) => names.layer(l)).join(", ");
 }
 
 /** "Q", "Q and W", "Q, W and E" */
-function andList(items: string[]): string {
+export function andList(items: string[]): string {
   return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
