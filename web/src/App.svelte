@@ -92,7 +92,8 @@
   onlanguage={(lang) => keyboard.setLanguage(lang)}
   {lock}
   lockBusy={keyboard.unlock.busy}
-  onunlock={() => void keyboard.unlock.unlock()}
+  unlockOpen={keyboard.unlock.open}
+  onunlock={() => void keyboard.unlock.start()}
   onlock={() => void keyboard.unlock.lock()}
 />
 

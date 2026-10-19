@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import type { KeyboardLanguage } from "../api/types";
   import ThemeSwitch from "./ThemeSwitch.svelte";
 
@@ -14,11 +15,35 @@
     lock: "locked" | "unlocked" | null;
     /** an unlock or a lock is being sent */
     lockBusy: boolean;
+    /** the unlock dialog shows */
+    unlockOpen: boolean;
     onunlock: () => void;
     onlock: () => void;
   }
 
-  let { name, status, fake, languages, language, onlanguage, lock, lockBusy, onunlock, onlock }: Props = $props();
+  let {
+    name, status, fake, languages, language, onlanguage, lock, lockBusy, unlockOpen, onunlock, onlock,
+  }: Props = $props();
+
+  let lockButton = $state<HTMLButtonElement>();
+  /** the lock button was pressed: it is disabled while its request is sent, and the unlock dialog may show, so the
+   * focus falls to the page. It gets the focus back once both are done (unless the user moved it meanwhile). */
+  let returnFocus = $state(false);
+
+  $effect(() => {
+    if (!returnFocus || lockBusy || unlockOpen) return;
+    returnFocus = false;
+    void tick().then(() => {
+      const focused = document.activeElement;
+      if ((!focused || focused === document.body) && !document.querySelector("dialog[open]")) lockButton?.focus();
+    });
+  });
+
+  function pressLock() {
+    returnFocus = true;
+    if (lock === "unlocked") onlock();
+    else onunlock();
+  }
 
   const STATUS_TEXT = {
     connected: "Connected",
@@ -52,6 +77,7 @@
       {#if lock}
         <!-- next to the connection: what the keyboard lets Vial change -->
         <button
+          bind:this={lockButton}
           type="button"
           class="badge lock {lock}"
           disabled={lockBusy}
@@ -59,7 +85,7 @@
           title={lock === "unlocked"
             ? "Unlocked: macros and the bootloader key can be changed. Click to lock it again."
             : "Locked: changing macros or the bootloader key needs it unlocked. Click to unlock it."}
-          onclick={lock === "unlocked" ? onlock : onunlock}
+          onclick={pressLock}
         >
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <rect x="3" y="7" width="10" height="7" rx="1.5" />

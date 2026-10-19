@@ -317,14 +317,19 @@ test("the top bar locks and unlocks the keyboard; a cancelled unlock can be take
   test.setTimeout(60_000);
   try {
     await app.getByRole("button", { name: "Keyboard unlocked: lock it" }).click();
-    await expect(app.getByRole("button", { name: "Keyboard locked: unlock it" })).toBeVisible();
+    const unlockButton = app.getByRole("button", { name: "Keyboard locked: unlock it" });
+    await expect(unlockButton).toBeVisible();
     expect(await unlockState(app)).toBe("locked");
+    // disabled while it was sent, it gets the focus back
+    await expect(unlockButton).toBeFocused();
 
-    await app.getByRole("button", { name: "Keyboard locked: unlock it" }).click();
+    await unlockButton.click();
     const dialog = app.getByRole("dialog", { name: "Unlock the keyboard" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(dialog).toBeHidden();
+    // the dialog opened from it: the focus goes back to it
+    await expect(unlockButton).toBeFocused();
     // the keyboard still waits for its keys, and says so
     const banner = app.getByRole("status").filter({ hasText: "The keyboard still waits to be unlocked" });
     await expect(banner).toBeVisible();
