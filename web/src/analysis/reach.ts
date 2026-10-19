@@ -67,9 +67,13 @@ export function layerTargets(model: Pick<KeyboardModel, "layers" | "tapDance">, 
       : []);
 }
 
+/** How many quick taps of a TT key toggle its layer: the firmware's TAPPING_TOGGLE, 5 unless the keyboard's firmware
+ * sets another (which the Vial protocol doesn't tell) */
+export const TAPPING_TOGGLE = 5;
+
 /** What a target does when its key can only be tapped, as an encoder direction is (turning the knob taps it): it is
  * never held, so a layer held while the key is down (MO, LT, LM, a tap dance's held slots) is never on, and TT only
- * toggles (after the firmware's tapping-toggle count of quick turns, 5 by default). One-shot layers work as on a key.
+ * toggles (after TAPPING_TOGGLE quick turns; wayLabel says so). One-shot layers work as on a key.
  * null: never reached that way. */
 function tapped(target: Target): Target | null {
   if (target.slot && (target.slot.slot === "Hold" || target.slot.slot === "Tap, then hold")) return null;

@@ -6,7 +6,7 @@ import { refId } from "../keyboard/refs";
 import type { SlotLabel } from "../keymap/tapdance";
 import { repeatedCodes, type ComboUse } from "./combos";
 import type { Found, How } from "./find";
-import type { LayerReach, ViaSlot, Way } from "./reach";
+import { TAPPING_TOGGLE, type LayerReach, type ViaSlot, type Way } from "./reach";
 
 /** What a key does to the layer, as the verb of a label: "hold Space", "toggle (left outer thumb)" */
 const VERBS: Record<LayerAction, string> = {
@@ -151,6 +151,7 @@ function modifiers(way: Way, ctx: PhraseContext): string {
  * - "default layer";
  * - keys: "hold Space", "one-shot (right outer thumb)", "toggle (left top row, 3rd from the outside)",
  *   "hold with Shift (left inner thumb)";
+ * - a hold-or-toggle key (TT) on an encoder: "turn it 5 times quickly to toggle (encoder 0, clockwise)";
  * - tap dance slots: "hold Tab", "double-tap Tab to toggle", "tap for a one-shot (right inner thumb)";
  * - combos: "combo: MO(5) + OSL(3)", "combo: J + K, double-tapped to toggle";
  * - the tri-layer keys: "hold both Fn keys (left inner thumb and right inner thumb)".
@@ -177,6 +178,10 @@ export function wayLabel(way: Way, ctx: PhraseContext): string {
     const purpose = PURPOSES[actionOf(way)] || (isHeld(via.slot.slot) ? "" : " and hold");
     const gesture = GESTURES[via.slot.slot];
     return name ? `${gesture} ${name}${purpose}${mods}${from}` : `${gesture}${purpose}${mods}${from} (${place})`;
+  }
+  if (via.ref.kind === "encoder" && via.action.layerAction === "hold, or tap to toggle") {
+    // turning the knob taps TT, which toggles the layer only after a few quick taps
+    return `turn it ${TAPPING_TOGGLE} times quickly to toggle${mods}${from} (${place})`;
   }
   const verb = VERBS[way.action];
   return name ? `${verb} ${name}${mods}${from}` : `${verb}${mods}${from} (${place})`;

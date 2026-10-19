@@ -237,6 +237,18 @@ describe("wayLabel and wayDetail", () => {
     expect(labels[1]).toEqual(["hold (left inner thumb)"]);
     expect(labels[3]).toEqual(["hold both Fn keys (left inner thumb and right inner thumb)"]);
   });
+
+  it("say that a hold-or-toggle key on an encoder toggles after a few quick turns, as the firmware's TT does", () => {
+    const model = corne({ layers: [layer({}, "KC_NO"), layer({}, "KC_NO"), layer({}, "KC_NO")] });
+    model.encoders = [0, 1].map((i) =>
+      ({ ...model.keys[0], row: null, col: null, encoder: 0, direction: 1 - i, x: 20 + 2 * i }));
+    model.layers.forEach((l, i) => (l.encoders = i === 0 ? [described("TT(1)"), described("TG(2)")] : [
+      described("KC_TRNS"), described("KC_TRNS")]));
+    const { labels, details } = setup(model);
+    expect(labels[1]).toEqual(["turn it 5 times quickly to toggle (encoder 0, clockwise)"]);
+    expect(details[1]).toEqual(["from any layer"]);
+    expect(labels[2]).toEqual(["toggle (encoder 0, counter-clockwise)"]);
+  });
 });
 
 describe("unreachedReason", () => {
