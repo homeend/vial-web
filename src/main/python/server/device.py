@@ -7,10 +7,11 @@ import time
 from collections import namedtuple
 from dataclasses import dataclass
 
-from protocol.constants import CMD_VIA_BOOTLOADER_JUMP, CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_KEYBOARD_ID, \
-    VIA_ID_UNHANDLED, VIAL_PROTOCOL_MATRIX_TESTER
+from protocol.constants import CMD_VIA_BOOTLOADER_JUMP, CMD_VIA_GET_KEYBOARD_VALUE, CMD_VIA_VIAL_PREFIX, \
+    CMD_VIAL_GET_KEYBOARD_ID, VIA_ID_UNHANDLED, VIA_SWITCH_MATRIX_STATE, VIAL_PROTOCOL_MATRIX_TESTER
 from protocol.keyboard_comm import Keyboard
 from simulator.device import SimulatedHidDevice
+from transport import MSG_LEN
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +60,31 @@ def has_matrix_tester(keyboard):
     matrix that fits in one reply by the firmware's own estimate (via.c: (MATRIX_COLS / 8 + 1) * MATRIX_ROWS <= 28;
     a larger one leaves the reply empty) """
     return keyboard.vial_protocol >= VIAL_PROTOCOL_MATRIX_TESTER and (keyboard.cols // 8 + 1) * keyboard.rows <= 28
+
+
+MATRIX_REQUEST = struct.pack("BB", CMD_VIA_GET_KEYBOARD_VALUE, VIA_SWITCH_MATRIX_STATE)
+""" what the reply to a switch matrix request starts with: the request, echoed """
+MATRIX_STRAYS_MAX = 4
+""" reports read at most after a switch matrix request that aren't its reply, before the reading fails """
+REPLY_TIMEOUT_MS = 500
+""" how long a reply is waited for (transport.hid_send waits as long) """
+
+
+def read_matrix(keyboard):
+    """ The reply to a switch matrix request (Keyboard.matrix_poll). A report that doesn't echo the request (one that
+    came too late for an earlier request) is skipped and the reply read again: it is never read as the matrix.
+    RuntimeError when the reply doesn't come. """
+    data = keyboard.matrix_poll()
+    strays = 0
+    while bytes(data[:2]) != MATRIX_REQUEST:
+        keyboard.dev.stray()
+        strays += 1
+        if strays > MATRIX_STRAYS_MAX:
+            raise RuntimeError("the keyboard's replies don't answer the switch matrix request")
+        data = bytes(keyboard.dev.read(MSG_LEN, timeout_ms=REPLY_TIMEOUT_MS))
+        if not data:
+            raise RuntimeError("failed to communicate with the device")
+    return data
 
 
 def matrix_pressed(data, rows, cols):
@@ -128,19 +154,49 @@ class CheckedDevice:
     - Once a request has failed on it while it wasn't working (broken), every further exchange fails at once,
       instead of going through the protocol's retries (seconds each, holding the device lock) until the hot-plug
       poll reopens it. Within one request the retries still run, so a handle that recovers is kept.
+    - A reply that comes after its read gave up (the protocol then sends the request again, or fails) would be read
+      as the reply to the next request. So once a request has gone unanswered, the reports queued meanwhile are
+      dropped before the next one is sent.
     """
+
+    DRAIN_MAX = 16
+    """ reports dropped at most before a request: more means the keyboard keeps sending, and the request goes ahead """
 
     def __init__(self, dev):
         self.dev = dev
         self.healthy = True
         self.broken = False
+        self.unanswered = 0
+        """ requests sent whose reply hasn't been read: theirs may still come """
 
     def _check_usable(self):
         if self.broken:
             raise DeviceIOError("the connection to the keyboard is broken; waiting for it to be reopened")
 
+    def _read(self, length, timeout_ms):
+        try:
+            return self.dev.read(length, timeout_ms=timeout_ms)
+        except ValueError as e:
+            self.healthy = False
+            raise DeviceIOError("the connection to the keyboard is broken ({})".format(e)) from e
+        except OSError:
+            self.healthy = False
+            raise
+
+    def _drop_late_replies(self):
+        """ Read what has queued up since a request went unanswered, without waiting: replies that came too late """
+        # a timeout of 0 would block for good in hidapi's blocking mode: 1 ms
+        dropped = 0
+        while dropped < self.DRAIN_MAX and self._read(MSG_LEN, 1):
+            dropped += 1
+        if dropped:
+            log.info("dropped %d late replies from the keyboard", dropped)
+        self.unanswered = 0
+
     def write(self, data):
         self._check_usable()
+        if self.unanswered:
+            self._drop_late_replies()
         try:
             written = self.dev.write(data)
         except ValueError as e:
@@ -151,21 +207,22 @@ class CheckedDevice:
             raise
         if written != len(data):
             self.healthy = False
+        else:
+            self.unanswered += 1
         return written
 
     def read(self, length, timeout_ms=0):
         self._check_usable()
-        try:
-            data = self.dev.read(length, timeout_ms=timeout_ms)
-        except ValueError as e:
-            self.healthy = False
-            raise DeviceIOError("the connection to the keyboard is broken ({})".format(e)) from e
-        except OSError:
-            self.healthy = False
-            raise
+        data = self._read(length, timeout_ms)
         # no reply in time: the keyboard isn't answering (yet); a later reply makes the handle healthy again
         self.healthy = bool(data)
+        if data:
+            self.unanswered = max(0, self.unanswered - 1)
         return data
+
+    def stray(self):
+        """ The report just read wasn't the reply to the request: that may still come """
+        self.unanswered += 1
 
     def __getattr__(self, name):
         return getattr(self.dev, name)
@@ -548,7 +605,7 @@ class DeviceManager:
                 return MatrixReading("unsupported")
             if self.unlocking is not None or not self.unlocked:
                 return MatrixReading("locked")
-            data = self._io(keyboard, lambda kb: kb.matrix_poll())
+            data = self._io(keyboard, read_matrix)
             return MatrixReading("testing", tuple(matrix_pressed(data, keyboard.rows, keyboard.cols)))
 
     def reboot_to_bootloader(self):

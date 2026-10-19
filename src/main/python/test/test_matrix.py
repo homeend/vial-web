@@ -3,16 +3,18 @@ keyboard """
 import asyncio
 import threading
 import time
+from collections import deque
 
 import pytest
 from fastapi.testclient import TestClient
 
 import transport
-from protocol.constants import CMD_VIA_BOOTLOADER_JUMP, CMD_VIA_GET_KEYBOARD_VALUE, VIA_SWITCH_MATRIX_STATE
+from protocol.constants import CMD_VIA_BOOTLOADER_JUMP, CMD_VIA_GET_KEYBOARD_VALUE, CMD_VIA_GET_KEYCODE, \
+    VIA_SWITCH_MATRIX_STATE
 from protocol.unlock_hook import set_unlock_handler
-from server.app import MatrixWatcher, create_app
-from server.device import DeviceManager, FakeBackend, KeyboardLocked, KeyboardRefused, MatrixReading, \
-    NotConnected, has_matrix_tester, matrix_pressed, require_unlocked
+from server.app import MATRIX_FAILURE_PAUSE, MatrixWatcher, create_app
+from server.device import MATRIX_STRAYS_MAX, DeviceManager, FakeBackend, KeyboardLocked, KeyboardRefused, \
+    MatrixReading, NotConnected, has_matrix_tester, matrix_pressed, require_unlocked
 from server.names import NamesStore
 from simulator.corne import UNLOCK_KEYS, make_corne
 from simulator.virtual_keyboard import VirtualKeyboard
@@ -136,6 +138,112 @@ def test_keyboards_that_cant_tell():
 def test_the_model_says_whether_the_matrix_tester_works(served):
     client, manager = served
     assert client.get("/api/keyboard").json()["matrixTester"] is True
+
+
+class QueuedReplies:
+    """ The simulated keyboard's replies queued as a HID device queues them. The next `slow` replies come late: the
+    read waiting for one gives up, and it arrives after the next read, whatever that read got, ahead of the replies to
+    later requests. The next `lost` replies never come. `strays` are reports that arrive right after the next request
+    is sent, ahead of its reply. """
+
+    def __init__(self, device):
+        self.queue = deque()
+        self.late = []
+        """ sent late, not arrived yet """
+        self.arriving = []
+        """ arriving: in the queue at the next write or read """
+        self.slow = 0
+        self.lost = 0
+        self.strays = []
+        write, read = device.write, device.read
+
+        def queued_write(data):
+            self._arrive()
+            written = write(data)
+            reply = bytes(read(transport.MSG_LEN))
+            self.queue.extend(self.strays)
+            self.strays.clear()
+            if self.lost:
+                self.lost -= 1
+            elif self.slow:
+                self.slow -= 1
+                self.late.append(reply)
+            else:
+                self.queue.append(reply)
+            return written
+
+        def queued_read(length, timeout_ms=0):
+            self._arrive()
+            data = list(self.queue.popleft()) if self.queue else []
+            self.arriving, self.late = self.late, []
+            return data
+        device.write, device.read = queued_write, queued_read
+
+    def _arrive(self):
+        self.queue.extend(self.arriving)
+        self.arriving = []
+
+    def idle(self):
+        """ nothing queued or still to come """
+        return not (self.queue or self.late or self.arriving)
+
+
+def stray_report():
+    """ What a keymap reply would read as, taken for the matrix: every key of the first rows held """
+    return bytes([CMD_VIA_GET_KEYCODE, 0, 0xff, 0xff, 0xff, 0xff]).ljust(transport.MSG_LEN, b"\0")
+
+
+def test_a_late_reply_is_not_taken_for_the_next_request():
+    manager = connected()
+    replies = QueuedReplies(manager.device)
+    manager.backend.virtual.press(4, 5)
+    # the first try goes unanswered in time, so the request is sent again: two replies come
+    replies.slow = 1
+    assert manager.poll_matrix() == MatrixReading("testing", ((4, 5),))
+    assert manager.run(lambda kb: kb.get_unlock_status()) == 1
+    assert manager.poll_matrix() == MatrixReading("testing", ((4, 5),))
+    assert replies.idle()
+
+
+def test_a_reply_late_after_the_request_got_through_is_not_taken_for_the_next_one():
+    manager = connected()
+    replies = QueuedReplies(manager.device)
+    # two tries go unanswered in time; the late replies come while the next try waits, and after it
+    replies.slow = 2
+    assert manager.poll_matrix() == MatrixReading("testing")
+    manager.backend.virtual.press(2, 3)
+    assert manager.run(lambda kb: kb.get_unlock_status()) == 1
+    assert manager.poll_matrix() == MatrixReading("testing", ((2, 3),))
+    assert replies.idle()
+
+
+def test_a_report_that_isnt_the_matrix_is_not_read_as_it():
+    manager = connected()
+    replies = QueuedReplies(manager.device)
+    manager.backend.virtual.press(0, 1)
+    replies.strays += [stray_report(), stray_report()]
+    assert manager.poll_matrix() == MatrixReading("testing", ((0, 1),))
+    assert replies.idle()
+    # too many: the reading fails, and its reply, which comes after them, isn't read as the next one's
+    replies.strays += [stray_report()] * (MATRIX_STRAYS_MAX + 1)
+    with pytest.raises(RuntimeError):
+        manager.poll_matrix()
+    manager.backend.virtual.press(0, 2)
+    assert manager.poll_matrix() == MatrixReading("testing", ((0, 1), (0, 2)))
+    assert manager.run(lambda kb: kb.get_unlock_status()) == 1
+    assert replies.idle()
+
+
+def test_a_report_that_isnt_the_matrix_with_no_reply_after_it_fails_the_reading():
+    manager = connected()
+    replies = QueuedReplies(manager.device)
+    replies.strays.append(stray_report())
+    replies.lost = 1
+    with pytest.raises(RuntimeError):
+        manager.poll_matrix()
+    # as an unanswered request does: the handle is reopened by the next hot-plug check
+    assert manager.check() == ["disconnected", "connected"]
+    assert manager.poll_matrix() == MatrixReading("testing")
 
 
 # ---------- watching it ----------
@@ -309,12 +417,63 @@ def test_a_failed_reading_is_logged_once_and_reading_goes_on(served, caplog):
             raise RuntimeError("failed to communicate with the device")
         return poll()
     manager.poll_matrix = failing_poll
+    client.app.state.matrix.failure_pause = GAP
     with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
         ws.receive_json()
         ws.send_json({"type": "matrix", "watch": True})
         assert matrix_events(ws, lambda m: True) == [{"state": "testing", "pressed": []}]
     assert [r.message for r in caplog.records].count(
         "reading the switch matrix failed: failed to communicate with the device") == 1
+
+
+def test_a_failed_reading_is_followed_by_a_pause():
+    manager = connected()
+    poll = manager.poll_matrix
+    readings = []
+
+    def failing_poll():
+        readings.append(True)
+        if len(readings) <= 2:
+            raise RuntimeError("failed to communicate with the device")
+        return poll()
+    manager.poll_matrix = failing_poll
+    pauses = []
+    sent = []
+
+    async def send(ws, event):
+        sent.append(event)
+
+    async def watch():
+        watcher = MatrixWatcher(manager, send, INTERVAL, GAP, sleep=sleep)
+        await watcher.watch("tab")
+        while len(pauses) < 4:
+            await asyncio.sleep(0)
+        await watcher.shutdown()
+
+    async def sleep(seconds):
+        pauses.append(seconds)
+        await asyncio.sleep(0)
+    asyncio.run(watch())
+    # after each failure the keyboard is left alone for a while; then readings are paced as usual
+    assert pauses[:2] == [MATRIX_FAILURE_PAUSE, MATRIX_FAILURE_PAUSE]
+    assert all(GAP <= p <= INTERVAL for p in pauses[2:4]), pauses
+    assert MATRIX_FAILURE_PAUSE >= 0.5
+    assert sent[0] == {"type": "matrix", "matrix": {"state": "testing", "pressed": []}}
+
+
+def test_a_keyboard_locked_behind_the_servers_back_says_locked(served):
+    client, manager = served
+    assert manager.unlocked
+    manager.backend.virtual.unlocked = False  # another app locked it: the firmware shows nothing held
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        assert ws.receive_json() == {"type": "connected"}
+        ws.send_json({"type": "matrix", "watch": True})
+        events = []
+        while not any(e["type"] == "matrix" for e in events):
+            events.append(ws.receive_json())
+        assert [e["unlock"]["state"] for e in events if e["type"] == "unlock"] == ["locked"]
+        assert events[-1]["matrix"] == {"state": "locked", "pressed": []}
+    assert not manager.unlocked
 
 
 def test_stopping_the_server_while_watched_leaves_no_task():

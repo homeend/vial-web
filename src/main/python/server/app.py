@@ -31,6 +31,8 @@ it every 20 ms, and the unlock state as well each time) """
 MATRIX_POLL_GAP = 0.02
 """ seconds the keyboard is left alone at least after each reading of the matrix, however long that took: other
 requests (edits, the unlock countdown) take the device lock in between """
+MATRIX_FAILURE_PAUSE = 0.5
+""" seconds the keyboard is left alone after a reading of the matrix that failed, before the next one """
 SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": "frame-ancestors 'none'",
@@ -145,14 +147,19 @@ class MatrixWatcher:
     """ Reads the switch matrix every `interval` seconds while at least one tab watches it, and sends each tab what is
     held whenever that changes (a tab that starts watching gets the last reading at once). One task reads it, and stops
     when no tab watches any more. After each reading the keyboard is left alone for at least `gap` seconds, so that
-    other requests get the device lock between two readings. `send(ws, event)` sends to one tab; a tab it drops is no
-    longer watching. """
+    other requests get the device lock between two readings; after a reading that failed, for `failure_pause` seconds.
+    `send(ws, event)` sends to one tab; a tab it drops is no longer watching. `on_start()`, awaited when the task starts,
+    before its first reading, reads what the readings depend on (the unlock state). """
 
-    def __init__(self, manager, send, interval, gap):
+    def __init__(self, manager, send, interval, gap, failure_pause=MATRIX_FAILURE_PAUSE, on_start=None,
+                 sleep=asyncio.sleep):
         self.manager = manager
         self.send = send
         self.interval = interval
         self.gap = gap
+        self.failure_pause = failure_pause
+        self.on_start = on_start
+        self.sleep = sleep
         self.watchers = set()
         self.task = None
         self.last = None
@@ -207,13 +214,18 @@ class MatrixWatcher:
         me = asyncio.current_task()
         loop = asyncio.get_running_loop()
         try:
+            if self.on_start is not None:
+                await self.on_start()
             while self.watchers and self.task is me and not self.stopping:
                 started = loop.time()
                 state = await asyncio.to_thread(self._reading)
                 if state is not None and state != self.last and self.task is me:
                     self.last = state
                     await self._send_to(list(self.watchers), state)
-                await asyncio.sleep(max(self.interval - (loop.time() - started), self.gap))
+                # a failure may come at once, again and again (a handle that stopped working), each checking whether
+                # the keyboard is still plugged in (an HID enumeration): not 20 times a second
+                await self.sleep(self.failure_pause if state is None
+                                 else max(self.interval - (loop.time() - started), self.gap))
         finally:
             if self.task is me:
                 self.task = None
@@ -327,7 +339,16 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         if ws not in hub.clients:  # dropped: it no longer watches either
             matrix.unwatch(ws)
 
-    matrix = MatrixWatcher(manager, send_to_watcher, matrix_interval, matrix_gap)
+    async def read_unlock_state():
+        """ Before the matrix tester's first reading: the keyboard may have been locked behind the server's back (by
+        another app), and would then show nothing held. Read, it is "locked" (and every tab is told). """
+        try:
+            await asyncio.to_thread(manager.read_unlocked)
+        except Exception as e:  # no keyboard, or it didn't answer: the readings say so
+            log.info("reading the unlock state for the matrix tester failed: %s", e)
+        await broadcast_events(await asyncio.to_thread(manager.take_events))
+
+    matrix = MatrixWatcher(manager, send_to_watcher, matrix_interval, matrix_gap, on_start=read_unlock_state)
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
