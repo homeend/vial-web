@@ -8,6 +8,8 @@
     id?: string;
     /** what is chosen, said before the list */
     label: string;
+    /** what is chosen. The page keeps it in step: it takes the value passed to `onchange` (or the keyboard's reply),
+     * and puts it back when a change fails; until `value` changes, the list shows what was picked */
     value: string;
     choices: Choice[];
     disabled?: boolean;

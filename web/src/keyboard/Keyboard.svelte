@@ -30,7 +30,8 @@
     rings?: (string | null)[];
     /** which placed keys are drawn faintly, aligned with placement.items */
     faded?: boolean[];
-    /** which placed keys are lit up as held down, aligned with placement.items */
+    /** which placed keys are lit up as held down, aligned with placement.items; shown only on a picture (interactive
+     * false) */
     pressed?: boolean[];
     /** keys to choose: whether each is chosen (its aria-pressed), aligned with placement.items */
     chosen?: boolean[];

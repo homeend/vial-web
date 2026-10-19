@@ -24,7 +24,8 @@
     ring?: string | null;
     /** drawn faintly: a key that doesn't matter here */
     faded?: boolean;
-    /** lit up: held down on the keyboard right now (the matrix tester) */
+    /** lit up: held down on the keyboard right now (the matrix tester). Drawn only on a picture (interactive false):
+     * a key to click doesn't show it */
     pressed?: boolean;
     /** a key to choose (pressed) or not: aria-pressed says this instead of whether it is selected */
     chosen?: boolean;
@@ -287,9 +288,28 @@
   }
 
   .key.pressed,
+  .pressed .alt-gr,
   .pressed .shifted,
   .pressed .hold {
     color: var(--accent-text);
+  }
+
+  /* forced colours (Windows contrast themes) replace the accent: a held key takes the system's highlight */
+  @media (forced-colors: active) {
+    .pressed .face {
+      fill: Highlight;
+    }
+
+    .pressed .edge {
+      stroke: Highlight;
+    }
+
+    .key.pressed,
+    .pressed .alt-gr,
+    .pressed .shifted,
+    .pressed .hold {
+      color: HighlightText;
+    }
   }
 
   .static {

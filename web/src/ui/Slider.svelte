@@ -4,6 +4,8 @@
   interface Props {
     id?: string;
     label: string;
+    /** where the thumb is. The page keeps it in step: it takes each value passed to `oninput` (or the keyboard's
+     * reply), and puts it back when a change fails; until `value` changes, the thumb stays where it was moved */
     value: number;
     min?: number;
     max: number;
