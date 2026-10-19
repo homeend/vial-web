@@ -161,6 +161,28 @@ def test_layers_requires_fake(capsys):
     assert "only work with --fake" in capsys.readouterr().err
 
 
+def test_fake_unlock_counter():
+    from simulator.virtual_keyboard import FIRMWARE_UNLOCK_POLL_GAP, UNLOCK_COUNTER_MAX
+    vk = vial_web.make_backend(vial_web.parse_args(["--fake", "--unlock-counter", "10"])).keyboard_factory()
+    assert vk.unlock_counter_max == 10
+    assert vk.unlock_poll_gap == FIRMWARE_UNLOCK_POLL_GAP  # still the firmware's timing
+    assert vial_web.make_backend(vial_web.parse_args(["--fake"])).keyboard_factory().unlock_counter_max == \
+        UNLOCK_COUNTER_MAX
+
+
+@pytest.mark.parametrize("counter", ["0", "256", "-1", "ten", "2.5"])
+def test_unlock_counter_must_be_a_countdown(counter, capsys):
+    with pytest.raises(SystemExit):
+        vial_web.parse_args(["--fake", "--unlock-counter", counter])
+    assert "unlock countdown (1 to 255)" in capsys.readouterr().err
+
+
+def test_unlock_counter_requires_fake(capsys):
+    with pytest.raises(SystemExit):
+        vial_web.parse_args(["--unlock-counter", "10"])
+    assert "only work with --fake" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("port", ["-1", "65536", "http", "1.5"])
 def test_port_must_be_a_port_number(port):
     with pytest.raises(SystemExit):

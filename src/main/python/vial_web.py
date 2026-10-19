@@ -36,6 +36,8 @@ FILE_RETRY_WAIT = 0.1
 MAX_FAKE_LAYERS = 32
 """ --layers: Vial keyboards have at most 32 layers, as many as MO, TG, DF and OSL can name (LT, LM and protocol 5's
 TO only reach the first 16) """
+MAX_UNLOCK_COUNTER = 255
+""" --unlock-counter: the firmware's VIAL_UNLOCK_COUNTER_MAX fits in one byte of the unlock poll's reply """
 UVICORN_LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -282,6 +284,8 @@ def make_backend(args):
             # unlocks with the real firmware's timing (polls too soon after the last start the countdown over); the
             # simulator's default, counting down on every poll, is for tests
             vk.unlock_poll_gap = FIRMWARE_UNLOCK_POLL_GAP
+            if args.unlock_counter is not None:
+                vk.unlock_counter_max = args.unlock_counter
             return vk
         if args.definition:
             from simulator.virtual_keyboard import VirtualKeyboard
@@ -304,6 +308,16 @@ def layer_count(text):
     return count
 
 
+def unlock_counter(text):
+    try:
+        counter = int(text)
+    except ValueError:
+        counter = 0
+    if not 1 <= counter <= MAX_UNLOCK_COUNTER:
+        raise argparse.ArgumentTypeError("{!r} is not an unlock countdown (1 to {})".format(text, MAX_UNLOCK_COUNTER))
+    return counter
+
+
 def port_number(text):
     try:
         port = int(text)
@@ -322,6 +336,9 @@ def parse_args(argv):
     parser.add_argument("--layers", type=layer_count,
                         help="with --fake: how many layers the simulated keyboard has (1 to {}; default: the "
                              "simulator's own, 4 for the sample Corne)".format(MAX_FAKE_LAYERS))
+    parser.add_argument("--unlock-counter", type=unlock_counter,
+                        help="with --fake: how many polls the unlock keys must be held for, about 0.2 s each (1 to "
+                             "{}; default: the firmware's 50, about 10 s)".format(MAX_UNLOCK_COUNTER))
     parser.add_argument("--port", type=port_number, default=0, help="port to listen on (default: any free port)")
     parser.add_argument("--no-browser", action="store_true", help="don't open the browser")
     parser.add_argument("--dry-run", action="store_true", help="connect, print a summary and exit without serving")
@@ -329,8 +346,8 @@ def parse_args(argv):
                         help="keep the instance lock, session file, log and names in this folder instead of the "
                              "user's data and config folders (for tests and development)")
     args = parser.parse_args(argv)
-    if (args.definition or args.layout or args.layers) and not args.fake:
-        parser.error("--definition, --layout and --layers only work with --fake")
+    if (args.definition or args.layout or args.layers or args.unlock_counter) and not args.fake:
+        parser.error("--definition, --layout, --layers and --unlock-counter only work with --fake")
     return args
 
 
