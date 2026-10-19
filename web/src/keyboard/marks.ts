@@ -11,7 +11,7 @@ export interface DotSizes {
   dot: number;
   /** the space between two dots */
   gap: number;
-  /** the width "+n" takes, its space before it included */
+  /** the width "+n" takes for a one-digit n, its space before it included */
   more: number;
 }
 
@@ -21,9 +21,12 @@ export function comboMarks(colours: number[], width: number, sizes: DotSizes): C
   if (colours.length === 0) return { type: "none" };
   if (colours.length === 1) return { type: "line", colour: colours[0] };
   const step = sizes.dot + sizes.gap;
-  const fit = Math.max(0, Math.floor((width + sizes.gap) / step));
-  if (colours.length <= fit) return { type: "dots", colours, more: 0 };
-  const shown = Math.max(0, Math.floor((width - sizes.more + sizes.gap) / step));
+  // a hair over, so that dots filling the width exactly still fit despite rounding
+  const fits = (room: number) => Math.max(0, Math.floor((room + sizes.gap) / step + 1e-6));
+  if (colours.length <= fits(width)) return { type: "dots", colours, more: 0 };
+  // "+12" is wider than "+3": half as wide again for each further digit (at most as many as the combos have)
+  const more = sizes.more * (1 + 0.5 * (String(colours.length).length - 1));
+  const shown = fits(width - more);
   return { type: "dots", colours: colours.slice(0, shown), more: colours.length - shown };
 }
 
