@@ -42,8 +42,10 @@
   const isDefault = $derived((shown.options & ALT_REPEAT_OPTIONS[0].bit) !== 0);
   const from = $derived(face(shown.keycode, isDefault ? "any key" : "nothing"));
   const to = $derived(face(shown.altKeycode));
-  /** both ways: only with an alt key to go back from */
-  const both = $derived((shown.options & ALT_REPEAT_OPTIONS[1].bit) !== 0 && shown.altKeycode.kind !== "none");
+  /** both ways: only with an alt key to go back from, and a last key to go back to (with none, Alt Repeat sends
+   * nothing after the alt key: the sentence says so) */
+  const both = $derived((shown.options & ALT_REPEAT_OPTIONS[1].bit) !== 0 && shown.altKeycode.kind !== "none" &&
+    shown.keycode.kind !== "none");
 </script>
 
 <article class="card behaviour-card" class:target class:again={target && replayed()} class:editing={draft !== null}

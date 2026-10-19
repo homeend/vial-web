@@ -255,7 +255,8 @@ function heldPhrase(mods: string[]): string {
  * other way round." The default alt key (vial.c get_alt_repeat_key_keycode_user) is also sent after any last key
  * that no entry matches, held with only the allowed modifiers; that doesn't look at the entry's own key. QMK asks
  * Vial's entries first and uses its own pairs only when none answers (repeat_key.c get_alt_repeat_key_keycode), so
- * an enabled default entry replaces those pairs for the keys no entry covers. */
+ * an enabled default entry replaces those pairs for the keys no entry covers. A default entry with no last key that
+ * goes both ways answers its alt key with its own empty key: Alt Repeat then sends nothing after the alt key. */
 export function altRepeatSentence(a: AltRepeatDraft, names: Names): string {
   const isDefault = (a.options & ALT_REPEAT_OPTIONS[0].bit) !== 0;
   if (!altRepeatReady(a)) {
@@ -266,7 +267,12 @@ export function altRepeatSentence(a: AltRepeatDraft, names: Names): string {
   const instead = ", instead of the firmware's own pairs";
   const sends = a.altKeycode.kind === "none" ? "sends nothing" : `sends ${keyName(a.altKeycode, names)}`;
   if (a.keycode.kind === "none") {
-    return `After any key${held} that no alt-repeat key covers, Alt Repeat ${sends}${instead}.`;
+    // both ways: the alt key matches, and the answer is the entry's own key, KC_NO: nothing is sent after it (and the
+    // firmware's own pair for it isn't used either)
+    const back = a.options & ALT_REPEAT_OPTIONS[1].bit && a.altKeycode.kind !== "none"
+      ? ` After ${keyName(a.altKeycode, names)}${mods.length > 0 ? held : ""}, it sends nothing.`
+      : "";
+    return `After any key${held} that no alt-repeat key covers, Alt Repeat ${sends}${instead}.${back}`;
   }
   const after = mods.length > 0 ? `${keyName(a.keycode, names)}${held}` : keyName(a.keycode, names);
   const back = a.options & ALT_REPEAT_OPTIONS[1].bit && a.altKeycode.kind !== "none" ? ", and the other way round" : "";

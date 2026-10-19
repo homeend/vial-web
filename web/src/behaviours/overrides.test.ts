@@ -235,6 +235,17 @@ describe("alt-repeat keys", () => {
       .toBe("After any key (alone, or with Left Ctrl) that no alt-repeat key covers, Alt Repeat sends RIGHT, instead " +
         "of the firmware's own pairs.");
   });
+
+  it("says that both ways with no last key sends nothing after the alt key", () => {
+    // the both-ways branch matches the alt key and answers with the entry's own key: KC_NO, so nothing is sent (and
+    // the firmware's own RIGHT -> LEFT pair isn't used either)
+    expect(altRepeatSentence(altRepeat({ keycode: NONE, options: AR_ENABLED | 0x03 }), names))
+      .toBe("After any key without modifiers that no alt-repeat key covers, Alt Repeat sends RIGHT, instead of the " +
+        "firmware's own pairs. After RIGHT, it sends nothing.");
+    expect(altRepeatSentence(altRepeat({ keycode: NONE, allowedMods: LCTL, options: AR_ENABLED | 0x03 }), names))
+      .toBe("After any key (alone, or with Left Ctrl) that no alt-repeat key covers, Alt Repeat sends RIGHT, instead " +
+        "of the firmware's own pairs. After RIGHT (alone, or with Left Ctrl), it sends nothing.");
+  });
 });
 
 describe("pressable", () => {
