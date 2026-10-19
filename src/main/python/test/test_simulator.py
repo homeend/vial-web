@@ -474,13 +474,72 @@ def test_backlight_levels_are_checked(levels):
         VirtualKeyboard(make_corne(lighting="qmk_backlight").definition, backlight_levels=levels)
 
 
-def test_backlight_brightness_steps_follow_the_levels():
-    vk = VirtualKeyboard(make_corne(lighting="qmk_backlight").definition, backlight_levels=5)
+@pytest.mark.parametrize("levels, start, level, brightness", [
+    (5, 102, 3, 153),  # starts at level 2: 2 * 255 / 5; 160 * 5 / 255 = level 3
+    (1, 255, 0, 0),  # one level: starts on it; 160 * 1 / 255 = level 0
+])
+def test_backlight_brightness_steps_follow_the_levels(levels, start, level, brightness):
+    vk = VirtualKeyboard(make_corne(lighting="qmk_backlight").definition, backlight_levels=levels)
     kb = Keyboard(SimulatedHidDevice(vk))
     kb.reload()
-    kb.set_qmk_backlight_brightness(160)  # 160 * 5 / 255 = level 3
+    assert kb.backlight_brightness == start
+    kb.set_qmk_backlight_brightness(160)
     kb.reload_rgb()
-    assert vk.backlight["level"] == 3 and kb.backlight_brightness == 153
+    assert vk.backlight["level"] == level and kb.backlight_brightness == brightness
+
+
+def test_backlight_breathing_is_kept_at_once():
+    """ via.c turns breathing on and off with backlight_enable/disable_breathing, which write the whole backlight
+    config (breathing and the level it runs at) to EEPROM: no save needed. A brightness alone is kept only by a save. """
+    vk = VirtualKeyboard(make_corne(lighting="qmk_backlight_rgblight").definition)
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    kb.set_qmk_backlight_brightness(255)
+    assert vk.lighting_saved is None
+    kb.set_qmk_backlight_effect(1)
+    assert vk.lighting_saved == {"rgblight": None, "backlight": vk.backlight, "vialrgb": None}
+    assert vk.lighting_saved["backlight"]["breathing"] and vk.lighting_saved["backlight"]["level"] == 3
+    # a copy: a later brightness is not kept
+    kb.set_qmk_backlight_brightness(0)
+    assert vk.lighting_saved["backlight"]["level"] == 3
+    # breathing that doesn't change writes nothing
+    kb.set_qmk_backlight_effect(1)
+    assert vk.lighting_saved["backlight"]["level"] == 3
+    # after a save, a change of breathing updates the backlight only
+    kb.set_qmk_backlight_brightness(85)
+    kb.set_qmk_rgblight_effect(4)
+    kb.save_rgb()
+    kb.set_qmk_rgblight_effect(5)
+    kb.set_qmk_backlight_brightness(170)
+    kb.set_qmk_backlight_effect(0)
+    assert vk.lighting_saved["rgblight"]["mode"] == 4
+    assert vk.lighting_saved["backlight"] == {**vk.backlight, "level": 2, "breathing": False}
+
+
+def test_backlight_breathing_is_not_kept_without_breathing_built_in():
+    vk = VirtualKeyboard(make_corne(lighting="qmk_backlight").definition, backlight_breathing=False)
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    kb.set_qmk_backlight_effect(1)
+    assert vk.lighting_saved is None
+
+
+@pytest.mark.parametrize("effect", [9, 0xFFFF])
+def test_unsupported_vialrgb_effect_runs_solid_colour(corne, effect):
+    """ vialrgb.c maps an effect it doesn't have to QMK mode 0, which rgb_matrix_mode_noeeprom raises to 1 (Solid
+    colour), read back as VialRGB's Solid colour """
+    vk, kb = corne
+    kb.set_vialrgb_mode(5)
+    kb.set_vialrgb_mode(effect)
+    assert vk.vialrgb["enable"] and vk.vialrgb["mode"] == 2
+    kb.reload_rgb()
+    assert kb.rgb_mode == 2
+
+
+def test_lighting_now_is_a_copy():
+    vk = make_corne()
+    vk.lighting_now()["vialrgb"]["mode"] = 7
+    assert vk.vialrgb["mode"] == 2
 
 
 def test_unknown_lighting_is_refused():

@@ -37,10 +37,10 @@ MAX_FAKE_LAYERS = 32
 """ --layers: Vial keyboards have at most 32 layers, as many as MO, TG, DF and OSL can name (LT, LM and protocol 5's
 TO only reach the first 16) """
 MAX_UNLOCK_COUNTER = 255
+""" --unlock-counter: the firmware's VIAL_UNLOCK_COUNTER_MAX fits in one byte of the unlock poll's reply """
 LIGHTING_KINDS = ("none", "qmk_backlight", "qmk_rgblight", "qmk_backlight_rgblight", "vialrgb")
 """ --lighting: what vial.json's "lighting" can say (simulator.corne.LIGHTING; not imported, as a real launch never
 loads the simulator) """
-""" --unlock-counter: the firmware's VIAL_UNLOCK_COUNTER_MAX fits in one byte of the unlock poll's reply """
 UVICORN_LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,

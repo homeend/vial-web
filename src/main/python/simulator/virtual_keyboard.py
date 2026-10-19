@@ -58,6 +58,8 @@ RGBLIGHT_RAINBOW = range(6, 15)
 BACKLIGHT_LEVELS = 3
 # VialRGB's "off" effect, which turns the RGB matrix off (vialrgb.c)
 VIALRGB_EFFECT_OFF = 0
+# VialRGB's Solid colour, QMK's RGB matrix mode 1: what an effect the firmware doesn't have runs as (vialrgb.c)
+VIALRGB_EFFECT_SOLID_COLOR = 2
 
 
 class SimulatorError(RuntimeError):
@@ -93,8 +95,8 @@ class VirtualKeyboard:
         backlight_levels: the backlight's brightness steps above off (BACKLIGHT_LEVELS, 1 to 31)
         backlight_breathing: the firmware is built with BACKLIGHT_BREATHING; without it the effect reads 0 and a change
                              of it does nothing
-        bootloader_jump: the firmware jumps to its bootloader when asked (a secure Vial build); False: built with
-                         VIAL_INSECURE, whose via.c doesn't handle the command
+        bootloader_jump: the firmware jumps to its bootloader when asked; False: firmware built without the bootloader
+                         jump, which answers the command as unhandled
         """
         if isinstance(definition, str):
             definition = json.loads(definition)
@@ -152,13 +154,14 @@ class VirtualKeyboard:
             if lighting in ["qmk_rgblight", "qmk_backlight_rgblight"] else None
         if not 1 <= backlight_levels <= 31:
             raise SimulatorError("the backlight has 1 to 31 levels")
-        self.backlight = {"level": 2, "breathing": False, "levels": backlight_levels,
+        self.backlight = {"level": min(2, backlight_levels), "breathing": False, "levels": backlight_levels,
                           "has_breathing": backlight_breathing} \
             if lighting in ["qmk_backlight", "qmk_backlight_rgblight"] else None
         self.vialrgb = {"enable": True, "mode": 2, "speed": 128, "hsv": (0, 255, 128), "max_brightness": 200,
                         "supported": [1, 2, 3, 4, 5, 6, 7, 8]} if lighting == "vialrgb" else None
         self.lighting_saved = None
-        """ what the last lighting save kept (each kind's state, as its EEPROM copy would hold it); None before one """
+        """ what the last lighting save kept (each kind's state, as its EEPROM copy would hold it); None before one.
+        A change of backlight breathing keeps the backlight at once, without a save: a kind not kept yet is None. """
         self.bootloader_jump = bootloader_jump
 
         self.pressed = set()
@@ -337,7 +340,9 @@ class VirtualKeyboard:
                 self._rgblight_sethsv(msg[2], msg[3], rgb["val"])
             elif sub == QMK_RGBLIGHT_EFFECT:
                 # via.c: rgblight_mode_noeeprom, then off for 0 and on for anything else. A light that is off changes
-                # no mode, and turning it on starts the mode it had: from off, an effect takes two sends.
+                # no mode, and turning it on starts the mode it had. An off sent from the host has already set that
+                # mode to 1 (0 is raised to Static light while the light is still on), so the light comes back as
+                # Static: from off, an effect takes two sends, which is why the server sends it twice.
                 if rgb["enable"]:
                     rgb["mode"] = min(max(msg[2], 1), RGBLIGHT_MODES)
                 rgb["enable"] = msg[2] != 0
@@ -348,17 +353,23 @@ class VirtualKeyboard:
             if sub == QMK_BACKLIGHT_BRIGHTNESS:
                 # via.c: value * BACKLIGHT_LEVELS / 255, rounded down
                 bl["level"] = msg[2] * bl["levels"] // 255
-            elif bl["has_breathing"]:
+            elif bl["has_breathing"] and bl["breathing"] != (msg[2] != 0):
+                # backlight_enable/disable_breathing write the whole backlight config (breathing and the level it
+                # runs at) to EEPROM when breathing changes: it is kept at once, without a save
                 bl["breathing"] = msg[2] != 0
+                saved = self.lighting_saved or {"rgblight": None, "backlight": None, "vialrgb": None}
+                saved["backlight"] = copy.deepcopy(bl)
+                self.lighting_saved = saved
         elif self.vialrgb is not None and sub == VIALRGB_SET_MODE:
             mode, speed, h, s, v = struct.unpack_from("<HBBBB", msg, 2)
             vr = self.vialrgb
-            # vialrgb.c set_mode: "off" turns the matrix off; any other effect turns it on
+            # vialrgb.c set_mode: "off" turns the matrix off; any other effect turns it on. An effect the firmware
+            # doesn't have maps to QMK mode 0, which rgb_matrix_mode_noeeprom raises to 1: Solid colour
             if mode == VIALRGB_EFFECT_OFF:
                 vr["enable"] = False
             else:
                 vr["enable"] = True
-                vr["mode"] = mode
+                vr["mode"] = mode if mode in vr["supported"] else VIALRGB_EFFECT_SOLID_COLOR
             vr["speed"] = speed
             # rgb_matrix_sethsv_noeeprom: nothing while off; the brightness at most RGB_MATRIX_MAXIMUM_BRIGHTNESS
             if vr["enable"]:
@@ -387,12 +398,12 @@ class VirtualKeyboard:
         return msg[0:1]
 
     def lighting_now(self):
-        """ What a lighting save would keep now: compare with lighting_saved """
-        return {"rgblight": self.rgblight, "backlight": self.backlight, "vialrgb": self.vialrgb}
+        """ What a lighting save would keep now (a copy): compare with lighting_saved """
+        return copy.deepcopy({"rgblight": self.rgblight, "backlight": self.backlight, "vialrgb": self.vialrgb})
 
     def _bootloader(self, msg):
         if not self.bootloader_jump:
-            # built with VIAL_INSECURE: via.c has no bootloader jump, and answers it as unhandled
+            # firmware built without the bootloader jump: via.c answers it as unhandled
             return bytes([VIA_ID_UNHANDLED]) + msg[1:]
         if not self.unlocked:
             return msg
