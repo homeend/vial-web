@@ -46,8 +46,8 @@
               <dd>
                 <span class="value" class:code={fact.code} title={fact.value}>{fact.value}</span>
                 {#if fact.copy}
-                  <button type="button" class="copy" aria-label="Copy the {fact.label.toLowerCase()}" title="Copy"
-                    onclick={() => void copy(fact.value, `the ${fact.label.toLowerCase()}`)}>
+                  <button type="button" class="copy" aria-label="Copy the {fact.label}" title="Copy"
+                    onclick={() => void copy(fact.value, `the ${fact.label}`)}>
                     <svg viewBox="0 0 16 16" aria-hidden="true">
                       <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" /><path d="M10.5 3.5v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5" />
                     </svg>
@@ -121,6 +121,13 @@
     font-size: 13px;
   }
 
+  /* a phone: a narrower label column, so the Keyboard ID shows whole */
+  @media (max-width: 479px) {
+    .fact {
+      grid-template-columns: minmax(0, 8.5em) minmax(0, 1fr);
+    }
+  }
+
   dt {
     color: var(--text-2);
   }
@@ -176,7 +183,8 @@
   .copied {
     min-height: 1.4em;
     margin: 0;
-    color: var(--ok);
+    /* --ok alone is too light on white (4.1:1) */
+    color: color-mix(in srgb, var(--ok) 80%, var(--text));
     font-size: 12.5px;
   }
 </style>

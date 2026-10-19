@@ -117,7 +117,10 @@
     font-size: 12.5px;
   }
 
+  /* set apart from the switch's own label */
   .off-hint {
+    padding-left: 10px;
+    border-left: 1px solid var(--border-strong);
     color: var(--text-2);
     font-size: 12.5px;
   }

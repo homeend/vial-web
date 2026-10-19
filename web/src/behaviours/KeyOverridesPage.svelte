@@ -98,8 +98,8 @@
     if (!draft || busy) return;
     const index = draft.index;
     draft = null;
-    // a new one, never saved: its card goes, and so does the address naming it (New set it), so the focus goes to
-    // the New button
+    // a new one, never saved: its card goes, and so does the address naming it (New set it, or a deep link to a free
+    // entry, then Edit), so the focus goes to the New button
     if (!keyOverrideIsSet(model.keyOverrides[index])) {
       opened = opened.filter((i) => i !== index);
       if (index === item) router.go("key-overrides", null, { replace: true });

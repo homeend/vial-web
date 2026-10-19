@@ -44,7 +44,8 @@
         aria-describedby="{uid}-range{problem ? ` ${uid}-problem` : ''}{changed ? ` ${uid}-changed` : ''}"
         oninput={(e) => ontext(e.currentTarget.value)}
       />
-      <span class="range" id="{uid}-range">{field.min ?? 0}–{field.max ?? 0}</span>
+      <span class="range" id="{uid}-range"><span aria-hidden="true">{field.min ?? 0}–{field.max ?? 0}</span><span
+        class="visually-hidden">from {field.min ?? 0} to {field.max ?? 0}</span></span>
     </span>
     {#if problem}<p class="problem" id="{uid}-problem">{problem}</p>{/if}
   {/if}
@@ -101,7 +102,8 @@
   input {
     width: 88px;
     padding: 4px 8px;
-    border: 1px solid var(--border-strong);
+    /* its edge stands out from the row (3:1, WCAG 1.4.11) */
+    border: 1px solid color-mix(in srgb, var(--text-3) 80%, var(--text));
     border-radius: 7px;
     background: var(--surface-2);
     font-variant-numeric: tabular-nums;
@@ -114,7 +116,7 @@
 
   .range {
     min-width: 72px;
-    color: var(--text-3);
+    color: var(--text-2);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
   }

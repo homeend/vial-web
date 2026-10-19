@@ -55,7 +55,7 @@
     {#if removable}
       <Button variant="danger" disabled={!canSave} aria-disabled={busy || undefined} onclick={onremove}>Remove</Button>
     {/if}
-    {#if notReady}<span class="needs" id="alt-repeat-{index}-needs">Choose the last key, or a default alt key</span>{/if}
+    {#if notReady}<span class="needs" id="alt-repeat-{index}-needs">Choose the last key, or turn on Default to this alt key</span>{/if}
     <Button aria-disabled={busy || undefined} onclick={oncancel}>Cancel</Button>
     <Button variant="primary" disabled={!canSave || notReady} aria-disabled={busy || undefined}
       aria-describedby={notReady ? `alt-repeat-${index}-needs` : undefined} onclick={onsave}>Save</Button>
@@ -108,7 +108,10 @@
     font-size: 12.5px;
   }
 
+  /* set apart from the switch's own label */
   .off-hint {
+    padding-left: 10px;
+    border-left: 1px solid var(--border-strong);
     color: var(--text-2);
     font-size: 12.5px;
   }

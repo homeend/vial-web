@@ -223,7 +223,8 @@ describe("alt-repeat keys", () => {
       "After LEFT, Alt Repeat sends nothing. After any other key without modifiers that no alt-repeat key covers, " +
       "it sends nothing too, instead of the firmware's own pairs.");
     expect(altRepeatSentence(altRepeat({ keycode: NONE }), names))
-      .toBe("No key chosen yet: choose the last key, and what Alt Repeat sends after it.");
+      .toBe("No key chosen yet: choose the last key and what Alt Repeat sends after it, or turn on Default to this " +
+        "alt key and choose the alt key.");
   });
 
   it("says what a default alt key with no key of its own does", () => {

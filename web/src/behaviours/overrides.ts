@@ -260,7 +260,8 @@ function heldPhrase(mods: string[]): string {
 export function altRepeatSentence(a: AltRepeatDraft, names: Names): string {
   const isDefault = (a.options & ALT_REPEAT_OPTIONS[0].bit) !== 0;
   if (!altRepeatReady(a)) {
-    return "No key chosen yet: choose the last key, and what Alt Repeat sends after it.";
+    return "No key chosen yet: choose the last key and what Alt Repeat sends after it, or turn on Default to this alt " +
+      "key and choose the alt key.";
   }
   const mods = modNames(a.allowedMods, (a.options & ALT_REPEAT_OPTIONS[2].bit) !== 0);
   const held = heldPhrase(mods);

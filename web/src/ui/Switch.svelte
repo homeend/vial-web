@@ -103,4 +103,17 @@
   input:disabled + .track {
     opacity: 0.45;
   }
+
+  /* the label says so too: the cursor over it, and dimmed while it can't be used */
+  .switch:has(input:disabled) {
+    cursor: not-allowed;
+  }
+
+  .switch:has(input[aria-disabled="true"]) {
+    cursor: progress;
+  }
+
+  .switch:has(input:disabled) .text {
+    color: var(--text-2);
+  }
 </style>

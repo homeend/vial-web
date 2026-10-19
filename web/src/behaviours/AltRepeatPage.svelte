@@ -95,8 +95,8 @@
     if (!draft || busy) return;
     const index = draft.index;
     draft = null;
-    // a new one, never saved: its card goes, and so does the address naming it (New set it), so the focus goes to
-    // the New button
+    // a new one, never saved: its card goes, and so does the address naming it (New set it, or a deep link to a free
+    // entry, then Edit), so the focus goes to the New button
     if (!altRepeatIsSet(model.altRepeatKeys[index])) {
       opened = opened.filter((i) => i !== index);
       if (index === item) router.go("alt-repeat", null, { replace: true });
@@ -125,7 +125,7 @@
   <PageHeader
     id="alt-repeat-title"
     title="Alt-repeat"
-    description="Repeat (QK_REPEAT_KEY) sends the last key again; Alt Repeat (QK_ALT_REPEAT_KEY) sends its opposite. Each entry here says what Alt Repeat sends after a key, adding to or changing the firmware's own pairs; a default one replaces them for every other key."
+    description="Repeat (QK_REPEAT_KEY) sends the last key again; Alt Repeat (QK_ALT_REPEAT_KEY) sends its opposite. Each entry here says what Alt Repeat sends after a key, adding to or changing the firmware's own pairs; a default one replaces them for the other keys it covers."
     note="Edit one, then Save to send it to the keyboard; Cancel leaves it as it was."
   >
     {#snippet action()}
