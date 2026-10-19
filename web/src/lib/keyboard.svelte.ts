@@ -3,7 +3,7 @@
 import { untrack } from "svelte";
 import { api } from "../api/api";
 import { DEFAULT_LANGUAGE, setRequestLanguage } from "../api/client";
-import { ApiError, failureMessage } from "../api/errors";
+import { ApiError, causeMessage, failureMessage } from "../api/errors";
 import { connectEvents, type LinkState, type ServerEvent } from "../api/events";
 import type {
   KeyboardLanguage, KeyboardModel, KeycodeCategory, MacroActionIn, Named, Session, TapDanceIn,
@@ -11,7 +11,7 @@ import type {
 import { actionAt, type KeyRef } from "../keyboard/refs";
 import { freeTapDance } from "../keymap/tapdance";
 import { toasts } from "./toasts.svelte";
-import { Unlocker } from "./unlock.svelte";
+import { LOCKED, Unlocker, type UnlockOutcome } from "./unlock.svelte";
 
 const LANGUAGE_KEY = "vial.keyboardLanguage";
 
@@ -54,6 +54,8 @@ export class KeyboardStore {
   canEdit = $derived(this.model !== null && !this.stale && this.connected && this.link === "open");
 
   #loads = 0;
+  /** "connected" and "disconnected" events so far: once it changes, the keyboard may not be the one it was */
+  #plugs = 0;
   /** the language list, or null when it couldn't be read */
   #languageList: Promise<KeyboardLanguage[] | null> = Promise.resolve(null);
 
@@ -79,6 +81,7 @@ export class KeyboardStore {
       if (event.unlock) this.unlock.update(event.unlock);
       return;
     }
+    if (event.type !== "reloaded") this.#plugs++;
     this.connected = event.type !== "disconnected";
     this.stale = true;
     if (this.connected) {
@@ -86,6 +89,9 @@ export class KeyboardStore {
     } else {
       this.#loads++; // a load in flight is for the keyboard that went away
       this.loadError = null;
+      // the server says "disconnected" only for a loaded keyboard: an unlock it ran is over, even if the session
+      // can't be read
+      this.unlock.update(LOCKED);
       api.session().then((s) => this.#useSession(s), () => undefined);
     }
   }
@@ -206,6 +212,7 @@ export class KeyboardStore {
 
   /** Set a combo: its keycodes (at most 4; the empty slots are filled in) and its output */
   setCombo(index: number, keys: string[], output: string, action = "Changing the combo"): Promise<boolean> {
+    if (keys.length > 4) throw new RangeError(`a combo has at most 4 keys, not ${keys.length}`);
     const model = this.model;
     if (!model || !this.canEdit) return Promise.resolve(false);
     const slots = [...keys, "KC_NO", "KC_NO", "KC_NO", "KC_NO"].slice(0, 4);
@@ -228,26 +235,34 @@ export class KeyboardStore {
     const model = this.model;
     if (!model || !this.canEdit) return Promise.resolve(false);
     const what = { layers: "layer", tapDance: "tap dance", macros: "macro" }[kind];
+    const items = () => (kind === "layers" ? model.layers : kind === "tapDance" ? model.tapDance : model.macros.items);
+    if (!items()[index]) throw new RangeError(`there is no ${what} ${index}`);
     return this.#edit(`Renaming the ${what}`, model, async () => {
       // the reply is the name to show: the new one, or the default name when it was cleared
       const named = await api.setName(kind, index, name);
-      const item = kind === "layers" ? model.layers[index]
-        : kind === "tapDance" ? model.tapDance[index] : model.macros.items[index];
-      item.name = named.name;
-      item.customName = named.customName;
+      // looked up again: the macros may have been replaced meanwhile
+      const item = items()[index];
+      if (item) Object.assign(item, { name: named.name, customName: named.customName });
     });
   }
 
   /** Runs write, which puts the keyboard's reply into model. A change refused because the keyboard is locked unlocks
-   * it (the user holds its unlock keys) and is sent again, once. */
+   * it (the user holds its unlock keys) and is sent again, once, unless the keyboard was unplugged or another one
+   * plugged in meanwhile: the change was for the one that went. */
   async #edit(action: string, model: KeyboardModel, write: () => Promise<void>): Promise<boolean> {
     this.pending++;
     const loads = this.#loads;
+    const plugs = this.#plugs;
     try {
       try {
         await write();
       } catch (error) {
-        if (!(error instanceof ApiError && error.status === 423) || !(await this.unlock.unlock())) throw error;
+        if (!(error instanceof ApiError && error.status === 423)) throw error;
+        const outcome = await this.unlock.unlockQuietly();
+        if (!outcome.unlocked || this.#plugs !== plugs) {
+          toasts.error(this.#notUnlocked(action, outcome));
+          return false;
+        }
         await write();
       }
       // a load started or landed meanwhile and may have read the keyboard before this edit (it can land after it,
@@ -261,6 +276,13 @@ export class KeyboardStore {
     } finally {
       this.pending--;
     }
+  }
+
+  /** Why a change refused as the keyboard is locked wasn't sent again: one message for the change and its unlock */
+  #notUnlocked(action: string, outcome: UnlockOutcome): string {
+    const why = !outcome.unlocked && outcome.failure !== undefined
+      ? `unlocking it failed: ${causeMessage(outcome.failure)}` : "it wasn't unlocked.";
+    return `${action} failed: The keyboard is locked, and ${why}`;
   }
 }
 

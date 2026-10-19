@@ -353,7 +353,8 @@ describe("refused edits", () => {
     mocked.setTapDance.mockReturnValueOnce(made.promise);
     const turning = store.turnIntoTapDance(0, { kind: "key", index: 0 });
 
-    mocked.keyboard.mockReturnValueOnce(new Promise(() => undefined)); // still reading when the tap dance is made
+    // still reading when the tap dance is made: every read, so neither the reload nor the edit's own read lands
+    mocked.keyboard.mockReturnValue(new Promise(() => undefined));
     emit("reloaded");
     made.resolve({ ...free, tap: described("KC_A") } as never);
     expect(await turning).toBeNull();
@@ -373,6 +374,13 @@ describe("behaviour edits", () => {
     expect(store.model!.combos[0].output.code).toBe("KC_ESC");
   });
 
+  it("refuse a combo of more than 4 keys", async () => {
+    const { store } = await loaded();
+    store.model!.combos = [{ index: 0, keys: [], output: described("KC_NO") }] as never;
+    expect(() => store.setCombo(0, ["KC_A", "KC_B", "KC_C", "KC_D", "KC_E"], "KC_ESC")).toThrow("at most 4 keys");
+    expect(mocked.setCombo).not.toHaveBeenCalled();
+  });
+
   it("name a tap dance or a macro", async () => {
     const { store } = await loaded();
     store.model!.macros = { count: 1, memory: 100, used: 1, items: [{ index: 0, name: "", customName: false, actions: [] }] };
@@ -380,6 +388,29 @@ describe("behaviour edits", () => {
     expect(await store.rename("macros", 0, "git status")).toBe(true);
     expect(mocked.setName).toHaveBeenCalledWith("macros", 0, "git status");
     expect(store.model!.macros.items[0]).toMatchObject({ name: "git status", customName: true });
+  });
+
+  it.each([
+    ["layers", (m: KeyboardModel) => m.layers[0]],
+    ["tapDance", (m: KeyboardModel) => m.tapDance[0]],
+  ] as const)("name %s, and give one its default name back", async (kind, item) => {
+    const { store } = await loaded();
+    store.model!.tapDance = [{ index: 0, name: "Tap dance 0", customName: false }] as never;
+    mocked.setName.mockResolvedValueOnce({ kind, index: 0, name: "nav", customName: true });
+    expect(await store.rename(kind, 0, "nav")).toBe(true);
+    expect(mocked.setName).toHaveBeenCalledWith(kind, 0, "nav");
+    expect(item(store.model!)).toMatchObject({ name: "nav", customName: true });
+
+    mocked.setName.mockResolvedValueOnce({ kind, index: 0, name: "Default 0", customName: false });
+    expect(await store.rename(kind, 0, "")).toBe(true);
+    expect(item(store.model!)).toMatchObject({ name: "Default 0", customName: false });
+  });
+
+  it("refuse to name something that isn't there", async () => {
+    const { store } = await loaded();
+    expect(() => store.rename("macros", 3, "x")).toThrow("there is no macro 3");
+    expect(() => store.rename("layers", 1, "x")).toThrow("there is no layer 1");
+    expect(mocked.setName).not.toHaveBeenCalled();
   });
 });
 
@@ -434,5 +465,79 @@ describe("a locked keyboard", () => {
     expect(mocked.unlockStart).not.toHaveBeenCalled();
     send({ type: "unlock", unlock: UNLOCKED });
     expect(await saving).toBe(true);
+  });
+
+  /** A macro save refused as the keyboard is locked, waiting for the unlock it started */
+  async function waitingForUnlock() {
+    const s = await loaded();
+    mocked.setMacros.mockRejectedValueOnce(new ApiError(423, "the keyboard is locked")).mockResolvedValue(macros);
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    const saving = s.store.setMacros([[]]);
+    await settle();
+    expect(s.store.unlock.open).toBe(true);
+    expect(s.store.pending).toBe(1);
+    return { ...s, saving };
+  }
+
+  const NOT_UNLOCKED = "Saving the macro failed: The keyboard is locked, and it wasn't unlocked.";
+
+  it("fails the change waiting for its unlock when the keyboard is unplugged, even if the session can't be read", async () => {
+    const { store, emit, saving } = await waitingForUnlock();
+    mocked.session.mockRejectedValueOnce(new ApiError(0));
+    emit("disconnected");
+    await settle();
+    expect(store.unlock.open).toBe(false);
+    expect(store.pending).toBe(0);
+    expect(await saving).toBe(false);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(1);
+    expect(toasts.items.map((t) => t.message)).toEqual([NOT_UNLOCKED]);
+  });
+
+  it.each([
+    [["disconnected", "connected"]],
+    [["connected"]], // the events link was down while the first one was unplugged
+  ] as const)("sends nothing to another, unlocked keyboard plugged in meanwhile (%j)", async (events) => {
+    const { store, emit, saving } = await waitingForUnlock();
+    mocked.session.mockResolvedValue({ fake: true, unlock: UNLOCKED } as never);
+    for (const event of events) emit(event);
+    await settle();
+    expect(store.pending).toBe(0);
+    expect(await saving).toBe(false);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(1);
+    expect(toasts.items.map((t) => t.message)).toEqual([NOT_UNLOCKED]);
+  });
+
+  it("sends the change again after a reload while it waited for its unlock", async () => {
+    const { send, emit, saving } = await waitingForUnlock();
+    mocked.session.mockResolvedValue({ fake: true, unlock: UNLOCKING } as never);
+    emit("reloaded");
+    await settle();
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await saving).toBe(true);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails once, with one message, when the change sent again is refused again", async () => {
+    const { store, send, saving } = await waitingForUnlock();
+    mocked.setMacros.mockRejectedValue(new ApiError(423, "the keyboard is locked: unlock it to make this change"));
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await saving).toBe(false);
+    await settle();
+    expect(mocked.setMacros).toHaveBeenCalledTimes(2);
+    expect(mocked.unlockStart).toHaveBeenCalledTimes(1);
+    expect(store.pending).toBe(0);
+    expect(toasts.items.map((t) => t.message))
+      .toEqual(["Saving the macro failed: the keyboard is locked: unlock it to make this change"]);
+  });
+
+  it("fails with one message when the unlock can't start", async () => {
+    const { store } = await loaded();
+    mocked.setMacros.mockRejectedValueOnce(new ApiError(423, "the keyboard is locked"));
+    mocked.unlockStart.mockRejectedValueOnce(new ApiError(502));
+    expect(await store.setMacros([[]])).toBe(false);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(1);
+    expect(store.unlock.open).toBe(false);
+    expect(toasts.items.map((t) => t.message))
+      .toEqual(["Saving the macro failed: The keyboard is locked, and unlocking it failed: The keyboard didn't respond."]);
   });
 });

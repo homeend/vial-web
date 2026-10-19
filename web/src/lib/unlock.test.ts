@@ -123,6 +123,51 @@ describe("Unlocker", () => {
     expect(toasts.items.map((t) => t.message)).toEqual(["Unlocking the keyboard failed: The keyboard didn't respond."]);
   });
 
+  it("leaves a start's failure to quiet callers to report, and tells them why", async () => {
+    const unlocker = new Unlocker();
+    const failure = new ApiError(502);
+    mocked.unlockStart.mockRejectedValueOnce(failure);
+    expect(await Promise.all([unlocker.unlockQuietly(), unlocker.unlockQuietly()]))
+      .toEqual([{ unlocked: false, failure }, { unlocked: false, failure }]);
+    expect(mocked.unlockStart).toHaveBeenCalledTimes(1);
+    expect(toasts.items).toEqual([]);
+    expect(unlocker.open).toBe(false);
+
+    // told as unlock() is otherwise
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    const unlocking = unlocker.unlockQuietly();
+    await vi.waitFor(() => expect(unlocker.open).toBe(true));
+    unlocker.update(UNLOCKED);
+    expect(await unlocking).toEqual({ unlocked: true });
+  });
+
+  it.each([
+    ["a start asked for directly", (u: InstanceType<typeof Unlocker>) => void u.start()],
+    ["an unlock that isn't quiet", (u: InstanceType<typeof Unlocker>) => void u.unlock()],
+  ])("shows a start's failure when %s waits for it too, and then doesn't hand it to quiet callers", async (_, other) => {
+    const unlocker = new Unlocker();
+    const started = deferred<UnlockState>();
+    mocked.unlockStart.mockReturnValueOnce(started.promise);
+    const quiet = unlocker.unlockQuietly();
+    other(unlocker);
+    started.reject(new ApiError(502));
+    expect(await quiet).toEqual({ unlocked: false });
+    expect(mocked.unlockStart).toHaveBeenCalledTimes(1);
+    expect(toasts.items.map((t) => t.message)).toEqual(["Unlocking the keyboard failed: The keyboard didn't respond."]);
+  });
+
+  it("shows the failure of a start asked for directly", async () => {
+    const unlocker = new Unlocker();
+    mocked.unlockStart.mockRejectedValueOnce(new ApiError(502));
+    await unlocker.start();
+    expect(toasts.items.map((t) => t.message)).toEqual(["Unlocking the keyboard failed: The keyboard didn't respond."]);
+
+    // the next start, asked for by a quiet caller, is quiet again
+    mocked.unlockStart.mockRejectedValueOnce(new ApiError(502));
+    expect((await unlocker.unlockQuietly()).unlocked).toBe(false);
+    expect(toasts.items).toHaveLength(1);
+  });
+
   it("takes an event over an answer that comes after it", async () => {
     const unlocker = new Unlocker();
     const started = deferred<UnlockState>();

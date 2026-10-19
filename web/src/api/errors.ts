@@ -20,7 +20,8 @@ export function errorMessage(status: number, detail?: string): string {
     case 401:
       return "This page's session has ended. Open Vial again from the link in its terminal.";
     case 423:
-      return "The keyboard is locked, and it wasn't unlocked.";
+      // "the keyboard is locked: unlock it to make this change", or it waits for its unlock keys
+      return detail || "The keyboard is locked.";
     case 422:
       return detail || "The keyboard can't take this change.";
     case 500:
@@ -39,7 +40,12 @@ export function errorMessage(status: number, detail?: string): string {
  * request() reports every failure to reach the server as ApiError(0), so anything else is a bug in the page.
  */
 export function failureMessage(action: string, error: unknown): string {
-  if (error instanceof ApiError) return `${action} failed: ${error.message}`;
+  return `${action} failed: ${causeMessage(error)}`;
+}
+
+/** What went wrong, to follow a failure of one's own: "The keyboard didn't respond." */
+export function causeMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
   console.error(error);
-  return `${action} failed: Unexpected error in the page.`;
+  return "Unexpected error in the page.";
 }
