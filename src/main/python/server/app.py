@@ -516,6 +516,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         await hub.broadcast({"type": "reloaded"})
         return result
 
+    @app.post("/api/layout-file/preview", response_model=schemas.LayoutFilePreview)
+    async def preview_layout(request: Request, lang: Lang = languages.DEFAULT):
+        """ What POST /api/layout-file would change with this file, checked the same way; nothing is written """
+        languages.overrides(lang)
+        data = await read_limited(request, MAX_LAYOUT_FILE)
+        return await asyncio.to_thread(read, lambda kb: edits.preview_layout_file(kb, data, names_for(kb)), lang)
+
     @app.post("/api/unlock/start", response_model=schemas.UnlockState)
     async def start_unlock():
         """ Start unlocking the keyboard: the user then holds its unlock keys until the countdown ends, which "unlock"

@@ -98,13 +98,16 @@ def macro_action(action):
     raise ValueError("unknown macro action {!r}".format(action))
 
 
+def macro(index, actions, names):
+    """ A macro from its protocol actions """
+    converted = [macro_action(a) for a in actions]
+    custom = names["macros"].get(str(index))
+    return schemas.Macro(index=index, name=custom or suggest_macro_name([a.model_dump() for a in converted]),
+                         customName=bool(custom), actions=converted)
+
+
 def macros(kb, names):
-    items = []
-    for index, actions in enumerate(kb.macros_deserialize(kb.macro)):
-        converted = [macro_action(a) for a in actions]
-        custom = names["macros"].get(str(index))
-        items.append(schemas.Macro(index=index, name=custom or suggest_macro_name([a.model_dump() for a in converted]),
-                                   customName=bool(custom), actions=converted))
+    items = [macro(index, actions, names) for index, actions in enumerate(kb.macros_deserialize(kb.macro))]
     return schemas.Macros(count=kb.macro_count, memory=kb.macro_memory, used=len(kb.macro), items=items)
 
 

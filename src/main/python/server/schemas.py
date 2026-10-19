@@ -265,6 +265,78 @@ class KeyboardModel(BaseModel):
     unlocked: bool
 
 
+class KeyChange(BaseModel):
+    layer: int
+    row: int
+    col: int
+    before: Described
+    after: Described
+
+
+class EncoderChange(BaseModel):
+    layer: int
+    encoder: int
+    direction: int
+    before: Described
+    after: Described
+
+
+class LayoutOptionsChange(BaseModel):
+    before: int
+    after: int
+
+
+class TapDanceChange(BaseModel):
+    before: TapDance
+    after: TapDance
+
+
+class ComboChange(BaseModel):
+    before: Combo
+    after: Combo
+
+
+class KeyOverrideChange(BaseModel):
+    before: KeyOverride
+    after: KeyOverride
+
+
+class AltRepeatKeyChange(BaseModel):
+    before: AltRepeatKey
+    after: AltRepeatKey
+
+
+class MacroChange(BaseModel):
+    before: Macro
+    after: Macro
+
+
+class SettingChange(BaseModel):
+    qsid: int
+    before: int
+    after: int
+
+
+class LayoutFilePreview(BaseModel):
+    """ What loading a .vil file would change on the keyboard; nothing is written to find out. Each list holds only
+    what differs from what the keyboard holds now. """
+    uid: Optional[str] = None
+    """ the keyboard the file was saved from, as KeyboardModel.uid; None when the file doesn't say """
+    keys: list[KeyChange]
+    encoders: list[EncoderChange]
+    layoutOptions: Optional[LayoutOptionsChange] = None
+    tapDance: list[TapDanceChange]
+    combos: list[ComboChange]
+    keyOverrides: list[KeyOverrideChange]
+    altRepeatKeys: list[AltRepeatKeyChange]
+    macros: list[MacroChange]
+    settings: list[SettingChange]
+    ignored: list[str]
+    """ what the file has that this keyboard doesn't, and is left out (as the Qt app does): "layers 4 to 7" """
+    needsUnlock: bool
+    """ writing it needs an unlocked keyboard (it changes the macros, or puts QK_BOOT somewhere) """
+
+
 class Session(BaseModel):
     status: Literal["connected", "disconnected"]
     fake: bool

@@ -325,11 +325,13 @@ def _vil_macro_action(kb, act):
     return _macro_action(kb, kind, keys=act[1:])
 
 
-def _vil_settings(kb, settings):
-    """ {qsid: value} to write; settings this keyboard doesn't have are skipped, as the Qt app does """
+def _vil_settings(kb, settings, ignored):
+    """ {qsid: value} to write; settings this keyboard doesn't have are skipped, as the Qt app does, and listed in
+    ignored """
     if not isinstance(settings, dict):
         raise _Invalid("settings must be an object")
     out = {}
+    skipped = []
     for key, value in settings.items():
         try:
             qsid = int(key)
@@ -338,11 +340,48 @@ def _vil_settings(kb, settings):
         if qsid in kb.supported_settings and QmkSettingsCodec.is_qsid_supported(qsid):
             _check_setting(kb, qsid, value)
             out[qsid] = value
+        else:
+            skipped.append(qsid)
+    if skipped:
+        ignored.append("QMK setting{} {}".format("s" if len(skipped) > 1 else "", ", ".join(map(str, sorted(skipped)))))
     return out
 
 
-def _parse_layout_file(kb, data):
-    """ Decode and check a whole .vil file against this keyboard, without writing. Returns the changes. """
+PLURALS = {"layer": "layers", "macro": "macros", "tap dance": "tap dances", "combo": "combos",
+           "key override": "key overrides", "alt-repeat key": "alt-repeat keys"}
+
+
+def _beyond(what, have, total):
+    """ The entries of a file beyond those the keyboard has, in words: "tap dances 8 to 15", "layer 4"; None if
+    there are none """
+    if total <= have:
+        return None
+    if total == have + 1:
+        return "{} {}".format(what, have)
+    return "{} {} to {}".format(PLURALS[what], have, total - 1)
+
+
+class OtherKeyboard(ValueError):
+    """ A .vil file saved from another keyboard """
+
+
+def _check_uid(kb, doc):
+    """ A file that says which keyboard it was saved from must be this one's: another keyboard's keycodes would land
+    on the wrong keys. (The Qt app asks first; here it is refused.) Returns the file's UID, or None. """
+    uid = doc.get("uid")
+    if uid is None:
+        return None
+    if isinstance(uid, bool) or not isinstance(uid, int) or not 0 <= uid <= 0xFFFFFFFFFFFFFFFF:
+        raise _Invalid("uid must be a number")
+    if uid != kb.keyboard_id:
+        raise OtherKeyboard("this layout file is for another keyboard (ID {:016X}), not this one (ID {})".format(
+            uid, model.uid_of(kb)))
+    return uid
+
+
+def _parse_layout_file(kb, data, any_keyboard=False):
+    """ Decode and check a whole .vil file against this keyboard, without writing. Returns the changes.
+    any_keyboard: a file saved from another keyboard is taken too """
     try:
         doc = json.loads(data)
     except RecursionError:
@@ -351,11 +390,16 @@ def _parse_layout_file(kb, data):
         raise _Invalid(str(e))
     if not isinstance(doc, dict):
         raise _Invalid("expected a JSON object")
+    uid = None if any_keyboard else _check_uid(kb, doc)
     for required in ("layout", "encoder_layout", "layout_options"):
         if required not in doc:
             raise _Invalid("missing {}".format(required))
+    ignored = []
 
     keys = {}
+    layer_beyond = _beyond("layer", kb.layers, len(_list(doc["layout"], "layout")))
+    if layer_beyond:
+        ignored.append(layer_beyond)
     for layer, rows in enumerate(_list(doc["layout"], "layout")):
         for row, cols in enumerate(_list(rows, "a layout layer")):
             for col, value in enumerate(_list(cols, "a layout row")):
@@ -383,6 +427,9 @@ def _parse_layout_file(kb, data):
         held = kb.save_macro()
         macros = []
         # macros beyond what the keyboard has are skipped, as the Qt app does
+        macro_beyond = _beyond("macro", kb.macro_count, len(_list(doc["macro"], "macro")))
+        if macro_beyond:
+            ignored.append(macro_beyond)
         for index, actions in enumerate(_list(doc["macro"], "macro")[:kb.macro_count]):
             if actions == held[index]:
                 macros.append(None)  # unchanged: keep the keyboard's bytes as they are
@@ -393,10 +440,15 @@ def _parse_layout_file(kb, data):
         macros += [[] for _ in range(kb.macro_count - len(macros))]
         macro_data = _at("macros", _macros_data, kb, macros)
 
-    def entries(section, count, convert):
-        """ (index, entry) of a section; entries beyond what the keyboard has are skipped, as the Qt app does """
+    def entries(section, what, count, convert):
+        """ (index, entry) of a section; entries beyond what the keyboard has are skipped, as the Qt app does, and
+        listed in ignored """
+        items = _list(doc.get(section, []), section)
+        beyond = _beyond(what, count, len(items))
+        if beyond:
+            ignored.append(beyond)
         return [(index, _at("{} {}".format(section, index), convert, index, entry))
-                for index, entry in enumerate(_list(doc.get(section, []), section)[:count])]
+                for index, entry in enumerate(items[:count])]
 
     # keycodes go through code() first: older files hold firmware integers, which the API's string fields refuse
 
@@ -430,17 +482,20 @@ def _parse_layout_file(kb, data):
             altKeycode=code(kb, _field(e, "alt_keycode", what), current.alt_keycode),
             allowedMods=_field(e, "allowed_mods", what), options=_field(e, "options", what))), current)
 
-    return {
+    changes = {
+        "uid": uid,
         "keys": keys,
         "encoders": encoders,
         "layout_options": layout_options,
         "macro": macro_data,
-        "tap_dance": entries("tap_dance", kb.tap_dance_count, tap_dance),
-        "combo": entries("combo", kb.combo_count, combo),
-        "key_override": entries("key_override", kb.key_override_count, key_override),
-        "alt_repeat_key": entries("alt_repeat_key", kb.alt_repeat_key_count, alt_repeat_key),
-        "settings": _at("settings", _vil_settings, kb, doc.get("settings", {})),
+        "tap_dance": entries("tap_dance", "tap dance", kb.tap_dance_count, tap_dance),
+        "combo": entries("combo", "combo", kb.combo_count, combo),
+        "key_override": entries("key_override", "key override", kb.key_override_count, key_override),
+        "alt_repeat_key": entries("alt_repeat_key", "alt-repeat key", kb.alt_repeat_key_count, alt_repeat_key),
+        "settings": _at("settings", _vil_settings, kb, doc.get("settings", {}), ignored),
     }
+    changes["ignored"] = ignored
+    return changes
 
 
 def _needs_unlock(kb, changes):
@@ -458,13 +513,69 @@ def _needs_unlock(kb, changes):
     ))
 
 
-def prepare_layout_file(kb, data):
-    """ Check a whole .vil file (bytes), including whether the keyboard must be unlocked for it, without writing
-    anything. Raises ValueError (or KeyboardLocked) if it can't be applied; returns apply(), which writes it. """
+def _layout_file_changes(kb, data, any_keyboard=False):
+    """ _parse_layout_file, with a problem in the file as a ValueError """
     try:
-        changes = _parse_layout_file(kb, data)
+        return _parse_layout_file(kb, data, any_keyboard)
     except _Invalid as e:
         raise ValueError("not a valid Vial layout file: {}".format(e))
+
+
+def _macro_changes(kb, data, names):
+    """ The macros a new macro buffer changes -> [MacroChange] """
+    if data is None or data == kb.macro:
+        return []
+    out = []
+    for index, (old, new) in enumerate(zip(kb.macros_deserialize(kb.macro), kb.macros_deserialize(data))):
+        before, after = model.macro(index, old, names), model.macro(index, new, names)
+        if before.actions != after.actions:
+            out.append(schemas.MacroChange(before=before, after=after))
+    return out
+
+
+def preview_layout_file(kb, data, names):
+    """ What loading a .vil file (bytes) would change, checked as prepare_layout_file checks it. Writes nothing, and
+    works on a locked keyboard too: needsUnlock says whether loading it needs the keyboard unlocked
+    -> LayoutFilePreview """
+    changes = _layout_file_changes(kb, data)
+    options = changes["layout_options"]
+    return schemas.LayoutFilePreview(
+        uid=None if changes["uid"] is None else "{:016X}".format(changes["uid"]),
+        keys=[schemas.KeyChange(layer=layer, row=row, col=col, before=model.d(kb.layout[(layer, row, col)]),
+                                after=model.d(keycode))
+              for (layer, row, col), keycode in sorted(changes["keys"].items())
+              if kb.layout[(layer, row, col)] != keycode],
+        encoders=[schemas.EncoderChange(layer=layer, encoder=index, direction=direction,
+                                        before=model.d(kb.encoder_layout[(layer, index, direction)]),
+                                        after=model.d(keycode))
+                  for (layer, index, direction), keycode in sorted(changes["encoders"].items())
+                  if kb.encoder_layout[(layer, index, direction)] != keycode],
+        layoutOptions=schemas.LayoutOptionsChange(before=kb.layout_options, after=options)
+        if options != -1 and options != kb.layout_options else None,
+        tapDance=[schemas.TapDanceChange(before=model.tap_dance(i, kb.tap_dance_entries[i], names),
+                                         after=model.tap_dance(i, e, names))
+                  for i, e in changes["tap_dance"] if kb.tap_dance_entries[i] != e],
+        combos=[schemas.ComboChange(before=model.combo(i, kb.combo_entries[i]), after=model.combo(i, e))
+                for i, e in changes["combo"] if kb.combo_entries[i] != e],
+        keyOverrides=[schemas.KeyOverrideChange(before=model.key_override(i, kb.key_override_entries[i]),
+                                                after=model.key_override(i, e))
+                      for i, e in changes["key_override"] if kb.key_override_entries[i] != e],
+        altRepeatKeys=[schemas.AltRepeatKeyChange(before=model.alt_repeat_key(i, kb.alt_repeat_key_entries[i]),
+                                                  after=model.alt_repeat_key(i, e))
+                       for i, e in changes["alt_repeat_key"] if kb.alt_repeat_key_entries[i] != e],
+        macros=_macro_changes(kb, changes["macro"], names),
+        settings=[schemas.SettingChange(qsid=qsid, before=kb.settings.get(qsid, 0), after=value)
+                  for qsid, value in sorted(changes["settings"].items()) if kb.settings.get(qsid) != value],
+        ignored=changes["ignored"],
+        needsUnlock=_needs_unlock(kb, changes),
+    )
+
+
+def prepare_layout_file(kb, data, any_keyboard=False):
+    """ Check a whole .vil file (bytes), including whether the keyboard must be unlocked for it, without writing
+    anything. Raises ValueError (or KeyboardLocked) if it can't be applied; returns apply(), which writes it.
+    any_keyboard: a file saved from another keyboard is taken too (the simulator loading someone's layout) """
+    changes = _layout_file_changes(kb, data, any_keyboard)
     if _needs_unlock(kb, changes):
         request_unlock(kb)
 

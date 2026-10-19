@@ -452,7 +452,8 @@ def load_layout_file(manager, path):
     except OSError as e:
         return e.strerror or str(e)
     try:
-        manager.run(lambda kb: edits.prepare_layout_file(kb, data)())
+        # any keyboard's: the simulated one stands in for the keyboard that saved the file
+        manager.run(lambda kb: edits.prepare_layout_file(kb, data, any_keyboard=True)())
     except Exception as e:
         return str(e) or e.__class__.__name__
     return None

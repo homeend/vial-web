@@ -380,6 +380,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/layout-file/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Layout
+         * @description What POST /api/layout-file would change with this file, checked the same way; nothing is written
+         */
+        post: operations["preview_layout_api_layout_file_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/unlock/start": {
         parameters: {
             query?: never;
@@ -459,6 +479,11 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
+        /** AltRepeatKeyChange */
+        AltRepeatKeyChange: {
+            before: components["schemas"]["AltRepeatKey"];
+            after: components["schemas"]["AltRepeatKey"];
+        };
         /** AltRepeatKeyIn */
         AltRepeatKeyIn: {
             /** Keycode */
@@ -526,6 +551,11 @@ export interface components {
             keys: components["schemas"]["Described"][];
             output: components["schemas"]["Described"];
         };
+        /** ComboChange */
+        ComboChange: {
+            before: components["schemas"]["Combo"];
+            after: components["schemas"]["Combo"];
+        };
         /** ComboIn */
         ComboIn: {
             /** Keys */
@@ -565,10 +595,32 @@ export interface components {
             /** Tapcode */
             tapCode?: string | null;
         };
+        /** EncoderChange */
+        EncoderChange: {
+            /** Layer */
+            layer: number;
+            /** Encoder */
+            encoder: number;
+            /** Direction */
+            direction: number;
+            before: components["schemas"]["Described"];
+            after: components["schemas"]["Described"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** KeyChange */
+        KeyChange: {
+            /** Layer */
+            layer: number;
+            /** Row */
+            row: number;
+            /** Col */
+            col: number;
+            before: components["schemas"]["Described"];
+            after: components["schemas"]["Described"];
         };
         /**
          * KeyGeometry
@@ -661,6 +713,11 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
+        /** KeyOverrideChange */
+        KeyOverrideChange: {
+            before: components["schemas"]["KeyOverride"];
+            after: components["schemas"]["KeyOverride"];
+        };
         /** KeyOverrideIn */
         KeyOverrideIn: {
             /** Trigger */
@@ -748,12 +805,49 @@ export interface components {
             /** Encoders */
             encoders: components["schemas"]["Described"][];
         };
+        /**
+         * LayoutFilePreview
+         * @description What loading a .vil file would change on the keyboard; nothing is written to find out. Each list holds only
+         *     what differs from what the keyboard holds now.
+         */
+        LayoutFilePreview: {
+            /** Uid */
+            uid?: string | null;
+            /** Keys */
+            keys: components["schemas"]["KeyChange"][];
+            /** Encoders */
+            encoders: components["schemas"]["EncoderChange"][];
+            layoutOptions?: components["schemas"]["LayoutOptionsChange"] | null;
+            /** Tapdance */
+            tapDance: components["schemas"]["TapDanceChange"][];
+            /** Combos */
+            combos: components["schemas"]["ComboChange"][];
+            /** Keyoverrides */
+            keyOverrides: components["schemas"]["KeyOverrideChange"][];
+            /** Altrepeatkeys */
+            altRepeatKeys: components["schemas"]["AltRepeatKeyChange"][];
+            /** Macros */
+            macros: components["schemas"]["MacroChange"][];
+            /** Settings */
+            settings: components["schemas"]["SettingChange"][];
+            /** Ignored */
+            ignored: string[];
+            /** Needsunlock */
+            needsUnlock: boolean;
+        };
         /** LayoutOptions */
         LayoutOptions: {
             /** Value */
             value: number;
             /** Labels */
             labels: (string | string[])[];
+        };
+        /** LayoutOptionsChange */
+        LayoutOptionsChange: {
+            /** Before */
+            before: number;
+            /** After */
+            after: number;
         };
         /** LayoutOptionsValue */
         LayoutOptionsValue: {
@@ -833,6 +927,11 @@ export interface components {
             keys: string[];
             /** Delay */
             delay?: number | null;
+        };
+        /** MacroChange */
+        MacroChange: {
+            before: components["schemas"]["Macro"];
+            after: components["schemas"]["Macro"];
         };
         /** Macros */
         Macros: {
@@ -957,6 +1056,15 @@ export interface components {
             /** Value */
             value: number;
         };
+        /** SettingChange */
+        SettingChange: {
+            /** Qsid */
+            qsid: number;
+            /** Before */
+            before: number;
+            /** After */
+            after: number;
+        };
         /**
          * SettingField
          * @description One field of the QMK settings form, as qmk_settings.json defines it. Several boolean fields can share a qsid:
@@ -1015,6 +1123,11 @@ export interface components {
             tapHold: components["schemas"]["Described"];
             /** Tappingterm */
             tappingTerm: number;
+        };
+        /** TapDanceChange */
+        TapDanceChange: {
+            before: components["schemas"]["TapDance"];
+            after: components["schemas"]["TapDance"];
         };
         /** TapDanceIn */
         TapDanceIn: {
@@ -1802,6 +1915,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KeyboardModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_layout_api_layout_file_preview_post: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayoutFilePreview"];
                 };
             };
             /** @description Validation Error */

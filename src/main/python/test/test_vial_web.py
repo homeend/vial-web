@@ -589,6 +589,18 @@ def test_layout_file_is_loaded_into_the_simulator(tmp_path, corne_keyboard, simu
     assert simulated[0].keymap[0][0][0] == encode("KC_Q")
 
 
+def test_another_keyboards_layout_file_is_loaded_into_the_simulator(tmp_path, corne_keyboard, simulated):
+    """ the simulated keyboard stands in for the one that saved the file: the API refuses another keyboard's file,
+    --layout takes it """
+    data = json.loads(corne_keyboard[1].save_layout())
+    data["uid"] = 0x1234
+    data["layout"][0][0][0] = "KC_Q"
+    path = tmp_path / "other.vil"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert vial_web.main(["--fake", "--layout", str(path), "--dry-run"]) == 0
+    assert simulated[0].keymap[0][0][0] == encode("KC_Q")
+
+
 def test_layout_file_is_checked_before_anything_is_written(tmp_path, corne_keyboard, simulated, capsys):
     data = json.loads(corne_keyboard[1].save_layout())
     data["layout"][0][0][0] = "KC_Q"
