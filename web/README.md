@@ -86,6 +86,10 @@ page.
 | `behaviours` | The Tap dance, Combos and Macros pages end to end, the top bar's Lock/Unlock, the pages at four window sizes and at 375 px |
 | `tapdance`, `combos`, `macros` | Editing on those pages: where the focus goes, saves that are slow or fail, recording keys |
 | `unlock` | The unlock dialog |
+| `overrides` | The Key overrides and Alt-repeat pages: a new key override built and saved, switched off, removed; an alt-repeat key edited |
+| `settings` | The QMK settings form: a change undone, a number out of range, Save, Reset to defaults with its confirmation |
+| `layoutfile` | Saving the layout, loading it back with its preview; another keyboard's file and a broken one; a file with macros on a locked keyboard |
+| `feature-pages` | The Key overrides, Alt-repeat, Settings and Keyboard pages at four window sizes and at 375 px, their editors and dialogs in a 1080p window |
 | `navigation` | The address and the back button, page titles, the focus, what the Keymap keeps while another page shows |
 
 The tests run in parallel: half the cores by default, or `E2E_WORKERS=<n> npx playwright test`
@@ -107,7 +111,9 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | `src/keyboard/` | Drawing any keyboard from its geometry; key labels; combo marks on keys (`marks.ts`: underlines and dots) |
 | `src/analysis/` | Pure functions over the loaded model: how each layer is reached, combo marks and colours (`comboMarksOn`, `comboColours`), tap dance and macro usage, finding a character or key, and the phrases for them |
 | `src/keymap/` | Keymap Edit and Overview views: layer tabs, Inspector, hold editor, keyboard navigation, layer cards, find box; what the page keeps while another one shows (`state.svelte.ts`) |
-| `src/behaviours/` | The Tap dance, Combos and Macros pages: their cards, the combo key chooser, the macro step editor and recorder, and the plain-language sentences |
+| `src/behaviours/` | The Tap dance, Combos, Macros, Key overrides and Alt-repeat pages: their cards and editors, the combo key chooser, the macro step editor and recorder, the modifier, layer and option controls, and the plain-language sentences |
+| `src/settings/` | The QMK settings form (Settings): the groups `qmk_settings.json` defines, what changed, Save, Undo and Reset; what the page keeps while another one shows (`state.svelte.ts`) |
+| `src/about/` | The Keyboard page: what the keyboard is (Qt's About keyboard), and saving and loading `.vil` layout files with a preview of what changes |
 | `src/picker/` | Keycode picker: search, categories, any-keycode entry |
 | `src/shell/` | Top bar (with the Lock/Unlock control), navigation, banners, toasts, the unlock dialog |
-| `src/ui/` | Small shared controls, and the name dialog (layers, tap dances, macros) |
+| `src/ui/` | Small shared controls (a switch), the name dialog (layers, tap dances, macros) and a confirmation dialog |
