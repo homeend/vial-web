@@ -10,9 +10,15 @@
     languages: KeyboardLanguage[];
     language: string;
     onlanguage: (lang: string) => void;
+    /** whether the keyboard is locked or unlocked; null while there is none to lock or unlock */
+    lock: "locked" | "unlocked" | null;
+    /** an unlock or a lock is being sent */
+    lockBusy: boolean;
+    onunlock: () => void;
+    onlock: () => void;
   }
 
-  let { name, status, fake, languages, language, onlanguage }: Props = $props();
+  let { name, status, fake, languages, language, onlanguage, lock, lockBusy, onunlock, onlock }: Props = $props();
 
   const STATUS_TEXT = {
     connected: "Connected",
@@ -43,6 +49,25 @@
       <span class="badge status {status}" role="status">
         <i aria-hidden="true"></i>{STATUS_TEXT[status]}
       </span>
+      {#if lock}
+        <!-- next to the connection: what the keyboard lets Vial change -->
+        <button
+          type="button"
+          class="badge lock {lock}"
+          disabled={lockBusy}
+          aria-label={lock === "unlocked" ? "Keyboard unlocked: lock it" : "Keyboard locked: unlock it"}
+          title={lock === "unlocked"
+            ? "Unlocked: macros and the bootloader key can be changed. Click to lock it again."
+            : "Locked: changing macros or the bootloader key needs it unlocked. Click to unlock it."}
+          onclick={lock === "unlocked" ? onlock : onunlock}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="3" y="7" width="10" height="7" rx="1.5" />
+            <path d={lock === "unlocked" ? "M5.5 7V5a2.5 2.5 0 0 1 4.9-.7" : "M5.5 7V5a2.5 2.5 0 0 1 5 0v2"} />
+          </svg>
+          {lock === "unlocked" ? "Unlocked" : "Locked"}
+        </button>
+      {/if}
       <ThemeSwitch />
       <label class="language">
         <span>Keyboard language</span>
@@ -152,6 +177,35 @@
   .status.disconnected i,
   .status.offline i {
     background: var(--danger);
+  }
+
+  .lock {
+    cursor: pointer;
+  }
+
+  .lock:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    color: var(--text);
+  }
+
+  .lock.unlocked {
+    border-color: color-mix(in srgb, var(--warning-text) 40%, transparent);
+    background: var(--warning-weak);
+    color: var(--warning-text);
+  }
+
+  .lock:disabled {
+    cursor: progress;
+    opacity: 0.6;
+  }
+
+  .lock svg {
+    width: 13px;
+    height: 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
   }
 
   .language {

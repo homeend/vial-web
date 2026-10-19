@@ -140,3 +140,13 @@ export async function labelsCutOff(page: Page): Promise<string[]> {
   }).map((l) => l.textContent ?? ""));
   return cut;
 }
+
+/** The fake server's test hook: the user holds the simulated keyboard's unlock keys (or lets go), or it is locked */
+export async function simulatorUnlock(page: Page, change: { keysHeld?: boolean; locked?: boolean }): Promise<void> {
+  await put(page, "/api/simulator/unlock", change);
+}
+
+/** The keyboard's unlock state, as the server tells */
+export async function unlockState(page: Page): Promise<string> {
+  return (await (await page.request.get(serverUrl(page, "/api/session"))).json()).unlock.state;
+}

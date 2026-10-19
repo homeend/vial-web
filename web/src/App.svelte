@@ -1,14 +1,17 @@
 <script lang="ts">
   import { analyse } from "./analysis/analysis";
   import { placeKeyboard } from "./keyboard/geometry";
+  import { namesOf } from "./keyboard/labels";
   import KeymapPage from "./keymap/KeymapPage.svelte";
   import { keyboard } from "./lib/keyboard.svelte";
   import type { SectionId } from "./lib/route";
   import { router } from "./lib/router.svelte";
+  import { isWaiting } from "./lib/unlock.svelte";
   import Banner from "./shell/Banner.svelte";
   import Nav, { type Section } from "./shell/Nav.svelte";
   import Toasts from "./shell/Toasts.svelte";
   import TopBar from "./shell/TopBar.svelte";
+  import UnlockDialog from "./shell/UnlockDialog.svelte";
 
   $effect(() => keyboard.start());
   $effect(() => router.start());
@@ -16,6 +19,7 @@
   // worked out once for every page, again after every edit
   const placement = $derived(keyboard.model ? placeKeyboard(keyboard.model) : null);
   const analysis = $derived(keyboard.model && placement ? analyse(keyboard.model, placement) : null);
+  const names = $derived(keyboard.model ? namesOf(keyboard.model) : null);
 
   // only the sections that are built; later tasks add theirs
   const sections = $derived<Section[]>([{ id: "keymap", label: "Keymap", count: keyboard.model?.layers.length }]);
@@ -35,6 +39,10 @@
   );
   // the loaded keyboard stays on screen, greyed out, while it can't be edited
   const blocked = $derived(keyboard.model !== null && status !== "connected");
+  const unlock = $derived(keyboard.unlock.state);
+  const lock = $derived(
+    status !== "connected" || !keyboard.model ? null : unlock.state === "unlocked" ? "unlocked" : "locked",
+  );
 </script>
 
 <TopBar
@@ -44,6 +52,10 @@
   languages={keyboard.languages}
   language={keyboard.language}
   onlanguage={(lang) => keyboard.setLanguage(lang)}
+  {lock}
+  lockBusy={keyboard.unlock.busy}
+  onunlock={() => void keyboard.unlock.unlock()}
+  onlock={() => void keyboard.unlock.lock()}
 />
 
 <div class="shell">
@@ -57,6 +69,15 @@
         tone="danger"
         title="Keyboard unplugged"
         message="Changes are blocked until it is plugged back in. It is then read again."
+      />
+    {/if}
+    {#if unlock.state === "cancelled"}
+      <Banner
+        tone="warning"
+        title="The keyboard still waits to be unlocked"
+        message="It takes no changes until its unlock keys are held, or it is unplugged and plugged back in."
+        actionLabel="Unlock"
+        onaction={() => void keyboard.unlock.start()}
       />
     {/if}
     {#if keyboard.loadError}
@@ -73,6 +94,11 @@
       <div class="page" class:blocked inert={blocked}>
         <KeymapPage model={keyboard.model} {placement} {analysis} />
       </div>
+    {:else if status === "disconnected" && isWaiting(unlock)}
+      <div class="empty">
+        <h1>The keyboard waits to be unlocked</h1>
+        <p>An unlock started earlier wasn't finished. It is read once its unlock keys have been held.</p>
+      </div>
     {:else if status === "disconnected"}
       <div class="empty">
         <h1>No keyboard found</h1>
@@ -86,6 +112,7 @@
   </main>
 </div>
 
+<UnlockDialog unlocker={keyboard.unlock} model={keyboard.model} {placement} {names} />
 <Toasts />
 
 <style>
