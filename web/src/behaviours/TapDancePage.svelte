@@ -5,6 +5,7 @@
   import { freeTapDance, type SlotLabel } from "../keymap/tapdance";
   import { keyboard } from "../lib/keyboard.svelte";
   import { router } from "../lib/router.svelte";
+  import { toasts } from "../lib/toasts.svelte";
   import Picker from "../picker/Picker.svelte";
   import Button from "../ui/Button.svelte";
   import NameDialog, { type NameSubject } from "../ui/NameDialog.svelte";
@@ -24,7 +25,10 @@
   let { model, analysis, item }: Props = $props();
 
   const names = $derived(namesOf(model));
-  const canEdit = $derived(keyboard.canEdit && keyboard.pending === 0);
+  const canEdit = $derived(keyboard.canEdit);
+  /** a change is being saved: another one would be made from the tap dance as it was before it, so it waits. The
+   * controls stay enabled meanwhile, so the one used keeps the focus. */
+  const busy = $derived(keyboard.pending > 0);
   /** tap dances opened that would not show otherwise: a new one, or one opened from elsewhere */
   let opened = $state<number[]>([]);
   const shown = $derived(shownEntries(model.tapDance.length,
@@ -48,7 +52,17 @@
 
   function setSlot(index: number, slot: SlotLabel, code: string) {
     const td = model.tapDance[index];
-    if (td) void keyboard.setTapDance(index, body(td, { [FIELDS[slot]]: code }), `Changing the ${slot.toLowerCase()}`);
+    const action = `Changing the ${slot.toLowerCase()}`;
+    if (!td) return;
+    // a keycode picked while another change is still being saved (the picker was opened before it)
+    if (busy) toasts.error(`${action} failed: another change was still being saved. Try again.`);
+    else void keyboard.setTapDance(index, body(td, { [FIELDS[slot]]: code }), action);
+  }
+
+  function setTerm(index: number, ms: number): Promise<boolean> {
+    const td = model.tapDance[index];
+    if (!td || busy) return Promise.resolve(false);
+    return keyboard.setTapDance(index, body(td, { tappingTerm: ms }), "Changing the tapping term");
   }
 
   // the keycode picker, for one slot at a time
@@ -57,6 +71,7 @@
   const pickingCurrent = $derived(picking ? model.tapDance[picking.index]?.[FIELDS[picking.slot]]?.code ?? "KC_NO" : "KC_NO");
 
   function pickSlot(index: number, slot: SlotLabel) {
+    if (busy) return;
     picking = { index, slot };
     pickerOpen = true;
   }
@@ -103,10 +118,11 @@
       positions={analysis.positions}
       uses={analysis.usage.tapDances[index] ?? []}
       {canEdit}
+      {busy}
       target={index === item}
       onpickslot={(slot) => pickSlot(index, slot)}
       onclearslot={(slot) => setSlot(index, slot, "KC_NO")}
-      onterm={(ms) => keyboard.setTapDance(index, body(td, { tappingTerm: ms }), "Changing the tapping term")}
+      onterm={(ms) => setTerm(index, ms)}
       onrename={() => (renaming = index)}
       onopenuse={openUse}
     />
@@ -135,7 +151,14 @@
     const index = renaming;
     if (index === null) return Promise.resolve(true);
     const td = model.tapDance[index];
-    return name === (td?.customName ? td.name : "") ? Promise.resolve(true) : keyboard.rename("tapDance", index, name);
+    if (name === (td?.customName ? td.name : "")) return Promise.resolve(true);
+    try {
+      return keyboard.rename("tapDance", index, name);
+    } catch {
+      // the tap dance is gone (another keyboard was plugged in meanwhile, say)
+      toasts.error(`Renaming the tap dance failed: this keyboard has no tap dance ${index}.`);
+      return Promise.resolve(false);
+    }
   }}
   onclose={() => {
     const index = renaming;
