@@ -17,7 +17,7 @@ const GESTURES: Record<SlotLabel, string> = {
   "Tap, then hold": "tap then hold",
 };
 
-/** The same, for a combo running the tap dance: "reaches Layer 2 when held", "is double-tapped to toggle Layer 2" */
+/** The same, for a combo running the tap dance: "reaches Layer 2 when held", "toggles Layer 2 when double-tapped" */
 const PARTICIPLES: Record<SlotLabel, string> = {
   Tap: "tapped",
   Hold: "held",
@@ -137,8 +137,17 @@ export function tapDanceSentence(td: TapDance, names: Names): string {
   return parts.length === 0 ? "Does nothing yet: choose what each way of pressing it does." : `${capitalised(parts.join(", "))}.`;
 }
 
+/** An outcome said of the tap dance itself: "to toggle Layer 2" → "toggles Layer 2", "for Layer 2 on the next key" →
+ * "reaches Layer 2 for the next key" */
+function thirdPerson(outcome: string): string {
+  const verb = /^to (\w+)(.*)$/.exec(outcome);
+  if (verb) return `${verb[1].endsWith("ch") || verb[1].endsWith("sh") ? `${verb[1]}es` : `${verb[1]}s`}${verb[2]}`;
+  const next = /^for (.*) on the next key$/.exec(outcome);
+  return next ? `reaches ${next[1]} for the next key` : outcome;
+}
+
 /** What a tap dance a combo runs does to each layer it reaches, after "which": "reaches Layer 1 when held", "reaches
- * Layer 1 when tapped and held" (a layer held from a tapped slot), "is double-tapped to toggle Layer 2" */
+ * Layer 1 when tapped and held" (a layer held from a tapped slot), "toggles Layer 2 when double-tapped" */
 function tapDanceReach(model: Pick<KeyboardModel, "layers" | "tapDance">, output: Described, names: Names): string[] {
   return layerTargets(model, output).flatMap((t) => {
     const slot = t.slot?.slot;
@@ -150,7 +159,7 @@ function tapDanceReach(model: Pick<KeyboardModel, "layers" | "tapDance">, output
       const mods = action === "while held, with modifiers" && d.hold ? ` with ${d.hold}` : "";
       return [`reaches ${layerLabel(t.layer, names)}${mods} when ${PARTICIPLES[slot]}${isHeld(slot) ? "" : " and held"}`];
     }
-    return [`is ${PARTICIPLES[slot]} ${outcome(d, names)}`];
+    return [`${thirdPerson(outcome(d, names))} when ${PARTICIPLES[slot]}`];
   });
 }
 

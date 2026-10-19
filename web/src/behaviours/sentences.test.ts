@@ -141,7 +141,7 @@ describe("comboSentence", () => {
   it("says a layer held from a tapped slot of a tap dance output needs a hold, and what each slot does", () => {
     expect(sentence(12)).toBe("Press K + Y together for tap dance 2, which reaches Layer 1 when tapped and held.");
     expect(sentence(11)).toBe("Press K + Y together for tap dance 1, which reaches Layer 1 when tapped and held, " +
-      "reaches Layer 2 when held, is double-tapped to toggle Layer 3 and reaches Layer 4 when tapped then held.");
+      "reaches Layer 2 when held, toggles Layer 3 when double-tapped and reaches Layer 4 when tapped then held.");
   });
 
   it("says when the output's layer is one the keyboard doesn't have", () => {
