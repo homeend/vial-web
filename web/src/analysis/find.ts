@@ -12,7 +12,7 @@ import type { Usage } from "./usage";
 /** How a keycode produces what was searched for: tapped, with Shift, with AltGr, or by its name ("Esc", "MO(2)") */
 export type How = "tap" | "shift" | "altgr" | "name";
 
-export interface Match {
+interface Match {
   how: How;
   action: Described;
 }
@@ -25,7 +25,7 @@ export interface Place {
 
 /** The keys that run a result that isn't on a key: all of them (`keys`, highlighted), and the first (`key`, the one
  * the result opens), or null when no key does */
-export interface RunBy {
+interface RunBy {
   key: Place | null;
   keys: Place[];
 }
@@ -38,7 +38,7 @@ export type Found =
   | ({ type: "macro"; macro: number; how: How | "text"; text: string | null; action: Described | null } & RunBy);
 
 /** What the search compares a keycode with, folded once per search */
-export interface Query {
+interface Query {
   /** folded: case and spaces don't count */
   text: string;
   /** as typed, less the spaces around it: macro text is matched with case */

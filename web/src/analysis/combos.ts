@@ -7,7 +7,7 @@ import { effectiveAt } from "./effective";
 
 type Model = Pick<KeyboardModel, "layers" | "combos">;
 
-export interface ComboMember {
+interface ComboMember {
   action: Described;
   /** the keys with this keycode on the base layer: none, one, or several */
   keys: KeyRef[];

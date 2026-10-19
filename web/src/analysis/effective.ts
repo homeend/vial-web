@@ -2,7 +2,7 @@
 import type { Described, KeyboardModel } from "../api/types";
 import { actionAt, type KeyRef } from "../keyboard/refs";
 
-export interface Effective {
+interface Effective {
   /** the layer the action is set on: the layer itself, or the base layer for a transparent key */
   layer: number;
   action: Described;

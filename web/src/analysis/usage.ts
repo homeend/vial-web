@@ -27,7 +27,7 @@ type Model = Pick<KeyboardModel, "layers" | "tapDance" | "combos" | "keyOverride
 
 /** Which keys (on the keyboard as drawn: the chosen layout options), combos, tap dances, macros, key overrides and
  * alt repeat keys use each tap dance and macro.
- * - A combo with no keys never fires, so its output isn't a use (as combosOf, which leaves it out).
+ * - A combo with no keycodes is an unused entry, not a combo: its output isn't a use (combosOf leaves it out too).
  * - A tap dance running itself from one of its slots doesn't count, nor does a macro running itself from a step.
  * - A disabled key override or alt repeat key still counts: it is set up, only switched off. */
 export function usageOf(model: Model, placement: Placement): Usage {

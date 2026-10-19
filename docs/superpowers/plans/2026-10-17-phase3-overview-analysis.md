@@ -174,8 +174,8 @@ diff --git a/src/main/python/test/test_describe.py b/src/main/python/test/test_d
 +++ b/src/main/python/test/test_describe.py
 @@ -96,6 +96,43 @@ def test_layer_action(code, action):
      assert describe(code)["layerAction"] == action
- 
- 
+
+
 +@pytest.mark.parametrize("protocol, value, layer, action, hold", [
 +    (6, 0x5022, 1, "while held, with modifiers", "Shift"),
 +    (6, 0x5045, 2, "while held, with modifiers", "Ctrl+Alt"),
@@ -214,7 +214,7 @@ diff --git a/src/main/python/test/test_describe.py b/src/main/python/test/test_d
 +
 +
  # ---------- modifiers: every combination the firmware can store ----------
- 
+
  MOD_BITS = [(0x01, "Ctrl"), (0x02, "Shift"), (0x04, "Alt"), (0x08, "Gui")]
 ```
 
@@ -237,13 +237,13 @@ diff --git a/src/main/python/server/schemas.py b/src/main/python/server/schemas.
 --- a/src/main/python/server/schemas.py
 +++ b/src/main/python/server/schemas.py
 @@ -12,7 +12,7 @@ KeyKind = Literal["basic", "modifier", "mod-tap", "layer-tap", "layer", "one-sho
- 
- 
+
+
  LayerAction = Literal["while held", "toggle", "switch to", "hold, or tap to toggle", "one-shot", "default",
 -                      "default (saved)"]
 +                      "default (saved)", "while held, with modifiers"]
- 
- 
+
+
  class Legend(BaseModel):
 @@ -36,6 +36,9 @@ class Described(BaseModel):
      layer: Optional[int] = None
@@ -271,7 +271,7 @@ diff --git a/src/main/python/server/describe.py b/src/main/python/server/describ
 +""" LM(layer, mods): the layer and the modifiers, while held """
  MODIFIER_KEYS = {"KC_LCTRL", "KC_LSHIFT", "KC_LALT", "KC_LGUI", "KC_RCTRL", "KC_RSHIFT", "KC_RALT", "KC_RGUI"}
  MOUSE_PREFIXES = ("KC_MS_", "KC_BTN", "KC_WH_", "KC_ACL")
- 
+
 @@ -36,6 +38,12 @@ QK_MOD_TAP = {6: (0x2000, 0x3FFF), 5: (0x6000, 0x7FFF)}
  """ mod-tap: modifiers on hold in bits 8-12, the tapped key in bits 0-7 """
  QK_ONE_SHOT_MOD = {6: (0x52A0, 0x52BF), 5: (0x5500, 0x55FF)}
@@ -287,8 +287,8 @@ diff --git a/src/main/python/server/describe.py b/src/main/python/server/describ
  TAPPABLE_KINDS = {"basic", "modifier", "media", "mouse"}
 @@ -144,10 +152,23 @@ def _description(code):
      return keycode.tooltip if keycode is not None and keycode.tooltip else None
- 
- 
+
+
 -def _result(code, kind, legend, tap=None, hold=None, layer=None, layer_action=None, index=None):
 +def _result(code, kind, legend, tap=None, hold=None, layer=None, layer_action=None, index=None, tri_layer=None,
 +            description=None):
@@ -308,8 +308,8 @@ diff --git a/src/main/python/server/describe.py b/src/main/python/server/describ
 +    description = "Turns on layer {} while held{}".format(layer, ", with {} held too".format(mods) if mods else "")
 +    return _result(code, "layer", _legend("LM {}".format(layer)), hold=mods, layer=layer,
 +                   layer_action=LAYER_WITH_MODS if mods else LAYER_ACTIONS["MO"], description=description)
- 
- 
+
+
  def _tap_code(result, value):
 @@ -222,6 +243,14 @@ def _describe(code, value):
          layer = int(m.group(1))
@@ -323,7 +323,7 @@ diff --git a/src/main/python/server/describe.py b/src/main/python/server/describ
 +                       layer_action=LAYER_ACTIONS["MO"], tri_layer=TRI_LAYER, description=description)
 +    if _in(value, QK_LAYER_MOD):
 +        return _layer_mod(code, value)
- 
+
      # modifier bits naming no modifier (none, or only the right-hand bit) fall through and read as a raw code
      if _in(value, QK_MOD_TAP) and mods_name((value >> 8) & 0x1F):
 ```
@@ -371,7 +371,7 @@ diff --git a/web/src/keyboard/labels.test.ts b/web/src/keyboard/labels.test.ts
 @@ -116,6 +116,12 @@ describe("actionSummary", () => {
      expect(actionSummary(key, names)).toEqual({ tap: sentence, hold: null });
    });
- 
+
 +  it("describes LM, a layer held with modifiers", () => {
 +    const lm = d({ code: "0x5022", kind: "layer", tap: "LM 1", hold: "Shift", layer: 2, layerAction: "while held, with modifiers" });
 +    expect(actionSummary(lm, names)).toEqual({ tap: "Layer 2 with Shift, while held", hold: null });
@@ -449,8 +449,8 @@ diff --git a/src/main/python/test/test_vial_web.py b/src/main/python/test/test_v
 +++ b/src/main/python/test/test_vial_web.py
 @@ -92,6 +92,34 @@ def test_definition_requires_fake():
          vial_web.parse_args(["--definition", "x.json"])
- 
- 
+
+
 +@pytest.mark.parametrize("layers", [1, 8, 32])
 +def test_fake_mode_with_more_or_fewer_layers(capsys, layers):
 +    assert vial_web.main(["--fake", "--layers", str(layers), "--dry-run"]) == 0
@@ -489,8 +489,8 @@ diff --git a/src/main/python/test/test_vial_web.py b/src/main/python/test/test_v
 -    monkeypatch.setattr(corne, "make_corne", lambda: made.append(make()) or made[-1])
 +    monkeypatch.setattr(corne, "make_corne", lambda **kwargs: made.append(make(**kwargs)) or made[-1])
      return made
- 
- 
+
+
 ```
 
 - [ ] **Step 2: Run them to see them fail**
@@ -513,8 +513,8 @@ diff --git a/src/main/python/simulator/corne.py b/src/main/python/simulator/corn
 +++ b/src/main/python/simulator/corne.py
 @@ -92,10 +92,10 @@ LAYERS = [
  ]
- 
- 
+
+
 -def keymap():
 -    """ {(layer, row, col): keycode} for all layers """
 +def keymap(layers=None):
@@ -527,8 +527,8 @@ diff --git a/src/main/python/simulator/corne.py b/src/main/python/simulator/corn
                  for c in range(6):
 @@ -120,14 +120,15 @@ def macros():
      return b"\x00".join(data) + b"\x00"
- 
- 
+
+
 -def make_corne():
 -    """ A fresh simulated Corne; nothing is shared between calls """
 +def make_corne(layers=len(LAYERS)):
@@ -569,8 +569,8 @@ diff --git a/src/main/python/vial_web.py b/src/main/python/vial_web.py
 +        return FakeBackend(lambda: make_corne(layers=layers))
      from server.device import HidBackend
      return HidBackend()
- 
- 
+
+
 +DEFAULT_FAKE_LAYERS = 4
 +MAX_FAKE_LAYERS = 32
 +""" Vial keyboards have at most 32 layers (the layer keycodes MO, TG, ... hold 5 bits) """
@@ -608,8 +608,8 @@ diff --git a/src/main/python/vial_web.py b/src/main/python/vial_web.py
 +    if (args.definition or args.layout or args.layers) and not args.fake:
 +        parser.error("--definition, --layout and --layers only work with --fake")
      return args
- 
- 
+
+
 ```
 
 - [ ] **Step 4: Run the tests to see them pass, then the whole suite**
@@ -847,13 +847,13 @@ diff --git a/web/src/keyboard/refs.test.ts b/web/src/keyboard/refs.test.ts
  import type { Described, KeyGeometry, KeyboardModel } from "../api/types";
 -import { actionAt, positionLine, whereIs } from "./refs";
 +import { actionAt, positionLine, refId, whereIs } from "./refs";
- 
+
  const d = (code: string): Described => ({
    code, kind: "basic", tap: code, legend: { main: code }, hold: null, layer: null, layerAction: null, index: null,
 @@ -25,6 +25,13 @@ describe("actionAt", () => {
    });
  });
- 
+
 +describe("refId", () => {
 +  it("is a key's or encoder direction's identity as one string", () => {
 +    expect(refId({ kind: "key", index: 3 })).toBe("key:3");
@@ -1250,7 +1250,7 @@ diff --git a/web/src/keyboard/refs.ts b/web/src/keyboard/refs.ts
 @@ -7,6 +7,11 @@ export interface KeyRef {
    index: number;
  }
- 
+
 +/** "key:3" or "encoder:1": a key's identity as one string (the keyboard drawing's data-ref, keys of sets and maps) */
 +export function refId(ref: KeyRef): string {
 +  return `${ref.kind}:${ref.index}`;
@@ -1270,7 +1270,7 @@ diff --git a/web/src/keymap/tapdance.ts b/web/src/keymap/tapdance.ts
 @@ -27,8 +27,11 @@ export function freeTapDance(model: Model): number | null {
    return free ? free.index : null;
  }
- 
+
 +/** The four ways of pressing a tap dance key */
 +export type SlotLabel = "Tap" | "Hold" | "Double tap" | "Tap, then hold";
 +
@@ -2787,7 +2787,7 @@ diff --git a/web/src/picker/search.test.ts b/web/src/picker/search.test.ts
  import type { CatalogueKeycode, KeycodeCategory } from "../api/types";
 -import { searchKeycodes, searchTemplates } from "./search";
 +import { codesNamed, searchKeycodes, searchTemplates, searchText } from "./search";
- 
+
  function k(code: string, tap: string, aliases: string[] = [], description: string | null = null,
    shifted: string | null = null, kind: CatalogueKeycode["kind"] = "basic"): CatalogueKeycode {
 @@ -168,3 +168,23 @@ describe("searchTemplates", () => {
@@ -2997,7 +2997,7 @@ diff --git a/web/src/picker/search.ts b/web/src/picker/search.ts
 @@ -102,6 +102,22 @@ export function searchKeycodes(categories: KeycodeCategory[], query: string): Ca
    return found.sort((a, b) => a.rank - b.rank || a.kind - b.kind || a.order - b.order).map((f) => f.k);
  }
- 
+
 +/** The keycodes the query names exactly: by their name, an alias, or either without KC_ ("esc", "KC_ESC", "caps") */
 +export function codesNamed(categories: KeycodeCategory[], query: string): Set<string> {
 +  const q = normalize(query);
@@ -3184,7 +3184,7 @@ diff --git a/web/src/analysis/phrases.ts b/web/src/analysis/phrases.ts
  import type { ComboUse } from "./combos";
 +import type { Found, How } from "./find";
  import type { LayerAction, LayerReach, ViaSlot, Way } from "./reach";
- 
+
  /** What a key does to the layer, as the verb of a label: "hold Space", "toggle (left outer thumb)" */
 @@ -190,3 +191,31 @@ export function missingPartners(use: ComboUse, names: Names): string | null {
    if (missing.length === 0) return null;
@@ -3274,7 +3274,7 @@ diff --git a/web/src/keyboard/labels.test.ts b/web/src/keyboard/labels.test.ts
 +  actionSummary, compactLegendSize, HOLD_MAX_LINES, holdLines, holdSize, keyFace, keyLabel, keyTitle, legendScale, legendSizes, legendWords, MAIN_LINE, mainLines,
    namesOf, toneOf, estimatedWidth, type Names, type TextWidth,
  } from "./labels";
- 
+
 @@ -484,3 +484,52 @@ describe("a text width that depends on the size", () => {
      expect(holdLines("git status", size, 40, hinted)).toBeLessThanOrEqual(2);
    });
@@ -3477,7 +3477,7 @@ diff --git a/web/src/keyboard/Key.svelte b/web/src/keyboard/Key.svelte
 +  import { compactLegendSize, legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
 +  import { refId } from "./refs";
    import { legendFont } from "./textWidth.svelte";
- 
+
    interface Props {
 @@ -13,14 +14,25 @@
      label: string;
@@ -3493,22 +3493,22 @@ diff --git a/web/src/keyboard/Key.svelte b/web/src/keyboard/Key.svelte
 +    compact?: boolean;
      onselect: () => void;
    }
- 
+
 -  let { item, face, u, selected, label, focusable, onselect }: Props = $props();
 +  let {
 +    item, face, u, selected, label, focusable, combo = false, found = false, interactive = true, compact = false, onselect,
 +  }: Props = $props();
- 
+
    const GAP = 0.09;
    /** space around the labels, in key units */
    const PAD = 0.04;
 +  const COMPACT_PAD = 0.015;
    const ROUND = 0.12;
- 
+
    // the button covers both rectangles; everything inside is relative to its top-left corner
 @@ -40,9 +52,15 @@
    });
- 
+
    // the legends fit inside the primary rectangle, less the gap between keys and the padding
 -  const sizes = $derived(
 -    legendSizes(face, (item.w - GAP - 2 * PAD) * u, (item.h - GAP - 2 * PAD) * u, u, legendFont.width),
@@ -3522,13 +3522,13 @@ diff --git a/web/src/keyboard/Key.svelte b/web/src/keyboard/Key.svelte
 +      ? { main: compactLegendSize(face.main, width, height, u, legendFont.width), shifted: 0, hold: 0, holdLines: 0 }
 +      : legendSizes(face, width, height, u, legendFont.width);
 +  });
- 
+
    const style = $derived(
      [
 @@ -60,24 +78,22 @@
      ].filter(Boolean).join("; "),
    );
- 
+
 +  // a line along the bottom of the primary rectangle, inside its outline
 +  const underline = $derived.by(() => {
 +    const r = rects[0];
@@ -3544,7 +3544,7 @@ diff --git a/web/src/keyboard/Key.svelte b/web/src/keyboard/Key.svelte
 +      `padding: ${pad * u}px`,
    );
  </script>
- 
+
 -<button
 -  type="button"
 -  class="key tone-{face.tone}" data-tone={face.tone}
@@ -3603,13 +3603,13 @@ diff --git a/web/src/keyboard/Key.svelte b/web/src/keyboard/Key.svelte
 +    {@render cap()}
 +  </div>
 +{/if}
- 
+
  <style>
    .key {
 @@ -147,10 +191,28 @@
      fill: color-mix(in srgb, var(--key-bg) 55%, var(--board-bg));
    }
- 
+
 -  .key:hover .face {
 +  .combo-mark {
 +    fill: var(--combo);
@@ -3622,7 +3622,7 @@ diff --git a/web/src/keyboard/Key.svelte b/web/src/keyboard/Key.svelte
 +  .key:not(.static):hover .face {
      fill: color-mix(in srgb, var(--fill) 88%, var(--accent));
    }
- 
+
 +  .found .edge {
 +    stroke: var(--find);
 +    stroke-width: 4;
@@ -3660,7 +3660,7 @@ diff --git a/web/src/keyboard/Encoder.svelte b/web/src/keyboard/Encoder.svelte
    import { legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
 +  import { refId } from "./refs";
    import { legendFont } from "./textWidth.svelte";
- 
+
    interface Props {
 @@ -11,10 +12,14 @@
      selected: boolean;
@@ -3672,16 +3672,16 @@ diff --git a/web/src/keyboard/Encoder.svelte b/web/src/keyboard/Encoder.svelte
 +    interactive?: boolean;
      onselect: () => void;
    }
- 
+
 -  let { item, face, u, selected, label, focusable, onselect }: Props = $props();
 +  let { item, face, u, selected, label, focusable, found = false, interactive = true, onselect }: Props = $props();
- 
+
    const clockwise = $derived(item.geometry.direction === 1);
    const size = $derived(Math.min(item.w, item.h) * u * 0.91);
 @@ -37,18 +42,7 @@
    );
  </script>
- 
+
 -<button
 -  type="button"
 -  class="encoder tone-{face.tone}" data-tone={face.tone}
@@ -3726,13 +3726,13 @@ diff --git a/web/src/keyboard/Encoder.svelte b/web/src/keyboard/Encoder.svelte
 +    {@render knob()}
 +  </div>
 +{/if}
- 
+
  <style>
    .encoder {
 @@ -76,6 +92,10 @@
      cursor: pointer;
    }
- 
+
 +  .static {
 +    cursor: inherit;
 +  }
@@ -3743,7 +3743,7 @@ diff --git a/web/src/keyboard/Encoder.svelte b/web/src/keyboard/Encoder.svelte
 @@ -87,6 +107,11 @@
      color: var(--text-3);
    }
- 
+
 +  .found {
 +    border-color: var(--find);
 +    box-shadow: 0 0 0 2px var(--find);
@@ -3767,7 +3767,7 @@ diff --git a/web/src/keyboard/Keyboard.svelte b/web/src/keyboard/Keyboard.svelte
    import Key from "./Key.svelte";
    import type { KeyFace } from "./labels";
 +  import { refId } from "./refs";
- 
+
    interface Props {
      placement: Placement;
 @@ -15,9 +16,21 @@
@@ -3784,19 +3784,19 @@ diff --git a/web/src/keyboard/Keyboard.svelte b/web/src/keyboard/Keyboard.svelte
 +    /** which placed keys produce what the find box looks for (highlighted), aligned with placement.items */
 +    highlights?: boolean[];
    }
- 
+
 -  let { placement, faces, labels, selected, onselect, maxUnit = 72 }: Props = $props();
 +  let {
 +    placement, faces, labels, selected, onselect, maxUnit = 72, combos = [], interactive = true, compact = false,
 +    highlights = [],
 +  }: Props = $props();
- 
+
    let width = $state(0);
    // as big as fits the width, never bigger than maxUnit
 @@ -29,11 +42,11 @@
    const focusIndex = $derived(selected >= 0 && selected < placement.items.length ? selected : 0);
  </script>
- 
+
 -<div class="keyboard" bind:clientWidth={width}>
 +<div class="keyboard" bind:clientWidth={width} aria-hidden={interactive ? undefined : "true"}>
    <div
@@ -3841,7 +3841,7 @@ diff --git a/web/src/keymap/KindLegend.svelte b/web/src/keymap/KindLegend.svelte
    <li><i class="transparent"></i>transparent (falls through)</li>
 +  <li><i class="combo"></i>part of a combo</li>
  </ul>
- 
+
  <style>
 @@ -58,4 +59,8 @@
      border-style: dashed;
@@ -4849,7 +4849,7 @@ diff --git a/web/src/keymap/Inspector.svelte b/web/src/keymap/Inspector.svelte
    import HoldEditor from "./HoldEditor.svelte";
 +  import ReachList from "./ReachList.svelte";
    import { freeTapDance, tapDanceSlots } from "./tapdance";
- 
+
    interface Props {
 @@ -14,19 +20,26 @@
      layer: number;
@@ -4865,12 +4865,12 @@ diff --git a/web/src/keymap/Inspector.svelte b/web/src/keymap/Inspector.svelte
      ontapdance: () => void;
      onjump: (layer: number) => void;
    }
- 
+
 -  let { model, names, layer, selection, canEdit, onchangekey, onsetcode, ontapdance, onjump }: Props = $props();
 +  let {
 +    model, names, layer, selection, canEdit, comboUses, reach, phrases, onchangekey, onsetcode, ontapdance, onjump,
 +  }: Props = $props();
- 
+
    let editingHold = $state(false);
    // the hold editor is for one key on one layer: another one closes it
    let editedKey = "";
@@ -4881,7 +4881,7 @@ diff --git a/web/src/keymap/Inspector.svelte b/web/src/keymap/Inspector.svelte
        editedKey = key;
        editingHold = false;
 @@ -84,7 +97,7 @@
- 
+
    {#if tapDance}
      <section class="tap-dance" aria-label="Tap dance {tapDance.index}">
 -      <h3>What each press does</h3>
@@ -4891,7 +4891,7 @@ diff --git a/web/src/keymap/Inspector.svelte b/web/src/keymap/Inspector.svelte
            <dt>{slot.label}</dt>
 @@ -138,7 +151,7 @@
    </div>
- 
+
    {#if editingHold && tapCode}
 -    {#key `${layer}:${selection.kind}:${selection.index}`}
 +    {#key `${layer}:${refId(selection)}`}
@@ -4899,7 +4899,7 @@ diff --git a/web/src/keymap/Inspector.svelte b/web/src/keymap/Inspector.svelte
          {current}
          tap={tapCode}
 @@ -152,7 +165,7 @@
- 
+
    {#if others.length > 0}
      <section class="others">
 -      <h3>On the other layers</h3>
@@ -4920,12 +4920,12 @@ diff --git a/web/src/keymap/Inspector.svelte b/web/src/keymap/Inspector.svelte
 +    <ReachList {reach} ctx={phrases} />
 +  {/if}
  </aside>
- 
+
  <style>
 @@ -261,15 +282,6 @@
      gap: 6px;
    }
- 
+
 -  h3 {
 -    margin: 0 0 8px;
 -    color: var(--text-2);
@@ -4972,20 +4972,20 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
 +  import Overview from "./Overview.svelte";
 +  import { readView, saveView, type KeymapView } from "./view";
 +  import ViewSwitch from "./ViewSwitch.svelte";
- 
+
    interface Props {
      model: KeyboardModel;
 @@ -18,6 +27,8 @@
- 
+
    let { model }: Props = $props();
- 
+
 +  let view = $state<KeymapView>(readView(browserStorage()));
 +  let findText = $state("");
    let layer = $state(0);
    let selection = $state<KeyRef | null>(null);
    let pickerOpen = $state(false);
 @@ -28,14 +39,32 @@
- 
+
    const names = $derived(namesOf(model));
    const placement = $derived(placeKeyboard(model));
 +  // layers reached, combo keys, usage: worked out again from the model after every edit
@@ -5021,7 +5021,7 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
 @@ -51,6 +80,27 @@
      }
    });
- 
+
 +  function changeView(next: KeymapView) {
 +    view = next;
 +    saveView(browserStorage(), next);
@@ -5047,16 +5047,16 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
      const item = placement.items[index];
      if (item) selection = { kind: item.kind, index: item.index };
 @@ -58,7 +108,7 @@
- 
+
    async function focusSelected() {
      await tick();
 -    if (selection) document.querySelector<HTMLElement>(`[data-ref="${selection.kind}:${selection.index}"]`)?.focus();
 +    if (selection) document.querySelector<HTMLElement>(`[data-ref="${refId(selection)}"]`)?.focus();
    }
- 
+
    function setCode(code: string, action = "Changing the key") {
 @@ -85,14 +135,15 @@
- 
+
    function onkeydown(event: KeyboardEvent) {
      // a dialog that is open (the picker) has the keyboard; its "close" event comes a moment after it closes
 -    if (document.querySelector("dialog[open]") || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
@@ -5075,7 +5075,7 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
      const handled = direction || event.key === "Enter" || event.key === "Delete" || event.key === "Backspace";
 @@ -114,6 +165,9 @@
    }
- 
+
    const current = $derived(selection ? actionAt(model, layer, selection) : undefined);
 +  const comboUses = $derived(
 +    selection ? combosUsing(analysis.combos, model, analysis.codes[layer] ?? new Map(), layer, selection) : [],
@@ -5084,7 +5084,7 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
      if (!selection) return "";
      const { what, where } = whereIs(model, selection);
 @@ -125,46 +179,64 @@
- 
+
  <section class="keymap" aria-labelledby="keymap-title">
    <header class="head">
 -    <h1 id="keymap-title">Keymap</h1>
@@ -5099,7 +5099,7 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
 +    </div>
 +    <ViewSwitch {view} onchange={changeView} />
    </header>
- 
+
 -  <LayerTabs
 -    layers={model.layers}
 -    active={layer}
@@ -5108,7 +5108,7 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
 -    onrename={(i, name) => keyboard.renameLayer(i, name)}
 -  />
 +  <FindBox bind:text={findText} results={foundResults} onopen={(place) => void openKey(place)} />
- 
+
 -  <div class="workspace">
 -    <div class="board" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
 -      <Keyboard {placement} {faces} {labels} selected={selectedIndex} onselect={select} />
@@ -5126,7 +5126,7 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
 +      onselect={(i) => (layer = i)}
 +      onrename={(i, name) => keyboard.renameLayer(i, name)}
 +    />
- 
+
 -    {#if selection && current}
 -      {#key `${selection.kind}:${selection.index}`}
 -        <Inspector
@@ -5176,7 +5176,7 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
 +    </div>
 +  {/if}
  </section>
- 
+
 -{#if selection && current}
 +{#if view === "edit" && selection && current}
    <Picker
@@ -5185,7 +5185,7 @@ diff --git a/web/src/keymap/KeymapPage.svelte b/web/src/keymap/KeymapPage.svelte
 @@ -185,6 +257,14 @@
      container: keymap / inline-size;
    }
- 
+
 +  .head {
 +    display: flex;
 +    flex-wrap: wrap;
@@ -5273,7 +5273,7 @@ diff --git a/web/e2e/global-setup.ts b/web/e2e/global-setup.ts
  import { tmpdir } from "node:os";
 @@ -117,14 +118,23 @@ async function startServer(extraArgs: string[]): Promise<{ url: string; stop: ()
  }
- 
+
  export default async function globalSetup(): Promise<() => Promise<void>> {
 -  const corne = await startServer([]);
 -  const macropad = await startServer(["--definition", MACROPAD_DEFINITION]).catch(async (error: unknown) => {
@@ -5313,7 +5313,7 @@ diff --git a/web/e2e/fixtures.ts b/web/e2e/fixtures.ts
 +++ b/web/e2e/fixtures.ts
 @@ -14,14 +14,17 @@ export async function open(page: Page, url: string | undefined): Promise<Page> {
  }
- 
+
  /** The page, opened from a server's link, with the keyboard drawn: `app` shows the simulated Corne, `macropad` the
 - * simulated macropad with encoders */
 -export const test = base.extend<{ app: Page; macropad: Page }>({
@@ -5329,12 +5329,12 @@ diff --git a/web/e2e/fixtures.ts b/web/e2e/fixtures.ts
 +    await use(await open(page, process.env.VIAL_EIGHT_LAYERS_URL));
 +  },
  });
- 
+
  export { expect };
 @@ -70,6 +73,17 @@ export async function setEncoderCodeAt(page: Page, layer: number, index: number,
    await put(page, `/api/encoders/${layer}/${encoder}/${direction}`, { code });
  }
- 
+
 +/** A combo's keycodes (all four slots) and output, as the server reports them */
 +export async function comboAt(page: Page, index: number): Promise<{ keys: string[]; output: string }> {
 +  const combo = (await keyboardModel(page)).combos[index];
@@ -5642,19 +5642,19 @@ diff --git a/web/README.md b/web/README.md
 +++ b/web/README.md
 @@ -29,7 +29,9 @@ python vial_web.py --fake        # open the printed link; reload the page after
  ```
- 
+
  `--fake` runs a simulated keyboard and never touches real hardware. Add `--data-dir DIR` to keep
 -its lock, log and names out of your user folders.
 +its lock, log and names out of your user folders. With `--fake`, `--layers N` (1 to 32) gives the
 +simulated keyboard N layers (the sample keymap fills the first four, the others are empty), and
 +`--definition FILE` simulates another keyboard.
- 
+
  ## Scripts
- 
+
 @@ -52,8 +54,9 @@ CI runs `npm run check:api`.
- 
+
  ## End-to-end tests
- 
+
 -`e2e/global-setup.ts` starts two `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
 -default Corne, and `e2e/fixtures/macropad.vial.json` with encoders),
 +`e2e/global-setup.ts` starts three `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
@@ -5662,7 +5662,7 @@ diff --git a/web/README.md b/web/README.md
 +owner's keyboard has),
  reads the links with the session token from their output and stops them afterwards. Screenshots, each in the
  light and the dark theme (`*-light.png`, `*-dark.png`), go to `e2e/screenshots/` (not committed).
- 
+
 @@ -68,7 +71,8 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
  | `src/api/` | Typed HTTP client, error messages, WebSocket events, generated schema types |
  | `src/lib/` | The keyboard store (loaded model, connection, edits), toasts, and the theme (System, Light, Dark) |
@@ -5798,7 +5798,7 @@ diff --git a/web/e2e/display.spec.ts b/web/e2e/display.spec.ts
 --- a/web/e2e/display.spec.ts
 +++ b/web/e2e/display.spec.ts
 @@ -43,7 +43,7 @@ test.describe("width and fit", () => {
- 
+
    // labels are sized by measuring them in the font the browser uses, which differs between systems (Segoe UI on
    // Windows, often the much wider DejaVu Sans on Linux): a wide font must fit too
 -  test("labels fit with a wide font, 800, 1280 and 2560 wide", async ({ page }) => {
@@ -5830,7 +5830,7 @@ diff --git a/web/e2e/display.spec.ts b/web/e2e/display.spec.ts
 +    await expect(async () => expect(await labelsCutOff(app)).toEqual([])).toPass({ timeout: 5_000 });
    });
  });
- 
+
 ```
 
 - [ ] **Step 3: Type-check, then build and run the e2e tests**

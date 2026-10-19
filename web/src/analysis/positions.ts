@@ -44,7 +44,7 @@ const UNDER_DOWN = 0.5;
 /** keys less than this far apart (in key units) touch */
 const TOUCH = 0.05;
 
-export type Side = "left" | "right";
+type Side = "left" | "right";
 
 /** The vertical line between the halves of a split keyboard (in key units), or null for a keyboard in one piece: the
  * widest gap of at least SPLIT_GAP across which no key reaches, with at least a quarter of the keys on each side.

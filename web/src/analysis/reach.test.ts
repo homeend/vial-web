@@ -251,6 +251,24 @@ describe("layerReach", () => {
     expect(layers[2].ways).toEqual([]);
   });
 
+  it("never holds a layer from an encoder, which is only ever tapped: TT toggles, MO, LT and held slots do nothing", () => {
+    const model: KeyboardModel = corne({
+      layers: [layer({}, "KC_NO"), layer({}), layer({}), layer({}), layer({})],
+      tapDances: [["KC_A", "MO(3)", "TG(4)", "MO(3)"]],
+    });
+    const codes = ["MO(1)", "TT(2)", "LT3(KC_A)", "TD(0)", "LM(1, MOD_LSFT)"];
+    model.encoders = codes.map((_, i) => ({ ...model.keys[0], row: null, col: null, encoder: i, direction: 1, x: 20 + 2 * i }));
+    for (const l of model.layers) l.encoders = codes.map((code) => described(l.index === 0 ? code : "KC_TRNS"));
+    const layers = layerReach(model, placeKeyboard(model));
+    expect(layers.map((l) => l.ways.map(brief))).toEqual([
+      ["default"],
+      [],
+      ["encoder 1 on 0: toggle from 0,1,3,4"],
+      [],
+      ["encoder 3 on 0 TD 0 Double tap: toggle from 0,1,2,3"],
+    ]);
+  });
+
   it("works for 8 layers, each reached from the one before", () => {
     const layers = reach({
       layers: Array.from({ length: 8 }, (_, i) => layer(i < 7 ? { [AT.leftInnerThumb]: `TO(${i + 1})` } : {}, "KC_NO")),

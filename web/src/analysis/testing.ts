@@ -72,7 +72,7 @@ export function corneKeys(): KeyGeometry[] {
   return keys;
 }
 
-export const KEY_COUNT = 42;
+const KEY_COUNT = 42;
 /** where the Corne's keys are, by index */
 export const AT = {
   grid: (row: number, col: number) => row * 12 + col,

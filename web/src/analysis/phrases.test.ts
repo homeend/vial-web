@@ -67,8 +67,9 @@ describe("memberName and comboName", () => {
     expect(memberName({ ...described("LT1(KC_NO)"), tap: "" }, names)).toBe("nothing (hold: Layer 1)");
   });
 
-  it("names a layer key without a keycode name (LM) and the tri-layer keys by their label", () => {
-    expect(memberName({ ...described("LM(1, MOD_LSFT)"), code: "0x5022" }, names)).toBe("LM 1");
+  it("names a layer key without a keycode name (LM, with its modifiers) and the tri-layer keys by their label", () => {
+    expect(memberName({ ...described("LM(1, MOD_LSFT)"), code: "0x5022" }, names)).toBe("LM 1 (with Shift)");
+    expect(memberName({ ...described("LM(1, 0)"), code: "0x5020" }, names)).toBe("LM 1");
     expect(memberName(described("FN_MO13"), names)).toBe("Fn1 (Fn3)");
   });
 

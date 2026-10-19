@@ -16,7 +16,7 @@ export interface ViaSlot {
   slot: SlotLabel;
 }
 
-export type Via =
+type Via =
   /** layer 0: where the keyboard starts */
   | { type: "default" }
   /** a key (or encoder direction) set on a layer: a layer key, a layer-tap, or a tap dance with a layer in a slot */
@@ -65,6 +65,15 @@ export function layerTargets(model: Pick<KeyboardModel, "layers" | "tapDance">, 
     (action.kind === "layer" || action.kind === "layer-tap") && isLayer(model, action.layer) && action.layerAction
       ? [{ layer: action.layer, action: action.layerAction, slot: { tapDance: td.index, slot: label } }]
       : []);
+}
+
+/** What a target does when its key can only be tapped, as an encoder direction is (turning the knob taps it): it is
+ * never held, so a layer held while the key is down (MO, LT, LM, a tap dance's held slots) is never on, and TT only
+ * toggles. null: never reached that way. */
+function tapped(target: Target): Target | null {
+  if (target.slot && (target.slot.slot === "Hold" || target.slot.slot === "Tap, then hold")) return null;
+  if (target.action === "while held" || target.action === "while held, with modifiers") return null;
+  return target.action === "hold, or tap to toggle" ? { ...target, action: "toggle" } : target;
 }
 
 type Model = Pick<KeyboardModel, "layers" | "tapDance" | "combos">;
@@ -116,6 +125,7 @@ function triLayerWays(keys: FnKey[]): { target: number; way: Way }[] {
  *   the active layers), transparent keys falling through to the base layer.
  * - Tri-layer keys: FN_MO13 and FN_MO23 held together turn on layer 3 (see triLayerWays).
  * - LM (a layer with modifiers) counts as a key held for its layer.
+ * - Encoder directions are only ever tapped: they never hold a layer (see tapped).
  * - Layer 0 is where the keyboard starts. A layer is reachable when a way to it works on a reachable layer; DF (a new
  *   default layer) counts like any other way.
  */
@@ -137,7 +147,9 @@ export function layerReach(model: Model, placement: Placement): LayerReach[] {
       if (d.kind === "layer" && isLayer(model, d.layer) && isLayer(model, d.triLayer)) {
         fnKeys.push({ ref, layer, own: d.layer, tri: d.triLayer, worksOn });
       }
-      for (const target of layerTargets(model, action.action)) {
+      for (const found of layerTargets(model, action.action)) {
+        const target = ref.kind === "encoder" ? tapped(found) : found;
+        if (!target) continue;
         const from = worksOn.filter((l) => l !== target.layer);
         if (from.length === 0) continue;
         ways[target.layer].push({

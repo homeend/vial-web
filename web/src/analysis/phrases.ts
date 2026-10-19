@@ -82,12 +82,14 @@ export function tapName(d: Described, model: Pick<KeyboardModel, "tapDance">): s
 }
 
 /** A combo's keycode as a label: what it types, with a short note of what holding it does ("Space (hold: Layer 1)",
- * "T (hold: Shift)"); layer keys by their keycode ("MO(5)", or "LM 1" for one that has no name); tap dance and macro
- * keys by their keycode ("TD(0)", "M1"); else what it types ("K", "Esc") */
+ * "T (hold: Shift)"); layer keys by their keycode ("MO(5)", or for one that has no name its label, with the modifiers
+ * LM holds: "LM 1 (with Shift)"); tap dance and macro keys by their keycode ("TD(0)", "M1"); else what it types ("K",
+ * "Esc") */
 export function memberName(d: Described, names: Names): string {
   switch (d.kind) {
     case "layer":
-      return /^[A-Z]+\(\d+\)$/.test(d.code) ? d.code : d.tap;
+      if (/^[A-Z]+\(\d+\)$/.test(d.code)) return d.code;
+      return d.layerAction === "while held, with modifiers" && d.hold ? `${d.tap} (with ${d.hold})` : d.tap;
     case "tap-dance":
     case "macro":
       return d.code;
