@@ -1,6 +1,6 @@
-import { codeAt, expect, keyIndex, layerNameOf, screenshots, serverUrl, setCodeAt, setLayerName, test } from "./fixtures";
+import { api, codeAt, expect, keyIndex, layerNameOf, screenshots, setCodeAt, setLayerName, test } from "./fixtures";
 
-// The server is shared by every test: a test that changes a key or a name puts it back in its `finally`
+// A worker's server is shared by the tests it runs: a test that changes a key or a name puts it back in its `finally`
 
 test("loads the simulated Corne and draws its 42 keys", async ({ app }) => {
   await expect(app.locator(".topbar")).toContainText("Simulated Corne");
@@ -114,7 +114,7 @@ test("layer tabs switch layers, and a renamed layer keeps its name", async ({ ap
 });
 
 test("an unplugged keyboard greys out the keymap and blocks edits until it is back", async ({ app }) => {
-  const plug = (connected: boolean) => app.request.put(serverUrl(app, "/api/simulator/connection"), { data: { connected } });
+  const plug = (connected: boolean) => api(app).put("/api/simulator/connection", { connected });
   const index = await keyIndex(app, 0, 1);
   const before = await codeAt(app, 0, index);
   try {
@@ -123,7 +123,7 @@ test("an unplugged keyboard greys out the keymap and blocks edits until it is ba
     await expect(app.locator(".page")).toHaveAttribute("inert", "");
     await expect(app.getByRole("button", { name: "Change key" })).toBeDisabled();
     // the server refuses the edit too, not only the page
-    const edit = await app.request.put(serverUrl(app, "/api/keymap/0/0/1"), { data: { code: "KC_ESCAPE" } });
+    const edit = await api(app).put("/api/keymap/0/0/1", { code: "KC_ESCAPE" });
     expect(edit.status()).toBe(503);
     await screenshots(app, "unplugged");
   } finally {

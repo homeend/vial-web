@@ -47,7 +47,8 @@ exist for no real keyboard and are left out of the OpenAPI schema (so of `schema
 
 `--fake` keeps the firmware's unlock timing: the countdown (50 steps) only goes down on a poll that
 comes more than 100 ms after the start or the last step (a sooner one starts it over), and the
-server polls every 200 ms, so an unlock with the keys held takes about 10 s.
+server polls every 200 ms, so an unlock with the keys held takes about 10 s. `--unlock-counter N` (1 to 255)
+starts the countdown at N instead, as firmware built with another `VIAL_UNLOCK_COUNTER_MAX` does.
 
 ## Scripts
 
@@ -70,10 +71,10 @@ CI runs `npm run check:api`.
 
 ## End-to-end tests
 
-`e2e/global-setup.ts` starts three `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
+`e2e/servers.ts` starts `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
 default Corne; `e2e/fixtures/macropad.vial.json` with encoders; and the Corne with `--layers 8`, as the
-owner's keyboard has),
-reads the links with the session token from their output and stops them afterwards. Screenshots, each in the
+owner's keyboard has), reads the links with the session token from their output and stops them. Each
+Playwright worker starts the ones its tests use (fixtures in `e2e/fixtures.ts`) and stops them when it ends. Screenshots, each in the
 light and the dark theme (`*-light.png`, `*-dark.png`), go to `e2e/screenshots/` (not committed); a
 full-page one is taken from the top, with the sticky top bar and macro editor footer drawn where they are in the
 page.
@@ -87,9 +88,11 @@ page.
 | `unlock` | The unlock dialog |
 | `navigation` | The address and the back button, page titles, the focus, what the Keymap keeps while another page shows |
 
-The servers are shared and the tests run one at a time: each test puts back what it changed. The
-tests that unlock the keyboard (in `unlock` and `behaviours`) hold its keys for the firmware's
-real timing, about 10 s each.
+The tests run in parallel: half the cores by default, or `E2E_WORKERS=<n> npx playwright test`
+(`E2E_WORKERS=1` runs them one after another). A worker runs its tests one at a time on its own servers,
+so tests running at the same time never share a keyboard; each test puts back what it changed. The
+tests that unlock the keyboard keep the firmware's timing with a short countdown
+(`--unlock-counter 10`): about 2 s each.
 
 `@playwright/test` is pinned to the version whose Chromium is already installed on the
 development machine, so no browser is downloaded there. CI installs that Chromium with

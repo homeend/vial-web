@@ -1,8 +1,8 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, setTapDance, tapDanceAt, test } from "./fixtures";
 
-// Editing a tap dance keeps the focus where it was. The server is shared by every test: each test puts back the tap
-// dance it changed, in its `finally` (setTapDance throws when the server refuses it).
+// Editing a tap dance keeps the focus where it was. A worker's server is shared by the tests it runs: each test puts
+// back the tap dance it changed, in its `finally` (setTapDance throws when the server refuses it).
 
 async function openTapDance(page: Page) {
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: /^Tap dance/ }).click();

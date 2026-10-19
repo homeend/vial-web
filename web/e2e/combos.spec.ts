@@ -1,9 +1,9 @@
 import type { Locator, Page } from "@playwright/test";
 import { comboAt, expect, keyIndex, setCombo, test } from "./fixtures";
 
-// Editing a combo: a combo listing a keycode twice, where the focus goes, and the key chooser's cursor. The server is
-// shared by every test: each test puts back the combo it changed, in its `finally` (setCombo throws when the server
-// refuses it).
+// Editing a combo: a combo listing a keycode twice, where the focus goes, and the key chooser's cursor. A worker's
+// server is shared by the tests it runs: each test puts back the combo it changed, in its `finally` (setCombo throws
+// when the server refuses it).
 
 async function openCombos(page: Page) {
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: /^Combos/ }).click();

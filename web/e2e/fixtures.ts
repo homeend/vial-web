@@ -1,29 +1,54 @@
 import { test as base, expect, type Page } from "@playwright/test";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SERVER_FIXTURE_MS, SERVERS, startServer } from "./servers";
 
 /** e2e/screenshots/, wherever the tests are run from */
 const SCREENSHOTS = fileURLToPath(new URL("./screenshots/", import.meta.url));
 
 /** Opens a server's link and waits for the keyboard to be drawn */
-export async function open(page: Page, url: string | undefined): Promise<Page> {
-  if (!url) throw new Error("the global setup did not start the server");
+export async function open(page: Page, url: string): Promise<Page> {
   await page.goto(url); // the link with the token sets the session cookie
   await expect(page.locator("button.key").first()).toBeVisible();
   return page;
 }
 
+/** A simulated keyboard's server, started the first time a test of the worker asks for it and stopped when the
+ * worker ends: the worker's tests run one at a time, so no two tests running at once share a keyboard */
+function serverOf(
+  args: string[],
+): [(args: object, use: (url: string) => Promise<void>) => Promise<void>, { scope: "worker"; timeout: number }] {
+  return [
+    async ({}, use: (url: string) => Promise<void>) => {
+      const server = await startServer(args);
+      try {
+        await use(server.url);
+      } finally {
+        await server.stop();
+      }
+    },
+    { scope: "worker", timeout: SERVER_FIXTURE_MS },
+  ];
+}
+
 /** The page, opened from a server's link, with the keyboard drawn: `app` shows the simulated Corne, `macropad` the
- * simulated macropad with encoders, `eightLayers` the simulated Corne with 8 layers (4-7 empty) */
-export const test = base.extend<{ app: Page; macropad: Page; eightLayers: Page }>({
-  app: async ({ page }, use) => {
-    await use(await open(page, process.env.VIAL_URL));
+ * simulated macropad with encoders, `eightLayers` the simulated Corne with 8 layers (4-7 empty). `corneUrl` is the
+ * simulated Corne's link, for a test that opens it itself. */
+export const test = base.extend<
+  { app: Page; macropad: Page; eightLayers: Page },
+  { corneUrl: string; macropadUrl: string; eightLayersUrl: string }
+>({
+  corneUrl: serverOf(SERVERS.corne),
+  macropadUrl: serverOf(SERVERS.macropad),
+  eightLayersUrl: serverOf(SERVERS.eightLayers),
+  app: async ({ page, corneUrl }, use) => {
+    await use(await open(page, corneUrl));
   },
-  macropad: async ({ page }, use) => {
-    await use(await open(page, process.env.VIAL_MACROPAD_URL));
+  macropad: async ({ page, macropadUrl }, use) => {
+    await use(await open(page, macropadUrl));
   },
-  eightLayers: async ({ page }, use) => {
-    await use(await open(page, process.env.VIAL_EIGHT_LAYERS_URL));
+  eightLayers: async ({ page, eightLayersUrl }, use) => {
+    await use(await open(page, eightLayersUrl));
   },
 });
 
@@ -34,8 +59,20 @@ export function serverUrl(page: Page, path: string): string {
   return new URL(path, page.url()).toString();
 }
 
+/** The server's API, with the page's session: each request on a connection of its own. The server closes a connection
+ * left idle for 5 s, and a request sent on it just then fails (ECONNRESET): a browser sends it again, Playwright's
+ * requests don't. */
+export function api(page: Page) {
+  const headers = { connection: "close" };
+  return {
+    get: (path: string) => page.request.get(serverUrl(page, path), { headers }),
+    put: (path: string, data: unknown) => page.request.put(serverUrl(page, path), { data, headers }),
+    post: (path: string) => page.request.post(serverUrl(page, path), { headers }),
+  };
+}
+
 async function keyboardModel(page: Page) {
-  return (await page.request.get(serverUrl(page, "/api/keyboard"))).json();
+  return (await api(page).get("/api/keyboard")).json();
 }
 
 /** Index of the key at a matrix position in the keyboard model */
@@ -57,7 +94,7 @@ export async function encoderCodeAt(page: Page, layer: number, index: number): P
 }
 
 async function put(page: Page, path: string, data: unknown): Promise<void> {
-  const response = await page.request.put(serverUrl(page, path), { data });
+  const response = await api(page).put(path, data);
   if (!response.ok()) throw new Error(`PUT ${path} failed: ${response.status()} ${await response.text()}`);
 }
 
@@ -91,7 +128,7 @@ export async function layerNameOf(page: Page, layer: number): Promise<string | n
 
 /** The custom name of a layer, tap dance or macro, or null when it has its default name */
 export async function nameOf(page: Page, kind: "layers" | "tapDance" | "macros", index: number): Promise<string | null> {
-  const names = await (await page.request.get(serverUrl(page, "/api/names"))).json();
+  const names = await (await api(page).get("/api/names")).json();
   return names[kind]?.[String(index)] ?? null;
 }
 
@@ -229,7 +266,7 @@ export async function simulatorUnlock(page: Page, change: { keysHeld?: boolean; 
 
 /** The keyboard's unlock state, as the server tells */
 export async function unlockState(page: Page): Promise<string> {
-  return (await (await page.request.get(serverUrl(page, "/api/session"))).json()).unlock.state;
+  return (await (await api(page).get("/api/session")).json()).unlock.state;
 }
 
 /** Locks the keyboard from the top bar and starts unlocking it there: the unlock dialog shows */
@@ -243,13 +280,13 @@ export async function openUnlockDialog(page: Page) {
 }
 
 /** Lets go of the unlock keys, and unlocks the simulated keyboard again if it isn't (the fake server keeps the
- * firmware's timing: about 10 s) */
+ * firmware's timing: about 2 s with the tests' countdown, see servers.ts) */
 export async function unlockAgain(page: Page): Promise<void> {
   await simulatorUnlock(page, { keysHeld: false });
   if ((await unlockState(page)) === "unlocked") return;
   // the simulator counts down while the keys are held
   await simulatorUnlock(page, { keysHeld: true });
-  await page.request.post(serverUrl(page, "/api/unlock/start"));
+  await api(page).post("/api/unlock/start");
   await expect.poll(() => unlockState(page), { timeout: 20_000 }).toBe("unlocked");
   await simulatorUnlock(page, { keysHeld: false });
 }

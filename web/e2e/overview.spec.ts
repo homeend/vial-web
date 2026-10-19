@@ -3,7 +3,7 @@ import {
   codeAt, comboAt, expect, keyIndex, screenshots, setCodeAt, setCombo, test,
 } from "./fixtures";
 
-// The server is shared by every test: a test that changes a key or a combo puts it back in its `finally`
+// A worker's server is shared by the tests it runs: a test that changes a key or a combo puts it back in its `finally`
 
 async function showOverview(page: Page) {
   await page.getByRole("radio", { name: "Overview" }).check();
@@ -213,6 +213,7 @@ async function expectReadable(page: Page) {
 
 test.describe("8 layers", () => {
   test("fit the Overview without scrolling sideways", async ({ eightLayers: app }) => {
+    test.slow(); // three window sizes, full-page screenshots in two themes: slow on a busy machine
     const restore = await likeTheWCorne(app);
     try {
       await showOverview(app);

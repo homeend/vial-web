@@ -1,15 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Runs the built UI (npm run build) against `vial_web.py --fake`, started by e2e/global-setup.ts.
+// Runs the built UI (npm run build) against `vial_web.py --fake`, started by the fixtures (e2e/fixtures.ts).
 // Never touches a real keyboard: the server only ever runs with --fake and a temporary data dir.
-// The two servers are shared by every test and keep every edit for the whole run. So the tests run one at a time,
-// and each test that changes a key, an encoder or a name puts it back (in a `finally`, through the API), leaving the
-// server as it found it: no test may depend on another having run, or on the order.
+// The tests run in parallel, each worker with its own servers, which keep every edit while the worker lasts. A worker
+// runs its tests one at a time, and each test that changes a key, an encoder or a name puts it back (in a `finally`,
+// through the API), leaving the server as it found it: no test may depend on another having run, or on the order.
 export default defineConfig({
   testDir: "e2e",
-  globalSetup: "./e2e/global-setup.ts",
-  fullyParallel: false,
-  workers: 1,
+  fullyParallel: true,
+  // half the cores by default; $E2E_WORKERS sets another number (1 runs everything one after another)
+  workers: process.env.E2E_WORKERS ? Number(process.env.E2E_WORKERS) : undefined,
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: process.env.CI ? "github" : "list",

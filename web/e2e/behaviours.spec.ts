@@ -1,11 +1,12 @@
 import type { Locator, Page } from "@playwright/test";
 import {
-  codeAt, comboAt, expect, keyIndex, macrosOf, nameOf, restoreAll, screenshots, serverUrl, setCodeAt, setCombo,
+  api, codeAt, comboAt, expect, keyIndex, macrosOf, nameOf, restoreAll, screenshots, setCodeAt, setCombo,
   setMacros, setNameOf, setTapDance, simulatorUnlock, tapDanceAt, test, unlockState,
 } from "./fixtures";
 
-// The server is shared by every test: a test that changes a tap dance, a combo or a macro puts it back in its `finally`
-// (the fixtures' setters throw when the server refuses; restoreAll runs every restore even when one fails)
+// A worker's server is shared by the tests it runs: a test that changes a tap dance, a combo or a macro puts it back in
+// its `finally` (the fixtures' setters throw when the server refuses; restoreAll runs every restore even when one
+// fails)
 
 async function openSection(page: Page, name: "Tap dance" | "Combos" | "Macros") {
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: new RegExp(`^${name}`) }).click();
@@ -48,7 +49,7 @@ async function unlockAgain(page: Page) {
   if ((await unlockState(page)) === "unlocked") return;
   // the simulator counts down while the keys are held
   await simulatorUnlock(page, { keysHeld: true });
-  const started = await page.request.post(serverUrl(page, "/api/unlock/start"));
+  const started = await api(page).post("/api/unlock/start");
   expect(started.ok(), `starting an unlock: ${started.status()}`).toBe(true);
   await expect.poll(() => unlockState(page), { timeout: 20_000 }).toBe("unlocked");
   await simulatorUnlock(page, { keysHeld: false });
@@ -272,7 +273,7 @@ test.describe("macros", () => {
       await expect(card.locator(".chain")).toContainText("type “ls -la”tap Enterpress LCtrlrelease LCtrlwait 30 ms");
       // the memory the page counts is the keyboard's
       const used = await app.locator(".memory .count").textContent();
-      const model = await (await app.request.get(new URL("/api/keyboard", app.url()).toString())).json();
+      const model = await (await api(app).get("/api/keyboard")).json();
       expect(used).toContain(`Uses ${model.macros.used} of 900 bytes`);
     } finally {
       await setMacros(app, before);

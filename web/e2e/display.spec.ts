@@ -43,10 +43,11 @@ test.describe("width and fit", () => {
 
   // labels are sized by measuring them in the font the browser uses, which differs between systems (Segoe UI on
   // Windows, often the much wider DejaVu Sans on Linux): a wide font must fit too
-  test("labels fit with a wide font, 800, 1280 and 2560 wide, in the Edit view, the Overview and the find views", async ({ page }) => {
+  test("labels fit with a wide font, 800, 1280 and 2560 wide, in the Edit view, the Overview and the find views", async ({ page, corneUrl }) => {
+    test.slow(); // three window sizes in two views and the find views, screenshots in two themes: slow on a busy machine
     const font = `Verdana, "DejaVu Sans", sans-serif`;
     await useFont(page, font);
-    const app = await open(page, process.env.VIAL_URL);
+    const app = await open(page, corneUrl);
     expect(await app.locator("button.key .tap").first().evaluate((e) => getComputedStyle(e).fontFamily)).toBe(font);
     for (const [width, height] of [[1280, 800], [2560, 1440], [800, 900]]) {
       await app.setViewportSize({ width, height });

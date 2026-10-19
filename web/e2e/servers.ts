@@ -1,7 +1,6 @@
-// Starts three `vial_web.py --fake --no-browser` servers, each on a free port with its own temporary data dir, and
-// stops them afterwards: the default simulated Corne (VIAL_URL), a macropad with encoders, rotated keys, an ISO
-// Enter, a decal and a layout option (VIAL_MACROPAD_URL), and the Corne with 8 layers, as the owner's W-CORNE has
-// (VIAL_EIGHT_LAYERS_URL). The URLs carry the session token.
+// Starts a `vial_web.py --fake --no-browser` server, on a free port with its own temporary data dir, and stops it:
+// the simulated keyboards the tests use (see SERVERS). Each test worker starts its own (fixtures.ts), so tests that run
+// at the same time never share a keyboard. The URLs carry the session token.
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +13,22 @@ const STOP_MS = 5_000;
 // What vial_web.py prints once it serves a simulated keyboard, the link on the next line. The token must reach the end
 // of its line, so output that stops in the middle of the link is never taken for the whole link.
 const STARTED = /Vial is running with a simulated keyboard\. Open it at:\r?\n\s*(http:\/\/127\.0\.0\.1:\d+\/\?token=[\w-]+)\r?\n/;
-export const MACROPAD_DEFINITION = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "macropad.vial.json");
+const MACROPAD_DEFINITION = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "macropad.vial.json");
+
+/** The unlock keys are held for 10 polls, about 2 s, instead of the firmware's usual 50 (a firmware setting,
+ * VIAL_UNLOCK_COUNTER_MAX): the polls keep the firmware's timing */
+const UNLOCK_COUNTER = ["--unlock-counter", "10"];
+
+/** vial_web.py's arguments for each simulated keyboard: the default simulated Corne, a macropad with encoders, rotated
+ * keys, an ISO Enter, a decal and a layout option, and the Corne with 8 layers, as the owner's W-CORNE has */
+export const SERVERS = {
+  corne: [...UNLOCK_COUNTER],
+  macropad: ["--definition", MACROPAD_DEFINITION, ...UNLOCK_COUNTER],
+  eightLayers: ["--layers", "8", ...UNLOCK_COUNTER],
+} satisfies Record<string, string[]>;
+
+/** Long enough to start a server, on a busy machine too */
+export const SERVER_FIXTURE_MS = STARTUP_MS + 2 * STOP_MS;
 
 const hasExited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
 
@@ -88,7 +102,7 @@ function waitForUrl(server: ChildProcess, output: { text: string }): Promise<str
   });
 }
 
-async function startServer(extraArgs: string[]): Promise<{ url: string; stop: () => Promise<void> }> {
+export async function startServer(extraArgs: string[]): Promise<{ url: string; stop: () => Promise<void> }> {
   const dataDir = mkdtempSync(join(tmpdir(), "vial-e2e-"));
   let server: ChildProcess | undefined;
   const output = { text: "" };
@@ -115,26 +129,4 @@ async function startServer(extraArgs: string[]): Promise<{ url: string; stop: ()
     const command = ["vial_web.py --fake", ...extraArgs].join(" ");
     throw new Error(`could not start the test server (${command}): ${reason}`, { cause: error });
   }
-}
-
-export default async function globalSetup(): Promise<() => Promise<void>> {
-  const started = await Promise.allSettled([
-    startServer([]),
-    startServer(["--definition", MACROPAD_DEFINITION]),
-    startServer(["--layers", "8"]),
-  ]);
-  const servers = started.flatMap((s) => (s.status === "fulfilled" ? [s.value] : []));
-  const failed = started.find((s) => s.status === "rejected");
-  if (failed) {
-    // never leave the others running
-    await Promise.all(servers.map((s) => s.stop()));
-    throw failed.reason;
-  }
-  const [corne, macropad, eight] = servers;
-  process.env.VIAL_URL = corne.url;
-  process.env.VIAL_MACROPAD_URL = macropad.url;
-  process.env.VIAL_EIGHT_LAYERS_URL = eight.url;
-  return async () => {
-    await Promise.all(servers.map((s) => s.stop()));
-  };
 }

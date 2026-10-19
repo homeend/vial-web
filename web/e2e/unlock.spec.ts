@@ -1,8 +1,8 @@
 import { expect, openUnlockDialog, simulatorUnlock, test, unlockAgain, unlockState } from "./fixtures";
 
-// The unlock dialog, as the owner uses it on the real keyboard: its unlock keys are held for about 10 s (the fake
-// server keeps the firmware's timing), on the keyboard that types into this page. The server is shared by every test:
-// each one leaves the simulated keyboard unlocked, as the server started.
+// The unlock dialog, as the owner uses it on the real keyboard: its unlock keys are held for a while (the fake server
+// keeps the firmware's timing, with a short countdown: see servers.ts), on the keyboard that types into this page. A
+// worker's server is shared by its tests: each one leaves the simulated keyboard unlocked, as the server started.
 
 test("the unlock dialog takes no key presses, and keys still held once it closes press nothing", async ({ app }) => {
   test.setTimeout(60_000);

@@ -1,9 +1,9 @@
 import type { Locator, Page, Route } from "@playwright/test";
-import { expect, macrosOf, openUnlockDialog, serverUrl, setMacros, simulatorUnlock, test, unlockAgain } from "./fixtures";
+import { api, expect, macrosOf, openUnlockDialog, setMacros, simulatorUnlock, test, unlockAgain } from "./fixtures";
 
 // Editing a macro: where the focus goes, a save that is slow or fails, a long macro, the memory the page counts, and
-// recording keys. The server is shared by every test: each test that changes the macros puts them back, in its
-// `finally` (setMacros throws when the server refuses them).
+// recording keys. A worker's server is shared by the tests it runs: each test that changes the macros puts them back,
+// in its `finally` (setMacros throws when the server refuses them).
 
 async function openMacros(page: Page) {
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: /^Macros/ }).click();
@@ -236,7 +236,7 @@ test("the memory counted while editing is what the keyboard counts once it is sa
     const counted = await usedNow();
     await card.getByRole("button", { name: "Save" }).click();
     await expect(card.getByRole("button", { name: "Edit" })).toBeVisible();
-    const model = await (await app.request.get(serverUrl(app, "/api/keyboard"))).json();
+    const model = await (await api(app).get("/api/keyboard")).json();
     expect(model.macros.used).toBe(counted);
     expect(await usedNow()).toBe(counted);
   } finally {
