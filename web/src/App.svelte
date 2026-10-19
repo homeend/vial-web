@@ -11,6 +11,10 @@
   import { placeKeyboard } from "./keyboard/geometry";
   import { namesOf } from "./keyboard/labels";
   import KeymapPage from "./keymap/KeymapPage.svelte";
+  import LayoutPage from "./layout/LayoutPage.svelte";
+  import { hasLighting } from "./lighting/lighting";
+  import LightingPage from "./lighting/LightingPage.svelte";
+  import MatrixPage from "./matrix/MatrixPage.svelte";
   import { keyboard } from "./lib/keyboard.svelte";
   import type { SectionId } from "./lib/route";
   import { router } from "./lib/router.svelte";
@@ -30,12 +34,13 @@
   const analysis = $derived(keyboard.model && placement ? analyse(keyboard.model, placement) : null);
   const names = $derived(keyboard.model ? namesOf(keyboard.model) : null);
 
-  // sections the keyboard's firmware doesn't have (no tap dances, combos, macros, key overrides, alt-repeat keys or
-  // QMK settings) are left out
+  // sections the keyboard's firmware doesn't have (no layout options, tap dances, combos, macros, key overrides,
+  // alt-repeat keys, QMK settings, lighting or matrix tester) are left out
   const sections = $derived.by<Section[]>(() => {
     const model = keyboard.model;
     const list: Section[] = [{ id: "keymap", label: "Keymap", count: model?.layers.length }];
     if (!model) return list;
+    if (model.layoutOptions) list.push({ id: "layout", label: "Layout" });
     const counts = behaviourCounts(model);
     if (counts.tapDance !== null) list.push({ id: "tap-dance", label: "Tap dance", count: counts.tapDance });
     if (counts.combos !== null) list.push({ id: "combos", label: "Combos", count: counts.combos });
@@ -43,6 +48,8 @@
     if (counts.keyOverrides !== null) list.push({ id: "key-overrides", label: "Key overrides", count: counts.keyOverrides });
     if (counts.altRepeat !== null) list.push({ id: "alt-repeat", label: "Alt-repeat", count: counts.altRepeat });
     if (model.settings.length > 0) list.push({ id: "settings", label: "Settings" });
+    if (hasLighting(model.lighting)) list.push({ id: "lighting", label: "Lighting" });
+    if (model.matrixTester) list.push({ id: "matrix", label: "Matrix tester" });
     list.push({ id: "keyboard", label: "Keyboard" });
     return list;
   });
@@ -112,6 +119,13 @@
   <main class="content">
     {#if status === "offline"}
       <Banner tone="warning" title="Lost contact with Vial" message="Reconnecting… If this lasts, check that Vial is still running." />
+    {:else if blocked && keyboard.inBootloader}
+      <Banner
+        id="bootloader-banner"
+        tone="warning"
+        title="The keyboard is in its bootloader"
+        message="It doesn't work as a keyboard until it is flashed, or unplugged and plugged back in. It shows up here again then."
+      />
     {:else if blocked}
       <Banner
         tone="danger"
@@ -152,6 +166,12 @@
           <AltRepeatPage model={keyboard.model} item={router.route.item} />
         {:else if section === "settings"}
           <SettingsPage model={keyboard.model} />
+        {:else if section === "layout"}
+          <LayoutPage model={keyboard.model} {placement} />
+        {:else if section === "lighting"}
+          <LightingPage model={keyboard.model} />
+        {:else if section === "matrix"}
+          <MatrixPage model={keyboard.model} {placement} />
         {:else if section === "keyboard"}
           <KeyboardPage model={keyboard.model} {analysis} />
         {:else}
