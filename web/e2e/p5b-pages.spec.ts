@@ -48,9 +48,10 @@ test("1920 x 950: the matrix tester while testing, and the reboot confirmation, 
     await pressKey(app, 2, 2, false);
     await pressKey(app, 3, 0);
     await expect(app.locator(".board .key.pressed")).toHaveCount(1);
-    // the drawing and the switch matrix together in one window
+    // the drawing and the switch matrix together in one window (a bounding box is where it is in the window)
     const grid = (await app.locator("table").boundingBox())!;
-    expect(grid.y + grid.height).toBeLessThanOrEqual(950 + (await app.evaluate(() => window.scrollY)));
+    expect(grid.y).toBeGreaterThanOrEqual(0);
+    expect(grid.y + grid.height).toBeLessThanOrEqual(950);
     await screenshots(app, "matrix-testing-1920x950", { fullPage: true });
     await app.getByRole("button", { name: "Stop testing" }).click();
 
@@ -59,7 +60,10 @@ test("1920 x 950: the matrix tester while testing, and the reboot confirmation, 
     const dialog = app.getByRole("dialog", { name: "Restart the keyboard into its bootloader?" });
     await expect(dialog).toBeVisible();
     const box = (await dialog.boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.y + box.height).toBeLessThanOrEqual(950);
+    // the safe choice has the focus
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
     await screenshots(app, "bootloader-confirm-1920x950");
     await dialog.getByRole("button", { name: "Cancel" }).click();
   } finally {

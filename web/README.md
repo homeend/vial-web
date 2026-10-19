@@ -100,10 +100,11 @@ page.
 | `layoutfile` | Saving the layout, loading it back with its preview; another keyboard's file and a broken one; a file with macros on a locked keyboard |
 | `feature-pages` | The Key overrides, Alt-repeat, Settings and Keyboard pages at four window sizes and at 375 px, their editors and dialogs in a 1080p window |
 | `navigation` | The address and the back button, page titles, the focus, what the Keymap keeps while another page shows |
-| `lighting` | The Lighting page: VialRGB, QMK RGB light and backlight changed, undone and saved (a replug tells what was kept), a slider dragged, a keyboard without lighting |
-| `layout` | The Layout page on the macropad: an option changed, every drawing following |
-| `matrix` | The matrix tester: unlocking first, keys pressed through the test hook, keys typed doing nothing meanwhile |
-| `bootloader` | Reboot to bootloader: the confirmation, the unlock, the keyboard shown gone and back |
+| `lighting` | The Lighting page: VialRGB, QMK RGB light and backlight changed, undone and saved (a replug tells what was kept), backlight breathing kept at once without a Save, a slider dragged, a keyboard without lighting having no Lighting page |
+| `layout` | The Layout page on the macropad: an option changed, every drawing following; a change the keyboard didn't take putting the switch back, keeping the focus; a keyboard without layout options having no Layout page |
+| `matrix` | The matrix tester: unlocking first, keys pressed through the test hook, keys typed doing nothing meanwhile; the test stopping when the page is left, the keyboard is unplugged, the window loses the focus or the tab is hidden |
+| `bootloader` | Reboot to bootloader: the confirmation (Cancel and Esc send nothing), the unlock, the jump sent to the keyboard once, the keyboard shown gone and back; a cancelled unlock sending nothing more; a firmware without the bootloader jump |
+| `bootloader-focus` | The focus going to the page heading when the bootloader banner goes |
 | `p5b-pages` | The Lighting, Layout, Matrix tester and Keyboard pages at five window sizes, in both themes |
 
 The tests run in parallel: half the cores by default, or `E2E_WORKERS=<n> npx playwright test`
