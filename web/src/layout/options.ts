@@ -1,6 +1,6 @@
 // The layout options form: one row per option of the keyboard's vial.json, as Qt's Layout tab shows them.
 import type { LayoutOptions } from "../api/types";
-import { layoutChoices } from "../keyboard/geometry";
+import { choiceCount, layoutChoices } from "../keyboard/geometry";
 
 export interface OptionRow {
   index: number;
@@ -25,4 +25,11 @@ export function optionRows(options: LayoutOptions): OptionRow[] {
     )];
     return { index, name, kind: "list", choice, choices };
   });
+}
+
+/** The keyboard can be given this choice of an option: on or off, or one its list names. A choice the keyboard holds
+ * beyond the list is shown, but can't be chosen again once left. */
+export function canChoose(options: LayoutOptions, index: number, choice: number): boolean {
+  const label = options.labels[index];
+  return label !== undefined && Number.isInteger(choice) && choice >= 0 && choice < choiceCount(label);
 }
