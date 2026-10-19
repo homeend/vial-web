@@ -2,6 +2,7 @@
   import { analyse } from "./analysis/analysis";
   import CombosPage from "./behaviours/CombosPage.svelte";
   import { behaviourCounts } from "./behaviours/entries";
+  import MacrosPage from "./behaviours/MacrosPage.svelte";
   import TapDancePage from "./behaviours/TapDancePage.svelte";
   import { placeKeyboard } from "./keyboard/geometry";
   import { namesOf } from "./keyboard/labels";
@@ -32,6 +33,7 @@
     const counts = behaviourCounts(model);
     if (counts.tapDance !== null) list.push({ id: "tap-dance", label: "Tap dance", count: counts.tapDance });
     if (counts.combos !== null) list.push({ id: "combos", label: "Combos", count: counts.combos });
+    if (counts.macros !== null) list.push({ id: "macros", label: "Macros", count: counts.macros });
     return list;
   });
   // a section this keyboard doesn't have shows the keymap
@@ -107,6 +109,8 @@
           <TapDancePage model={keyboard.model} {analysis} item={router.route.item} />
         {:else if section === "combos"}
           <CombosPage model={keyboard.model} {placement} {analysis} item={router.route.item} />
+        {:else if section === "macros"}
+          <MacrosPage model={keyboard.model} {analysis} item={router.route.item} />
         {:else}
           <KeymapPage model={keyboard.model} {placement} {analysis} />
         {/if}

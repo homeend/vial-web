@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import {
-  comboAt, expect, keyIndex, screenshots, setCombo, setTapDance, simulatorUnlock, tapDanceAt, test, unlockState,
+  comboAt, expect, keyIndex, macrosOf, screenshots, setCombo, setMacros, setTapDance, simulatorUnlock, tapDanceAt, test,
+  unlockState,
 } from "./fixtures";
 
 // The server is shared by every test: a test that changes a tap dance, a combo or a macro puts it back in its `finally`
@@ -14,6 +15,7 @@ async function openSection(page: Page, name: "Tap dance" | "Combos" | "Macros") 
 
 const tapDanceCard = (page: Page, index: number) => page.locator(`#tap-dance-${index}`);
 const comboCard = (page: Page, index: number) => page.locator(`#combo-${index}`);
+const macroCard = (page: Page, index: number) => page.locator(`#macro-${index}`);
 
 /** The picker's any-keycode box: type a keycode and use it */
 async function pickAnyKeycode(page: Page, code: string) {
@@ -29,6 +31,13 @@ async function pickAnyKeycode(page: Page, code: string) {
 async function pageShots(page: Page, name: string) {
   await page.evaluate(() => window.scrollTo(0, 0));
   await screenshots(page, name, { fullPage: true });
+}
+
+/** The element ends inside the window: nothing to scroll to */
+async function expectInWindow(page: Page, element: Locator) {
+  const box = (await element.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
 }
 
 /** Lets go of the unlock keys, and unlocks the simulated keyboard again if it isn't, as the server started */
@@ -208,6 +217,98 @@ test.describe("combos", () => {
       await screenshots(app, "combo-dots");
     } finally {
       await setCombo(app, 2, before);
+    }
+  });
+});
+
+test.describe("macros", () => {
+  test("a macro is built from every kind of step, and from keys recorded in the browser", async ({ app }) => {
+    const before = await macrosOf(app);
+    try {
+      await openSection(app, "Macros");
+      await expect(app.locator(".memory")).toContainText(/Uses \d+ of 900 bytes/);
+      await app.getByRole("button", { name: "New macro" }).click();
+      await expect(app).toHaveURL(/#macros\/2$/);
+      const card = macroCard(app, 2);
+      const add = card.getByRole("group", { name: "Add a step" });
+
+      await add.getByRole("button", { name: "Type text" }).click();
+      await card.getByLabel("Step 1: the text to type").fill("ls -la");
+      await add.getByRole("button", { name: "Tap a key" }).click();
+      await pickAnyKeycode(app, "KC_ENTER");
+      await add.getByRole("button", { name: "Press a key" }).click();
+      await pickAnyKeycode(app, "KC_LCTRL");
+      await add.getByRole("button", { name: "Wait" }).click();
+      await card.getByLabel("Step 4: how long to wait, in ms").fill("30");
+      await add.getByRole("button", { name: "Release a key" }).click();
+      await pickAnyKeycode(app, "KC_LCTRL");
+      // moved: release before the wait
+      await card.getByRole("button", { name: "Move step 5 up" }).click();
+
+      await add.getByRole("button", { name: "Record from keyboard" }).click();
+      await expect(card.getByRole("status")).toContainText("Recording");
+      await app.keyboard.type("cd");
+      await app.keyboard.press("Control+L");
+      await app.keyboard.press("Escape");
+      await expect(card).toContainText("2 steps recorded.");
+      await pageShots(app, "macro-editor");
+
+      await card.getByRole("button", { name: "Save" }).click();
+      await expect(card.getByRole("button", { name: "Edit" })).toBeVisible();
+      const saved = (await macrosOf(app))[2];
+      expect(saved).toEqual([
+        { type: "text", text: "ls -la", keys: [], delay: null },
+        { type: "tap", text: null, keys: ["KC_ENTER"], delay: null },
+        { type: "down", text: null, keys: ["KC_LCTRL"], delay: null },
+        { type: "up", text: null, keys: ["KC_LCTRL"], delay: null },
+        { type: "delay", text: null, keys: [], delay: 30 },
+        { type: "text", text: "cd", keys: [], delay: null },
+        { type: "tap", text: null, keys: ["LCTL(KC_L)"], delay: null },
+      ]);
+      await expect(card.locator(".chain")).toContainText("type “ls -la”tap Enterpress LCtrlrelease LCtrlwait 30 ms");
+      // the memory the page counts is the keyboard's
+      const used = await app.locator(".memory .count").textContent();
+      const model = await (await app.request.get(new URL("/api/keyboard", app.url()).toString())).json();
+      expect(used).toContain(`Uses ${model.macros.used} of 900 bytes`);
+    } finally {
+      await setMacros(app, before);
+    }
+  });
+
+  test("a macro changed on a locked keyboard is saved once the keyboard is unlocked", async ({ app }) => {
+    test.setTimeout(60_000);
+    const before = await macrosOf(app);
+    try {
+      await app.setViewportSize({ width: 1920, height: 950 }); // a 1080p screen, less the browser's own bars
+      await simulatorUnlock(app, { locked: true });
+      await app.reload();
+      await expect(app.getByRole("button", { name: "Keyboard locked: unlock it" })).toBeVisible();
+      await openSection(app, "Macros");
+      const card = macroCard(app, 0);
+      await card.getByRole("button", { name: "Edit" }).click();
+      await card.getByLabel("Step 1: the text to type").fill("git log");
+      await card.getByRole("button", { name: "Save" }).click();
+
+      const dialog = app.getByRole("dialog", { name: "Unlock the keyboard" });
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText("Press and hold the 2 highlighted keys");
+      await expect(dialog.locator(".key.found")).toHaveCount(2);
+      await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+      await expectInWindow(app, dialog);
+      // the unlock keys type into the page too: no key press cancels or closes it
+      for (const key of ["Enter", "Space", "Escape", "Tab"]) await app.keyboard.press(key);
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+      await screenshots(app, "unlock-dialog");
+      await simulatorUnlock(app, { keysHeld: true });
+      await expect(dialog.getByRole("progressbar")).toHaveAttribute("aria-valuetext", /keep holding/, { timeout: 5000 });
+      await expect(dialog).toBeHidden({ timeout: 20_000 });
+      await expect(card.getByRole("button", { name: "Edit" })).toBeVisible();
+      expect((await macrosOf(app))[0][0]).toEqual({ type: "text", text: "git log", keys: [], delay: null });
+      await expect(app.getByRole("button", { name: "Keyboard unlocked: lock it" })).toBeVisible();
+    } finally {
+      await unlockAgain(app);
+      await setMacros(app, before);
     }
   });
 });

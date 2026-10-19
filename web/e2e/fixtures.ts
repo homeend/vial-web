@@ -153,6 +153,18 @@ export async function setTapDance(page: Page, index: number, body: Awaited<Retur
   await put(page, `/api/tap-dance/${index}`, body);
 }
 
+/** Every macro's steps, as the server takes them */
+export async function macrosOf(page: Page): Promise<unknown[][]> {
+  const model = await keyboardModel(page);
+  return model.macros.items.map((m: { actions: { type: string; text: string | null; keys: { code: string }[];
+    delay: number | null }[] }) => m.actions.map((a) => ({ ...a, keys: a.keys.map((k) => k.code) })));
+}
+
+/** Sets every macro through the API (the simulated keyboard must be unlocked) */
+export async function setMacros(page: Page, items: unknown[][]): Promise<void> {
+  await put(page, "/api/macros", { items });
+}
+
 /** The fake server's test hook: the user holds the simulated keyboard's unlock keys (or lets go), or it is locked */
 export async function simulatorUnlock(page: Page, change: { keysHeld?: boolean; locked?: boolean }): Promise<void> {
   await put(page, "/api/simulator/unlock", change);
