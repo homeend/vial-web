@@ -36,6 +36,10 @@ class KeyboardLocked(RuntimeError):
     pass
 
 
+class KeyboardRefused(RuntimeError):
+    """ The keyboard answered, and refused the change: the message says which one """
+
+
 class DeviceIOError(RuntimeError):
     """ The HID handle itself failed (it is closed or no longer valid), as opposed to a request that was refused """
 

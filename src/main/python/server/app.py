@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from protocol.qmk_settings_codec import QmkSettingsCodec
 from server import edits, languages, model, schemas
 from server.describe import keyboard_language, parse
-from server.device import NotConnected, KeyboardLocked
+from server.device import NotConnected, KeyboardLocked, KeyboardRefused
 
 log = logging.getLogger(__name__)
 
@@ -321,6 +321,12 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     @app.exception_handler(RecursionError)
     async def too_deep(request, exc):
         return JSONResponse({"detail": "the request is nested too deeply"}, status_code=422)
+
+    @app.exception_handler(KeyboardRefused)
+    async def refused(request, exc):
+        # it answered: the message says what it refused
+        log.warning("%s", exc)
+        return JSONResponse({"detail": str(exc)}, status_code=502)
 
     @app.exception_handler(RuntimeError)
     async def device_error(request, exc):

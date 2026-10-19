@@ -173,7 +173,25 @@ def test_a_setting_the_keyboard_rejects_keeps_its_value(client, virtual, monkeyp
             return b"\x01"
         return real(msg)
     monkeypatch.setattr(virtual, "_vial", refuse_settings)
-    assert client.put("/api/qmk-settings/7", json={"value": 300}).status_code == 502
+    response = client.put("/api/qmk-settings/7", json={"value": 300})
+    # the keyboard answered: it refused, which isn't "didn't respond"
+    assert response.status_code == 502
+    assert response.json()["detail"] == "the keyboard rejected setting 7 (Tapping Term)"
+    settings = {s["qsid"]: s["value"] for s in client.get("/api/keyboard").json()["settings"]}
+    assert settings[7] == 200
+
+
+def test_a_setting_whose_sending_fails_keeps_its_value(client, virtual, monkeypatch):
+    """ the protocol layer keeps the value before it sends it: a send that fails (no answer) mustn't leave it shown """
+    real = virtual._vial
+
+    def fail_settings(msg):
+        if msg[1] == CMD_VIAL_QMK_SETTINGS_SET:
+            raise OSError("the keyboard didn't answer")
+        return real(msg)
+    monkeypatch.setattr(virtual, "_vial", fail_settings)
+    assert client.put("/api/qmk-settings/7", json={"value": 300}).status_code >= 500
+    monkeypatch.setattr(virtual, "_vial", real)
     settings = {s["qsid"]: s["value"] for s in client.get("/api/keyboard").json()["settings"]}
     assert settings[7] == 200
 

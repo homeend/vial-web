@@ -21,6 +21,7 @@ from protocol.qmk_settings_codec import QmkSettingsCodec
 from protocol.unlock_hook import request_unlock
 from server import model, schemas
 from server.describe import parse_value, reference
+from server.device import KeyboardRefused
 
 MACRO_TEXT = re.compile(r"[\t\n\x20-\x7e]*")
 """ What a macro text step may hold. The firmware types printable ASCII; a 0 byte would end the macro and bytes
@@ -203,13 +204,23 @@ def _check_setting(kb, qsid, value):
 
 def _write_setting(kb, qsid, value):
     held = kb.settings.get(qsid)
-    if kb.qmk_settings_set(qsid, value) != 0:
-        # the protocol layer keeps the value it sent: what the keyboard holds is still the one before
+
+    def put_back():
+        # the protocol layer keeps the value before it sends it: what the keyboard holds is still the one before
         if held is None:
             kb.settings.pop(qsid, None)
         else:
             kb.settings[qsid] = held
-        raise RuntimeError("the keyboard rejected setting {}".format(qsid))
+    try:
+        refused = kb.qmk_settings_set(qsid, value) != 0
+    except Exception:
+        put_back()
+        raise
+    if refused:
+        put_back()
+        fields = QmkSettingsCodec.fields().get(qsid)
+        title = " ({})".format(fields[0]["title"]) if fields else ""
+        raise KeyboardRefused("the keyboard rejected setting {}{}".format(qsid, title))
 
 
 def set_setting(kb, qsid, value):
