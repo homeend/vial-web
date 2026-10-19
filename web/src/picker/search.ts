@@ -1,5 +1,6 @@
-// Searching the keycode catalogue by label, name, alias and description.
+// Searching the keycode catalogue by label, name, alias, description and the names people call keys by.
 import type { CatalogueKeycode, KeycodeCategory } from "../api/types";
+import { everydayNames } from "./names";
 
 /** A keycode with its search fields lowercased once, not on every keystroke */
 interface Entry {
@@ -8,14 +9,21 @@ interface Entry {
   names: string[];
   bare: string[];
   description: string;
+  /** the names people call it by ("backspace", "up arrow"): searched as labels, and names it for the find box */
+  everyday: string[];
   /** one-shot modifiers come after the real keys of the same rank */
   kind: number;
 }
 
 const SIDES: Record<string, string> = { L: "left", R: "right" };
 
-/** the other names people search the GUI key by */
-const GUI_WORDS = ["gui", "win", "windows", "cmd", "command", "super", "meta"];
+/** the names people search each modifier by */
+const MOD_WORDS: Record<string, string[]> = {
+  CTRL: ["ctrl", "control"],
+  SHIFT: ["shift"],
+  ALT: ["alt", "option"],
+  GUI: ["gui", "win", "windows", "cmd", "command", "super", "meta"],
+};
 
 function fold(text: string): string {
   return text.normalize("NFC").toLowerCase();
@@ -28,13 +36,15 @@ function fold(text: string): string {
 function derivedLabels(k: CatalogueKeycode): string[] {
   const m = /^KC_([LR])(CTRL|SHIFT|ALT|GUI)$/.exec(k.code);
   if (!m) return [];
-  const words = m[2] === "GUI" ? GUI_WORDS : [m[2].toLowerCase()];
-  return words.flatMap((word) => [word, `${SIDES[m[1]]} ${word}`]);
+  const words = MOD_WORDS[m[2]].flatMap((word) => [word, `${SIDES[m[1]]} ${word}`]);
+  return k.code === "KC_RALT" ? [...words, "altgr"] : words;
 }
 
 function entry(k: CatalogueKeycode): Entry {
   const labels = [k.tap, k.legend.shifted, k.legend.altGr].filter((l): l is string => !!l).map(fold);
   labels.push(...derivedLabels(k));
+  const everyday = everydayNames(k.code, k.tap).map(fold);
+  labels.push(...everyday);
   const names = [k.code, ...k.aliases].map(fold);
   return {
     k,
@@ -42,6 +52,7 @@ function entry(k: CatalogueKeycode): Entry {
     names,
     bare: names.map((n) => n.replace(/^kc_/, "")),
     description: fold(k.description ?? ""),
+    everyday,
     kind: k.kind === "one-shot-mod" ? 1 : 0,
   };
 }
@@ -102,13 +113,14 @@ export function searchKeycodes(categories: KeycodeCategory[], query: string): Ca
   return found.sort((a, b) => a.rank - b.rank || a.kind - b.kind || a.order - b.order).map((f) => f.k);
 }
 
-/** The keycodes the query names exactly: by their name, an alias, or either without KC_ ("esc", "KC_ESC", "caps") */
+/** The keycodes the query names exactly: by their name, an alias, or either without KC_ ("esc", "KC_ESC", "caps"),
+ * or a name people call them by ("backspace", "up arrow") */
 export function codesNamed(categories: KeycodeCategory[], query: string): Set<string> {
   const q = normalize(query);
   const found = new Set<string>();
   if (!q) return found;
   for (const e of indexOf(categories)) {
-    if (e.names.includes(q) || e.bare.includes(q)) found.add(e.k.code);
+    if (e.names.includes(q) || e.bare.includes(q) || e.everyday.includes(q)) found.add(e.k.code);
   }
   return found;
 }

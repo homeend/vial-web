@@ -188,3 +188,36 @@ describe("searchText", () => {
     expect(searchText("  Caps   LOCK ")).toBe("caps lock");
   });
 });
+
+describe("everyday names", () => {
+  const basic = catalogue(
+    k("KC_BSPACE", "Bksp", ["KC_BSPC"]), k("KC_DELETE", "Del", ["KC_DEL"]), k("KC_ENTER", "Enter", ["KC_ENT"]),
+    k("KC_UP", "Up"), k("KC_DOWN", "Down"), k("KC_LEFT", "Left"), k("KC_RIGHT", "Right", ["KC_RGHT"]),
+    k("KC_LCTRL", "LCtrl", ["KC_LCTL"]), k("KC_RALT", "RAlt", ["KC_ALGR"]), k("KC_PGUP", "Page Up"),
+    k("KC_KP_1", "1", ["KC_P1"]), k("KC_1", "1"), k("KC_GRAVE", "`", ["KC_GRV"]),
+  );
+
+  it("find the keys by the names people call them", () => {
+    expect(codes("backspace", basic)[0]).toBe("KC_BSPACE");
+    expect(codes("back space", basic)[0]).toBe("KC_BSPACE");
+    expect(codes("delete", basic)[0]).toBe("KC_DELETE");
+    expect(codes("return", basic)[0]).toBe("KC_ENTER");
+    expect(codes("control", basic)[0]).toBe("KC_LCTRL");
+    expect(codes("altgr", basic)[0]).toBe("KC_RALT");
+    expect(codes("pageup", basic)[0]).toBe("KC_PGUP");
+    expect(codes("backtick", basic)[0]).toBe("KC_GRAVE");
+    expect(codes("numpad 1", basic)[0]).toBe("KC_KP_1");
+  });
+
+  it("find all four arrows by 'arrow', and one by its direction", () => {
+    expect(new Set(codes("arrow", basic))).toEqual(new Set(["KC_UP", "KC_DOWN", "KC_LEFT", "KC_RIGHT"]));
+    expect(codes("up arrow", basic)[0]).toBe("KC_UP");
+    expect(codes("arrow left", basic)[0]).toBe("KC_LEFT");
+  });
+
+  it("name the keys for the find box too", () => {
+    expect([...codesNamed(basic, "Backspace")]).toEqual(["KC_BSPACE"]);
+    expect([...codesNamed(basic, "up arrow")]).toEqual(["KC_UP"]);
+    expect([...codesNamed(basic, "arrow")]).toEqual([]);
+  });
+});
