@@ -27,9 +27,8 @@ async function pickAnyKeycode(page: Page, code: string) {
   await expect(picker).toBeHidden();
 }
 
-/** A full-page screenshot from the top: the sticky top bar is drawn where the page was scrolled to */
+/** A full-page screenshot (from the top, sticky elements in their place: see screenshots) */
 async function pageShots(page: Page, name: string) {
-  await page.evaluate(() => window.scrollTo(0, 0));
   await screenshots(page, name, { fullPage: true });
 }
 

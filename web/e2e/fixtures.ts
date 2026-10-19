@@ -96,14 +96,46 @@ export async function setLayerName(page: Page, layer: number, name: string | nul
 }
 
 /** Screenshots of the page in the light and the dark theme (the app follows the system's): <name>-light.png and
- * <name>-dark.png in e2e/screenshots/ */
+ * <name>-dark.png in e2e/screenshots/. A full-page one is taken from the top, with sticky elements (the top bar, the
+ * macro editor's footer) where they are in the page: the browser would draw them where the window was scrolled to,
+ * over what is there. The scroll position is put back afterwards. */
 export async function screenshots(page: Page, name: string, options: { fullPage?: boolean } = {}): Promise<void> {
-  for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    // animations "disabled" finishes colour transitions, which the switch of theme just started
-    await page.screenshot({ path: join(SCREENSHOTS, `${name}-${scheme}.png`), animations: "disabled", ...options });
+  const unstuck = options.fullPage ? await unstick(page) : null;
+  try {
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      // animations "disabled" finishes colour transitions, which the switch of theme just started
+      await page.screenshot({ path: join(SCREENSHOTS, `${name}-${scheme}.png`), animations: "disabled", ...options });
+    }
+    await page.emulateMedia({ colorScheme: null });
+  } finally {
+    await unstuck?.();
   }
-  await page.emulateMedia({ colorScheme: null });
+}
+
+/** Scrolls to the top and makes every sticky element static; returns what undoes both */
+async function unstick(page: Page): Promise<() => Promise<void>> {
+  const scrolled = await page.evaluate(() => {
+    const at = { x: window.scrollX, y: window.scrollY };
+    window.scrollTo(0, 0);
+    for (const element of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
+      if (getComputedStyle(element).position === "sticky") element.setAttribute("data-shot-unstuck", "");
+    }
+    const style = document.createElement("style");
+    style.id = "shot-unstuck";
+    style.textContent = "[data-shot-unstuck] { position: static !important; }";
+    document.head.append(style);
+    return at;
+  });
+  return async () => {
+    await page.evaluate((at) => {
+      document.getElementById("shot-unstuck")?.remove();
+      for (const element of Array.from(document.querySelectorAll("[data-shot-unstuck]"))) {
+        element.removeAttribute("data-shot-unstuck");
+      }
+      window.scrollTo(at.x, at.y);
+    }, scrolled);
+  };
 }
 
 /** Makes the page draw all its text in a font family from the start, before the app first measures text, as a
