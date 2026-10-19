@@ -69,11 +69,13 @@
     display: inline-flex;
     align-items: flex-end;
     justify-content: center;
-    gap: 2px;
+    gap: 1px;
     padding-bottom: 1px;
   }
 
+  /* two 4 px dots 1 px apart fill the 9 px inside the border; they mustn't shrink into ovals */
   .combos b {
+    flex: none;
     width: 4px;
     height: 4px;
     border-radius: 50%;

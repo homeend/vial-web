@@ -82,7 +82,7 @@
   const dotRow = $derived.by(() => {
     if (marks.type !== "dots") return null;
     const step = dots.dot + dots.gap;
-    const width = marks.colours.length * step - dots.gap + (marks.more > 0 ? dots.more : 0);
+    const width = marks.colours.length * step - dots.gap + marks.moreWidth;
     const left = underline.x + (underline.w - width) / 2;
     const cy = underline.bottom - dots.dot / 2;
     return {

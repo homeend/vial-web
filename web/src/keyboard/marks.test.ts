@@ -10,33 +10,36 @@ describe("comboMarks", () => {
   });
 
   it("is a dot per combo for a key in several", () => {
-    expect(comboMarks([0, 2], 40, sizes)).toEqual({ type: "dots", colours: [0, 2], more: 0 });
+    expect(comboMarks([0, 2], 40, sizes)).toEqual({ type: "dots", colours: [0, 2], more: 0, moreWidth: 0 });
     // 36 px hold four dots of 6 px with 4 px between them, exactly
-    expect(comboMarks([0, 1, 2, 3], 36, sizes)).toEqual({ type: "dots", colours: [0, 1, 2, 3], more: 0 });
+    expect(comboMarks([0, 1, 2, 3], 36, sizes)).toEqual({ type: "dots", colours: [0, 1, 2, 3], more: 0, moreWidth: 0 });
   });
 
-  it("shows as many dots as fit next to \"+n\" for the others", () => {
+  it("shows as many dots as fit next to \"+n\" for the others, and says how wide \"+n\" is", () => {
     // 36 px: four dots fit, but not five; with "+n" (14 px) two dots fit
-    expect(comboMarks([0, 1, 2, 3, 4], 36, sizes)).toEqual({ type: "dots", colours: [0, 1], more: 3 });
-    expect(comboMarks([0, 1, 2], 12, sizes)).toEqual({ type: "dots", colours: [], more: 3 });
+    const plus = { type: "dots", moreWidth: 14 };
+    expect(comboMarks([0, 1, 2, 3, 4], 36, sizes)).toEqual({ ...plus, colours: [0, 1], more: 3 });
+    expect(comboMarks([0, 1, 2], 12, sizes)).toEqual({ ...plus, colours: [], more: 3 });
     // 35 px: a pixel short of four dots; 30 px: exactly two dots and "+n"; 24 px: one dot and "+n"
-    expect(comboMarks([0, 1, 2, 3], 35, sizes)).toEqual({ type: "dots", colours: [0, 1], more: 2 });
-    expect(comboMarks([0, 1, 2, 3], 30, sizes)).toEqual({ type: "dots", colours: [0, 1], more: 2 });
-    expect(comboMarks([0, 1, 2, 3], 24, sizes)).toEqual({ type: "dots", colours: [0], more: 3 });
-    expect(comboMarks([0, 1, 2], -5, sizes)).toEqual({ type: "dots", colours: [], more: 3 });
+    expect(comboMarks([0, 1, 2, 3], 35, sizes)).toEqual({ ...plus, colours: [0, 1], more: 2 });
+    expect(comboMarks([0, 1, 2, 3], 30, sizes)).toEqual({ ...plus, colours: [0, 1], more: 2 });
+    expect(comboMarks([0, 1, 2, 3], 24, sizes)).toEqual({ ...plus, colours: [0], more: 3 });
+    expect(comboMarks([0, 1, 2], -5, sizes)).toEqual({ ...plus, colours: [], more: 3 });
   });
 
   it("fits dots that fill the width exactly, whatever the rounding", () => {
     const small = dotSizes(20); // 4 px dots, 2.4 px apart
-    expect(comboMarks([0, 1, 2, 3], 4 * 4 + 3 * 2.4, small)).toEqual({ type: "dots", colours: [0, 1, 2, 3], more: 0 });
+    expect(comboMarks([0, 1, 2, 3], 4 * 4 + 3 * 2.4, small))
+      .toEqual({ type: "dots", colours: [0, 1, 2, 3], more: 0, moreWidth: 0 });
     const large = dotSizes(72);
-    expect(comboMarks([0, 1], 2 * large.dot + large.gap, large)).toEqual({ type: "dots", colours: [0, 1], more: 0 });
+    expect(comboMarks([0, 1], 2 * large.dot + large.gap, large))
+      .toEqual({ type: "dots", colours: [0, 1], more: 0, moreWidth: 0 });
   });
 
-  it("leaves more room for a two-digit \"+n\"", () => {
+  it("leaves more room for a two-digit \"+n\", and says so", () => {
     const many = Array.from({ length: 12 }, (_, i) => i);
     // one digit would leave room for two dots (36 - 14 = 22); two digits take 21 px, leaving one
-    expect(comboMarks(many, 36, sizes)).toEqual({ type: "dots", colours: [0], more: 11 });
+    expect(comboMarks(many, 36, sizes)).toEqual({ type: "dots", colours: [0], more: 11, moreWidth: 21 });
   });
 });
 

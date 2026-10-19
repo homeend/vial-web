@@ -4,7 +4,8 @@
 export type ComboMarks =
   | { type: "none" }
   | { type: "line"; colour: number }
-  | { type: "dots"; colours: number[]; more: number };
+  /** moreWidth: the width kept for "+n", its space before it included (0 when more is 0) */
+  | { type: "dots"; colours: number[]; more: number; moreWidth: number };
 
 export interface DotSizes {
   /** a dot's diameter, in pixels */
@@ -23,11 +24,11 @@ export function comboMarks(colours: number[], width: number, sizes: DotSizes): C
   const step = sizes.dot + sizes.gap;
   // a hair over, so that dots filling the width exactly still fit despite rounding
   const fits = (room: number) => Math.max(0, Math.floor((room + sizes.gap) / step + 1e-6));
-  if (colours.length <= fits(width)) return { type: "dots", colours, more: 0 };
+  if (colours.length <= fits(width)) return { type: "dots", colours, more: 0, moreWidth: 0 };
   // "+12" is wider than "+3": half as wide again for each further digit (at most as many as the combos have)
-  const more = sizes.more * (1 + 0.5 * (String(colours.length).length - 1));
-  const shown = fits(width - more);
-  return { type: "dots", colours: colours.slice(0, shown), more: colours.length - shown };
+  const moreWidth = sizes.more * (1 + 0.5 * (String(colours.length).length - 1));
+  const shown = fits(width - moreWidth);
+  return { type: "dots", colours: colours.slice(0, shown), more: colours.length - shown, moreWidth };
 }
 
 /** Dot sizes for a key of `u` pixels a key unit: the dots stay at least 4 px wide on the smallest keys */

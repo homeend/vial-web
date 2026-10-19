@@ -29,12 +29,14 @@ export function freeMacro(model: Pick<KeyboardModel, "macros">, usage: Usage): n
   return model.macros.items.find((m) => !macroIsSet(m) && (usage.macros[m.index]?.length ?? 0) === 0)?.index ?? null;
 }
 
-/** How many of each are set up, for the navigation; null where the firmware has none (the section is hidden) */
+/** How many of each are set up, for the navigation; null where the firmware has none (the section is hidden). Only
+ * those set up count, though a page also shows those used but empty (a macro on a key with no steps): the count says
+ * how many there are, the page where they are used. */
 export function behaviourCounts(model: Pick<KeyboardModel, "tapDance" | "combos" | "macros">):
   { tapDance: number | null; combos: number | null; macros: number | null } {
   return {
     tapDance: model.tapDance.length > 0 ? model.tapDance.filter(tapDanceIsSet).length : null,
     combos: model.combos.length > 0 ? model.combos.filter(comboIsSet).length : null,
-    macros: model.macros.count > 0 ? model.macros.items.filter(macroIsSet).length : null,
+    macros: model.macros.items.length > 0 ? model.macros.items.filter(macroIsSet).length : null,
   };
 }

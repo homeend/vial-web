@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { placeKeyboard } from "../keyboard/geometry";
 import { codesOn, comboColours, comboLayers, comboMarksOn, combosOf, combosUsing } from "./combos";
 import { effectiveAt } from "./effective";
-import { AT, corne, layer, simulatedCorne } from "./testing";
+import { AT, corne, described, layer, simulatedCorne } from "./testing";
 
 const key = (index: number) => ({ kind: "key" as const, index });
 
@@ -41,11 +41,22 @@ describe("combosOf", () => {
   it("leaves out empty combos and empty slots", () => {
     const model = corne({
       layers: [layer({}, "KC_NO")],
-      combos: [{ keys: [], output: "KC_NO" }, { keys: ["KC_NO", "KC_A"], output: "KC_B" }],
+      combos: [{ keys: [], output: "KC_NO" }, { keys: ["KC_A"], output: "KC_B" }],
     });
     const combos = combosOf(model, placeKeyboard(model));
     expect(combos.map((c) => c.index)).toEqual([1]);
     expect(combos[0].members.map((m) => m.action.code)).toEqual(["KC_A"]);
+  });
+
+  it("ends a combo's keycodes at its first empty slot, as the firmware reads them", () => {
+    const model = corne({
+      layers: [layer({ 0: "KC_K", 1: "KC_Y" }, "KC_NO")],
+      combos: [{ keys: ["KC_K", "KC_NO", "KC_Y", "KC_NO"], output: "KC_X" }, { keys: ["KC_NO", "KC_K"], output: "KC_B" }],
+    });
+    const combos = combosOf(model, placeKeyboard(model));
+    // the second has no keycode before its gap: none at all for the analysis, though it has an output
+    expect(combos.map((c) => c.index)).toEqual([0]);
+    expect(combos[0].members.map((m) => m.action.code)).toEqual(["KC_K"]);
   });
 
   it("finds nothing on a keyboard without layers", () => {
@@ -141,24 +152,76 @@ describe("comboColours", () => {
     return [...comboColours(combos, marks, size).values()];
   }
 
-  it("gives combos on the same layer different colours, in palette order", () => {
+  /** The colours of the combos set at these slots (of 10), each of two keycodes, all on the base layer: slot -> colour */
+  function coloursAt(slots: number[], size = 6) {
+    const letters = "ABCDEFGHIJKLMNOPQRST";
+    const codes = (i: number) => [`KC_${letters[2 * i]}`, `KC_${letters[2 * i + 1]}`];
+    const base: Record<number, string> = {};
+    for (let i = 0; i < 10; i++) codes(i).forEach((code, k) => { base[2 * i + k] = code; });
+    const model = corne({
+      layers: [layer(base, "KC_NO")],
+      combos: Array.from({ length: 10 }, (_, i) =>
+        (slots.includes(i) ? { keys: codes(i), output: "KC_X" } : { keys: [], output: "KC_NO" })),
+    });
+    const p = placeKeyboard(model);
+    const combos = combosOf(model, p);
+    return comboColours(combos, [comboMarksOn(combos, codesOn(model, p, 0), model, 0)], size);
+  }
+
+  it("gives each combo the colour of its number, round the palette", () => {
     expect(colours(3, 6)).toEqual([0, 1, 2]);
+    expect(coloursAt([2, 4])).toEqual(new Map([[2, 2], [4, 4]]));
+  });
+
+  it("keeps a combo's colour when another combo is set or cleared", () => {
+    expect(coloursAt([1, 3])).toEqual(new Map([[1, 1], [3, 3]]));
+    // "New combo" fills the first free slot: the others keep their colours
+    expect(coloursAt([0, 1, 3])).toEqual(new Map([[0, 0], [1, 1], [3, 3]]));
+    // clearing one leaves the others as they were
+    expect(coloursAt([3])).toEqual(new Map([[3, 3]]));
+    expect(coloursAt([0, 3])).toEqual(new Map([[0, 0], [3, 3]]));
+  });
+
+  it("gives combos on the same layer different colours: one whose colour is taken there takes the first free one", () => {
+    // 6 and 0 would share colour 0, 7 and 1 colour 1: combo 6 takes the first free colour (2), then 7 the next (3)
+    expect(coloursAt([0, 1, 6, 7])).toEqual(new Map([[0, 0], [1, 1], [6, 2], [7, 3]]));
+    // up to as many combos as colours on a layer, they all differ
+    expect(new Set(coloursAt([0, 2, 3, 6, 8, 9]).values()).size).toBe(6);
+    // three colours: 3 would have 0's colour and takes 1; then 4's own colour (1) is taken: it takes 2
+    expect(coloursAt([0, 3, 4], 3)).toEqual(new Map([[0, 0], [3, 1], [4, 2]]));
   });
 
   it("lets combos on different layers share a colour", () => {
-    // combos 1 and 2 have their keys on layer 1 only: they start the palette again
-    expect(colours(4, 6, [1, 2])).toEqual([0, 0, 1, 1]);
+    // two colours: combo 2's own colour is combo 0's, on the same layer, so it takes colour 1, which combo 1 has
+    // on layer 1 only
+    expect(colours(3, 2, [1])).toEqual([0, 1, 1]);
+    // combo 2's own colour is combo 0's, but they are on different layers: it keeps it
+    expect(colours(3, 2, [2])).toEqual([0, 1, 0]);
   });
 
-  it("repeats colours in palette order once they are all taken", () => {
+  it("gives a combo its own colour once every colour is taken on its layers", () => {
     expect(colours(5, 3)).toEqual([0, 1, 2, 0, 1]);
+    expect(coloursAt([0, 1, 2, 3, 4, 5, 6, 7])).toEqual(new Map([[0, 0], [1, 1], [2, 2], [3, 3], [4, 4], [5, 5],
+      [6, 0], [7, 1]]));
   });
 
-  it("gives a combo with no keys anywhere the first colour", () => {
-    const model = corne({ layers: [layer({}, "KC_NO")], combos: [{ keys: ["KC_Q"], output: "KC_X" }] });
+  it("gives a combo with no keys anywhere its own colour", () => {
+    const model = corne({
+      layers: [layer({}, "KC_NO")],
+      combos: [{ keys: [], output: "KC_NO" }, { keys: ["KC_Q"], output: "KC_X" }],
+    });
     const p = placeKeyboard(model);
     const combos = combosOf(model, p);
-    expect([...comboColours(combos, [comboMarksOn(combos, codesOn(model, p, 0), model, 0)])]).toEqual([[0, 0]]);
+    expect([...comboColours(combos, [comboMarksOn(combos, codesOn(model, p, 0), model, 0)])]).toEqual([[1, 1]]);
+  });
+
+  it("colours the simulated Corne's combos by their numbers, and a third on the base layer the third colour", () => {
+    const model = simulatedCorne();
+    model.combos[2] = { index: 2, keys: ["KC_K", "KC_L", "KC_NO", "KC_NO"].map(described), output: described("KC_X") };
+    const p = placeKeyboard(model);
+    const combos = combosOf(model, p);
+    const marks = model.layers.map((_, l) => comboMarksOn(combos, codesOn(model, p, l), model, l));
+    expect(comboColours(combos, marks)).toEqual(new Map([[0, 0], [1, 1], [2, 2]]));
   });
 });
 

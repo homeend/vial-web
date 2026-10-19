@@ -26,7 +26,9 @@ export function membersOf(combo: Combo): Described[] {
   return end === -1 ? combo.keys : combo.keys.slice(0, end);
 }
 
-/** Whether a combo is set up: it has a keycode or an output */
+/** Whether a combo is set up: it has a keycode or an output. A combo with an output and no keycode counts: it gets a
+ * card and counts in the navigation, as there is something in it to see and change. The analysis (combosOf in
+ * analysis/combos.ts) goes by keycodes only: such a combo has no keys to mark and never fires. */
 export function isSet(combo: Combo): boolean {
   return combo.output.kind !== "none" || combo.keys.some((k) => k.kind !== "none");
 }

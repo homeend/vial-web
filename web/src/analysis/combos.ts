@@ -3,6 +3,7 @@
 import type { Described, KeyboardModel } from "../api/types";
 import type { Placement } from "../keyboard/geometry";
 import { actionAt, refId, type KeyRef } from "../keyboard/refs";
+import { membersOf } from "../behaviours/members";
 import { effectiveAt } from "./effective";
 
 type Model = Pick<KeyboardModel, "layers" | "combos">;
@@ -15,7 +16,7 @@ interface ComboMember {
 
 export interface ComboInfo {
   index: number;
-  /** its keycodes, empty slots (KC_NO) left out */
+  /** its keycodes, up to its first empty slot (KC_NO), as the firmware reads them (see membersOf) */
   members: ComboMember[];
   output: Described;
 }
@@ -38,15 +39,16 @@ export function codesOn(model: Pick<KeyboardModel, "layers">, placement: Placeme
   return codes;
 }
 
-/** The combos that are set (at least one keycode), each keycode with the keys that have it on the base layer */
+/** The combos that have at least one keycode (up to the first empty slot, see membersOf), each keycode with the keys
+ * that have it on the base layer. Not quite the combos that are set up (members.isSet), which also counts a combo
+ * with an output and no keycode: that one gets a card and counts in the navigation, as there is something in it to
+ * see and change; but with no keycode it has no keys to mark, no layer it fires on, and nothing to analyse. */
 export function combosOf(model: Model, placement: Placement): ComboInfo[] {
   const base = model.layers.length > 0 ? codesOn(model, placement, 0) : new Map<string, KeyRef[]>();
   return model.combos
     .map((combo) => ({
       index: combo.index,
-      members: combo.keys
-        .filter((k) => k.kind !== "none")
-        .map((action) => ({ action, keys: base.get(action.code) ?? [] })),
+      members: membersOf(combo).map((action) => ({ action, keys: base.get(action.code) ?? [] })),
       output: combo.output,
     }))
     .filter((combo) => combo.members.length > 0);
@@ -100,25 +102,28 @@ export function comboMarksOn(
 /** How many colours combos are marked in (app.css: --combo-0 to --combo-5) */
 export const COMBO_COLOURS = 6;
 
-/** The colour of each combo (an index into the palette), by combo index: the same everywhere it is shown. Different
- * combos with keys on the same layer get different colours: in combo order, each takes the palette's first colour
- * that no combo before it with keys on one of its layers has. With more such combos than colours, colours repeat
- * in palette order: the combo takes the colour at its place among the set combos, round the palette. marks: by
- * layer, as comboMarksOn gives them. */
+/** The colour of each combo (an index into the palette), by combo index: the same everywhere it is shown. A combo
+ * has its own colour, its number round the palette (combo 7 of 6 colours: colour 1), so that setting or clearing
+ * another combo doesn't recolour it. Different combos with keys on the same layer get different colours though: in
+ * combo order, a combo whose own colour a combo before it with keys on one of its layers has takes the palette's
+ * first colour none of those have. (Only then can another combo change its colour.) With more such combos than
+ * colours, it keeps its own colour. marks: by layer, as comboMarksOn gives them. */
 export function comboColours(combos: ComboInfo[], marks: Map<string, number[]>[], size = COMBO_COLOURS): Map<number, number> {
   const layersOf = new Map<number, Set<number>>(combos.map((c) => [c.index, new Set<number>()]));
   marks.forEach((onLayer, layer) => {
     for (const indexes of onLayer.values()) for (const index of indexes) layersOf.get(index)?.add(layer);
   });
   const colours = new Map<number, number>();
-  combos.forEach((combo, rank) => {
+  for (const combo of [...combos].sort((a, b) => a.index - b.index)) {
     const layers = layersOf.get(combo.index) ?? new Set<number>();
-    const taken = new Set(combos.slice(0, rank)
-      .filter((other) => [...(layersOf.get(other.index) ?? [])].some((l) => layers.has(l)))
-      .map((other) => colours.get(other.index)));
-    const free = Array.from({ length: size }, (_, c) => c).find((c) => !taken.has(c));
-    colours.set(combo.index, free ?? rank % size);
-  });
+    const taken = new Set<number>();
+    for (const [other, colour] of colours) {
+      if ([...(layersOf.get(other) ?? [])].some((l) => layers.has(l))) taken.add(colour);
+    }
+    const own = combo.index % size;
+    const free = taken.has(own) ? Array.from({ length: size }, (_, c) => c).find((c) => !taken.has(c)) : own;
+    colours.set(combo.index, free ?? own);
+  }
   return colours;
 }
 

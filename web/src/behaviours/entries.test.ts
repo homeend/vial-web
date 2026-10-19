@@ -42,4 +42,9 @@ describe("behaviourCounts", () => {
     expect(behaviourCounts(model)).toEqual({ tapDance: 2, combos: 2, macros: 2 });
     expect(behaviourCounts(corne({ layers: [] }))).toEqual({ tapDance: null, combos: null, macros: null });
   });
+
+  it("go by the entries the keyboard lists, as tap dances and combos do", () => {
+    const model = simulatedCorne();
+    expect(behaviourCounts({ ...model, macros: { ...model.macros, items: [] } }).macros).toBeNull();
+  });
 });
