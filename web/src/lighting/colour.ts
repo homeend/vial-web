@@ -28,7 +28,7 @@ export function rgbToHsv([r, g, b]: Rgb): Rgb {
     else hue = (r - g) / d + 4;
     hue = (hue * 60 + 360) % 360;
   }
-  return [Math.round((hue / 360) * 255) % 256, max === 0 ? 0 : Math.round((d / max) * 255), max];
+  return [Math.round((hue / 360) * 255), max === 0 ? 0 : Math.round((d / max) * 255), max];
 }
 
 /** "#ff8000" */
@@ -75,7 +75,7 @@ export function brightnessTrack(h: number, s: number, most = 255): string {
   return `linear-gradient(to right, #000000, ${rgbToHex(hsvToRgb(h, s, most))})`;
 }
 
-/** The track of a saturation slider for a hue: from grey to the full colour */
+/** The track of a saturation slider for a hue: from white (no saturation at full brightness) to the full colour */
 export function saturationTrack(h: number): string {
   return `linear-gradient(to right, ${rgbToHex(hsvToRgb(h, 0, 255))}, ${rgbToHex(hsvToRgb(h, 255, 255))})`;
 }
