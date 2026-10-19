@@ -6,6 +6,7 @@
   import { keyboard } from "../lib/keyboard.svelte";
   import Button from "../ui/Button.svelte";
   import ConfirmDialog from "../ui/ConfirmDialog.svelte";
+  import SaveBar from "../ui/SaveBar.svelte";
   import { settingDefinitions } from "./definitions";
   import {
     changeCount, changed, fieldChanged, groupChanges, numberProblem, settingGroups, valuesOf, type Values,
@@ -86,16 +87,9 @@
 
   let confirming = $state(false);
 
-  /** the Save bar's height: the window keeps that much room at its bottom when it scrolls a field into view (the
-   * focus moved there with Tab), so the bar never covers the field. scroll-padding on the root element applies to the
-   * window's scrolling, in Firefox and Chromium alike. */
-  let barHeight = $state(0);
-  $effect(() => {
-    if (barHeight === 0) return;
-    const root = document.documentElement;
-    root.style.scrollPaddingBottom = `${barHeight + 12}px`;
-    return () => root.style.removeProperty("scroll-padding-bottom");
-  });
+  const status = $derived(blocked ? "A number can't be saved: see the field marked in red."
+    : changes.length > 0 ? `${changeCount(changes.length)} not saved yet`
+    : "No changes: the form shows what the keyboard holds.");
 </script>
 
 <section class="page" aria-labelledby="settings-title">
@@ -150,23 +144,13 @@
       </section>
     {/each}
 
-    <div class="savebar" bind:clientHeight={barHeight}>
-      <span class="status" role="status">
-        {#if blocked}
-          A number can't be saved: see the field marked in red.
-        {:else if changes.length > 0}
-          {changeCount(changes.length)} not saved yet
-        {:else}
-          No changes: the form shows what the keyboard holds.
-        {/if}
-      </span>
-      <span class="spacer"></span>
+    <SaveBar {status}>
       <!-- with nothing to undo or save they look disabled, but keep the focus (Save, once it has saved) -->
       <Button class={idle ? "idle" : undefined} aria-disabled={busy || idle || undefined} disabled={!canEdit}
         onclick={undo}>Undo</Button>
       <Button class={blocked || changes.length === 0 ? "idle" : undefined} variant="primary" disabled={!canEdit}
         aria-disabled={busy || blocked || changes.length === 0 || undefined} onclick={() => void save()}>Save</Button>
-    </div>
+    </SaveBar>
   {/if}
 </section>
 
@@ -235,35 +219,5 @@
     align-items: center;
     gap: 8px;
     color: var(--danger);
-  }
-
-  /* Save and Undo stay in sight at the window's bottom */
-  .savebar {
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border: 1px solid var(--border);
-    border-radius: 12px 12px 0 0;
-    background: var(--surface);
-    box-shadow: 0 -4px 12px rgb(16 24 40 / 8%);
-  }
-
-  .status {
-    color: var(--text-2);
-    font-size: 13px;
-  }
-
-  .spacer {
-    flex: 1;
-  }
-
-  .savebar :global(.btn.idle[aria-disabled="true"]) {
-    opacity: 0.45;
-    cursor: default;
   }
 </style>

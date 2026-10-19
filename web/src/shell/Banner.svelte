@@ -7,13 +7,15 @@
     message: string;
     actionLabel?: string;
     onaction?: () => void;
+    /** an id for the banner, so that it can take the focus from script (when what had it went away) */
+    id?: string;
   }
 
-  let { tone, title, message, actionLabel, onaction }: Props = $props();
+  let { tone, title, message, actionLabel, onaction, id }: Props = $props();
 </script>
 
 <!-- danger interrupts (the keyboard is unplugged, or couldn't be read); warning waits its turn -->
-<div class="banner {tone}" role={tone === "danger" ? "alert" : "status"}>
+<div class="banner {tone}" role={tone === "danger" ? "alert" : "status"} {id} tabindex="-1">
   <svg viewBox="0 0 20 20" aria-hidden="true">
     <path d="M10 3l8 14H2z" />
     <path d="M10 8.5v3.5M10 14.5v.01" />

@@ -24,6 +24,8 @@
     ring?: string | null;
     /** drawn faintly: a key that doesn't matter here */
     faded?: boolean;
+    /** lit up: held down on the keyboard right now (the matrix tester) */
+    pressed?: boolean;
     /** a key to choose (pressed) or not: aria-pressed says this instead of whether it is selected */
     chosen?: boolean;
     /** a key to click; otherwise only a picture (the keyboard as a whole is labelled) */
@@ -34,8 +36,8 @@
   }
 
   let {
-    item, face, u, selected, label, focusable, combos = [], found = false, ring = null, faded = false, chosen,
-    interactive = true, compact = false, onselect,
+    item, face, u, selected, label, focusable, combos = [], found = false, ring = null, faded = false, pressed = false,
+    chosen, interactive = true, compact = false, onselect,
   }: Props = $props();
 
   const combo = $derived(combos.length > 0);
@@ -210,7 +212,7 @@
   </button>
 {:else}
   <div class="key static tone-{face.tone}" data-tone={face.tone} class:combo class:found class:ringed={ringColour !== null}
-    class:faded {style}>
+    class:faded class:pressed {style}>
     {@render cap()}
   </div>
 {/if}
@@ -273,6 +275,21 @@
 
   .faded {
     opacity: 0.38;
+  }
+
+  /* held down: filled with the accent colour, whatever its kind */
+  .pressed .face {
+    fill: var(--accent);
+  }
+
+  .pressed .edge {
+    stroke: var(--accent);
+  }
+
+  .key.pressed,
+  .pressed .shifted,
+  .pressed .hold {
+    color: var(--accent-text);
   }
 
   .static {

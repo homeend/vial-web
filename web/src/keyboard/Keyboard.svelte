@@ -30,6 +30,8 @@
     rings?: (string | null)[];
     /** which placed keys are drawn faintly, aligned with placement.items */
     faded?: boolean[];
+    /** which placed keys are lit up as held down, aligned with placement.items */
+    pressed?: boolean[];
     /** keys to choose: whether each is chosen (its aria-pressed), aligned with placement.items */
     chosen?: boolean[];
     /** the key reached with Tab, when it isn't the selected one (a cursor shown only while the keys have the focus) */
@@ -42,7 +44,7 @@
 
   let {
     placement, faces, labels, selected, onselect, maxUnit = 72, combos = [], interactive = true, compact = false,
-    highlights = [], rings = [], faded = [], chosen, tabStop, label = "Keyboard", describedby,
+    highlights = [], rings = [], faded = [], pressed = [], chosen, tabStop, label = "Keyboard", describedby,
   }: Props = $props();
 
   let width = $state(0);
@@ -77,7 +79,7 @@
         {#if item.kind === "key"}
           <Key {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
             combos={combos[i] ?? []} found={highlights[i] ?? false} ring={rings[i] ?? null} faded={faded[i] ?? false}
-            chosen={chosen?.[i]} {interactive} {compact} onselect={() => onselect(i)} />
+            pressed={pressed[i] ?? false} chosen={chosen?.[i]} {interactive} {compact} onselect={() => onselect(i)} />
         {:else}
           <Encoder {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
             found={highlights[i] ?? false} faded={faded[i] ?? false} chosen={chosen?.[i]} {interactive} {compact}
