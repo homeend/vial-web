@@ -243,21 +243,44 @@ def test_unlock_poll_needs_unlock_start(locked):
     assert kb.get_unlock_status() == 0
     kb.unlock_start()
     assert kb.get_unlock_in_progress() == 1
-    assert kb.unlock_poll()[0:2] == b"\x01\x00"
+    vk.hold_unlock_keys(True)
+    for remaining in range(49, 0, -1):
+        assert kb.unlock_poll()[0:3] == bytes([0, 1, remaining])
+    assert kb.unlock_poll()[0:3] == bytes([1, 0, 0])
     assert kb.get_unlock_status() == 1
 
 
-def test_unlock_needs_the_unlock_keys_held():
-    vk = VirtualKeyboard(TINY, unlocked=False, unlock_keys=[(0, 0), (0, 1)])
+def test_without_unlock_keys_every_poll_counts_down():
+    vk = VirtualKeyboard(TINY, unlocked=False, unlock_counter_max=2)
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    kb.unlock_start()
+    assert [kb.unlock_poll()[0:3] for _ in range(2)] == [bytes([0, 1, 1]), bytes([1, 0, 0])]
+
+
+def test_unlock_counts_down_while_the_unlock_keys_are_held():
+    vk = VirtualKeyboard(TINY, unlocked=False, unlock_keys=[(0, 0), (0, 1)], unlock_counter_max=3)
     kb = Keyboard(SimulatedHidDevice(vk))
     kb.reload()
     assert kb.get_unlock_keys() == [(0, 0), (0, 1)]
     kb.unlock_start()
     vk.press(0, 0)
-    assert kb.unlock_poll()[0:3] == bytes([0, 1, 50])
+    assert kb.unlock_poll()[0:3] == bytes([0, 1, 3])
     vk.press(0, 1)
-    assert kb.unlock_poll()[0:3] == bytes([1, 0, 0])
+    assert kb.unlock_poll()[0:3] == bytes([0, 1, 2])
+    # letting go starts the countdown again
+    vk.release(0, 1)
+    assert kb.unlock_poll()[0:3] == bytes([0, 1, 3])
+    vk.hold_unlock_keys(True)
+    assert [kb.unlock_poll()[0:3] for _ in range(3)] == [bytes([0, 1, 2]), bytes([0, 1, 1]), bytes([1, 0, 0])]
     assert kb.get_unlock_status() == 1
+    vk.hold_unlock_keys(False)
+    assert vk.pressed == set()
+
+
+def test_unlock_countdown_starts_at_one_or_more():
+    with pytest.raises(SimulatorError):
+        VirtualKeyboard(TINY, unlock_counter_max=0)
 
 
 def test_unlock_in_progress_only_answers_unlock_and_identity_commands(locked):
@@ -267,7 +290,9 @@ def test_unlock_in_progress_only_answers_unlock_and_identity_commands(locked):
     assert send(vk, request) == request + b"\x00" * (MSG_LEN - len(request))
     assert vk.keymap[0][0][0] == encode("KC_TAB")
     assert kb.get_uid() == struct.pack("<Q", 0x5EEDC0DE00420042)
-    kb.unlock_poll()
+    vk.hold_unlock_keys(True)
+    while kb.unlock_poll()[1]:
+        pass
     kb.set_key(0, 0, 0, "KC_A")
     assert vk.keymap[0][0][0] == encode("KC_A")
 

@@ -14,6 +14,8 @@ LEFT = [[(r, c) for c in range(6)] for r in range(3)]
 RIGHT = [[(r + 4, 5 - c) for c in range(6)] for r in range(3)]
 LEFT_THUMBS = [(3, 3), (3, 4), (3, 5)]
 RIGHT_THUMBS = [(7, 5), (7, 4), (7, 3)]
+UNLOCK_KEYS = [LEFT[0][0], RIGHT[0][5]]
+""" held to unlock the keyboard: the outermost keys of both top rows (Tab and Backspace) """
 
 
 def definition():
@@ -147,5 +149,7 @@ def make_corne(layers=len(LAYERS)):
         # 22-24 are the separate Permissive Hold / Hold On Other Key Press / Retro Tapping settings. The legacy
         # bitfield (8) also has Permissive Hold and Retro Tapping bits, so it is left out to avoid showing them twice
         settings={2: 50, 7: 200, 22: 0, 23: 0, 24: 0, 25: 100},
+        # unlocked, as nobody can hold its keys; tests lock it to try the unlock
         unlocked=True,
+        unlock_keys=UNLOCK_KEYS,
     )
