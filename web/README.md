@@ -82,6 +82,7 @@ page.
 | Spec | What it tests |
 |---|---|
 | `keymap`, `find`, `overview`, `display`, `theme` | The Keymap's Edit and Overview views, the find box, sizes and fonts, the theme |
+| `move` | Dragging a key onto another with the mouse (Replace, Swap both, Undo, Esc), the Inspector's Copy and Swap without a mouse, the drop menu in a 1080p window |
 | `macropad` | Another keyboard: encoders, rotated keys, an ISO Enter, a decal, a layout option |
 | `behaviours` | The Tap dance, Combos and Macros pages end to end, the top bar's Lock/Unlock, the pages at four window sizes and at 375 px |
 | `tapdance`, `combos`, `macros` | Editing on those pages: where the focus goes, saves that are slow or fail, recording keys |
@@ -110,7 +111,7 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | `src/lib/` | The keyboard store (loaded model, connection, edits), unlocking, the section shown (the address's `#combos/2`), toasts, and the theme (System, Light, Dark) |
 | `src/keyboard/` | Drawing any keyboard from its geometry; key labels; combo marks on keys (`marks.ts`: underlines and dots) |
 | `src/analysis/` | Pure functions over the loaded model: how each layer is reached, combo marks and colours (`comboMarksOn`, `comboColours`), tap dance and macro usage, finding a character or key, and the phrases for them |
-| `src/keymap/` | Keymap Edit and Overview views: layer tabs, Inspector, hold editor, keyboard navigation, layer cards, find box; what the page keeps while another one shows (`state.svelte.ts`) |
+| `src/keymap/` | Keymap Edit and Overview views: layer tabs, Inspector, hold editor, keyboard navigation, moving a key onto another (a drag and its drop menu, or Copy and Swap in the Inspector), layer cards, find box; what the page keeps while another one shows (`state.svelte.ts`) |
 | `src/behaviours/` | The Tap dance, Combos, Macros, Key overrides and Alt-repeat pages: their cards and editors, the combo key chooser, the macro step editor and recorder, the modifier, layer and option controls, and the plain-language sentences |
 | `src/settings/` | The QMK settings form (Settings): the groups `qmk_settings.json` defines, what changed, Save, Undo and Reset; what the page keeps while another one shows (`state.svelte.ts`) |
 | `src/about/` | The Keyboard page: what the keyboard is (Qt's About keyboard), and saving and loading `.vil` layout files with a preview of what changes |
