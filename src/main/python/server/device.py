@@ -7,7 +7,7 @@ import time
 from collections import namedtuple
 from dataclasses import dataclass
 
-from protocol.constants import CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_KEYBOARD_ID
+from protocol.constants import CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_KEYBOARD_ID, VIAL_PROTOCOL_MATRIX_TESTER
 from protocol.keyboard_comm import Keyboard
 from simulator.device import SimulatedHidDevice
 
@@ -51,6 +51,34 @@ def require_unlocked(keyboard):
     if keyboard.get_unlock_status() != 1:
         raise KeyboardLocked("the keyboard is locked: unlock it to make this change")
     return True
+
+
+def has_matrix_tester(keyboard):
+    """ Whether the keyboard tells which of its keys are held (Qt's matrix tester): Vial protocol 3 or later, and a
+    matrix that fits in one reply by the firmware's own estimate (via.c: (MATRIX_COLS / 8 + 1) * MATRIX_ROWS <= 28;
+    a larger one leaves the reply empty) """
+    return keyboard.vial_protocol >= VIAL_PROTOCOL_MATRIX_TESTER and (keyboard.cols // 8 + 1) * keyboard.rows <= 28
+
+
+def matrix_pressed(data, rows, cols):
+    """ The (row, col) of each key held, from the reply to a switch matrix request, as Qt's matrix tester reads it:
+    after the 2 bytes of the request, each row takes ceil(cols / 8) bytes, the highest columns first """
+    row_size = (cols + 7) // 8
+    pressed = []
+    for row in range(rows):
+        start = 2 + row * row_size
+        bits = int.from_bytes(bytes(data[start:start + row_size]), byteorder="big")
+        pressed += [(row, col) for col in range(cols) if bits >> col & 1]
+    return pressed
+
+
+@dataclass(frozen=True)
+class MatrixReading:
+    """ One reading of the switch matrix (schemas.MatrixState) """
+    state: str
+    """ "testing": `pressed` is what is held now; "locked": the firmware shows nothing until the keyboard is unlocked;
+    "unsupported": this keyboard can't tell (has_matrix_tester) """
+    pressed: tuple = ()
 
 
 def interrupted_unlock_keys(keyboard):
@@ -504,6 +532,23 @@ class DeviceManager:
                 self.unlocked = unlocked
                 self.pending_events.append("unlock")
             return self.unlock_state()
+
+    # ---------- matrix tester ----------
+
+    def poll_matrix(self):
+        """ Read which keys are held: one request, under the device lock. The firmware hides them (a would-be
+        keylogger) until the keyboard is unlocked, and answers nothing while it waits for its unlock keys: then the
+        keyboard isn't asked, and the reading says "locked". Returns a MatrixReading. """
+        with self.lock:
+            keyboard = self.keyboard
+            if keyboard is None:
+                raise NotConnected("no keyboard connected")
+            if not has_matrix_tester(keyboard):
+                return MatrixReading("unsupported")
+            if self.unlocking is not None or not self.unlocked:
+                return MatrixReading("locked")
+            data = self._io(keyboard, lambda kb: kb.matrix_poll())
+            return MatrixReading("testing", tuple(matrix_pressed(data, keyboard.rows, keyboard.cols)))
 
     # ---------- hot-plug ----------
 

@@ -263,6 +263,8 @@ class KeyboardModel(BaseModel):
     lighting: Lighting
     features: list[str]
     unlocked: bool
+    matrixTester: bool
+    """ the keyboard tells which of its keys are held (Vial protocol 3 and later, and a matrix small enough) """
 
 
 class KeyChange(BaseModel):

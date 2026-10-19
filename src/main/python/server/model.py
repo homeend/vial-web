@@ -8,6 +8,7 @@ from keycodes.keycodes import KEYCODES_SPECIAL, KEYCODES_BASIC, KEYCODES_SHIFTED
 from macro.macro_action import ActionText, ActionDelay, ActionSequence
 from server import schemas
 from server.describe import describe
+from server.device import has_matrix_tester
 from server.names import suggest_tap_dance_name, suggest_macro_name
 
 KEYCODE_CATEGORIES = [
@@ -159,6 +160,7 @@ def build(kb, names, unlocked):
         lighting=lighting(kb),
         features=sorted(kb.supported_features),
         unlocked=unlocked,
+        matrixTester=has_matrix_tester(kb),
     )
 
 

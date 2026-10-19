@@ -143,7 +143,7 @@ export function corne(setup: Setup): KeyboardModel {
         actions: Array.from({ length: steps }, () => ({ type: "tap" as const, keys: [described("KC_A")] })),
       })),
     },
-    settings: [], lighting: {}, features: [], unlocked: true,
+    settings: [], lighting: {}, features: [], unlocked: true, matrixTester: true,
   };
 }
 

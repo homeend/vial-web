@@ -801,6 +801,8 @@ export interface components {
             features: string[];
             /** Unlocked */
             unlocked: boolean;
+            /** Matrixtester */
+            matrixTester: boolean;
         };
         /**
          * KeycodeCategory
