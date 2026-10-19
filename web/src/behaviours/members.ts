@@ -19,9 +19,11 @@ export function toggleMember(members: Described[], d: Described): { members: Des
   return problem ? { members, problem } : { members: [...members, d], problem: null };
 }
 
-/** A combo's keycodes, its empty slots left out */
+/** A combo's keycodes: the firmware reads them up to the first empty slot (KC_NO ends the list), so keycodes after a
+ * gap (a combo saved that way elsewhere) never count */
 export function membersOf(combo: Combo): Described[] {
-  return combo.keys.filter((k) => k.kind !== "none");
+  const end = combo.keys.findIndex((k) => k.kind === "none");
+  return end === -1 ? combo.keys : combo.keys.slice(0, end);
 }
 
 /** Whether a combo is set up: it has a keycode or an output */

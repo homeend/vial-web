@@ -30,10 +30,17 @@ describe("toggleMember", () => {
 });
 
 describe("a combo's members", () => {
-  const combo = { index: 0, keys: ["KC_K", "KC_NO", "KC_Y", "KC_NO"].map(described), output: described("KC_ESC") };
+  const combo = { index: 0, keys: ["KC_K", "KC_Y", "KC_NO", "KC_NO"].map(described), output: described("KC_ESC") };
 
   it("leave out its empty slots", () => {
     expect(codes(membersOf(combo))).toEqual(["KC_K", "KC_Y"]);
+    expect(codes(membersOf({ ...combo, keys: ["KC_K", "KC_Y", "KC_J", "KC_L"].map(described) }))).toEqual(
+      ["KC_K", "KC_Y", "KC_J", "KC_L"]);
+  });
+
+  it("end at the first empty slot, as the firmware reads them", () => {
+    expect(codes(membersOf({ ...combo, keys: ["KC_K", "KC_NO", "KC_Y", "KC_NO"].map(described) }))).toEqual(["KC_K"]);
+    expect(membersOf({ ...combo, keys: ["KC_NO", "KC_K", "KC_Y", "KC_NO"].map(described) })).toEqual([]);
   });
 
   it("make it set up, as an output does", () => {

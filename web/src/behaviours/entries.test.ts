@@ -9,6 +9,10 @@ describe("shownEntries", () => {
     expect(shownEntries(6, (i) => i === 1 || i === 4, [5, 1])).toEqual([1, 4, 5]);
     expect(shownEntries(3, () => false, [])).toEqual([]);
   });
+
+  it("drop opened numbers the keyboard doesn't have, and show one opened twice once", () => {
+    expect(shownEntries(3, () => false, [3, -1, 7, 2, 2])).toEqual([2]);
+  });
 });
 
 describe("free entries", () => {
@@ -25,6 +29,8 @@ describe("free entries", () => {
     // M2 on a key: in use, though empty
     const used = corne({ layers: [layer({ 0: "M2" }, "KC_NO")], macros: [2, 6, 0, 0] });
     expect(freeMacro(used, usageOf(used, placeKeyboard(used)))).toBe(3);
+    const full = corne({ layers: [layer({}, "KC_NO")], macros: [2, 6, 1] }); // every macro has steps
+    expect(freeMacro(full, usageOf(full, placeKeyboard(full)))).toBeNull();
   });
 });
 
