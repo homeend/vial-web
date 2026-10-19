@@ -76,45 +76,43 @@
   }}
 />
 
-<!-- a menu of the moves a drop can make; hidden until it is placed, so it doesn't show where it isn't -->
+<!-- the moves a drop can make, under what is dropped onto what (outside the menu, which has menu items only); hidden
+     until it is placed, so it doesn't show where it isn't -->
 <div
   bind:this={menu}
   class="drop-menu"
-  role="menu"
-  tabindex="-1"
-  aria-labelledby="{uid}-title"
-  aria-busy={working !== null || undefined}
   style:left="{place?.left ?? 0}px"
   style:top="{place?.top ?? 0}px"
   style:visibility={place ? null : "hidden"}
-  {onkeydown}
 >
   <p class="title" id="{uid}-title"><span title={source}>{source}</span> onto <span title={target}>{target}</span></p>
-  <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
-    onclick={() => choose("replace")}>
-    <span class="label" title="Replace {target} with {source}">
-      {working === "replace" ? "Replacing…" : `Replace with ${source}`}
-    </span>
-    <span class="detail">the key dragged stays as it is</span>
-  </button>
-  <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
-    onclick={() => choose("swap")}>
-    <span class="label">{working === "swap" ? "Swapping…" : "Swap both"}</span>
-    <span class="detail">the two keys trade keycodes</span>
-  </button>
-  <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
-    onclick={() => {
-      if (!working) oncancel(true);
-    }}>
-    <span class="label">Cancel</span>
-  </button>
+  <div class="items" role="menu" tabindex="-1" aria-labelledby="{uid}-title" aria-busy={working !== null || undefined}
+    {onkeydown}>
+    <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
+      onclick={() => choose("replace")}>
+      <span class="label" title="Replace {target} with {source}">
+        {working === "replace" ? "Replacing…" : `Replace with ${source}`}
+      </span>
+      <span class="detail">the key dragged stays as it is</span>
+    </button>
+    <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
+      onclick={() => choose("swap")}>
+      <span class="label">{working === "swap" ? "Swapping…" : "Swap both"}</span>
+      <span class="detail">the two keys trade keycodes</span>
+    </button>
+    <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
+      onclick={() => {
+        if (!working) oncancel(true);
+      }}>
+      <span class="label">Cancel</span>
+    </button>
+  </div>
 </div>
 
 <style>
   .drop-menu {
     position: absolute;
     z-index: 20;
-    display: grid;
     width: 230px;
     padding: 6px;
     border: 1px solid var(--border-strong);
@@ -122,6 +120,11 @@
     background: var(--surface);
     color: var(--text);
     box-shadow: var(--shadow-lg);
+    outline: none;
+  }
+
+  .items {
+    display: grid;
     outline: none;
   }
 
