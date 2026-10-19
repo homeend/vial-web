@@ -86,13 +86,38 @@ export async function setCombo(page: Page, index: number, combo: { keys: string[
 
 /** The custom name of a layer, or null when it has its default name */
 export async function layerNameOf(page: Page, layer: number): Promise<string | null> {
+  return nameOf(page, "layers", layer);
+}
+
+/** The custom name of a layer, tap dance or macro, or null when it has its default name */
+export async function nameOf(page: Page, kind: "layers" | "tapDance" | "macros", index: number): Promise<string | null> {
   const names = await (await page.request.get(serverUrl(page, "/api/names"))).json();
-  return names.layers?.[String(layer)] ?? null;
+  return names[kind]?.[String(index)] ?? null;
 }
 
 /** Names a layer through the API; null gives it its default name back */
 export async function setLayerName(page: Page, layer: number, name: string | null): Promise<void> {
-  await put(page, `/api/names/layers/${layer}`, { name });
+  await setNameOf(page, "layers", layer, name);
+}
+
+/** Names a layer, tap dance or macro through the API; null gives it its default name back */
+export async function setNameOf(page: Page, kind: "layers" | "tapDance" | "macros", index: number,
+  name: string | null): Promise<void> {
+  await put(page, `/api/names/${kind}/${index}`, { name });
+}
+
+/** Runs every one of a test's restores, even after one fails, then fails with the first failure (each is reported) */
+export async function restoreAll(...restores: (() => Promise<unknown>)[]): Promise<void> {
+  const failures: unknown[] = [];
+  for (const restore of restores) {
+    try {
+      await restore();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, `${failures.length} restores failed`);
 }
 
 /** Screenshots of the page in the light and the dark theme (the app follows the system's): <name>-light.png and

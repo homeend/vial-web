@@ -1,12 +1,11 @@
 import type { Locator, Page } from "@playwright/test";
 import {
-  comboAt, expect, keyIndex, macrosOf, screenshots, setCombo, setMacros, setTapDance, simulatorUnlock, tapDanceAt, test,
-  unlockState,
+  codeAt, comboAt, expect, keyIndex, macrosOf, nameOf, restoreAll, screenshots, serverUrl, setCodeAt, setCombo,
+  setMacros, setNameOf, setTapDance, simulatorUnlock, tapDanceAt, test, unlockState,
 } from "./fixtures";
 
 // The server is shared by every test: a test that changes a tap dance, a combo or a macro puts it back in its `finally`
-
-const EMPTY_COMBO = { keys: ["KC_NO", "KC_NO", "KC_NO", "KC_NO"], output: "KC_NO" };
+// (the fixtures' setters throw when the server refuses; restoreAll runs every restore even when one fails)
 
 async function openSection(page: Page, name: "Tap dance" | "Combos" | "Macros") {
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: new RegExp(`^${name}`) }).click();
@@ -49,7 +48,8 @@ async function unlockAgain(page: Page) {
   if ((await unlockState(page)) === "unlocked") return;
   // the simulator counts down while the keys are held
   await simulatorUnlock(page, { keysHeld: true });
-  await page.request.post(new URL("/api/unlock/start", page.url()).toString());
+  const started = await page.request.post(serverUrl(page, "/api/unlock/start"));
+  expect(started.ok(), `starting an unlock: ${started.status()}`).toBe(true);
   await expect.poll(() => unlockState(page), { timeout: 20_000 }).toBe("unlocked");
   await simulatorUnlock(page, { keysHeld: false });
 }
@@ -94,6 +94,7 @@ test.describe("tap dance", () => {
 
   test("the tapping term, and a long name cut short with a tooltip", async ({ app }) => {
     const before = await tapDanceAt(app, 1);
+    const name = await nameOf(app, "tapDance", 1);
     const long = "Escape on a tap, Control held, save twice";
     try {
       await openSection(app, "Tap dance");
@@ -112,13 +113,13 @@ test.describe("tap dance", () => {
       await expect(name).toHaveAttribute("title", long.slice(0, 40));
       await expect(card.getByRole("button", { name: "Rename tap dance 1" })).toBeFocused();
     } finally {
-      await setTapDance(app, 1, before);
-      await app.request.put(new URL("/api/names/tapDance/1", app.url()).toString(), { data: { name: null } });
+      await restoreAll(() => setTapDance(app, 1, before), () => setNameOf(app, "tapDance", 1, name));
     }
   });
 
   test("turning a key into a tap dance opens its card", async ({ app }) => {
     const index = await keyIndex(app, 0, 2); // base layer: L
+    const code = await codeAt(app, 0, index);
     const before = await tapDanceAt(app, 2);
     try {
       await app.locator(`[data-ref="key:${index}"]`).click();
@@ -129,14 +130,14 @@ test.describe("tap dance", () => {
       await expect(card).toContainText("Tap for L.");
       await expect(card.getByRole("heading", { level: 2 })).toBeFocused();
     } finally {
-      await app.request.put(new URL("/api/keymap/0/0/2", app.url()).toString(), { data: { code: "KC_L" } });
-      await setTapDance(app, 2, before);
+      await restoreAll(() => setCodeAt(app, 0, index, code), () => setTapDance(app, 2, before));
     }
   });
 });
 
 test.describe("combos", () => {
   test("a combo made by clicking its keys is marked on them", async ({ app }) => {
+    const before = await comboAt(app, 2);
     try {
       await openSection(app, "Combos");
       await app.getByRole("button", { name: "New combo" }).click();
@@ -169,7 +170,7 @@ test.describe("combos", () => {
       await expect(key).toHaveAccessibleName(/· in combo 2$/);
       expect(await fillOf(key.locator(".combo-mark"))).toBe(await comboColour(app, 2));
     } finally {
-      await setCombo(app, 2, EMPTY_COMBO);
+      await setCombo(app, 2, before);
     }
   });
 
@@ -310,8 +311,8 @@ test.describe("macros", () => {
       expect((await macrosOf(app))[0][0]).toEqual({ type: "text", text: "git log", keys: [], delay: null });
       await expect(app.getByRole("button", { name: "Keyboard unlocked: lock it" })).toBeVisible();
     } finally {
-      await unlockAgain(app);
-      await setMacros(app, before);
+      // the macros can only be put back on an unlocked keyboard
+      await restoreAll(() => unlockAgain(app), () => setMacros(app, before));
     }
   });
 });
