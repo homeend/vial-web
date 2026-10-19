@@ -469,3 +469,16 @@ def test_value_follows_the_protocol(rebuilt_tables, protocol, code, value):
     result = describe(code)
     assert result["value"] == value
     assert ActionTap([result["code"]]).serialize(2) == ActionTap([code]).serialize(2)
+
+
+@pytest.mark.parametrize("value, ok", [(0, True), (0xFFFF, True), (-1, False), (0x10000, False)])
+def test_the_schema_keeps_the_value_to_16_bits(value, ok):
+    """ The keyboard stores a keycode in 16 bits: the schema (and the web's types) say so """
+    from pydantic import ValidationError
+    from server.schemas import Described
+    shape = {**describe("KC_A"), "value": value}
+    if ok:
+        assert Described.model_validate(shape).value == value
+    else:
+        with pytest.raises(ValidationError):
+            Described.model_validate(shape)

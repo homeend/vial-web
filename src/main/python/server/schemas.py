@@ -27,7 +27,7 @@ class Legend(BaseModel):
 class Described(BaseModel):
     """ A keycode as the UI shows it """
     code: str
-    value: int
+    value: int = Field(ge=0, le=0xFFFF)
     """ the keycode as the keyboard stores it (16 bits): a macro step takes more bytes for one of 256 or more """
     kind: KeyKind
     tap: str
