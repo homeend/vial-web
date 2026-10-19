@@ -339,7 +339,9 @@ export interface paths {
         put?: never;
         /**
          * Save Lighting
-         * @description Keep the lighting the keyboard shows now when it is unplugged (changes are only shown until then)
+         * @description Keep the lighting the keyboard shows now when it is unplugged (changes are only shown until then, but for
+         *     backlight breathing, which the firmware keeps at once with the backlight level it runs at). The reply is
+         *     read back from the keyboard.
          */
         post: operations["save_lighting_api_lighting_save_post"];
         delete?: never;
@@ -895,7 +897,8 @@ export interface components {
         /**
          * LightingIn
          * @description A change the keyboard shows at once and forgets when it is unplugged, as Qt's Lighting tab makes it: POST
-         *     /api/lighting/save keeps it
+         *     /api/lighting/save keeps it. Backlight breathing (backlight.effect) is kept at once: the firmware writes it, with
+         *     the backlight level it runs at, when it changes. At least one section; a section with no fields is skipped.
          */
         LightingIn: {
             vialrgb?: components["schemas"]["VialRgbIn"] | null;

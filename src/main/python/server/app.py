@@ -470,7 +470,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.post("/api/lighting/save", response_model=schemas.Lighting)
     def save_lighting():
-        """ Keep the lighting the keyboard shows now when it is unplugged (changes are only shown until then) """
+        """ Keep the lighting the keyboard shows now when it is unplugged (changes are only shown until then, but for
+        backlight breathing, which the firmware keeps at once with the backlight level it runs at). The reply is
+        read back from the keyboard. """
         return run(edits.save_lighting)
 
     @app.get("/api/names", response_model=schemas.Names)

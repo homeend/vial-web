@@ -9,13 +9,14 @@ They are called by DeviceManager.run, which holds the device lock.
 """
 import json
 import re
+import struct
 
 from pydantic import ValidationError
 
 from keycodes.keycodes import Keycode, RESET_KEYCODE
 from macro.macro_action import ActionText, ActionDelay, tag_to_action
 from protocol.alt_repeat_key import AltRepeatKeyEntry
-from protocol.constants import VIAL_PROTOCOL_ADVANCED_MACROS
+from protocol.constants import CMD_VIA_LIGHTING_GET_VALUE, QMK_RGBLIGHT_EFFECT, VIAL_PROTOCOL_ADVANCED_MACROS
 from protocol.key_override import KeyOverrideEntry
 from protocol.qmk_settings_codec import QmkSettingsCodec
 from protocol.unlock_hook import request_unlock
@@ -234,7 +235,13 @@ def reset_settings(kb):
     kb.reload_settings()
 
 
+def _changes_something(section):
+    return section is not None and any(getattr(section, field) is not None for field in type(section).model_fields)
+
+
 def set_lighting(kb, body):
+    if body.vialrgb is None and body.rgblight is None and body.backlight is None:
+        raise ValueError("there is no lighting change in the request")
     # check every section before writing any of them
     if body.vialrgb is not None:
         if not kb.lighting_vialrgb:
@@ -246,7 +253,30 @@ def set_lighting(kb, body):
     if body.backlight is not None and not kb.lighting_qmk_backlight:
         raise ValueError("this keyboard has no backlight")
 
-    if body.vialrgb is not None:
+    try:
+        _write_lighting(kb, body)
+    except Exception:
+        # the protocol layer keeps each value before it sends it: what the keyboard shows is read back instead, if
+        # it still answers
+        try:
+            kb.reload_rgb()
+        except Exception:
+            pass
+        raise
+    # the reply is what the keyboard shows now, read back as Qt does after a change: the firmware can take a value
+    # otherwise (the backlight's few brightness steps, a colour while the light is off, breathing it doesn't have)
+    kb.reload_rgb()
+    return model.lighting(kb)
+
+
+def _rgblight_effect_now(kb):
+    """ The RGB light's effect as the keyboard reads it now, 0 while the light is off: a key on the keyboard
+    (RGB_TOG) can have switched it since it was last read """
+    return kb.usb_send(kb.dev, struct.pack(">BB", CMD_VIA_LIGHTING_GET_VALUE, QMK_RGBLIGHT_EFFECT), retries=20)[2]
+
+
+def _write_lighting(kb, body):
+    if _changes_something(body.vialrgb):
         v = body.vialrgb
         # VialRGB sets effect, speed and colour in one request (vialrgb_set_mode): one is sent with all three, the
         # brightness at most the keyboard's maximum, as Qt's slider allows
@@ -254,12 +284,12 @@ def set_lighting(kb, body):
         kb.rgb_mode = kb.rgb_mode if v.mode is None else v.mode
         kb.rgb_speed = kb.rgb_speed if v.speed is None else v.speed
         kb.set_vialrgb_color(h, s, min(value, kb.rgb_maximum_brightness))
-    if body.rgblight is not None:
+    if _changes_something(body.rgblight):
         r = body.rgblight
         if r.effect is not None:
-            was_off = kb.underglow_effect == 0
+            was_off = r.effect != 0 and _rgblight_effect_now(kb) == 0
             kb.set_qmk_rgblight_effect(r.effect)
-            if was_off and r.effect != 0:
+            if was_off:
                 # a light that is off takes no effect: via.c turns it on after setting the effect, and it starts the
                 # one it had before. Sent again, the effect is taken.
                 kb.set_qmk_rgblight_effect(r.effect)
@@ -272,15 +302,11 @@ def set_lighting(kb, body):
             kb.underglow_color = (hue, sat)
         elif r.brightness is not None:
             kb.set_qmk_rgblight_brightness(r.brightness)
-    if body.backlight is not None:
+    if _changes_something(body.backlight):
         if body.backlight.brightness is not None:
             kb.set_qmk_backlight_brightness(body.backlight.brightness)
         if body.backlight.effect is not None:
             kb.set_qmk_backlight_effect(body.backlight.effect)
-    # the reply is what the keyboard shows now, read back as Qt does after a change: the firmware can take a value
-    # otherwise (the backlight's few brightness steps, a colour while the light is off, breathing it doesn't have)
-    kb.reload_rgb()
-    return model.lighting(kb)
 
 
 def save_lighting(kb):
@@ -288,6 +314,8 @@ def save_lighting(kb):
     if not (kb.lighting_vialrgb or kb.lighting_qmk_rgblight or kb.lighting_qmk_backlight):
         raise ValueError("this keyboard has no lighting")
     kb.save_rgb()
+    # the reply is what the keyboard kept, read back: a key on the keyboard can have changed it since the last read
+    kb.reload_rgb()
     return model.lighting(kb)
 
 

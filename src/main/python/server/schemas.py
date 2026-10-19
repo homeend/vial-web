@@ -474,7 +474,8 @@ class BacklightIn(Request):
 
 class LightingIn(Request):
     """ A change the keyboard shows at once and forgets when it is unplugged, as Qt's Lighting tab makes it: POST
-    /api/lighting/save keeps it """
+    /api/lighting/save keeps it. Backlight breathing (backlight.effect) is kept at once: the firmware writes it, with
+    the backlight level it runs at, when it changes. At least one section; a section with no fields is skipped. """
     vialrgb: Optional[VialRgbIn] = None
     rgblight: Optional[RgbLightIn] = None
     backlight: Optional[BacklightIn] = None

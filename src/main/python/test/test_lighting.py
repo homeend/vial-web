@@ -77,7 +77,17 @@ def test_a_keyboard_without_lighting_refuses_lighting_changes_and_saves(lit):
     assert client.put("/api/lighting", json={"vialrgb": {"mode": 1}}).status_code == 422
     assert client.put("/api/lighting", json={"rgblight": {"effect": 1}}).status_code == 422
     assert client.put("/api/lighting", json={"backlight": {"effect": 1}}).status_code == 422
+    assert client.put("/api/lighting", json={}).status_code == 422
     assert client.post("/api/lighting/save").status_code == 422
+    assert log == []
+
+
+@pytest.mark.parametrize("lit", ["vialrgb", "qmk_backlight_rgblight"], indirect=True)
+def test_a_change_of_nothing_is_refused(lit):
+    client, virtual = lit
+    log = sent(virtual)
+    assert client.put("/api/lighting", json={}).status_code == 422
+    assert client.put("/api/lighting", json={"vialrgb": None, "rgblight": None, "backlight": None}).status_code == 422
     assert log == []
 
 
@@ -114,6 +124,18 @@ def test_vialrgb_off_keeps_its_colour_and_the_reply_says_what_the_keyboard_shows
         off["hsv"]
     on = client.put("/api/lighting", json={"vialrgb": {"mode": 2, "hsv": [99, 99, 99]}}).json()["vialrgb"]
     assert (on["mode"], on["hsv"]) == (2, [99, 99, 99])
+
+
+@pytest.mark.parametrize("lit", ["vialrgb"], indirect=True)
+def test_vialrgb_with_nothing_to_change_sends_nothing(lit):
+    client, virtual = lit
+    # changed on the keyboard (a key): a request built from the server's copy would undo it
+    virtual.vialrgb["mode"] = 7
+    log = sent(virtual)
+    assert client.put("/api/lighting", json={"vialrgb": {}}).json()["vialrgb"]["mode"] == 7
+    assert client.put("/api/lighting", json={"vialrgb": {"mode": None}}).json()["vialrgb"]["mode"] == 7
+    assert log == []
+    assert virtual.vialrgb["mode"] == 7
 
 
 @pytest.mark.parametrize("lit", ["vialrgb"], indirect=True)
@@ -162,6 +184,23 @@ def test_rgblight_effect_once_when_it_is_on(lit):
     log = sent(virtual)
     client.put("/api/lighting", json={"rgblight": {"effect": 3}})
     assert len(log) == 1
+
+
+@pytest.mark.parametrize("lit", ["qmk_rgblight"], indirect=True)
+def test_rgblight_switched_off_or_on_with_a_key_is_read_before_the_effect_is_sent(lit):
+    client, virtual = lit
+    # RGB_TOG on the keyboard: the server's copy still says the light is on
+    virtual.rgblight["enable"] = False
+    log = sent(virtual)
+    assert client.put("/api/lighting", json={"rgblight": {"effect": 20}}).json()["rgblight"]["effect"] == 20
+    assert [entry[1] for entry in log] == [QMK_RGBLIGHT_EFFECT, QMK_RGBLIGHT_EFFECT]
+    assert (virtual.rgblight["enable"], virtual.rgblight["mode"]) == (True, 20)
+    # and the other way: switched off here, on with the key; a light that is on takes the effect at once
+    client.put("/api/lighting", json={"rgblight": {"effect": 0}})
+    virtual.rgblight["enable"] = True
+    log.clear()
+    assert client.put("/api/lighting", json={"rgblight": {"effect": 3}}).json()["rgblight"]["effect"] == 3
+    assert [entry[1] for entry in log] == [QMK_RGBLIGHT_EFFECT]
 
 
 @pytest.mark.parametrize("lit", ["qmk_rgblight"], indirect=True)
@@ -220,6 +259,24 @@ def test_both_kinds_change_in_one_request(lit):
     assert (reply["rgblight"]["effect"], reply["backlight"]["brightness"]) == (4, 255)
 
 
+@pytest.mark.parametrize("lit", ["qmk_backlight_rgblight"], indirect=True)
+def test_a_failed_write_leaves_the_model_as_the_keyboard_shows(lit):
+    client, virtual = lit
+    process = virtual.process
+
+    def failing(msg):
+        if (msg[0], msg[1]) == (CMD_VIA_LIGHTING_SET_VALUE, QMK_BACKLIGHT_BRIGHTNESS):
+            raise OSError("the cable came loose")
+        return process(msg)
+    virtual.process = failing
+    change = {"rgblight": {"effect": 4}, "backlight": {"brightness": 0}}
+    assert client.put("/api/lighting", json=change).status_code == 502
+    virtual.process = process
+    lighting = client.get("/api/keyboard").json()["lighting"]
+    # the effect was taken, the brightness not: still level 2 of 3
+    assert (lighting["rgblight"]["effect"], lighting["backlight"]["brightness"]) == (4, 170)
+
+
 # ---------- kept only once saved ----------
 
 @pytest.mark.parametrize("lit", LIGHTING[1:], indirect=True)
@@ -238,6 +295,24 @@ def test_changes_are_kept_only_once_saved(lit):
     # one save request keeps every kind (via.c id_lighting_save)
     assert [entry[0] for entry in log].count(CMD_VIA_LIGHTING_SAVE) == 1
     assert virtual.lighting_saved == virtual.lighting_now()
+
+
+@pytest.mark.parametrize("lit", ["vialrgb", "qmk_backlight_rgblight"], indirect=True)
+def test_a_save_replies_with_what_the_keyboard_kept(lit):
+    client, virtual = lit
+    # changed on the keyboard (its keys), not through the server
+    if virtual.vialrgb is not None:
+        virtual.vialrgb["mode"] = 7
+    else:
+        virtual.rgblight["mode"] = 6
+        virtual.backlight["level"] = 3
+    saved = client.post("/api/lighting/save").json()
+    if virtual.vialrgb is not None:
+        assert saved["vialrgb"]["mode"] == 7
+    else:
+        assert (saved["rgblight"]["effect"], saved["backlight"]["brightness"]) == (6, 255)
+    assert virtual.lighting_saved == virtual.lighting_now()
+    assert client.get("/api/keyboard").json()["lighting"] == saved
 
 
 @pytest.mark.parametrize("lit", ["vialrgb"], indirect=True)
