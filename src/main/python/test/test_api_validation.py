@@ -251,7 +251,7 @@ def test_lighting_is_checked_before_writing(client, virtual):
     response = client.put("/api/lighting", json={"vialrgb": {"mode": 3}, "rgblight": {"effect": 1}})
     assert response.status_code == 422
     assert snapshot(virtual) == before
-    assert not virtual.lighting_saved
+    assert virtual.lighting_saved is None
 
 
 # ---------- size limits and unknown fields ----------

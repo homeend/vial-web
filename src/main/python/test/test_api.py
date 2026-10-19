@@ -266,7 +266,9 @@ def test_settings_and_lighting(client, virtual):
     lighting = client.put("/api/lighting", json={"vialrgb": {"mode": 3, "hsv": [10, 20, 255]}}).json()
     assert lighting["vialrgb"]["mode"] == 3
     assert virtual.vialrgb["hsv"] == (10, 20, 200)  # clamped to the keyboard's maximum brightness
-    assert virtual.lighting_saved
+    assert virtual.lighting_saved is None  # shown, not kept: Save keeps it
+    assert client.post("/api/lighting/save").json()["vialrgb"]["mode"] == 3
+    assert virtual.lighting_saved["vialrgb"]["mode"] == 3
     assert client.put("/api/lighting", json={"vialrgb": {"mode": 99}}).status_code == 422
     assert client.put("/api/lighting", json={"backlight": {"brightness": 1}}).status_code == 422
 

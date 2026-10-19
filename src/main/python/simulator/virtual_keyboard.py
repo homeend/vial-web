@@ -162,6 +162,8 @@ class VirtualKeyboard:
         self.lighting_saved = None
         """ what the last lighting save kept (each kind's state, as its EEPROM copy would hold it); None before one.
         A change of backlight breathing keeps the backlight at once, without a save: a kind not kept yet is None. """
+        self.lighting_kept = copy.deepcopy(self.lighting_now())
+        """ what the lighting starts with when the keyboard is plugged in: its EEPROM copy """
         self.bootloader_jump = bootloader_jump
 
         self.pressed = set()
@@ -360,6 +362,7 @@ class VirtualKeyboard:
                 saved = self.lighting_saved or {"rgblight": None, "backlight": None, "vialrgb": None}
                 saved["backlight"] = copy.deepcopy(bl)
                 self.lighting_saved = saved
+                self.lighting_kept["backlight"] = copy.deepcopy(bl)
         elif self.vialrgb is not None and sub == VIALRGB_SET_MODE:
             mode, speed, h, s, v = struct.unpack_from("<HBBBB", msg, 2)
             vr = self.vialrgb
@@ -393,13 +396,22 @@ class VirtualKeyboard:
 
     def _lighting_save(self, msg):
         # via.c id_lighting_save: each kind's EEPROM copy is updated from what it runs with
-        self.lighting_saved = copy.deepcopy({"rgblight": self.rgblight, "backlight": self.backlight,
-                                             "vialrgb": self.vialrgb})
+        self.lighting_saved = copy.deepcopy(self.lighting_now())
+        self.lighting_kept = copy.deepcopy(self.lighting_now())
         return msg[0:1]
 
     def lighting_now(self):
         """ What a lighting save would keep now (a copy): compare with lighting_saved """
         return copy.deepcopy({"rgblight": self.rgblight, "backlight": self.backlight, "vialrgb": self.vialrgb})
+
+    def plug_in(self):
+        """ The keyboard is plugged in again: its firmware starts over with what it keeps (the lighting saved, which
+        changes made since without saving don't reach), and out of its bootloader. Everything else the simulator keeps
+        as it was. """
+        kept = copy.deepcopy(self.lighting_kept)
+        self.rgblight, self.backlight, self.vialrgb = kept["rgblight"], kept["backlight"], kept["vialrgb"]
+        self.bootloader_requested = False
+        self.connected = True
 
     def _bootloader(self, msg):
         if not self.bootloader_jump:

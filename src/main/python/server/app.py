@@ -468,6 +468,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     def set_lighting(body: schemas.LightingIn):
         return run(lambda kb: edits.set_lighting(kb, body))
 
+    @app.post("/api/lighting/save", response_model=schemas.Lighting)
+    def save_lighting():
+        """ Keep the lighting the keyboard shows now when it is unplugged (changes are only shown until then) """
+        return run(edits.save_lighting)
+
     @app.get("/api/names", response_model=schemas.Names)
     def get_names():
         return read(lambda kb: names_for(kb))

@@ -328,6 +328,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lighting/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Lighting
+         * @description Keep the lighting the keyboard shows now when it is unplugged (changes are only shown until then)
+         */
+        post: operations["save_lighting_api_lighting_save_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/names": {
         parameters: {
             query?: never;
@@ -872,16 +892,15 @@ export interface components {
             rgblight?: components["schemas"]["RgbLight"] | null;
             backlight?: components["schemas"]["Backlight"] | null;
         };
-        /** LightingIn */
+        /**
+         * LightingIn
+         * @description A change the keyboard shows at once and forgets when it is unplugged, as Qt's Lighting tab makes it: POST
+         *     /api/lighting/save keeps it
+         */
         LightingIn: {
             vialrgb?: components["schemas"]["VialRgbIn"] | null;
             rgblight?: components["schemas"]["RgbLightIn"] | null;
             backlight?: components["schemas"]["BacklightIn"] | null;
-            /**
-             * Save
-             * @default true
-             */
-            save: boolean;
         };
         /** Macro */
         Macro: {
@@ -1813,6 +1832,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_lighting_api_lighting_save_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lighting"];
                 };
             };
         };

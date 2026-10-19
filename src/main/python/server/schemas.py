@@ -473,10 +473,11 @@ class BacklightIn(Request):
 
 
 class LightingIn(Request):
+    """ A change the keyboard shows at once and forgets when it is unplugged, as Qt's Lighting tab makes it: POST
+    /api/lighting/save keeps it """
     vialrgb: Optional[VialRgbIn] = None
     rgblight: Optional[RgbLightIn] = None
     backlight: Optional[BacklightIn] = None
-    save: bool = True
 
 
 class SimulatorConnection(Request):

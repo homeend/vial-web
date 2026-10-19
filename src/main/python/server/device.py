@@ -163,9 +163,12 @@ class FakeBackend:
         return self.virtual is not None and self.virtual.connected
 
     def set_connected(self, connected):
-        """ Simulate unplugging the keyboard (False) or plugging it back in (True); the hot-plug poll notices """
+        """ Simulate unplugging the keyboard (False) or plugging it back in (True, VirtualKeyboard.plug_in); the
+        hot-plug poll notices """
         if self.virtual is None:
             self.virtual = self.keyboard_factory()
+        if connected and not self.virtual.connected:
+            self.virtual.plug_in()
         self.virtual.connected = connected
 
 

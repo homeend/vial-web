@@ -18,7 +18,7 @@ def test_dump_openapi_writes_the_schema_without_qt_hidapi_or_a_server(tmp_path):
                         "title": "Response Keycodes Api Keycodes Get"}
     # test aids of fake mode, not part of the API
     assert "/api/simulator/connection" not in schema["paths"] and "/api/simulator/unlock" not in schema["paths"]
-    assert {"/api/unlock/start", "/api/unlock/cancel", "/api/lock"} <= set(schema["paths"])
+    assert {"/api/unlock/start", "/api/unlock/cancel", "/api/lock", "/api/lighting/save"} <= set(schema["paths"])
     assert "/" not in schema["paths"]  # the page, not the API
     # what /api/events sends (WebSockets have no place in OpenAPI's paths)
     event = schema["components"]["schemas"]["Event"]

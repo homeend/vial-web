@@ -247,17 +247,22 @@ def set_lighting(kb, body):
         raise ValueError("this keyboard has no backlight")
 
     if body.vialrgb is not None:
-        if body.vialrgb.mode is not None:
-            kb.set_vialrgb_mode(body.vialrgb.mode)
-        if body.vialrgb.speed is not None:
-            kb.set_vialrgb_speed(body.vialrgb.speed)
-        if body.vialrgb.hsv is not None:
-            h, s, v = body.vialrgb.hsv
-            kb.set_vialrgb_color(h, s, min(v, kb.rgb_maximum_brightness))
+        v = body.vialrgb
+        # VialRGB sets effect, speed and colour in one request (vialrgb_set_mode): one is sent with all three, the
+        # brightness at most the keyboard's maximum, as Qt's slider allows
+        h, s, value = kb.rgb_hsv if v.hsv is None else v.hsv
+        kb.rgb_mode = kb.rgb_mode if v.mode is None else v.mode
+        kb.rgb_speed = kb.rgb_speed if v.speed is None else v.speed
+        kb.set_vialrgb_color(h, s, min(value, kb.rgb_maximum_brightness))
     if body.rgblight is not None:
         r = body.rgblight
         if r.effect is not None:
+            was_off = kb.underglow_effect == 0
             kb.set_qmk_rgblight_effect(r.effect)
+            if was_off and r.effect != 0:
+                # a light that is off takes no effect: via.c turns it on after setting the effect, and it starts the
+                # one it had before. Sent again, the effect is taken.
+                kb.set_qmk_rgblight_effect(r.effect)
         if r.speed is not None:
             kb.set_qmk_rgblight_effect_speed(r.speed)
         if r.hue is not None or r.saturation is not None:
@@ -272,8 +277,17 @@ def set_lighting(kb, body):
             kb.set_qmk_backlight_brightness(body.backlight.brightness)
         if body.backlight.effect is not None:
             kb.set_qmk_backlight_effect(body.backlight.effect)
-    if body.save:
-        kb.save_rgb()
+    # the reply is what the keyboard shows now, read back as Qt does after a change: the firmware can take a value
+    # otherwise (the backlight's few brightness steps, a colour while the light is off, breathing it doesn't have)
+    kb.reload_rgb()
+    return model.lighting(kb)
+
+
+def save_lighting(kb):
+    """ Keep the lighting the keyboard shows now when it is unplugged (Qt's Save on its Lighting tab) """
+    if not (kb.lighting_vialrgb or kb.lighting_qmk_rgblight or kb.lighting_qmk_backlight):
+        raise ValueError("this keyboard has no lighting")
+    kb.save_rgb()
     return model.lighting(kb)
 
 
