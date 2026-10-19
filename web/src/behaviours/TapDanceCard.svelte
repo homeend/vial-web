@@ -5,6 +5,7 @@
   import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
   import EntryHead from "./EntryHead.svelte";
   import { replayed } from "./target.svelte";
+  import { tapDanceIsSet } from "./entries";
   import { tapDanceSentence } from "./sentences";
   import UsedOn from "./UsedOn.svelte";
 
@@ -20,7 +21,7 @@
     busy: boolean;
     /** the card opened from elsewhere: drawn out for a moment (the highlight fades) */
     target: boolean;
-    /** a slot's keycode is being picked: the card keeps its highlight meanwhile */
+    /** the tap dance being worked on: the card keeps its highlight */
     editing: boolean;
     /** choose what a slot does (with the keycode picker) */
     onpickslot: (slot: SlotLabel) => void;
@@ -41,6 +42,8 @@
   const slots = $derived(tapDanceSlots(td));
   const sentence = $derived(tapDanceSentence(td, names, model));
   const headingId = $derived(`tap-dance-${td.index}-title`);
+  /** a new one: no slot does anything and no key uses it, so the page lists it only while it is open */
+  const isNew = $derived(!tapDanceIsSet(td) && uses.length === 0);
   /** what is wrong with the tapping term typed, or what was done about it; null when nothing is */
   let termProblem = $state<string | null>(null);
   /** the field holds a tapping term that can't be saved (until it is put back on leaving the field) */
@@ -91,6 +94,12 @@
     renameLabel="Rename tap dance {td.index}" />
 
   <p class="plain">{sentence}</p>
+  {#if isNew}
+    <p class="new">
+      <strong>New tap dance:</strong> nothing is kept until you choose what one of its slots does. Left empty, it is gone
+      once you leave the page.
+    </p>
+  {/if}
 
   <ul class="slots" aria-label="What each press of tap dance {td.index} does">
     {#each slots as slot (slot.label)}
@@ -158,6 +167,16 @@
   /* its frame and highlight: .behaviour-card (app.css) */
   .card {
     --card-accent: var(--tone-tap-dance);
+  }
+
+  .new {
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    border-radius: 8px;
+    background: var(--accent-weak);
+    color: var(--text);
+    font-size: 13px;
   }
 
   .plain {

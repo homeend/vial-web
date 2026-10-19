@@ -51,6 +51,13 @@
     };
   }
 
+  /** the tap dance being worked on: the last one opened from the address, made, or changed here. Its card keeps its
+   * highlight (there is no editor to open: each change is saved at once) until another one is. */
+  let current = $state<number | null>(untrack(() => item));
+  $effect.pre(() => {
+    if (item !== null) current = item;
+  });
+
   function setSlot(index: number, slot: SlotLabel, code: string) {
     const td = model.tapDance[index];
     const action = `Changing the ${slot.toLowerCase()}`;
@@ -73,6 +80,7 @@
 
   function pickSlot(index: number, slot: SlotLabel) {
     if (busy) return;
+    current = index;
     picking = { index, slot };
     pickerOpen = true;
   }
@@ -95,6 +103,7 @@
       if (uid === shownUid) return;
       shownUid = uid;
       opened = [];
+      current = null;
       renaming = null;
       picking = null;
       pickerOpen = false;
@@ -138,11 +147,20 @@
       {canEdit}
       {busy}
       target={index === item}
-      editing={pickerOpen && picking?.index === index}
+      editing={index === current}
       onpickslot={(slot) => pickSlot(index, slot)}
-      onclearslot={(slot) => setSlot(index, slot, "KC_NO")}
-      onterm={(ms) => setTerm(index, ms)}
-      onrename={() => (renaming = index)}
+      onclearslot={(slot) => {
+        current = index;
+        setSlot(index, slot, "KC_NO");
+      }}
+      onterm={(ms) => {
+        current = index;
+        return setTerm(index, ms);
+      }}
+      onrename={() => {
+        current = index;
+        renaming = index;
+      }}
       onopenuse={openUse}
     />
   {/each}

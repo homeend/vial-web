@@ -32,20 +32,37 @@ const borderOf = (card: Locator) =>
     return getComputedStyle(e).borderTopColor;
   });
 
-test("the tap dance whose slot is being picked keeps its border; the page says changes are saved at once", async ({ app }) => {
+test("the tap dance worked on keeps its border until another one is; the page says changes are saved at once", async ({ app }) => {
   await openTapDance(app);
   await expect(app.getByText("Each change is saved to the keyboard at once")).toBeVisible();
-  const card = tapDanceCard(app, 0);
-  const plain = await borderOf(card);
-  await slotButton(app, 0, 1).click();
+  const first = tapDanceCard(app, 0);
+  const second = tapDanceCard(app, 1);
+  const plain = await borderOf(first);
+  await expect(first).not.toHaveClass(/\bediting\b/);
   const picker = app.getByRole("dialog", { name: "Choose a keycode" });
+  await slotButton(app, 0, 1).click();
   await expect(picker).toBeVisible();
-  await expect(card).toHaveClass(/\bediting\b/);
-  expect(await borderOf(card)).not.toBe(plain);
   await app.keyboard.press("Escape");
   await expect(picker).toBeHidden();
-  await expect(card).not.toHaveClass(/\bediting\b/);
-  expect(await borderOf(card)).toBe(plain);
+  // still the one worked on, once the picker is closed
+  await expect(first).toHaveClass(/\bediting\b/);
+  expect(await borderOf(first)).not.toBe(plain);
+  await slotButton(app, 1, 3).click();
+  await expect(picker).toBeVisible();
+  await app.keyboard.press("Escape");
+  await expect(second).toHaveClass(/\bediting\b/);
+  await expect(first).not.toHaveClass(/\bediting\b/);
+  expect(await borderOf(first)).toBe(plain);
+});
+
+test("a new tap dance keeps its border", async ({ app }) => {
+  await openTapDance(app);
+  await app.getByRole("button", { name: "New tap dance" }).click();
+  const added = tapDanceCard(app, 2);
+  await expect(added).toHaveClass(/\bediting\b/);
+  await expect(added.getByText("nothing is kept until you choose what one of its slots does")).toBeVisible();
+  await expect(tapDanceCard(app, 0).getByText("New tap dance:")).toHaveCount(0);
+  expect(await borderOf(added)).not.toBe(await borderOf(tapDanceCard(app, 0)));
 });
 
 test.describe("editing a tap dance keeps the focus", () => {
