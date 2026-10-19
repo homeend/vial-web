@@ -110,8 +110,10 @@
     background: color-mix(in srgb, var(--ok) 22%, transparent);
   }
 
+  /* filled inside its dashed border only: held, it still looks unlike a key */
   .cell.nokey.held {
     background: var(--accent);
+    background-clip: padding-box;
   }
 
   .legend {

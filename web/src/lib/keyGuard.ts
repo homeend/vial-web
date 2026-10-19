@@ -5,7 +5,7 @@
 
 const KINDS = ["keydown", "keypress", "keyup"] as const;
 
-interface Listened {
+export interface Listened {
   addEventListener(type: string, listener: (event: Event) => void, capture?: boolean): void;
   removeEventListener(type: string, listener: (event: Event) => void, capture?: boolean): void;
 }
