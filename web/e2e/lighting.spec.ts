@@ -17,8 +17,16 @@ function restoreBody(l: Lighting) {
   };
 }
 
-/** Puts the lighting back and keeps it so */
+/** The session says the keyboard is connected */
+async function connected(page: Page): Promise<boolean> {
+  return (await (await api(page).get("/api/session")).json()).status === "connected";
+}
+
+/** Puts the lighting back and keeps it so. A test that failed while its keyboard was unplugged left it so: it is
+ * plugged in again first (nothing changes for one plugged in), and read again. */
 async function putBack(page: Page, l: Lighting) {
+  await plugIn(page, true);
+  await expect.poll(() => connected(page), { timeout: 10_000 }).toBe(true);
   await setLighting(page, restoreBody(l));
   const saved = await api(page).post("/api/lighting/save");
   if (!saved.ok()) throw new Error(`saving the lighting failed: ${saved.status()}`);
@@ -88,6 +96,8 @@ test("VialRGB: Undo puts back the lighting, and the brightness stops at the keyb
     // off: the keyboard takes no colour, and the page says so
     await app.getByLabel("Effect").selectOption({ label: "Disable" });
     await expect(app.getByText("The lights are off: the keyboard takes no colour or brightness")).toBeVisible();
+    // the page shows the draft at once: the clean-up waits for the keyboard, or the change would reach it after
+    await expect.poll(async () => (await lightingOf(app)).vialrgb.mode).toBe(0);
   } finally {
     await restoreAll(() => putBack(app, before));
   }
@@ -102,19 +112,21 @@ test("a slider dragged quickly sends a few changes, the last one last", async ({
   try {
     await openSection(app, "Lighting");
     const speed = app.getByRole("slider", { name: "Speed" });
-    // a drag: 100 moves at once, as fast as the browser sends them
-    await speed.evaluate((input: HTMLInputElement, from: number) => {
+    // a drag: 100 moves at once, as fast as the browser sends them, down or up, whichever stays within 0-255
+    const from = before.vialrgb.speed;
+    const step = from >= 100 ? -1 : 1;
+    const to = from + 100 * step;
+    await speed.evaluate((input: HTMLInputElement, { from, step }: { from: number; step: number }) => {
       for (let i = 1; i <= 100; i++) {
-        input.value = String(from - i);
+        input.value = String(from + i * step);
         input.dispatchEvent(new Event("input", { bubbles: true }));
       }
-    }, before.vialrgb.speed);
-    await expect.poll(async () => (await lightingOf(app)).vialrgb.speed).toBe(before.vialrgb.speed - 100);
+    }, { from, step });
+    await expect.poll(async () => (await lightingOf(app)).vialrgb.speed).toBe(to);
     await expect(status(app)).not.toHaveText(/Sending/);
     // the first move at once, then the last: nothing in between
-    expect(puts.length).toBeLessThanOrEqual(3);
-    expect(JSON.parse(puts.at(-1)!)).toEqual({ vialrgb: { speed: before.vialrgb.speed - 100 } });
-    await expect(speed).toHaveValue(String(before.vialrgb.speed - 100));
+    expect(puts.map((p) => JSON.parse(p))).toEqual([{ vialrgb: { speed: from + step } }, { vialrgb: { speed: to } }]);
+    await expect(speed).toHaveValue(String(to));
   } finally {
     await restoreAll(() => putBack(app, before));
   }
@@ -161,14 +173,51 @@ test("QMK RGB light and backlight: effect, colour, brightness steps and breathin
   }
 });
 
+test("QMK backlight breathing is kept at once, without a Save; an RGB light change is not", async ({ qmkLighting: page }) => {
+  const before = await lightingOf(page);
+  try {
+    await openSection(page, "Lighting");
+    await expect(page.getByText("Backlight breathing is the exception: the keyboard keeps it at once.")).toBeVisible();
+    const breathing = page.getByRole("region", { name: "Backlight" }).getByRole("switch", { name: "Breathing" });
+    await expect(breathing).not.toBeChecked();
+    const hue = (before.rgblight.hue + 85) % 256;
+    await page.getByRole("slider", { name: "Hue" }).fill(String(hue));
+    await breathing.check();
+    await expect.poll(async () => {
+      const l = await lightingOf(page);
+      return [l.rgblight.hue, l.backlight.effect];
+    }).toEqual([hue, 1]);
+    await expect(status(page)).toContainText("not saved");
+
+    // not saved: a replug brings back the RGB light the keyboard kept, and the breathing it kept at once
+    await replug(page);
+    await expect.poll(async () => {
+      const l = await lightingOf(page);
+      return [l.rgblight.hue, l.backlight.effect];
+    }).toEqual([before.rgblight.hue, 1]);
+    await expect(breathing).toBeChecked();
+    await expect(page.getByRole("slider", { name: "Hue" })).toHaveValue(String(before.rgblight.hue));
+    await expect(status(page)).toHaveText("The backlight is kept as it is: the keyboard keeps a change of breathing at once.");
+  } finally {
+    await restoreAll(() => putBack(page, before));
+  }
+});
+
 test("a keyboard without lighting has no Lighting page and says nothing of lighting", async ({ macropad }) => {
   const nav = macropad.getByRole("navigation", { name: "Sections" });
   await expect(nav.getByRole("button", { name: /^Keyboard/ })).toBeVisible();
   await expect(nav.getByRole("button", { name: /^Lighting/ })).toHaveCount(0);
-  // its address shows the keymap instead
+  // its address shows the keymap instead, from another page too
+  await openSection(macropad, "Keyboard");
   await macropad.goto(macropad.url().replace(/#.*$/, "") + "#lighting");
+  await expect(macropad).toHaveURL(/#keymap$/);
   await expect(macropad.getByRole("heading", { level: 1, name: "Keymap" })).toBeVisible();
-  for (const name of ["Keyboard", "Layout", "Matrix tester"]) {
+  // every other page in the navigation (the macropad has no tap dances, combos, key overrides, alt-repeat keys or QMK
+  // settings). The Keymap is left out: its keycode picker always has a Lighting category of
+  // keycodes, as Qt's has, whatever the keyboard. (Outside <main>, the theme switch's "Light" is no lighting either.)
+  const names = (await nav.locator("button > span").allTextContents()).filter((name) => name !== "Keymap");
+  expect(names).toEqual(["Layout", "Macros", "Matrix tester", "Keyboard"]);
+  for (const name of names) {
     await openSection(macropad, name);
     await expect(macropad.locator("main")).not.toContainText(/lighting|RGB|backlight/i);
   }

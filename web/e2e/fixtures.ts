@@ -1,6 +1,7 @@
 import { test as base, expect, type Page } from "@playwright/test";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Lighting } from "../src/api/types";
 import { SERVER_FIXTURE_MS, SERVERS, startServer } from "./servers";
 
 /** e2e/screenshots/, wherever the tests are run from */
@@ -333,8 +334,9 @@ export async function setSettings(page: Page, settings: Record<number, number>):
   }
 }
 
-/** The keyboard's lighting, as the server reports it */
-export async function lightingOf(page: Page) {
+/** The keyboard's lighting, as the server reports it. A test knows which kinds its keyboard has, so every kind is
+ * typed as there: one the keyboard hasn't is null all the same. */
+export async function lightingOf(page: Page): Promise<{ [K in keyof Lighting]-?: NonNullable<Lighting[K]> }> {
   return (await keyboardModel(page)).lighting;
 }
 
