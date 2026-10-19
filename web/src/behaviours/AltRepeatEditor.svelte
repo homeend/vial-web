@@ -5,7 +5,7 @@
   import KeycodeButton from "./KeycodeButton.svelte";
   import ModToggles from "./ModToggles.svelte";
   import OptionChecks from "./OptionChecks.svelte";
-  import { ALT_REPEAT_OPTIONS, type AltRepeatDraft } from "./overrides";
+  import { ALT_REPEAT_OPTIONS, altRepeatReady, type AltRepeatDraft } from "./overrides";
 
   interface Props {
     index: number;
@@ -25,7 +25,8 @@
 
   let { index, draft, names, removable, canSave, busy, onchange, onpick, onsave, oncancel, onremove }: Props = $props();
 
-  const noKey = $derived(draft.keycode.kind === "none");
+  /** it needs a last key, or to be a default alt key with an alt key, before it is worth saving */
+  const notReady = $derived(!altRepeatReady(draft));
 </script>
 
 <div class="editor">
@@ -51,10 +52,10 @@
     {#if removable}
       <Button variant="danger" disabled={!canSave} aria-disabled={busy || undefined} onclick={onremove}>Remove</Button>
     {/if}
-    {#if noKey}<span class="needs" id="alt-repeat-{index}-needs">Choose the last key</span>{/if}
+    {#if notReady}<span class="needs" id="alt-repeat-{index}-needs">Choose the last key, or a default alt key</span>{/if}
     <Button aria-disabled={busy || undefined} onclick={oncancel}>Cancel</Button>
-    <Button variant="primary" disabled={!canSave || noKey} aria-disabled={busy || undefined}
-      aria-describedby={noKey ? `alt-repeat-${index}-needs` : undefined} onclick={onsave}>Save</Button>
+    <Button variant="primary" disabled={!canSave || notReady} aria-disabled={busy || undefined}
+      aria-describedby={notReady ? `alt-repeat-${index}-needs` : undefined} onclick={onsave}>Save</Button>
   </div>
 </div>
 

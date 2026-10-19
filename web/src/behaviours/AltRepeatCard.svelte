@@ -33,13 +33,17 @@
   /** the options set, by their labels */
   const options = $derived(ALT_REPEAT_OPTIONS.filter((o) => shown.options & o.bit).map((o) => o.label));
 
-  function face(d: Described) {
+  /** empty: "nothing", or for the last key of a default alt key (which answers for every key no entry covers),
+   * "any key" */
+  function face(d: Described, empty = "nothing") {
     const f = keyFace(d, names);
-    return { tone: f.tone, text: d.kind === "none" ? "nothing" : f.main || d.code };
+    return { tone: f.tone, text: d.kind === "none" ? empty : f.main || d.code };
   }
-  const from = $derived(face(shown.keycode));
+  const isDefault = $derived((shown.options & ALT_REPEAT_OPTIONS[0].bit) !== 0);
+  const from = $derived(face(shown.keycode, isDefault ? "any key" : "nothing"));
   const to = $derived(face(shown.altKeycode));
-  const both = $derived((shown.options & ALT_REPEAT_OPTIONS[1].bit) !== 0);
+  /** both ways: only with an alt key to go back from */
+  const both = $derived((shown.options & ALT_REPEAT_OPTIONS[1].bit) !== 0 && shown.altKeycode.kind !== "none");
 </script>
 
 <article class="card behaviour-card" class:target class:again={target && replayed()} class:editing={draft !== null}

@@ -236,12 +236,18 @@ export function altRepeatRequest(a: AltRepeatDraft): AltRepeatKeyIn {
   };
 }
 
+/** Whether it is worth saving: it has a last key, or it is a default alt key with an alt key (a default entry never
+ * looks at its own key: vial.c get_alt_repeat_key_keycode_user) */
+export function altRepeatReady(a: AltRepeatDraft): boolean {
+  return a.keycode.kind !== "none" || ((a.options & ALT_REPEAT_OPTIONS[0].bit) !== 0 && a.altKeycode.kind !== "none");
+}
+
 /** "After Left, Alt Repeat sends Right.", "After Left (alone, or with Left Shift), Alt Repeat sends Right, and the
  * other way round." The default alt key (vial.c get_alt_repeat_key_keycode_user) is also sent after any last key
  * that no entry matches, held with only the allowed modifiers; that doesn't look at the entry's own key. */
 export function altRepeatSentence(a: AltRepeatDraft, names: Names): string {
   const isDefault = (a.options & ALT_REPEAT_OPTIONS[0].bit) !== 0;
-  if (a.keycode.kind === "none" && !(isDefault && a.altKeycode.kind !== "none")) {
+  if (!altRepeatReady(a)) {
     return "No key chosen yet: choose the last key, and what Alt Repeat sends after it.";
   }
   const mods = modNames(a.allowedMods, (a.options & ALT_REPEAT_OPTIONS[2].bit) !== 0);

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { corne, described, layer } from "../analysis/testing";
 import { namesOf } from "../keyboard/labels";
 import {
-  allLayers, altRepeatIsSet, altRepeatRequest, altRepeatSentence, AR_ENABLED, clearedKeyOverride,
+  allLayers, altRepeatIsSet, altRepeatReady, altRepeatRequest, altRepeatSentence, AR_ENABLED, clearedKeyOverride,
   freeAltRepeat, freeKeyOverride, keyOverrideDetails, keyOverrideIsSet, keyOverrideProblems, keyOverrideRequest,
   keyOverrideSentence, KO_ACTIVATIONS, KO_ENABLED, layerPhrase, layersIn, modBit, modNames, newAltRepeat,
   newKeyOverride, orList, pressable, toggled, type AltRepeatDraft, type KeyOverrideDraft,
@@ -188,6 +188,15 @@ describe("alt-repeat keys", () => {
   it("starts a new one switched on, and sends the enabled bit as the switch says", () => {
     expect(altRepeatRequest(newAltRepeat(NONE))).toEqual({ keycode: "KC_NO", altKeycode: "KC_NO", allowedMods: 0, options: 8 });
     expect(altRepeatRequest(altRepeat({ options: 0xff, enabled: false })).options).toBe(0x07);
+  });
+
+  it("can be saved with a last key, or as a default alt key with an alt key", () => {
+    expect(altRepeatReady(altRepeat())).toBe(true);
+    expect(altRepeatReady(altRepeat({ altKeycode: NONE }))).toBe(true);
+    expect(altRepeatReady(altRepeat({ keycode: NONE }))).toBe(false);
+    // a default entry never looks at its own key (vial.c get_alt_repeat_key_keycode_user)
+    expect(altRepeatReady(altRepeat({ keycode: NONE, options: AR_ENABLED | 0x01 }))).toBe(true);
+    expect(altRepeatReady(altRepeat({ keycode: NONE, altKeycode: NONE, options: AR_ENABLED | 0x01 }))).toBe(false);
   });
 
   it("says what it does", () => {
