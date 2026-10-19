@@ -5,6 +5,7 @@
   import { layerFaces, type Names } from "../keyboard/labels";
   import { onDestroy } from "svelte";
   import { andList } from "../analysis/phrases";
+  import { KeyGuard } from "../lib/keyGuard";
   import { keyboard } from "../lib/keyboard.svelte";
   import { unlockProgress, type Unlocker } from "../lib/unlock.svelte";
   import Button from "../ui/Button.svelte";
@@ -42,62 +43,12 @@
   }
 
   // The unlock keys are held on the keyboard in use, which types them into this page: while it waits, key presses do
-  // nothing here (as in Qt's unlocker). Held Enter or Space would otherwise press Cancel, held Tab move the focus. They
-  // are still held when it closes, and repeat or are let go on whatever has the focus then (Enter on the top bar's
-  // Lock, Tab then Backspace on a key): the keys pressed while it showed do nothing until they are let go.
-  const KINDS = ["keydown", "keypress", "keyup"] as const;
-  /** the keys pressed while the dialog showed and not let go since (event.code) */
-  const pressed = new Set<string>();
-  /** the listeners are on */
-  let guarding = false;
-  /** the dialog shows: every key does nothing */
-  let showing = false;
+  // nothing here (as in Qt's unlocker), and those still held when it closes do nothing until they are let go (KeyGuard)
+  const keyGuard = new KeyGuard();
+  const guard = () => keyGuard.start();
+  const release = () => keyGuard.stop();
 
-  function swallow(event: KeyboardEvent) {
-    const code = event.code || event.key;
-    // once it closed, only the keys still held from it
-    if (!showing && !pressed.has(code)) return;
-    if (event.type === "keydown" && showing) pressed.add(code);
-    else if (event.type === "keyup") pressed.delete(code);
-    event.preventDefault();
-    // nothing else sees them, not even listeners on the window added after these ones. The macro recorder's, added
-    // before them when a recording started first, leaves the keys alone while the dialog shows (it stops recording).
-    event.stopImmediatePropagation();
-    if (!showing && pressed.size === 0) unguard();
-  }
-
-  /** The page lost the keyboard: a key let go meanwhile isn't told, and keys pressed afterwards work again */
-  function forget() {
-    pressed.clear();
-    if (!showing) unguard();
-  }
-
-  function guard() {
-    showing = true;
-    if (guarding) return;
-    guarding = true;
-    for (const kind of KINDS) window.addEventListener(kind, swallow, true);
-    window.addEventListener("blur", forget);
-    document.addEventListener("visibilitychange", forget);
-  }
-
-  /** The dialog closed: the keys still held from it go on doing nothing until they are let go */
-  function release() {
-    showing = false;
-    if (pressed.size === 0) unguard();
-  }
-
-  function unguard() {
-    showing = false;
-    pressed.clear();
-    if (!guarding) return;
-    guarding = false;
-    for (const kind of KINDS) window.removeEventListener(kind, swallow, true);
-    window.removeEventListener("blur", forget);
-    document.removeEventListener("visibilitychange", forget);
-  }
-
-  onDestroy(unguard);
+  onDestroy(() => keyGuard.dispose());
 
   const unlock = $derived(unlocker.state);
   const keys = $derived(unlock.keys);
