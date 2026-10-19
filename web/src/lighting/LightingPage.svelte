@@ -48,11 +48,12 @@
   const shown = $derived(withPatch(model.lighting, draft));
   const kinds = $derived(lightingKinds(model.lighting));
 
-  // what the keyboard showed when this page first showed it, or what was saved here since (for this keyboard)
-  untrack(() => baseline.follow(model.uid, model.lighting));
+  // what the keyboard showed when this page first showed it, or what was saved here since (for this keyboard). A
+  // pre-effect runs at once, before the first render; it follows the keyboard (its uid), not each change of its
+  // lighting.
   $effect.pre(() => {
-    const [uid, lighting] = [model.uid, model.lighting];
-    untrack(() => baseline.follow(uid, lighting));
+    const uid = model.uid;
+    untrack(() => baseline.follow(uid, model.lighting));
   });
   /** Undo has something to put back */
   const changed = $derived(baseline.changed(model.lighting));
@@ -101,32 +102,35 @@
     + "Undo puts back the lighting saved here last, or what it showed when this page first opened.");
 </script>
 
-<section class="page" aria-labelledby="lighting-title">
-  <PageHeader
-    id="lighting-title"
-    title="Lighting"
-    description="This keyboard's {kinds.join(' and ')}. Only what its firmware has is shown."
-    {note}
-  />
+<!-- a keyboard without lighting has no Lighting page: nothing here mentions lighting then -->
+{#if kinds.length > 0}
+  <section class="page" aria-labelledby="lighting-title">
+    <PageHeader
+      id="lighting-title"
+      title="Lighting"
+      description="This keyboard's {kinds.join(' and ')}. Only what its firmware has is shown."
+      {note}
+    />
 
-  {#if shown.vialrgb}
-    <VialRgbCard value={shown.vialrgb} disabled={!canEdit} onchange={change} />
-  {/if}
-  {#if shown.rgblight}
-    <RgbLightCard value={shown.rgblight} disabled={!canEdit} onchange={change} />
-  {/if}
-  {#if shown.backlight}
-    <BacklightCard value={shown.backlight} disabled={!canEdit} onchange={change} />
-  {/if}
+    {#if shown.vialrgb}
+      <VialRgbCard value={shown.vialrgb} disabled={!canEdit} onchange={change} />
+    {/if}
+    {#if shown.rgblight}
+      <RgbLightCard value={shown.rgblight} disabled={!canEdit} onchange={change} />
+    {/if}
+    {#if shown.backlight}
+      <BacklightCard value={shown.backlight} disabled={!canEdit} onchange={change} />
+    {/if}
 
-  <SaveBar {status}>
-    <Button class={!changed ? "idle" : undefined} aria-disabled={busy || !changed || undefined} disabled={!canEdit}
-      onclick={() => void undo()}>Undo</Button>
-    <!-- what the keyboard shows may not be what it keeps until it is saved here once -->
-    <Button class={saved ? "idle" : undefined} variant="primary" disabled={!canEdit}
-      aria-disabled={busy || saved || undefined} onclick={() => void save()}>Save</Button>
-  </SaveBar>
-</section>
+    <SaveBar {status}>
+      <Button class={!changed ? "idle" : undefined} aria-disabled={busy || !changed || undefined} disabled={!canEdit}
+        onclick={() => void undo()}>Undo</Button>
+      <!-- what the keyboard shows may not be what it keeps until it is saved here once -->
+      <Button class={saved ? "idle" : undefined} variant="primary" disabled={!canEdit}
+        aria-disabled={busy || saved || undefined} onclick={() => void save()}>Save</Button>
+    </SaveBar>
+  </section>
+{/if}
 
 <style>
   .page {
