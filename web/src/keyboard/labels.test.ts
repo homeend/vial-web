@@ -9,7 +9,7 @@ type Fields = Partial<Described> & Pick<Described, "code" | "kind" | "tap">;
 
 function d(fields: Fields): Described {
   return {
-    hold: null, layer: null, layerAction: null, index: null, description: null,
+    value: 0, hold: null, layer: null, layerAction: null, index: null, description: null,
     legend: { main: fields.tap, shifted: null, altGr: null },
     ...fields,
   };

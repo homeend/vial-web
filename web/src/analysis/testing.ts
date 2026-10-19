@@ -13,10 +13,19 @@ function label(code: string): string {
   return LABELS[name] ?? name;
 }
 
+/** Roughly the value the keyboard stores: what matters is that plain KC_ keycodes are under 256 (one byte in a macro)
+ * and the others aren't */
+function valueOf(code: string): number {
+  if (code === "KC_NO") return 0;
+  if (code === "KC_TRNS") return 1;
+  return /^KC_\w+$/.test(code) ? 0x04 : 0x5200;
+}
+
 /** A keycode described as the server would, for the kinds the analysis looks at */
 export function described(code: string): Described {
   const base = {
-    code, hold: null, layer: null, layerAction: null, index: null, description: null, tapCode: null, triLayer: null,
+    code, value: valueOf(code), hold: null, layer: null, layerAction: null, index: null, description: null,
+    tapCode: null, triLayer: null,
   };
   const plain = (kind: Described["kind"], tap: string, extra: Partial<Described> = {}): Described =>
     ({ ...base, kind, tap, legend: { main: tap }, ...extra });

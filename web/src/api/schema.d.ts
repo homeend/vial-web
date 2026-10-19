@@ -484,6 +484,8 @@ export interface components {
         CatalogueKeycode: {
             /** Code */
             code: string;
+            /** Value */
+            value: number;
             /**
              * Kind
              * @enum {string}
@@ -534,6 +536,8 @@ export interface components {
         Described: {
             /** Code */
             code: string;
+            /** Value */
+            value: number;
             /**
              * Kind
              * @enum {string}

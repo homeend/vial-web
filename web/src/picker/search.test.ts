@@ -5,7 +5,7 @@ import { codesNamed, searchKeycodes, searchTemplates, searchText } from "./searc
 function k(code: string, tap: string, aliases: string[] = [], description: string | null = null,
   shifted: string | null = null, kind: CatalogueKeycode["kind"] = "basic"): CatalogueKeycode {
   return {
-    code, kind, tap, legend: { main: tap, shifted, altGr: null }, hold: null, layer: null, layerAction: null,
+    code, value: 4, kind, tap, legend: { main: tap, shifted, altGr: null }, hold: null, layer: null, layerAction: null,
     index: null, description, aliases,
   };
 }

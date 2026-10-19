@@ -217,6 +217,7 @@ def describe(code):
     value = Keycode.deserialize(code)
     result = _describe(code, value)
     result["tapCode"] = _tap_code(result, value)
+    result["value"] = value
     return result
 
 

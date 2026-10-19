@@ -27,6 +27,8 @@ class Legend(BaseModel):
 class Described(BaseModel):
     """ A keycode as the UI shows it """
     code: str
+    value: int
+    """ the keycode as the keyboard stores it (16 bits): a macro step takes more bytes for one of 256 or more """
     kind: KeyKind
     tap: str
     """ what a tap does, in a few words, e.g. "1", "Caps Lock", "Ctrl+C", "TD 0" """

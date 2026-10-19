@@ -3,10 +3,10 @@ import type { Described, KeyboardModel, TapDance } from "../api/types";
 import { freeTapDance, tapDanceSlots } from "./tapdance";
 
 const none: Described = {
-  code: "KC_NO", kind: "none", tap: "", legend: { main: "" }, hold: null, layer: null, layerAction: null, index: null,
+  code: "KC_NO", value: 0, kind: "none", tap: "", legend: { main: "" }, hold: null, layer: null, layerAction: null, index: null,
   description: null,
 };
-const tab: Described = { ...none, code: "KC_TAB", kind: "basic", tap: "Tab", legend: { main: "Tab" } };
+const tab: Described = { ...none, code: "KC_TAB", value: 0x2b, kind: "basic", tap: "Tab", legend: { main: "Tab" } };
 
 function td(index: number, tap: Described): TapDance {
   return { index, name: "", customName: false, tap, hold: none, doubleTap: none, tapHold: none, tappingTerm: 200 };

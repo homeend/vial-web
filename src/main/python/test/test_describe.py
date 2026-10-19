@@ -45,6 +45,11 @@ def test_describe(code, kind, tap, hold, layer, index):
         (kind, tap, hold, layer, index)
 
 
+@pytest.mark.parametrize("code, value", [("KC_NO", 0), ("KC_A", 0x04), ("LCTL(KC_C)", 0x0106), ("M0", 0x7700)])
+def test_describe_gives_the_value_the_keyboard_stores(code, value):
+    assert describe(code)["value"] == value
+
+
 def test_describe_normalizes_aliases():
     assert describe("KC_ENT")["code"] == "KC_ENTER"
 

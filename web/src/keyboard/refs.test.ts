@@ -3,7 +3,7 @@ import type { Described, KeyGeometry, KeyboardModel } from "../api/types";
 import { actionAt, positionLine, refId, whereIs } from "./refs";
 
 const d = (code: string): Described => ({
-  code, kind: "basic", tap: code, legend: { main: code }, hold: null, layer: null, layerAction: null, index: null,
+  code, value: 4, kind: "basic", tap: code, legend: { main: code }, hold: null, layer: null, layerAction: null, index: null,
   description: null,
 });
 const g = (fields: Partial<KeyGeometry>) => ({ x: 0, y: 0, w: 1, h: 1, ...fields }) as KeyGeometry;

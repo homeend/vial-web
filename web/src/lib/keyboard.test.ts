@@ -41,7 +41,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function described(code: string): Described {
   return {
-    code, kind: "basic", tap: code, legend: { main: code }, hold: null, layer: null, layerAction: null, index: null,
+    code, value: 4, kind: "basic", tap: code, legend: { main: code }, hold: null, layer: null, layerAction: null, index: null,
     description: null,
   };
 }
