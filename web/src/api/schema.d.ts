@@ -263,7 +263,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Setting Definitions */
+        /**
+         * Setting Definitions
+         * @description Every QMK setting Vial knows, grouped as qmk_settings.json has them; the keyboard's model lists those it
+         *     has (KeyboardModel.settings)
+         */
         get: operations["setting_definitions_api_qmk_settings_definitions_get"];
         put?: never;
         post?: never;
@@ -953,10 +957,49 @@ export interface components {
             /** Value */
             value: number;
         };
+        /**
+         * SettingField
+         * @description One field of the QMK settings form, as qmk_settings.json defines it. Several boolean fields can share a qsid:
+         *     each is one bit of its value.
+         */
+        SettingField: {
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "boolean" | "integer";
+            /** Title */
+            title: string;
+            /** Qsid */
+            qsid: number;
+            /** Bit */
+            bit?: number | null;
+            /** Width */
+            width?: number | null;
+            /** Min */
+            min?: number | null;
+            /** Max */
+            max?: number | null;
+        };
         /** SettingIn */
         SettingIn: {
             /** Value */
             value: number;
+        };
+        /** SettingsDefinitions */
+        SettingsDefinitions: {
+            /** Tabs */
+            tabs: components["schemas"]["SettingsTab"][];
+        };
+        /**
+         * SettingsTab
+         * @description A group of QMK settings: Qt's tab
+         */
+        SettingsTab: {
+            /** Name */
+            name: string;
+            /** Fields */
+            fields: components["schemas"]["SettingField"][];
         };
         /** TapDance */
         TapDance: {
@@ -1568,7 +1611,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["SettingsDefinitions"];
                 };
             };
         };

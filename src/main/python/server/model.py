@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ Builds the API's view of a loaded keyboard. Reads only what the protocol layer already holds: no device I/O. """
+import re
+
 from keycodes.keycodes import KEYCODES_SPECIAL, KEYCODES_BASIC, KEYCODES_SHIFTED, KEYCODES_ISO, KEYCODES_LAYERS, \
     KEYCODES_BOOT, KEYCODES_MODIFIERS, KEYCODES_QUANTUM, KEYCODES_BACKLIGHT, KEYCODES_MEDIA, KEYCODES_TAP_DANCE, \
     KEYCODES_MACRO, KEYCODES_USER, KEYCODES_MIDI
@@ -159,6 +161,13 @@ def build(kb, names, unlocked):
 
 def uid_of(kb):
     return "{:016X}".format(kb.keyboard_id & 0xFFFFFFFFFFFFFFFF)
+
+
+def layout_file_name(kb):
+    """ The name a downloaded .vil file gets: the keyboard's, e.g. "Simulated Corne.vil", without characters file
+    systems refuse """
+    name = re.sub(r'[\x00-\x1f<>:"/\\|?*]+', "_", kb.definition.get("name", "")).strip(" ._")
+    return "{}.vil".format(name[:100] or "keyboard")
 
 
 def catalogue_keycode(keycode):

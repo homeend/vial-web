@@ -146,6 +146,32 @@ class QmkSetting(BaseModel):
     value: int
 
 
+class SettingField(BaseModel):
+    """ One field of the QMK settings form, as qmk_settings.json defines it. Several boolean fields can share a qsid:
+    each is one bit of its value. """
+    type: Literal["boolean", "integer"]
+    title: str
+    qsid: int
+    bit: Optional[int] = None
+    """ boolean: the bit of the value it is (0 when not given) """
+    width: Optional[int] = None
+    """ bytes the value takes on the keyboard (1 when not given) """
+    min: Optional[int] = None
+    """ integer: the smallest value """
+    max: Optional[int] = None
+    """ integer: the largest value """
+
+
+class SettingsTab(BaseModel):
+    """ A group of QMK settings: Qt's tab """
+    name: str
+    fields: list[SettingField]
+
+
+class SettingsDefinitions(BaseModel):
+    tabs: list[SettingsTab]
+
+
 class VialRgb(BaseModel):
     mode: int
     speed: int

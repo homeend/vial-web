@@ -5,6 +5,7 @@ import contextlib
 import logging
 import os
 import secrets
+import urllib.parse
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -52,6 +53,12 @@ NEED_TOKEN_PAGE = """<!doctype html>
 
 
 Lang = Annotated[str, Query(description="keyboard language the keys are labelled in, from /api/keyboard-languages")]
+
+
+def content_disposition(filename):
+    """ An attachment's header: the name as typed (RFC 5987, UTF-8), and an ASCII one for older clients """
+    ascii_name = "".join(c if " " <= c <= "~" and c not in '"\\' else "_" for c in filename)
+    return "attachment; filename=\"{}\"; filename*=UTF-8''{}".format(ascii_name, urllib.parse.quote(filename))
 
 
 def cookie_name(port):
@@ -433,8 +440,10 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     def set_macros(body: schemas.MacrosIn, lang: Lang = languages.DEFAULT):
         return run(lambda kb: edits.set_macros(kb, body, names_for(kb)), lang)
 
-    @app.get("/api/qmk-settings/definitions")
+    @app.get("/api/qmk-settings/definitions", response_model=schemas.SettingsDefinitions)
     def setting_definitions():
+        """ Every QMK setting Vial knows, grouped as qmk_settings.json has them; the keyboard's model lists those it
+        has (KeyboardModel.settings) """
         QmkSettingsCodec.fields()
         return QmkSettingsCodec.settings_defs
 
@@ -468,9 +477,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.get("/api/layout-file")
     def download_layout():
-        data = read(lambda kb: kb.save_layout())
+        data, name = read(lambda kb: (kb.save_layout(), model.layout_file_name(kb)))
         return Response(data, media_type="application/json",
-                        headers={"Content-Disposition": 'attachment; filename="keyboard.vil"'})
+                        headers={"Content-Disposition": content_disposition(name)})
 
     async def read_limited(request, limit):
         """ The request body, refused with 413 as soon as it is known to be larger than limit """
