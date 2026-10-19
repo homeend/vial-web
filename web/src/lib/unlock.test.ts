@@ -25,6 +25,9 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** Unlocks: whether the keyboard got unlocked */
+const unlocked = (unlocker: InstanceType<typeof Unlocker>) => unlocker.unlockQuietly().then((o) => o.unlocked);
+
 /** Lets every settled promise run its callbacks */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -61,7 +64,7 @@ describe("Unlocker", () => {
   it("starts an unlock, shows the dialog and tells once the keyboard is unlocked", async () => {
     const unlocker = new Unlocker();
     mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
-    const unlocking = unlocker.unlock();
+    const unlocking = unlocked(unlocker);
     await vi.waitFor(() => expect(unlocker.state).toEqual(UNLOCKING));
     expect(unlocker.open).toBe(true);
     unlocker.update(state({ state: "unlocking", remaining: 10, total: 50 }));
@@ -76,7 +79,7 @@ describe("Unlocker", () => {
     const unlocker = new Unlocker();
     unlocker.update(UNLOCKED);
     mocked.unlockStart.mockResolvedValueOnce(UNLOCKED);
-    expect(await unlocker.unlock()).toBe(true);
+    expect(await unlocked(unlocker)).toBe(true);
     expect(mocked.unlockStart).toHaveBeenCalledTimes(1);
     expect(unlocker.open).toBe(false);
   });
@@ -85,7 +88,7 @@ describe("Unlocker", () => {
     const unlocker = new Unlocker();
     mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
     mocked.unlockCancel.mockResolvedValueOnce(CANCELLED);
-    const cancelled = unlocker.unlock();
+    const cancelled = unlocked(unlocker);
     await vi.waitFor(() => expect(unlocker.state).toEqual(UNLOCKING));
     await unlocker.cancel();
     expect(await cancelled).toBe(false);
@@ -93,16 +96,15 @@ describe("Unlocker", () => {
 
     mocked.unlockStart.mockRejectedValueOnce(new Error("no"));
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    expect(await unlocker.unlock()).toBe(false);
-    expect(toasts.items.map((t) => t.message)).toEqual(["Unlocking the keyboard failed: Unexpected error in the page."]);
+    expect(await unlocked(unlocker)).toBe(false);
   });
 
   it("sends one start for unlocks asked at once, and tells each of them", async () => {
     const unlocker = new Unlocker();
     const started = deferred<UnlockState>();
     mocked.unlockStart.mockReturnValueOnce(started.promise);
-    const first = unlocker.unlock();
-    const second = unlocker.unlock();
+    const first = unlocked(unlocker);
+    const second = unlocked(unlocker);
     expect(mocked.unlockStart).toHaveBeenCalledTimes(1);
     started.resolve(UNLOCKING);
     await vi.waitFor(() => expect(unlocker.open).toBe(true));
@@ -111,19 +113,11 @@ describe("Unlocker", () => {
 
     // once a start is answered, the next unlock sends its own, even from a caller told by that answer
     mocked.unlockStart.mockResolvedValue(UNLOCKED);
-    expect(await unlocker.unlock().then(() => unlocker.unlock())).toBe(true);
+    expect(await unlocked(unlocker).then(() => unlocked(unlocker))).toBe(true);
     expect(mocked.unlockStart).toHaveBeenCalledTimes(3);
   });
 
-  it("fails every unlock asked at once when their one start fails", async () => {
-    const unlocker = new Unlocker();
-    mocked.unlockStart.mockRejectedValueOnce(new ApiError(502));
-    expect(await Promise.all([unlocker.unlock(), unlocker.unlock()])).toEqual([false, false]);
-    expect(mocked.unlockStart).toHaveBeenCalledTimes(1);
-    expect(toasts.items.map((t) => t.message)).toEqual(["Unlocking the keyboard failed: The keyboard didn't respond."]);
-  });
-
-  it("leaves a start's failure to quiet callers to report, and tells them why", async () => {
+  it("leaves a start's failure to its callers to report, and tells them why", async () => {
     const unlocker = new Unlocker();
     const failure = new ApiError(502);
     mocked.unlockStart.mockRejectedValueOnce(failure);
@@ -133,7 +127,7 @@ describe("Unlocker", () => {
     expect(toasts.items).toEqual([]);
     expect(unlocker.open).toBe(false);
 
-    // told as unlock() is otherwise
+    // and once it starts, as above
     mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
     const unlocking = unlocker.unlockQuietly();
     await vi.waitFor(() => expect(unlocker.open).toBe(true));
@@ -141,15 +135,12 @@ describe("Unlocker", () => {
     expect(await unlocking).toEqual({ unlocked: true });
   });
 
-  it.each([
-    ["a start asked for directly", (u: InstanceType<typeof Unlocker>) => void u.start()],
-    ["an unlock that isn't quiet", (u: InstanceType<typeof Unlocker>) => void u.unlock()],
-  ])("shows a start's failure when %s waits for it too, and then doesn't hand it to quiet callers", async (_, other) => {
+  it("shows a start's failure when a start asked for directly waits for it too, and then doesn't hand it on", async () => {
     const unlocker = new Unlocker();
     const started = deferred<UnlockState>();
     mocked.unlockStart.mockReturnValueOnce(started.promise);
     const quiet = unlocker.unlockQuietly();
-    other(unlocker);
+    void unlocker.start();
     started.reject(new ApiError(502));
     expect(await quiet).toEqual({ unlocked: false });
     expect(mocked.unlockStart).toHaveBeenCalledTimes(1);
@@ -162,7 +153,7 @@ describe("Unlocker", () => {
     await unlocker.start();
     expect(toasts.items.map((t) => t.message)).toEqual(["Unlocking the keyboard failed: The keyboard didn't respond."]);
 
-    // the next start, asked for by a quiet caller, is quiet again
+    // the next start, asked for by unlockQuietly(), is quiet again
     mocked.unlockStart.mockRejectedValueOnce(new ApiError(502));
     expect((await unlocker.unlockQuietly()).unlocked).toBe(false);
     expect(toasts.items).toHaveLength(1);
@@ -172,7 +163,7 @@ describe("Unlocker", () => {
     const unlocker = new Unlocker();
     const started = deferred<UnlockState>();
     mocked.unlockStart.mockReturnValueOnce(started.promise);
-    const unlocking = unlocker.unlock();
+    const unlocking = unlocked(unlocker);
     unlocker.update(LOCKED); // a session read sent before the start, answered after it was sent
     expect(await unlocking).toBe(false);
     started.resolve(UNLOCKING);
@@ -183,7 +174,7 @@ describe("Unlocker", () => {
     // the server's event for the start arrives before the start's answer, which is older than the event's reading
     const again = deferred<UnlockState>();
     mocked.unlockStart.mockReturnValueOnce(again.promise);
-    const second = unlocker.unlock();
+    const second = unlocked(unlocker);
     const counting = state({ ...UNLOCKING, remaining: 40, total: 50 });
     unlocker.update(counting);
     again.resolve(UNLOCKING);
@@ -199,7 +190,7 @@ describe("Unlocker", () => {
     const unlocker = new Unlocker();
     const started = deferred<UnlockState>();
     mocked.unlockStart.mockReturnValueOnce(started.promise);
-    const unlocking = unlocker.unlock();
+    const unlocking = unlocked(unlocker);
     unlocker.update(UNLOCKING);
     started.resolve(UNLOCKED);
     expect(await unlocking).toBe(true);
@@ -210,7 +201,7 @@ describe("Unlocker", () => {
     const started = deferred<UnlockState>();
     mocked.unlockStart.mockReturnValueOnce(started.promise);
     mocked.unlockCancel.mockResolvedValueOnce(CANCELLED);
-    const unlocking = unlocker.unlock();
+    const unlocking = unlocked(unlocker);
     await unlocker.cancel();
     expect(await unlocking).toBe(false);
     started.resolve(UNLOCKING);
@@ -300,7 +291,7 @@ describe("Unlocker, when something goes wrong while the dialog shows", () => {
     unlocker.update(UNLOCKING);
     mocked.unlockCancel.mockRejectedValueOnce(new ApiError(502));
     await unlocker.cancel();
-    const waiting = unlocker.unlock();
+    const waiting = unlocked(unlocker);
     unlocker.dismiss();
     expect(unlocker.open).toBe(false);
     expect(unlocker.problem).toBeNull();
@@ -308,7 +299,7 @@ describe("Unlocker, when something goes wrong while the dialog shows", () => {
     unlocker.update(UNLOCKING); // the server still follows it
     expect(unlocker.open).toBe(false);
 
-    const again = unlocker.unlock();
+    const again = unlocked(unlocker);
     expect(unlocker.open).toBe(true);
     expect(mocked.unlockStart).not.toHaveBeenCalled(); // it runs already
     unlocker.update(UNLOCKED);

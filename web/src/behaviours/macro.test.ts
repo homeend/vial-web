@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { described } from "../analysis/testing";
 import type { Described } from "../api/types";
 import {
-  changeKind, macroBytes, macroSentence, memoryLevel, memoryUsed, moveStep, newStep, parseDelay, sameSteps, stepBytes,
-  stepProblem, stepRequest, stepWhat, type Step,
+  changeKind, macroBytes, memoryLevel, memoryUsed, moveStep, newStep, parseDelay, stepBytes,
+  stepProblem, stepRequest, stepVerb, stepWhat, type Step,
 } from "./macro";
 
 const key = (code: string, value: number, tap: string): Described => ({ ...described(code), value, tap });
@@ -74,10 +74,11 @@ describe("memoryLevel", () => {
 });
 
 describe("macro steps in words", () => {
-  it("chain the steps", () => {
-    expect(macroSentence(M0)).toBe("type “git status” → tap Enter");
-    expect(macroSentence(M1)).toBe("tap Home → press LShift → tap End → release LShift → wait 50 ms → tap Ctrl+C");
-    expect(macroSentence([])).toBe("Does nothing yet.");
+  it("say what each step does, as the macro's card chains them", () => {
+    expect([...M0, ...M1].map((s) => `${stepVerb(s)} ${stepWhat(s)}`)).toEqual([
+      "type “git status”", "tap Enter",
+      "tap Home", "press LShift", "tap End", "release LShift", "wait 50 ms", "tap Ctrl+C",
+    ]);
   });
 
   it("show line breaks and tabs in text", () => {
@@ -144,10 +145,8 @@ describe("editing steps", () => {
     expect(moveStep(["a", "b"], 1, 2)).toEqual(["a", "b"]);
   });
 
-  it("sends the steps as the server takes them, and compares them so", () => {
+  it("sends the steps as the server takes them", () => {
     expect(M1.map(stepRequest)[5]).toEqual({ type: "tap", text: null, keys: ["LCTL(KC_C)"], delay: null });
     expect(stepRequest(text("hi"))).toEqual({ type: "text", text: "hi", keys: [], delay: null });
-    expect(sameSteps(M0, [text("git status"), keys("tap", { ...ENTER, tap: "Return" })])).toBe(true);
-    expect(sameSteps(M0, [text("git status")])).toBe(false);
   });
 });

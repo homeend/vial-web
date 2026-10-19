@@ -23,9 +23,6 @@ export function isWaiting(state: UnlockState): boolean {
 /** What an unlock came to; when it couldn't start and nobody was shown why, the start's failure */
 export type UnlockOutcome = { unlocked: true } | { unlocked: false; failure?: unknown };
 
-/** A caller of unlock() or unlockQuietly() */
-type Waiter = { tell: (outcome: UnlockOutcome) => void; quiet: boolean };
-
 export class Unlocker {
   state = $state.raw<UnlockState>(LOCKED);
   /** the unlock dialog shows */
@@ -34,8 +31,8 @@ export class Unlocker {
   busy = $state(false);
   /** why a request sent while the dialog showed failed (its toast is behind the dialog), until another is sent */
   problem = $state<string | null>(null);
-  /** callers of unlock() and unlockQuietly(): told whether the keyboard got unlocked */
-  #waiting: Waiter[] = [];
+  /** callers of unlockQuietly(): told whether the keyboard got unlocked */
+  #waiting: ((outcome: UnlockOutcome) => void)[] = [];
   /** requests sent to the server so far */
   #sent = 0;
   /** updates (events and session reads) so far */
@@ -54,23 +51,16 @@ export class Unlocker {
     this.#apply(state);
   }
 
-  /** Unlock the keyboard (a change was refused as it is locked): resolves true once it is unlocked, false if the user
-   * cancelled or it couldn't start. The server is asked even when the keyboard seems unlocked here: the refusal is
-   * fresher than the state. */
-  unlock(): Promise<boolean> {
-    return new Promise((resolve) => this.#wait({ tell: (outcome) => resolve(outcome.unlocked), quiet: false }));
-  }
-
-  /** unlock() for a caller that reports a failure itself, as part of its own: a start that fails isn't shown when only
-   * such callers wait for it, and they are told its failure instead */
+  /** Unlock the keyboard (a change was refused as it is locked): tells once it is unlocked, or that it wasn't (the user
+   * cancelled, or it couldn't start). The server is asked even when the keyboard seems unlocked here: the refusal is
+   * fresher than the state. The caller reports a failure itself, as part of its own: a start that fails isn't shown
+   * (unless start() asked for it too), and the caller is told its failure instead. */
   unlockQuietly(): Promise<UnlockOutcome> {
-    return new Promise((tell) => this.#wait({ tell, quiet: true }));
-  }
-
-  #wait(waiter: Waiter): void {
-    this.#waiting.push(waiter);
-    this.#undismiss();
-    if (this.state.state !== "unlocking") void this.#start(false);
+    return new Promise((tell) => {
+      this.#waiting.push(tell);
+      this.#undismiss();
+      if (this.state.state !== "unlocking") void this.#start(false);
+    });
   }
 
   /** Starts an unlock; the server answers "unlocked" without starting one when the keyboard is unlocked already */
@@ -99,7 +89,7 @@ export class Unlocker {
     this.open = true;
   }
 
-  /** `shown`: a failure is shown even when only quiet callers wait (the start was asked for by start()) */
+  /** `shown`: a failure is shown even when callers of unlockQuietly() wait (the start was asked for by start()) */
   #start(shown: boolean): Promise<void> {
     if (this.#starting) {
       this.#startShown ||= shown;
@@ -113,7 +103,7 @@ export class Unlocker {
       outdated: (state) => {
         if (state.state === "unlocked") this.#settle(true);
       },
-      quiet: () => !this.#startShown && this.#waiting.length > 0 && this.#waiting.every((w) => w.quiet),
+      quiet: () => !this.#startShown && this.#waiting.length > 0,
       failed: (failure) => {
         this.open = false;
         this.#settle(false, failure);
@@ -181,12 +171,12 @@ export class Unlocker {
     else on.outdated?.(state);
   }
 
-  /** Tells everyone waiting; `failure` is for the quiet ones, when the start failed without being shown */
+  /** Tells everyone waiting; `failure` when the start failed without being shown */
   #settle(unlocked: boolean, failure?: unknown): void {
     const waiting = this.#waiting;
     this.#waiting = [];
     const outcome: UnlockOutcome = unlocked ? { unlocked: true }
       : failure === undefined ? { unlocked: false } : { unlocked: false, failure };
-    for (const { tell } of waiting) tell(outcome);
+    for (const tell of waiting) tell(outcome);
   }
 }

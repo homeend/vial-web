@@ -18,13 +18,13 @@ export const STEP_KINDS: { kind: StepKind; label: string }[] = [
 ];
 
 /** Vial protocol 2 brought delays, and a prefix byte before every key action */
-export const ADVANCED_MACROS = 2;
+const ADVANCED_MACROS = 2;
 /** the longest delay a step can have, in ms (as the server's MACRO_DELAY_MAX) */
-export const DELAY_MAX = 64000;
+const DELAY_MAX = 64000;
 /** the most steps a macro can have (as the server's MACRO_STEPS_MAX) */
 export const STEPS_MAX = 256;
 /** the share of the macro memory from which its bar turns amber */
-export const NEAR_FULL = 0.85;
+const NEAR_FULL = 0.85;
 /** what a text step may hold: printable ASCII, tabs and line breaks (as the server's MACRO_TEXT) */
 const TEXT = /^[\t\n\x20-\x7e]*$/;
 
@@ -78,11 +78,6 @@ export function stepWhat(step: Step): string {
     default:
       return step.keys.length > 0 ? step.keys.map(keyName).join(", ") : "no key yet";
   }
-}
-
-/** The whole macro in words: 'type “git status” → tap Enter' */
-export function macroSentence(steps: Step[]): string {
-  return steps.length === 0 ? "Does nothing yet." : steps.map((s) => `${stepVerb(s)} ${stepWhat(s)}`).join(" → ");
 }
 
 /** Why a step can't be saved, or null */
@@ -148,9 +143,4 @@ export function stepRequest(step: Step): MacroActionIn {
     default:
       return { type: step.type, text: null, keys: step.keys.map((k) => k.code), delay: null };
   }
-}
-
-/** Whether two step lists say the same */
-export function sameSteps(a: Step[], b: Step[]): boolean {
-  return JSON.stringify(a.map(stepRequest)) === JSON.stringify(b.map(stepRequest));
 }
