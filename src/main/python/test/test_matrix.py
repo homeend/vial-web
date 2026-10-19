@@ -8,11 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 import transport
-from protocol.constants import CMD_VIA_GET_KEYBOARD_VALUE, VIA_SWITCH_MATRIX_STATE
+from protocol.constants import CMD_VIA_BOOTLOADER_JUMP, CMD_VIA_GET_KEYBOARD_VALUE, VIA_SWITCH_MATRIX_STATE
 from protocol.unlock_hook import set_unlock_handler
 from server.app import MatrixWatcher, create_app
 from server.device import DeviceManager, FakeBackend, KeyboardLocked, KeyboardRefused, MatrixReading, \
-    has_matrix_tester, matrix_pressed, require_unlocked
+    NotConnected, has_matrix_tester, matrix_pressed, require_unlocked
 from server.names import NamesStore
 from simulator.corne import UNLOCK_KEYS, make_corne
 from simulator.virtual_keyboard import VirtualKeyboard
@@ -347,7 +347,7 @@ def test_the_simulator_hook_presses_and_lets_go(served):
 
 # ---------- reboot to the bootloader ----------
 
-def test_rebooting_needs_an_unlocked_keyboard(tmp_path):
+def test_rebooting_needs_an_unlocked_keyboard():
     manager = connected(locked_corne)
     with pytest.raises(KeyboardLocked):
         manager.reboot_to_bootloader()
@@ -429,3 +429,59 @@ def test_waiting_reboot_requests_wait_for_the_device_lock():
     worker.join(5)
     rebooter.join(5)
     assert manager.backend.virtual.bootloader_requested
+
+
+def jump_requests(vk, lose_reply=False):
+    """ How many bootloader jumps the simulated keyboard is sent from now on (a list that counts them); with
+    lose_reply the answer never arrives, as when the keyboard drops off the bus first """
+    sent = []
+    process = vk.process
+
+    def counting(msg):
+        reply = process(msg)
+        if msg[0] == CMD_VIA_BOOTLOADER_JUMP:
+            sent.append(msg)
+            if lose_reply:
+                raise OSError("the reply is lost")
+        return reply
+    vk.process = counting
+    return sent
+
+
+def test_the_jump_is_sent_once():
+    manager = connected()
+    sent = jump_requests(manager.backend.virtual)
+    manager.reboot_to_bootloader()
+    assert len(sent) == 1
+
+
+def test_the_jump_is_sent_once_when_the_reply_is_lost():
+    manager = connected()
+    vk = manager.backend.virtual
+    sent = jump_requests(vk, lose_reply=True)
+    with pytest.raises(NotConnected):
+        manager.reboot_to_bootloader()
+    assert len(sent) == 1 and vk.bootloader_requested
+    assert not manager.connected
+
+
+def test_the_bootloader_route_is_guarded(served):
+    client, manager = served
+    with TestClient(client.app, base_url=BASE) as anonymous:
+        assert anonymous.post("/api/bootloader").status_code == 401
+    assert client.post("/api/bootloader", headers={"origin": "http://evil.example"}).status_code == 403
+    assert client.get("/api/bootloader").status_code == 405
+    assert not manager.backend.virtual.bootloader_requested
+    assert manager.connected
+
+
+def test_the_bootloader_route_when_the_keyboard_was_locked_behind_our_back(served):
+    client, manager = served
+    assert manager.unlocked
+    manager.backend.virtual.unlocked = False
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        assert ws.receive_json() == {"type": "connected"}
+        assert client.post("/api/bootloader").status_code == 423
+        message = ws.receive_json()
+        assert (message["type"], message["unlock"]["state"]) == ("unlock", "locked")
+    assert not manager.unlocked and not manager.backend.virtual.bootloader_requested

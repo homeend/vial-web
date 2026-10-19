@@ -670,7 +670,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             await asyncio.to_thread(manager.reboot_to_bootloader)
         finally:
             await broadcast_events(await asyncio.to_thread(manager.take_events))
-        return session()
+        return await asyncio.to_thread(session)
 
     @app.websocket("/api/events")
     async def events(ws: WebSocket):

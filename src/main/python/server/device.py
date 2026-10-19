@@ -554,14 +554,16 @@ class DeviceManager:
     def reboot_to_bootloader(self):
         """ Restart the keyboard into its bootloader, as Qt's Security > Reboot to bootloader does: the keyboard must
         be unlocked (KeyboardLocked otherwise), and then jumps (via.c id_bootloader_jump), leaving Vial: it is closed,
-        with a "disconnected" event. A firmware built without the jump (VIAL_INSECURE) answers that it doesn't know the
-        command: KeyboardRefused, and the keyboard stays. """
+        with a "disconnected" event. A firmware that doesn't take the jump (vial-qmk leaves it out of VIAL_INSECURE
+        builds) answers id_unhandled: KeyboardRefused, and the keyboard stays. """
         with self.lock:
             def jump(kb):
                 require_unlocked(kb)
                 # one try: the firmware answers, waits 100 ms and jumps; sent again, it would reach the bootloader
                 return kb.usb_send(kb.dev, struct.pack("B", CMD_VIA_BOOTLOADER_JUMP))
             reply = self.run(jump)
+            # an echoed command is ambiguous (a locked keyboard's `goto skip` echoes it in via.c too); accepted, as the
+            # unlock status was read just before, under the same lock
             if reply[0] == VIA_ID_UNHANDLED:
                 raise KeyboardRefused("this keyboard's firmware can't restart into its bootloader from Vial (it is "
                                       "built without that)")
