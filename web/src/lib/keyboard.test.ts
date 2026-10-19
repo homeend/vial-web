@@ -12,6 +12,11 @@ vi.mock("../api/api", () => ({
     setEncoder: vi.fn(),
     setTapDance: vi.fn(),
     setCombo: vi.fn(),
+    setKeyOverride: vi.fn(),
+    setAltRepeatKey: vi.fn(),
+    setSetting: vi.fn(),
+    resetSettings: vi.fn(),
+    loadLayoutFile: vi.fn(),
     setMacros: vi.fn(),
     setName: vi.fn(),
     unlockStart: vi.fn(),
@@ -411,6 +416,77 @@ describe("behaviour edits", () => {
     expect(() => store.rename("macros", 3, "x")).toThrow("there is no macro 3");
     expect(() => store.rename("layers", 1, "x")).toThrow("there is no layer 1");
     expect(mocked.setName).not.toHaveBeenCalled();
+  });
+});
+
+describe("key overrides, alt-repeat keys, QMK settings and layout files", () => {
+  const override = {
+    index: 0, trigger: described("KC_BSPC"), replacement: described("KC_DEL"), layers: 1, triggerMods: 2,
+    negativeModMask: 0, suppressedMods: 2, options: 0x87, enabled: true,
+  };
+  const body = { trigger: "KC_BSPC", replacement: "KC_DEL", layers: 1, triggerMods: 2, negativeModMask: 0,
+    suppressedMods: 2, options: 0x87 };
+
+  it("put the keyboard's key override and alt-repeat key into the model", async () => {
+    const { store } = await loaded();
+    store.model!.keyOverrides = [{ ...override, trigger: described("KC_NO") }];
+    mocked.setKeyOverride.mockResolvedValueOnce(override);
+    expect(await store.setKeyOverride(0, body)).toBe(true);
+    expect(mocked.setKeyOverride).toHaveBeenCalledWith(0, body);
+    expect(store.model!.keyOverrides[0].trigger.code).toBe("KC_BSPC");
+
+    const ark = { index: 0, keycode: described("KC_LEFT"), altKeycode: described("KC_RGHT"), allowedMods: 0, options: 8,
+      enabled: true };
+    store.model!.altRepeatKeys = [{ ...ark, keycode: described("KC_NO") }];
+    mocked.setAltRepeatKey.mockResolvedValueOnce(ark);
+    expect(await store.setAltRepeatKey(0, { keycode: "KC_LEFT", altKeycode: "KC_RGHT", allowedMods: 0, options: 8 }))
+      .toBe(true);
+    expect(store.model!.altRepeatKeys[0].keycode.code).toBe("KC_LEFT");
+  });
+
+  it("set QMK settings one after another; those set before one fails stay set", async () => {
+    const { store } = await loaded();
+    store.model!.settings = [{ qsid: 7, value: 200 }, { qsid: 22, value: 0 }, { qsid: 25, value: 100 }];
+    mocked.setSetting.mockResolvedValueOnce({ qsid: 7, value: 250 })
+      .mockRejectedValueOnce(new ApiError(422, "setting 22 must be a number from 0 to 255"));
+    expect(await store.setSettings([{ qsid: 7, value: 250 }, { qsid: 22, value: 300 }, { qsid: 25, value: 90 }]))
+      .toBe(false);
+    expect(mocked.setSetting).toHaveBeenCalledTimes(2);
+    expect(store.model!.settings).toEqual([{ qsid: 7, value: 250 }, { qsid: 22, value: 0 }, { qsid: 25, value: 100 }]);
+    expect(toasts.items.map((t) => t.message)).toEqual([
+      "Saving the settings failed: setting 22 must be a number from 0 to 255"]);
+  });
+
+  it("reset the QMK settings to what the keyboard says they are now", async () => {
+    const { store } = await loaded();
+    store.model!.settings = [{ qsid: 7, value: 250 }];
+    mocked.resetSettings.mockResolvedValueOnce([{ qsid: 7, value: 200 }]);
+    expect(await store.resetSettings()).toBe(true);
+    expect(store.model!.settings).toEqual([{ qsid: 7, value: 200 }]);
+  });
+
+  it("load a layout file: the model is the keyboard's reply", async () => {
+    const { store } = await loaded();
+    const after = model("KC_Z");
+    mocked.loadLayoutFile.mockResolvedValueOnce(after);
+    expect(await store.loadLayoutFile("{}")).toBe(true);
+    expect(mocked.loadLayoutFile).toHaveBeenCalledWith("{}");
+    expect(store.model!.layers[0].keys[0].code).toBe("KC_Z");
+  });
+
+  it("load a layout file a locked keyboard refused once it is unlocked: the whole file again", async () => {
+    const { store, send } = await loaded();
+    mocked.loadLayoutFile.mockRejectedValueOnce(new ApiError(423, "the keyboard is locked"))
+      .mockResolvedValueOnce(model("KC_Z"));
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    const loading = store.loadLayoutFile("{\"macro\": []}");
+    await settle();
+    expect(store.unlock.open).toBe(true);
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await loading).toBe(true);
+    expect(mocked.loadLayoutFile.mock.calls).toEqual([["{\"macro\": []}"], ["{\"macro\": []}"]]);
+    expect(store.model!.layers[0].keys[0].code).toBe("KC_Z");
+    expect(toasts.items).toEqual([]);
   });
 });
 

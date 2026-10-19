@@ -6,7 +6,8 @@ import { DEFAULT_LANGUAGE, setRequestLanguage } from "../api/client";
 import { ApiError, causeMessage, failureMessage } from "../api/errors";
 import { connectEvents, type LinkState, type ServerEvent } from "../api/events";
 import type {
-  KeyboardLanguage, KeyboardModel, KeycodeCategory, MacroActionIn, Named, Session, TapDanceIn,
+  AltRepeatKeyIn, KeyboardLanguage, KeyboardModel, KeycodeCategory, KeyOverrideIn, MacroActionIn, Named, QmkSetting,
+  Session, TapDanceIn,
 } from "../api/types";
 import { actionAt, type KeyRef } from "../keyboard/refs";
 import { freeTapDance } from "../keymap/tapdance";
@@ -234,6 +235,58 @@ export class KeyboardStore {
     const slots = [...keys, "KC_NO", "KC_NO", "KC_NO", "KC_NO"].slice(0, 4);
     return this.#edit(action, model, async () => {
       model.combos[index] = await api.setCombo(index, { keys: slots, output });
+    });
+  }
+
+  /** Set a key override: its trigger and replacement, layers, modifiers and options */
+  setKeyOverride(index: number, body: KeyOverrideIn, action = "Saving the key override"): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit(action, model, async () => {
+      model.keyOverrides[index] = await api.setKeyOverride(index, body);
+    });
+  }
+
+  /** Set an alt-repeat key: its keycode and alt keycode, allowed modifiers and options */
+  setAltRepeatKey(index: number, body: AltRepeatKeyIn, action = "Saving the alt-repeat key"): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit(action, model, async () => {
+      model.altRepeatKeys[index] = await api.setAltRepeatKey(index, body);
+    });
+  }
+
+  /** Set QMK settings, one after another. Those the keyboard took before one failed stay set, and show so. */
+  setSettings(values: QmkSetting[], action = "Saving the settings"): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit(action, model, async () => {
+      for (const { qsid, value } of values) {
+        const set = await api.setSetting(qsid, value);
+        const at = model.settings.findIndex((s) => s.qsid === set.qsid);
+        if (at >= 0) model.settings[at] = set;
+        else model.settings.push(set);
+      }
+    });
+  }
+
+  /** Put every QMK setting back to the firmware's default */
+  resetSettings(): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit("Resetting the settings", model, async () => {
+      model.settings = await api.resetSettings();
+    });
+  }
+
+  /** Write a .vil file to the keyboard: all of it, or nothing when it doesn't fit. A file that needs the keyboard
+   * unlocked (it changes the macros) is refused as a whole on a locked one, unlocked for and sent again. */
+  loadLayoutFile(text: string): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit("Loading the layout file", model, async () => {
+      const loaded = await api.loadLayoutFile(text);
+      if (this.model === model) this.model = loaded;
     });
   }
 
