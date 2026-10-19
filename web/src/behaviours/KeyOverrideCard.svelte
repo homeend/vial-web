@@ -85,7 +85,7 @@
     {/if}
   {/if}
   {#if showProblems}
-    <ul class="problems">
+    <ul class="problems" aria-label="Problems">
       {#each problems as problem (problem)}<li>{problem}</li>{/each}
     </ul>
   {/if}

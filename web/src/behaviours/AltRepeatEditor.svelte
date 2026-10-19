@@ -46,8 +46,11 @@
     onchange={(options) => onchange({ options })} />
 
   <div class="foot">
-    <Switch label={draft.enabled ? "On" : "Off: it does nothing until it is switched on"} checked={draft.enabled}
+    <Switch label="Enabled" checked={draft.enabled} describedby={draft.enabled ? undefined : `alt-repeat-${index}-off`}
       {busy} onchange={(enabled) => onchange({ enabled })} />
+    {#if !draft.enabled}
+      <span class="off-hint" id="alt-repeat-{index}-off">It does nothing until it is switched on.</span>
+    {/if}
     <span class="spacer"></span>
     {#if removable}
       <Button variant="danger" disabled={!canSave} aria-disabled={busy || undefined} onclick={onremove}>Remove</Button>
@@ -102,6 +105,11 @@
 
   .needs {
     color: var(--text-3);
+    font-size: 12.5px;
+  }
+
+  .off-hint {
+    color: var(--text-2);
     font-size: 12.5px;
   }
 </style>

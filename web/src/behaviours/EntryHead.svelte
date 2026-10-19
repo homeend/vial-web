@@ -79,7 +79,8 @@
   /* key overrides and alt-repeat keys */
   .id.override {
     background: var(--accent-weak);
-    color: var(--accent);
+    /* toward the text, so it reads (4.5:1) in both themes */
+    color: color-mix(in srgb, var(--accent) 80%, var(--text));
   }
 
   /* a long name is cut short; the tooltip has all of it */

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Use } from "../analysis/usage";
   import type { Described, KeyboardModel, TapDance } from "../api/types";
-  import { actionSummary, keyFace, type Names } from "../keyboard/labels";
+  import { keyFace, keyTitle, type Names } from "../keyboard/labels";
   import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
   import EntryHead from "./EntryHead.svelte";
   import { replayed } from "./target.svelte";
@@ -51,8 +51,9 @@
   /** each slot's choose button, by its label */
   const chooseButtons: Partial<Record<SlotLabel, HTMLButtonElement>> = {};
 
+  /** what a slot does, the hold too: "A — hold for Layer 2" */
   function what(d: Described): string {
-    return actionSummary(d, names).tap;
+    return keyTitle(d, names);
   }
 
   function clearSlot(slot: SlotLabel) {

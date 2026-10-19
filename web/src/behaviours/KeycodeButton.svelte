@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Described } from "../api/types";
-  import { actionSummary, keyFace, type Names } from "../keyboard/labels";
+  import { keyFace, keyTitle, type Names } from "../keyboard/labels";
 
   interface Props {
     id?: string;
@@ -17,7 +17,8 @@
   let { id, label, action, names, busy, onpick }: Props = $props();
   const set = $derived(action.kind !== "none");
   const face = $derived(keyFace(action, names));
-  const what = $derived(set ? actionSummary(action, names).tap : "nothing");
+  /** what it does, the hold too: "A — hold for Layer 2" */
+  const what = $derived(set ? keyTitle(action, names) : "nothing");
 </script>
 
 <button

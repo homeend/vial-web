@@ -21,7 +21,6 @@
     role="switch"
     {checked}
     {disabled}
-    aria-checked={checked}
     aria-describedby={describedby}
     aria-disabled={busy || undefined}
     onclick={(event) => {
@@ -70,6 +69,8 @@
     height: 20px;
     border-radius: 999px;
     background: var(--border-strong);
+    /* its edge, so the off track stands out from the card (3:1, WCAG 1.4.11) */
+    box-shadow: inset 0 0 0 1px var(--text-3);
     transition: background-color 0.12s;
   }
 
@@ -87,6 +88,7 @@
 
   input:checked + .track {
     background: var(--accent);
+    box-shadow: none;
   }
 
   input:checked + .track .thumb {
