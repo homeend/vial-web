@@ -1,50 +1,62 @@
+<script lang="ts" module>
+  /** the longest name a layer, tap dance or macro can have, the same as the server's (schemas.NameIn) */
+  export const NAME_MAX = 40;
+
+  /** What the dialog names */
+  export interface NameSubject {
+    /** "Rename layer 2" */
+    title: string;
+    /** the field's name for screen readers: "Name of layer 2" */
+    label: string;
+    /** what an empty name gives, after "Leave it empty for": "the default name, Layer 2" */
+    empty: string;
+    placeholder: string;
+    /** what the field starts with: the own name, "" for a default one, or what a failed save had */
+    text: string;
+  }
+</script>
+
 <script lang="ts">
   import { tick } from "svelte";
-  import Button from "../ui/Button.svelte";
+  import Button from "./Button.svelte";
 
   interface Props {
-    /** the layer renamed, or null while the dialog is closed */
-    layer: number | null;
-    /** what the field starts with: the layer's own name, "" if it has its default one, or what a failed save had */
-    text: string;
+    /** what is being named, or null while the dialog is closed */
+    subject: NameSubject | null;
     /** resolves to whether it worked: the dialog then closes, or stays open with what was typed (a toast says why) */
-    onsave: (layer: number, name: string) => Promise<boolean>;
-    /** closed, saved or not: the layer's tab gets the focus back */
-    onclose: (layer: number) => void;
+    onsave: (name: string) => Promise<boolean>;
+    /** closed, saved or not: whatever opened it gets the focus back */
+    onclose: () => void;
   }
 
-  let { layer, text, onsave, onclose }: Props = $props();
-
-  /** the longest name a layer can have, the same as the server's */
-  const MAX = 40;
+  let { subject, onsave, onclose }: Props = $props();
 
   let dialog = $state<HTMLDialogElement>();
   let input = $state<HTMLInputElement>();
   let draft = $state("");
   let saving = $state(false);
-  /** the layer the dialog is open for: kept while it closes, for onclose */
-  let shownFor = $state<number | null>(null);
-
-  const defaultName = $derived(layer === 0 ? "Base" : `Layer ${layer}`);
+  /** what the dialog is open for: kept while it closes */
+  let shown = $state<NameSubject | null>(null);
+  const uid = $props.id();
 
   $effect(() => {
     if (!dialog) return;
-    if (layer !== null && !dialog.open) {
-      shownFor = layer;
-      draft = text;
+    if (subject !== null && !dialog.open) {
+      shown = subject;
+      draft = subject.text;
       saving = false;
       dialog.showModal();
       void tick().then(() => input?.select());
-    } else if (layer === null && dialog.open) {
+    } else if (subject === null && dialog.open) {
       dialog.close();
     }
   });
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
-    if (shownFor === null || saving) return;
+    if (shown === null || saving) return;
     saving = true;
-    const done = await onsave(shownFor, draft.trim());
+    const done = await onsave(draft.trim());
     saving = false;
     if (done) dialog?.close();
     else void tick().then(() => input?.focus());
@@ -53,31 +65,31 @@
 
 <dialog
   bind:this={dialog}
-  class="rename-dialog"
-  aria-labelledby="rename-title"
+  class="name-dialog"
+  aria-labelledby="{uid}-title"
   onclose={() => {
-    if (shownFor !== null) onclose(shownFor);
-    shownFor = null;
+    if (shown !== null) onclose();
+    shown = null;
   }}
 >
   <form onsubmit={save}>
-    <h2 id="rename-title">Rename layer {shownFor ?? layer}</h2>
+    <h2 id="{uid}-title">{shown?.title ?? ""}</h2>
     <label>
-      <span class="visually-hidden">Name of layer {shownFor ?? layer}</span>
+      <span class="visually-hidden">{shown?.label ?? ""}</span>
       <input
         bind:this={input}
         bind:value={draft}
-        maxlength={MAX}
-        placeholder={defaultName}
-        aria-describedby="rename-hint"
+        maxlength={NAME_MAX}
+        placeholder={shown?.placeholder ?? ""}
+        aria-describedby="{uid}-hint"
         spellcheck="false"
         autocomplete="off"
         disabled={saving}
       />
     </label>
-    <p id="rename-hint" class="hint">
-      <span>Leave it empty for the default name, {defaultName}.</span>
-      <span class="count" class:full={draft.length >= MAX}>{draft.length} / {MAX}</span>
+    <p id="{uid}-hint" class="hint">
+      <span>Leave it empty for {shown?.empty ?? "the default name"}.</span>
+      <span class="count" class:full={draft.length >= NAME_MAX}>{draft.length} / {NAME_MAX}</span>
     </p>
     <div class="buttons">
       <Button onclick={() => dialog?.close()}>Cancel</Button>
@@ -88,7 +100,7 @@
 
 <style>
   /* wide enough for the longest name (40 characters) without scrolling */
-  .rename-dialog {
+  .name-dialog {
     width: min(calc(40ch + 90px), calc(100vw - 32px));
     max-width: none;
     padding: 0;
@@ -99,7 +111,7 @@
     box-shadow: var(--shadow-lg);
   }
 
-  .rename-dialog::backdrop {
+  .name-dialog::backdrop {
     background: rgb(10 14 22 / 45%);
     backdrop-filter: blur(2px);
   }

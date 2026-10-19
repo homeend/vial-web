@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Layer } from "../api/types";
-  import LayerNameDialog from "./LayerNameDialog.svelte";
+  import NameDialog, { type NameSubject } from "../ui/NameDialog.svelte";
 
   interface Props {
     layers: Layer[];
@@ -30,9 +30,18 @@
     return name === ownName(index) ? Promise.resolve(true) : onrename(index, name);
   }
 
-  function closed(index: number) {
+  const subject = $derived<NameSubject | null>(renaming === null ? null : {
+    title: `Rename layer ${renaming}`,
+    label: `Name of layer ${renaming}`,
+    empty: `the default name, ${renaming === 0 ? "Base" : `Layer ${renaming}`}`,
+    placeholder: renaming === 0 ? "Base" : `Layer ${renaming}`,
+    text: ownName(renaming),
+  });
+
+  function closed() {
+    const index = renaming;
     renaming = null;
-    document.getElementById(tabId(index))?.focus();
+    if (index !== null) document.getElementById(tabId(index))?.focus();
   }
 
   /** the tabs pattern: arrows, Home and End move along the layers and select; F2 renames */
@@ -97,12 +106,7 @@
   {/if}
 </div>
 
-<LayerNameDialog
-  layer={renaming}
-  text={renaming === null ? "" : ownName(renaming)}
-  onsave={save}
-  onclose={closed}
-/>
+<NameDialog {subject} onsave={(name) => (renaming === null ? Promise.resolve(true) : save(renaming, name))} onclose={closed} />
 
 <style>
   .tabs {
