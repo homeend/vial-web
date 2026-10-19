@@ -163,10 +163,20 @@
         <h1>The keyboard waits to be unlocked</h1>
         <p>An unlock started earlier wasn't finished. It is read once its unlock keys have been held.</p>
       </div>
+    {:else if status === "disconnected" && keyboard.session?.error}
+      <div class="empty">
+        <h1>A keyboard was found, but couldn't be read</h1>
+        <p>{keyboard.session.error}</p>
+        <p>Vial tries again by itself, and when it is plugged in again.</p>
+      </div>
     {:else if status === "disconnected"}
       <div class="empty">
         <h1>No keyboard found</h1>
         <p>Plug in a Vial keyboard. It shows up here as soon as it is found.</p>
+        <p class="hint">
+          On Linux, Vial needs a udev rule to see keyboards:
+          <a href="https://get.vial.today/manual/linux-udev.html" target="_blank" rel="noreferrer">how to add it</a>.
+        </p>
       </div>
     {:else if !keyboard.loadError}
       <div class="empty" aria-busy="true">
@@ -226,6 +236,18 @@
 
   .empty p {
     margin: 0;
+  }
+
+  .empty p + p {
+    margin-top: 6px;
+  }
+
+  .empty .hint {
+    font-size: 13px;
+  }
+
+  .empty a {
+    color: var(--accent);
   }
 
   @media (min-width: 1000px) {
