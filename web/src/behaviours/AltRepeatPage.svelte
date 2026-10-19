@@ -34,7 +34,7 @@
     item === null ? opened : [...opened, item]));
   const free = $derived(freeAltRepeat(model.altRepeatKeys));
   const unshown = $derived(model.altRepeatKeys.length - shown.length);
-  /** the entries only matter with Alt Repeat somewhere it can be pressed */
+  /** the entries only matter with Alt Repeat somewhere it can be pressed: said when there are some */
   const noAltRepeatKey = $derived(!pressable("QK_ALT_REPEAT_KEY", model));
 
   useTarget(() => (item === null ? null : `alt-repeat-${item}-title`));
@@ -125,7 +125,7 @@
   <PageHeader
     id="alt-repeat-title"
     title="Alt-repeat"
-    description="Repeat (QK_REPEAT_KEY) sends the last key again; Alt Repeat (QK_ALT_REPEAT_KEY) sends its opposite. Each entry here says what Alt Repeat sends after a key, on top of the firmware's own pairs."
+    description="Repeat (QK_REPEAT_KEY) sends the last key again; Alt Repeat (QK_ALT_REPEAT_KEY) sends its opposite. Each entry here says what Alt Repeat sends after a key, adding to or changing the firmware's own pairs; a default one replaces them for every other key."
     note="Edit one, then Save to send it to the keyboard; Cancel leaves it as it was."
   >
     {#snippet action()}
@@ -137,7 +137,7 @@
     {/snippet}
   </PageHeader>
 
-  {#if noAltRepeatKey}
+  {#if noAltRepeatKey && shown.length > 0}
     <p class="warning" role="note">
       No key has Alt Repeat (<code>QK_ALT_REPEAT_KEY</code>), so these do nothing yet: put it on a key in the Keymap.
     </p>

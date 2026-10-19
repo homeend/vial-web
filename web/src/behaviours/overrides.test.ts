@@ -204,19 +204,24 @@ describe("alt-repeat keys", () => {
     expect(altRepeatSentence(altRepeat({ allowedMods: LSFT, options: AR_ENABLED | 0x02 }), names))
       .toBe("After LEFT (alone, or with Left Shift), Alt Repeat sends RIGHT, and the other way round.");
     expect(altRepeatSentence(altRepeat({ allowedMods: RSFT | LCTL, options: AR_ENABLED | 0x04 }), names))
-      .toBe("After LEFT (alone, or with Ctrl or Shift), Alt Repeat sends RIGHT.");
+      .toBe("After LEFT (alone, or with Ctrl, Shift or both), Alt Repeat sends RIGHT.");
+    // any mix of the allowed modifiers (vial.c alt_repeat_key_mods_match)
+    expect(altRepeatSentence(altRepeat({ allowedMods: LSFT | LCTL | 0x04 }), names))
+      .toBe("After LEFT (alone, or with any mix of Left Ctrl, Left Shift and Left Alt), Alt Repeat sends RIGHT.");
     expect(altRepeatSentence(altRepeat({ altKeycode: NONE, options: 0x0a }), names)).toBe("After LEFT, Alt Repeat sends nothing.");
-    // the default alt key: also after any key no other entry covers (vial.c get_alt_repeat_key_keycode_user)
+    // the default alt key: also after any key no other entry covers (vial.c get_alt_repeat_key_keycode_user), and
+    // QMK then never looks at its own pairs (repeat_key.c get_alt_repeat_key_keycode)
     expect(altRepeatSentence(altRepeat({ options: AR_ENABLED | 0x01 }), names)).toBe("After LEFT, Alt Repeat sends " +
-      "RIGHT. After any other key without modifiers that no alt-repeat key covers, it sends RIGHT too.");
+      "RIGHT. After any other key without modifiers that no alt-repeat key covers, it sends RIGHT too, instead of " +
+      "the firmware's own pairs.");
     // only with the allowed modifiers held, or none
     expect(altRepeatSentence(altRepeat({ allowedMods: LSFT, options: AR_ENABLED | 0x01 }), names)).toBe(
       "After LEFT (alone, or with Left Shift), Alt Repeat sends RIGHT. After any other key (alone, or with Left Shift) " +
-      "that no alt-repeat key covers, it sends RIGHT too.");
+      "that no alt-repeat key covers, it sends RIGHT too, instead of the firmware's own pairs.");
     // a default alt key with no alt key: Alt Repeat sends nothing after the other keys
     expect(altRepeatSentence(altRepeat({ altKeycode: NONE, options: AR_ENABLED | 0x01 }), names)).toBe(
       "After LEFT, Alt Repeat sends nothing. After any other key without modifiers that no alt-repeat key covers, " +
-      "it sends nothing too.");
+      "it sends nothing too, instead of the firmware's own pairs.");
     expect(altRepeatSentence(altRepeat({ keycode: NONE }), names))
       .toBe("No key chosen yet: choose the last key, and what Alt Repeat sends after it.");
   });
@@ -224,9 +229,11 @@ describe("alt-repeat keys", () => {
   it("says what a default alt key with no key of its own does", () => {
     // the fallback branch of get_alt_repeat_key_keycode_user doesn't look at the entry's own key
     expect(altRepeatSentence(altRepeat({ keycode: NONE, options: AR_ENABLED | 0x01 }), names))
-      .toBe("After any key without modifiers that no alt-repeat key covers, Alt Repeat sends RIGHT.");
+      .toBe("After any key without modifiers that no alt-repeat key covers, Alt Repeat sends RIGHT, instead of the " +
+        "firmware's own pairs.");
     expect(altRepeatSentence(altRepeat({ keycode: NONE, allowedMods: LCTL, options: AR_ENABLED | 0x01 }), names))
-      .toBe("After any key (alone, or with Left Ctrl) that no alt-repeat key covers, Alt Repeat sends RIGHT.");
+      .toBe("After any key (alone, or with Left Ctrl) that no alt-repeat key covers, Alt Repeat sends RIGHT, instead " +
+        "of the firmware's own pairs.");
   });
 });
 

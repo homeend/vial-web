@@ -107,7 +107,7 @@ const KO_OPTION_BITS = KEY_OVERRIDE_OPTIONS.reduce((all, o) => all | o.bit, 0);
 /** Vial's alt-repeat key option bits (vial_arep_option_*), in Qt's order */
 export const ALT_REPEAT_OPTIONS: OptionInfo[] = [
   { bit: 1 << 0, label: "Default to this alt key",
-    explanation: "After any other key that no alt-repeat key covers, Alt Repeat sends this alt key too (with only allowed modifiers held)." },
+    explanation: "After any other key that no alt-repeat key covers (with only allowed modifiers held), Alt Repeat sends this alt key, instead of the firmware's own pairs." },
   { bit: 1 << 1, label: "Both ways",
     explanation: "Also the other way round: after the alt key, Alt Repeat sends the key." },
   { bit: 1 << 2, label: "Either side's modifiers",
@@ -242,21 +242,37 @@ export function altRepeatReady(a: AltRepeatDraft): boolean {
   return a.keycode.kind !== "none" || ((a.options & ALT_REPEAT_OPTIONS[0].bit) !== 0 && a.altKeycode.kind !== "none");
 }
 
+/** "(alone, or with Left Shift)", "(alone, or with Ctrl, Shift or both)": the firmware takes any mix of the allowed
+ * modifiers (vial.c alt_repeat_key_mods_match) */
+function heldPhrase(mods: string[]): string {
+  if (mods.length === 0) return " without modifiers";
+  if (mods.length === 1) return ` (alone, or with ${mods[0]})`;
+  if (mods.length === 2) return ` (alone, or with ${mods[0]}, ${mods[1]} or both)`;
+  return ` (alone, or with any mix of ${andList(mods)})`;
+}
+
 /** "After Left, Alt Repeat sends Right.", "After Left (alone, or with Left Shift), Alt Repeat sends Right, and the
  * other way round." The default alt key (vial.c get_alt_repeat_key_keycode_user) is also sent after any last key
- * that no entry matches, held with only the allowed modifiers; that doesn't look at the entry's own key. */
+ * that no entry matches, held with only the allowed modifiers; that doesn't look at the entry's own key. QMK asks
+ * Vial's entries first and uses its own pairs only when none answers (repeat_key.c get_alt_repeat_key_keycode), so
+ * an enabled default entry replaces those pairs for the keys no entry covers. */
 export function altRepeatSentence(a: AltRepeatDraft, names: Names): string {
   const isDefault = (a.options & ALT_REPEAT_OPTIONS[0].bit) !== 0;
   if (!altRepeatReady(a)) {
     return "No key chosen yet: choose the last key, and what Alt Repeat sends after it.";
   }
   const mods = modNames(a.allowedMods, (a.options & ALT_REPEAT_OPTIONS[2].bit) !== 0);
-  const held = mods.length > 0 ? ` (alone, or with ${orList(mods)})` : " without modifiers";
+  const held = heldPhrase(mods);
+  const instead = ", instead of the firmware's own pairs";
   const sends = a.altKeycode.kind === "none" ? "sends nothing" : `sends ${keyName(a.altKeycode, names)}`;
-  if (a.keycode.kind === "none") return `After any key${held} that no alt-repeat key covers, Alt Repeat ${sends}.`;
+  if (a.keycode.kind === "none") {
+    return `After any key${held} that no alt-repeat key covers, Alt Repeat ${sends}${instead}.`;
+  }
   const after = mods.length > 0 ? `${keyName(a.keycode, names)}${held}` : keyName(a.keycode, names);
   const back = a.options & ALT_REPEAT_OPTIONS[1].bit && a.altKeycode.kind !== "none" ? ", and the other way round" : "";
-  const fallback = isDefault ? ` After any other key${held} that no alt-repeat key covers, it ${sends} too.` : "";
+  const fallback = isDefault
+    ? ` After any other key${held} that no alt-repeat key covers, it ${sends} too${instead}.`
+    : "";
   return `After ${after}, Alt Repeat ${sends}${back}.${fallback}`;
 }
 
