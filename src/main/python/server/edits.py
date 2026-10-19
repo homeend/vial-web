@@ -191,13 +191,24 @@ def set_macros(kb, body, names):
 def _check_setting(kb, qsid, value):
     if qsid not in kb.supported_settings or not QmkSettingsCodec.is_qsid_supported(qsid):
         raise ValueError("setting {} is not supported by this keyboard".format(qsid))
-    width = QmkSettingsCodec.fields()[qsid][0].get("width", 1)
+    field = QmkSettingsCodec.fields()[qsid][0]
+    width = field.get("width", 1)
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 1 << (8 * width):
         raise ValueError("setting {} must be a number from 0 to {}".format(qsid, (1 << (8 * width)) - 1))
+    # a number takes what Qt's form takes (qmk_settings.json's min and max), unless the keyboard holds it already
+    if field["type"] == "integer" and value != kb.settings.get(qsid) and not field["min"] <= value <= field["max"]:
+        raise ValueError("setting {} ({}) must be from {} to {}".format(qsid, field["title"], field["min"],
+                                                                         field["max"]))
 
 
 def _write_setting(kb, qsid, value):
+    held = kb.settings.get(qsid)
     if kb.qmk_settings_set(qsid, value) != 0:
+        # the protocol layer keeps the value it sent: what the keyboard holds is still the one before
+        if held is None:
+            kb.settings.pop(qsid, None)
+        else:
+            kb.settings[qsid] = held
         raise RuntimeError("the keyboard rejected setting {}".format(qsid))
 
 

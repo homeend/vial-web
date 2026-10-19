@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import transport
+from protocol.constants import CMD_VIAL_QMK_SETTINGS_SET
 from protocol.unlock_hook import set_unlock_handler
 from server import edits
 from server.app import create_app
@@ -139,8 +140,42 @@ def test_setting_value_must_fit_the_setting(client, virtual):
     assert snapshot(virtual) == before
     settings = {s["qsid"]: s["value"] for s in client.get("/api/keyboard").json()["settings"]}
     assert settings[7] == 200
-    assert client.put("/api/qmk-settings/7", json={"value": 65535}).status_code == 200
-    assert virtual.settings[7] == 65535
+    assert client.put("/api/qmk-settings/7", json={"value": 10000}).status_code == 200
+    assert virtual.settings[7] == 10000
+
+
+def test_number_settings_stay_within_the_range_qt_allows(client, virtual):
+    """ qmk_settings.json gives each number setting a range, which Qt's form keeps to: the Tapping Term (7) is 0 to
+    10000 ms, the One Shot tap toggle (5) 0 to 50 """
+    before = snapshot(virtual)
+    response = client.put("/api/qmk-settings/7", json={"value": 10001})
+    assert response.status_code == 422 and "from 0 to 10000" in response.json()["detail"]
+    assert client.put("/api/qmk-settings/5", json={"value": 51}).status_code == 422
+    assert snapshot(virtual) == before
+    assert client.put("/api/qmk-settings/5", json={"value": 50}).status_code == 200
+
+
+def test_a_number_setting_the_keyboard_holds_beyond_its_range_is_kept(setup):
+    """ firmware defaults can lie beyond the range: what the keyboard holds is accepted back, as other values are """
+    client, virtual, app = setup
+    virtual.settings[7] = 20000
+    client.post("/api/reload")
+    assert client.put("/api/qmk-settings/7", json={"value": 20000}).status_code == 200
+    assert client.put("/api/qmk-settings/7", json={"value": 20001}).status_code == 422
+
+
+def test_a_setting_the_keyboard_rejects_keeps_its_value(client, virtual, monkeypatch):
+    """ the protocol layer keeps the value it sent even when the keyboard refuses it: the model mustn't show it """
+    real = virtual._vial
+
+    def refuse_settings(msg):
+        if msg[1] == CMD_VIAL_QMK_SETTINGS_SET:
+            return b""
+        return real(msg)
+    monkeypatch.setattr(virtual, "_vial", refuse_settings)
+    assert client.put("/api/qmk-settings/7", json={"value": 300}).status_code == 502
+    settings = {s["qsid"]: s["value"] for s in client.get("/api/keyboard").json()["settings"]}
+    assert settings[7] == 200
 
 
 @pytest.mark.parametrize("text", ["a\0b", "\x01\x04", "\u0105\u20ac", "bell\x07", "del\x7f"])
