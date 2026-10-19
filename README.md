@@ -15,7 +15,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 | 1 | Keyboard simulator and local API server (`vial_web.py`) | done |
 | 2 | Web UI: see and edit every key on every layer | done |
 | 3 | Overview of all layers; how each layer is reached (including combos); find a character or key | done |
-| 4 | Tap dance, combos, macros pages; unlock | planned |
+| 4 | Tap dance, combos, macros pages; unlock | done |
 | 5 | Parity with the Qt app | planned |
 | 6 | Packaging; Qt removed | planned |
 | 7 | Firmware flasher | optional |
@@ -80,7 +80,7 @@ python vial_web.py --fake
 | `--port PORT` | Port to listen on (default: any free port) |
 | `--no-browser` | Don't open the browser; the link with its session token is printed |
 | `--dry-run` | Connect, print a summary and exit |
-| `--data-dir DIR` | Keep the lock, session file, log and layer names in `DIR` instead of the user folders |
+| `--data-dir DIR` | Keep the lock, session file, log and the layer, tap dance and macro names in `DIR` instead of the user folders |
 
 The server listens on `127.0.0.1` only, and answers only pages opened through the printed link.
 
