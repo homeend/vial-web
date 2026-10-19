@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Described, KeyboardModel } from "../api/types";
 import {
   actionSummary, compactLegendSize, HOLD_MAX_LINES, holdLines, holdSize, keyFace, keyLabel, keyTitle, legendScale, legendSizes, legendWords, MAIN_LINE, mainLines,
-  namesOf, toneOf, estimatedWidth, type Names, type TextWidth,
+  layerFaces, namesOf, toneOf, estimatedWidth, EMPTY_FACE, type Names, type TextWidth,
 } from "./labels";
 
 type Fields = Partial<Described> & Pick<Described, "code" | "kind" | "tap">;
@@ -531,5 +531,15 @@ describe("compactLegendSize", () => {
 
   it("never goes below 7 px", () => {
     expect(compactLegendSize("Bootloader", 12, 12, 14)).toBe(7);
+  });
+});
+
+describe("layerFaces", () => {
+  it("gives each key its face on the layer, and an empty one where the layer has no keycode", () => {
+    const model = { layers: [{ keys: [modTap], encoders: [layerTap] }] } as unknown as KeyboardModel;
+    const faces = layerFaces(model, [{ kind: "key", index: 0 }, { kind: "encoder", index: 0 }, { kind: "key", index: 5 }],
+      0, names);
+    expect(faces).toEqual([keyFace(modTap, names), keyFace(layerTap, names), EMPTY_FACE]);
+    expect(layerFaces(model, [{ kind: "key", index: 0 }], 3, names)).toEqual([EMPTY_FACE]);
   });
 });

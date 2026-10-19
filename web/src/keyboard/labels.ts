@@ -1,5 +1,6 @@
 // What a key shows: on the key itself (keyFace) and in words in the Inspector (actionSummary, keyTitle).
 import type { Described, KeyKind, KeyboardModel } from "../api/types";
+import { actionAt, type KeyRef } from "./refs";
 
 /** The colour family of a key */
 export type Tone = "normal" | "mod" | "layer" | "tap-dance" | "macro" | "transparent" | "none";
@@ -67,6 +68,15 @@ export function keyFace(d: Described, names: Names): KeyFace {
   else if (d.kind === "mod-tap") hold = d.hold ?? null;
   else if (d.kind === "one-shot-mod") hold = "one-shot";
   return { main: d.legend.main, shifted: d.legend.shifted ?? null, altGr: d.legend.altGr ?? null, hold, tone: toneOf(d.kind) };
+}
+
+/** What each key shows on a layer, aligned with `keys` (a drawing's placed keys): an empty face where the layer has no
+ * keycode */
+export function layerFaces(model: Pick<KeyboardModel, "layers">, keys: KeyRef[], layer: number, names: Names): KeyFace[] {
+  return keys.map((key) => {
+    const d = actionAt(model, layer, key);
+    return d ? keyFace(d, names) : EMPTY_FACE;
+  });
 }
 
 /** "Layer 1 · Symbols" for a named layer, "Layer 2" for an unnamed one */

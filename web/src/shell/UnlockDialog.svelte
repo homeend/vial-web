@@ -2,10 +2,9 @@
   import type { KeyboardModel } from "../api/types";
   import type { Placement } from "../keyboard/geometry";
   import Keyboard from "../keyboard/Keyboard.svelte";
-  import { EMPTY_FACE, keyFace, type Names } from "../keyboard/labels";
+  import { layerFaces, type Names } from "../keyboard/labels";
   import { onDestroy } from "svelte";
   import { andList } from "../analysis/phrases";
-  import { actionAt } from "../keyboard/refs";
   import { keyboard } from "../lib/keyboard.svelte";
   import { unlockProgress, type Unlocker } from "../lib/unlock.svelte";
   import Button from "../ui/Button.svelte";
@@ -118,10 +117,7 @@
     const unlockKey = placement.items.map((item) => item.kind === "key" &&
       keys.some((k) => k.row === item.geometry.row && k.col === item.geometry.col));
     return {
-      faces: placement.items.map((item) => {
-        const d = actionAt(model, 0, item);
-        return d ? keyFace(d, names) : EMPTY_FACE;
-      }),
+      faces: layerFaces(model, placement.items, 0, names),
       highlights: unlockKey,
       faded: unlockKey.map((u) => !u),
       labels: placement.items.map(() => ""),

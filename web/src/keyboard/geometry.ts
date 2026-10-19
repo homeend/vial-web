@@ -34,6 +34,19 @@ export interface Placement {
 
 type Board = Pick<KeyboardModel, "keys" | "encoders" | "layoutOptions">;
 
+/** How many choices a layout option has: an on/off option (a name) two, a list (its name, then its choices) as many as
+ * it lists */
+export function choiceCount(label: string | string[]): number {
+  return typeof label === "string" ? 2 : label.length - 1;
+}
+
+/** The values each option's bits can hold: Vial pads to (count - 1).bit_length() bits but never below one, so a lone or
+ * missing choice still takes one */
+function optionSize(label: string | string[]): number {
+  const count = choiceCount(label);
+  return 2 ** (count <= 2 ? 1 : (count - 1).toString(2).length);
+}
+
 /** The chosen choice of each layout option. Vial packs them into one number, the first option in the highest bits:
  * an on/off option takes one bit, a list of choices as many bits as its highest choice needs, and at least one. */
 export function layoutChoices(options: LayoutOptions | null | undefined): number[] {
@@ -41,14 +54,30 @@ export function layoutChoices(options: LayoutOptions | null | undefined): number
   let value = options.value;
   const choices: number[] = [];
   for (const label of [...options.labels].reverse()) {
-    const count = typeof label === "string" ? 2 : label.length - 1;
-    // Vial pads to (count - 1).bit_length() but never below one bit, so a lone or missing choice still takes one
-    const bits = count <= 2 ? 1 : (count - 1).toString(2).length;
-    const size = 2 ** bits;
+    const size = optionSize(label);
     choices.unshift(value % size);
     value = Math.floor(value / size);
   }
   return choices;
+}
+
+/** The layout options' value with one option's choice changed, packed as layoutChoices reads it. Bits above those of
+ * the options (which nothing reads) are kept as the keyboard holds them. */
+export function withLayoutChoice(options: LayoutOptions, index: number, choice: number): number {
+  const choices = layoutChoices(options);
+  if (index < 0 || index >= choices.length) throw new RangeError(`there is no layout option ${index}`);
+  if (!Number.isInteger(choice) || choice < 0 || choice >= choiceCount(options.labels[index])) {
+    throw new RangeError(`layout option ${index} has no choice ${choice}`);
+  }
+  choices[index] = choice;
+  let span = 1;
+  let packed = 0;
+  options.labels.forEach((label, i) => {
+    const size = optionSize(label);
+    packed = packed * size + choices[i];
+    span *= size;
+  });
+  return Math.floor(options.value / span) * span + packed;
 }
 
 function rotate(x: number, y: number, r: number, rx: number, ry: number): [number, number] {

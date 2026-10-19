@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { KeyGeometry, KeyboardModel } from "../api/types";
-import { boundsOf, encoderKnobs, layoutChoices, placeKeyboard } from "./geometry";
+import { boundsOf, choiceCount, encoderKnobs, layoutChoices, placeKeyboard, withLayoutChoice } from "./geometry";
 
 function key(fields: Partial<KeyGeometry>): KeyGeometry {
   return {
@@ -190,5 +190,34 @@ describe("boundsOf", () => {
     close(box.bottom - box.top, 2);
     close((box.left + box.right) / 2, turned.cx);
     close((box.top + box.bottom) / 2, turned.cy);
+  });
+});
+
+describe("withLayoutChoice", () => {
+  const labels = ["Split Backspace", ["Bottom row", "ANSI", "Tsangan", "WKL", "HHKB"], ["Enter", "ANSI", "ISO", "Big"]];
+
+  it("changes one option's bits and leaves the others", () => {
+    const options = { value: 0, labels };
+    expect(withLayoutChoice(options, 0, 1)).toBe(0b1_00_00);
+    expect(withLayoutChoice({ value: 0b1_00_00, labels }, 1, 3)).toBe(0b1_11_00);
+    expect(withLayoutChoice({ value: 0b1_11_00, labels }, 2, 2)).toBe(0b1_11_10);
+    expect(withLayoutChoice({ value: 0b1_11_10, labels }, 0, 0)).toBe(0b0_11_10);
+    expect(layoutChoices({ value: 0b0_11_10, labels })).toEqual([0, 3, 2]);
+  });
+
+  it("keeps the bits above the options", () => {
+    expect(withLayoutChoice({ value: 0b1011_0_00_00, labels }, 1, 1)).toBe(0b1011_0_01_00);
+    expect(withLayoutChoice({ value: 0xfffffffe, labels: ["Flag"] }, 0, 1)).toBe(0xffffffff);
+  });
+
+  it("refuses an option or a choice that doesn't exist", () => {
+    expect(() => withLayoutChoice({ value: 0, labels }, 3, 0)).toThrow(RangeError);
+    expect(() => withLayoutChoice({ value: 0, labels }, 0, 2)).toThrow(RangeError);
+    expect(() => withLayoutChoice({ value: 0, labels }, 2, 3)).toThrow(RangeError); // 2 bits, 3 choices
+    expect(() => withLayoutChoice({ value: 0, labels }, 1, 1.5)).toThrow(RangeError);
+  });
+
+  it("counts the choices of each kind of option", () => {
+    expect(labels.map(choiceCount)).toEqual([2, 4, 3]);
   });
 });
