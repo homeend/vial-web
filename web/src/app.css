@@ -51,6 +51,8 @@
   /* layout: the navigation plus a content column of at most 1100 px, centred on wide screens */
   --nav-width: 190px;
   --content-max: 1100px;
+  /* list pages (tap dance, combos, macros) are at most 860 px wide */
+  --list-max: 860px;
   --shell-gap: 28px;
   --shell-gutter: 24px;
   --shell-width: calc(var(--nav-width) + var(--shell-gap) + var(--content-max) + 2 * var(--shell-gutter));

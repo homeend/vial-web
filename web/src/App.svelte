@@ -1,5 +1,7 @@
 <script lang="ts">
   import { analyse } from "./analysis/analysis";
+  import { behaviourCounts } from "./behaviours/entries";
+  import TapDancePage from "./behaviours/TapDancePage.svelte";
   import { placeKeyboard } from "./keyboard/geometry";
   import { namesOf } from "./keyboard/labels";
   import KeymapPage from "./keymap/KeymapPage.svelte";
@@ -21,8 +23,15 @@
   const analysis = $derived(keyboard.model && placement ? analyse(keyboard.model, placement) : null);
   const names = $derived(keyboard.model ? namesOf(keyboard.model) : null);
 
-  // only the sections that are built; later tasks add theirs
-  const sections = $derived<Section[]>([{ id: "keymap", label: "Keymap", count: keyboard.model?.layers.length }]);
+  // sections the keyboard's firmware doesn't have (no tap dances, combos or macros) are left out
+  const sections = $derived.by<Section[]>(() => {
+    const model = keyboard.model;
+    const list: Section[] = [{ id: "keymap", label: "Keymap", count: model?.layers.length }];
+    if (!model) return list;
+    const counts = behaviourCounts(model);
+    if (counts.tapDance !== null) list.push({ id: "tap-dance", label: "Tap dance", count: counts.tapDance });
+    return list;
+  });
   // a section this keyboard doesn't have shows the keymap
   const section = $derived<SectionId>(
     sections.some((s) => s.id === router.route.section) ? router.route.section : "keymap",
@@ -91,8 +100,12 @@
     {/if}
 
     {#if keyboard.model && placement && analysis}
-      <div class="page" class:blocked inert={blocked}>
-        <KeymapPage model={keyboard.model} {placement} {analysis} />
+      <div class="page" class:list={section !== "keymap"} class:blocked inert={blocked}>
+        {#if section === "tap-dance"}
+          <TapDancePage model={keyboard.model} {analysis} item={router.route.item} />
+        {:else}
+          <KeymapPage model={keyboard.model} {placement} {analysis} />
+        {/if}
       </div>
     {:else if status === "disconnected" && isWaiting(unlock)}
       <div class="empty">
@@ -127,10 +140,18 @@
 
   .content {
     display: grid;
+    align-content: start;
     gap: 14px;
     min-width: 0;
     width: 100%;
     max-width: var(--content-max);
+  }
+
+  /* list pages (tap dance, combos, macros) are narrower than the keymap, centred in its column */
+  .page.list {
+    width: 100%;
+    max-width: var(--list-max);
+    margin: 0 auto;
   }
 
   .page.blocked {

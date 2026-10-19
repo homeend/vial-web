@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { comboMarksOf, type Analysis } from "../analysis/analysis";
   import { combosUsing } from "../analysis/combos";
   import { findOnKeymap, foundKeys, queryOf, type Place } from "../analysis/find";
@@ -10,6 +10,7 @@
   import { EMPTY_FACE, keyFace, keyLabel, layerLabel, namesOf } from "../keyboard/labels";
   import { actionAt, refId, whereIs, type KeyRef } from "../keyboard/refs";
   import { keyboard } from "../lib/keyboard.svelte";
+  import { router } from "../lib/router.svelte";
   import { browserStorage } from "../lib/theme";
   import Picker from "../picker/Picker.svelte";
   import Inspector from "./Inspector.svelte";
@@ -94,7 +95,17 @@
     document.getElementById(`layer-tab-${index}`)?.focus();
   }
 
-  /** From a find result: the key, selected in the Edit view on its layer */
+  // a key to show, from another page ("used on" of a tap dance or macro)
+  $effect(() => {
+    if (router.keyTarget) {
+      untrack(() => {
+        const place = router.takeKeyTarget();
+        if (place) void openKey(place);
+      });
+    }
+  });
+
+  /** From a find result or another page: the key, selected in the Edit view on its layer */
   async function openKey(place: Place) {
     layer = place.layer;
     selection = place.ref;
@@ -128,8 +139,11 @@
     return done;
   }
 
-  function turnIntoTapDance() {
-    return selection ? keyboard.turnIntoTapDance(layer, selection).then((index) => index !== null) : Promise.resolve(false);
+  /** The tap dance made opens on its page */
+  async function turnIntoTapDance() {
+    const index = selection ? await keyboard.turnIntoTapDance(layer, selection) : null;
+    if (index !== null) router.go("tap-dance", index);
+    return index !== null;
   }
 
   const ARROWS: Record<string, Direction> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
