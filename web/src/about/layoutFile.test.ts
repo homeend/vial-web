@@ -86,13 +86,77 @@ describe("previewSections", () => {
     expect(sections.map((s) => [s.title, s.items])).toEqual([
       ["Tap dances", ["Tap dance 2: Tap for A, double-tap for B."]],
       ["Combos", ["Combo 2: J + K → Esc"]],
-      ["Key overrides", ["Key override 0: Left Shift + BSPC sends DEL, on every layer. Switched off."]],
+      ["Key overrides", ["Key override 0: Left Shift + BSPC sends DEL, on every layer. Left Shift is hidden from the " +
+        "computer while it works. Switched off."]],
       ["Alt-repeat keys", ["Alt-repeat key 0: cleared"]],
       ["Macros", ["Macro 2: hello (1 step)"]],
       ["QMK settings", ["Tapping Term: 200 → 250", "Swap Caps Lock and Left Control: off → on"]],
     ]);
     expect(unchangedSections(preview({ macros: [{ before: { ...macro, actions: [] }, after: macro }] }), ctx))
       .not.toContain("macros");
+  });
+
+  it("says what else a changed entry changes, and never asks for what an editor would", () => {
+    const td = { ...model.tapDance[2], tap: described("KC_NO"), hold: described("KC_NO"), doubleTap: described("KC_NO"),
+      tapHold: described("KC_NO") };
+    const ko = model.keyOverrides[0];
+    const ark = model.altRepeatKeys[0];
+    const sections = previewSections(preview({
+      tapDance: [
+        // the tapping term too
+        { before: td, after: { ...td, tap: described("KC_A"), tappingTerm: 250 } },
+        // only the term of a tap dance that does nothing: not "cleared"
+        { before: { ...td, index: 1 }, after: { ...td, index: 1, tappingTerm: 300 } },
+        { before: { ...td, index: 0, tap: described("KC_B") }, after: { ...td, index: 0 } },
+      ],
+      keyOverrides: [
+        { before: ko, after: { ...ko, negativeModMask: 1, options: 0x81 } },
+        { before: ko, after: { ...ko, index: 1, trigger: described("KC_NO"), triggerMods: 0 } },
+        { before: ko, after: { ...ko, index: 2, trigger: described("KC_NO"), triggerMods: 0, enabled: false } },
+      ],
+      altRepeatKeys: [
+        { before: ark, after: { ...ark, keycode: described("KC_NO") } },
+        { before: ark, after: { ...ark, index: 1, keycode: described("KC_NO"), options: 0x0a } },
+      ],
+    }), ctx);
+    expect(sections.map((s) => [s.title, s.items])).toEqual([
+      ["Tap dances", [
+        "Tap dance 2: Tap for A. Tapping term: 200 → 250 ms.",
+        "Tap dance 1: does nothing. Tapping term: 200 → 300 ms.",
+        "Tap dance 0: cleared",
+      ]],
+      ["Key overrides", [
+        "Key override 0: Left Shift + BSPC sends DEL, on every layer. Not while Left Ctrl is held. Left Shift is " +
+          "hidden from the computer while it works. Starts only: when the trigger key goes down.",
+        "Key override 1: With no trigger key and no trigger modifiers, it starts on every key press on its layers. " +
+          "Left Shift is hidden from the computer while it works.",
+        "Key override 2: No trigger key or modifiers. Left Shift is hidden from the computer while it works. " +
+          "Switched off.",
+      ]],
+      ["Alt-repeat keys", [
+        "Alt-repeat key 0: No last key, so it does nothing.",
+        "Alt-repeat key 1: No last key: after RGHT, Alt Repeat sends nothing.",
+      ]],
+    ]);
+  });
+
+  it("says where a key or encoder is by its matrix position or number when nothing is drawn there", () => {
+    const sections = previewSections(preview({
+      keys: [key(0, 3, 0, "KC_A", "KC_B")],
+      encoders: [{ layer: 1, encoder: 0, direction: 1, before: described("KC_VOLU"), after: described("KC_PGDN") }],
+    }), ctx);
+    expect(sections.map((s) => [s.title, s.items])).toEqual([
+      ["Keys", ["Base, row 3, column 0: A → B"]],
+      ["Encoders", ["Layer 1, encoder 0, clockwise: VOLU → PGDN"]],
+    ]);
+  });
+
+  it("names a setting by its number without the definitions, or when only bits no field covers change", () => {
+    const settings = [{ qsid: 7, before: 200, after: 250 }];
+    expect(previewSections(preview({ settings }), { ...ctx, definitions: null })[0].items)
+      .toEqual(["Setting 7: 200 → 250"]);
+    expect(previewSections(preview({ settings: [{ qsid: 21, before: 0, after: 2 }] }), ctx)[0].items)
+      .toEqual(["Setting 21: 0 → 2"]);
   });
 
   it("names the layout options that change", () => {

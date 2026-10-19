@@ -40,6 +40,29 @@ describe("aboutFacts", () => {
     expect(value(corne({ keyOverrides: [] }), "Key overrides")).toBe("no (turned off in the firmware)");
   });
 
+  it("says a feature is missing for old firmware by the protocol that brought it", () => {
+    // Persistent default layer and Repeat Key came with Vial protocol 5 (protocol/dynamic.py); Caps Word with 4
+    const four = corne({ vialProtocol: 4, features: [] });
+    expect(value(four, "Persistent default layer")).toBe("no (the Vial firmware is too old)");
+    expect(value(four, "Repeat Key")).toBe("no (the Vial firmware is too old)");
+    expect(value(four, "Caps Word")).toBe("no (turned off in the firmware)");
+  });
+
+  it("counts the keys of the layout options chosen, not every choice's", () => {
+    const keys = simulatedCorne().keys;
+    const model = corne({
+      layoutOptions: { value: 1, labels: ["Split Backspace"] },
+      keys: [
+        ...keys,
+        { ...keys[0], layoutIndex: 0, layoutOption: 0 },
+        { ...keys[0], layoutIndex: 0, layoutOption: 1 },
+        { ...keys[0], layoutIndex: 0, layoutOption: 1 },
+        { ...keys[0], decal: true },
+      ],
+    });
+    expect(value(model, "Keys")).toBe(String(keys.length + 2));
+  });
+
   it("counts encoders by number, not by direction, and lists features it doesn't know by name", () => {
     const geometry = { ...simulatedCorne().keys[0], row: null, col: null };
     const model = corne({

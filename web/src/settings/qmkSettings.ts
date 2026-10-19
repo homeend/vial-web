@@ -79,12 +79,14 @@ export function fieldText(field: SettingField, value: number): string {
 }
 
 /** The changes from one value of a setting to another, field by field: "Tapping Term: 200 → 250", "Swap Caps Lock and
- * Left Control: off → on"; "Setting 30: 1 → 2" for one the definitions don't have */
+ * Left Control: off → on"; "Setting 30: 1 → 2" for one the definitions don't have, or when only bits no field covers
+ * change */
 export function settingChanges(definitions: SettingsDefinitions | null, qsid: number, before: number,
   after: number): string[] {
+  const whole = before === after ? [] : [`Setting ${qsid}: ${before} → ${after}`];
   const fields = definitions?.tabs.flatMap((t) => t.fields).filter((f) => f.qsid === qsid) ?? [];
-  if (fields.length === 0) return [`Setting ${qsid}: ${before} → ${after}`];
-  return fields
+  const changes = fields
     .filter((f) => fieldText(f, before) !== fieldText(f, after))
     .map((f) => `${f.title}: ${fieldText(f, before)} → ${fieldText(f, after)}`);
+  return changes.length > 0 ? changes : whole;
 }

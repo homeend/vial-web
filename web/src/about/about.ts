@@ -1,5 +1,6 @@
 // What the Keyboard page says about the keyboard: what Qt's "About keyboard" dialog says, from the loaded model.
-import type { KeyboardModel } from "../api/types";
+import type { KeyboardModel, KeyGeometry } from "../api/types";
+import { layoutChoices } from "../keyboard/geometry";
 
 /** Vial protocol versions that brought each feature (protocol/constants.py), for why a keyboard lacks one */
 const ADVANCED_MACROS = 2;
@@ -22,16 +23,19 @@ export interface FactGroup {
   facts: Fact[];
 }
 
-/** Features the firmware reports (KeyboardModel.features), by name */
-const FEATURES: [string, string][] = [
-  ["caps_word", "Caps Word"],
-  ["layer_lock", "Layer Lock"],
-  ["repeat_key", "Repeat Key"],
-  ["persistent_default_layer", "Persistent default layer"],
+/** Features the firmware reports (KeyboardModel.features), by name, with the Vial protocol that can report them
+ * (protocol/dynamic.py: the feature bits come with the dynamic entries; Repeat Key with the alt-repeat keys, and the
+ * persistent default layer with protocol 5) */
+const FEATURES: [string, string, number][] = [
+  ["caps_word", "Caps Word", DYNAMIC],
+  ["layer_lock", "Layer Lock", DYNAMIC],
+  ["repeat_key", "Repeat Key", KEY_OVERRIDE],
+  ["persistent_default_layer", "Persistent default layer", KEY_OVERRIDE],
 ];
 
 type Model = Pick<KeyboardModel, "name" | "uid" | "viaProtocol" | "vialProtocol" | "rows" | "cols" | "keys" |
-  "encoders" | "layers" | "macros" | "tapDance" | "combos" | "keyOverrides" | "altRepeatKeys" | "settings" | "features">;
+  "encoders" | "layoutOptions" | "layers" | "macros" | "tapDance" | "combos" | "keyOverrides" | "altRepeatKeys" |
+  "settings" | "features">;
 
 /** Why a keyboard has none of something, as Qt says it: its firmware is too old, or it was left out of it */
 function missing(model: Model, since: number): string {
@@ -47,7 +51,11 @@ function plural(n: number, one: string, many: string): string {
 }
 
 export function aboutFacts(model: Model): FactGroup[] {
-  const encoders = new Set(model.encoders.map((e) => e.encoder)).size;
+  // the keys drawn: no decals, and of a layout option only the choice made (keyboard/geometry.ts placeKeyboard)
+  const choices = layoutChoices(model.layoutOptions);
+  const drawn = (g: KeyGeometry) => !g.decal && (g.layoutIndex === -1 || g.layoutOption === (choices[g.layoutIndex] ?? 0));
+  const keys = model.keys.filter(drawn).length;
+  const encoders = new Set(model.encoders.filter(drawn).map((e) => e.encoder)).size;
   const features = new Set(model.features);
   const known = new Set(FEATURES.map(([id]) => id));
   return [
@@ -58,7 +66,7 @@ export function aboutFacts(model: Model): FactGroup[] {
         { label: "Keyboard ID", value: model.uid, copy: true, code: true },
         { label: "Protocols", value: `VIA ${model.viaProtocol}, Vial ${model.vialProtocol}`, copy: true },
         { label: "Matrix", value: `${plural(model.rows, "row", "rows")} × ${plural(model.cols, "column", "columns")}` },
-        { label: "Keys", value: `${model.keys.length}${encoders > 0 ? `, and ${plural(encoders, "encoder", "encoders")}` : ""}` },
+        { label: "Keys", value: `${keys}${encoders > 0 ? `, and ${plural(encoders, "encoder", "encoders")}` : ""}` },
         { label: "Layers", value: String(model.layers.length) },
       ],
     },
@@ -79,7 +87,7 @@ export function aboutFacts(model: Model): FactGroup[] {
     {
       title: "Features",
       facts: [
-        ...FEATURES.map(([id, label]) => ({ label, value: features.has(id) ? "yes" : missing(model, DYNAMIC) })),
+        ...FEATURES.map(([id, label, since]) => ({ label, value: features.has(id) ? "yes" : missing(model, since) })),
         ...[...features].filter((id) => !known.has(id)).sort().map((id) => ({ label: id, value: "yes" })),
       ],
     },

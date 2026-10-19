@@ -1,13 +1,18 @@
 // What loading a .vil file changes, section by section, in words: from the server's preview (POST
 // /api/layout-file/preview), with the page's own names for keys, layers and settings.
-import type { Described, KeyboardModel, LayoutFilePreview, LayoutOptions, SettingsDefinitions } from "../api/types";
+import type {
+  AltRepeatKey, Described, KeyboardModel, KeyOverride, LayoutFilePreview, LayoutOptions, SettingsDefinitions, TapDance,
+} from "../api/types";
 import { layoutChoices } from "../keyboard/geometry";
 import { memberName } from "../analysis/phrases";
 import type { Names } from "../keyboard/labels";
 import { refId } from "../keyboard/refs";
 import { tapDanceIsSet } from "../behaviours/entries";
 import { isSet as comboIsSet } from "../behaviours/members";
-import { altRepeatIsSet, altRepeatSentence, keyOverrideIsSet, keyOverrideSentence } from "../behaviours/overrides";
+import {
+  ALT_REPEAT_OPTIONS, altRepeatIsSet, altRepeatReady, altRepeatSentence, keyOverrideDetails, keyOverrideIsSet,
+  keyOverrideProblems, keyOverrideSentence,
+} from "../behaviours/overrides";
 import { tapDanceSentence } from "../behaviours/sentences";
 import { settingChanges } from "../settings/qmkSettings";
 
@@ -89,9 +94,42 @@ export function layoutOptionChanges(options: LayoutOptions | null | undefined, b
   return changes;
 }
 
-function section(id: PreviewSection["id"], title: string, items: string[], summary: string | null = null,
-  count = items.length): PreviewSection {
-  return { id, title, count, summary, items: items.slice(0, LISTED), more: Math.max(0, items.length - LISTED) };
+function section(id: PreviewSection["id"], title: string, items: string[], summary: string | null = null): PreviewSection {
+  return { id, title, count: items.length, summary, items: items.slice(0, LISTED), more: Math.max(0, items.length - LISTED) };
+}
+
+/** A tap dance after loading: what it does, and its tapping term when that changes too; "cleared" only for one that
+ * did something */
+function tapDanceText(before: TapDance, after: TapDance, ctx: PreviewContext): string {
+  const term = before.tappingTerm !== after.tappingTerm
+    ? ` Tapping term: ${before.tappingTerm} → ${after.tappingTerm} ms.` : "";
+  if (tapDanceIsSet(after)) return `${tapDanceSentence(after, ctx.names, ctx.model)}${term}`;
+  return tapDanceIsSet(before) ? `cleared${term}` : `does nothing.${term}`;
+}
+
+/** A key override after loading: what it does, what isn't QMK's usual about it and why it may not work, said of it
+ * (not the editor's prompt for a trigger) */
+function keyOverrideText(o: KeyOverride, layerCount: number, names: Names): string {
+  const problems = keyOverrideProblems(o, layerCount);
+  const ready = o.trigger.kind !== "none" || o.triggerMods !== 0;
+  // with no trigger, the problem that it starts on every key press (when it is on) says what it does
+  const everyPress = ready ? -1 : problems.findIndex((p) => p.startsWith("With no trigger"));
+  const opener = ready ? keyOverrideSentence(o, layerCount, names)
+    : everyPress >= 0 ? problems.splice(everyPress, 1)[0] : "No trigger key or modifiers.";
+  const parts = [opener, ...keyOverrideDetails(o).map((d) => `${d}.`), ...problems];
+  if (!o.enabled) parts.push("Switched off.");
+  return parts.join(" ");
+}
+
+/** An alt-repeat key after loading: what it does, said of it (not the editor's prompt for a last key). One with no
+ * last key that isn't a default alt key only answers its alt key, with nothing, when it goes both ways. */
+function altRepeatText(a: AltRepeatKey, names: Names): string {
+  const off = a.enabled ? "" : " Switched off.";
+  if (altRepeatReady(a)) return `${altRepeatSentence(a, names)}${off}`;
+  const back = (a.options & ALT_REPEAT_OPTIONS[1].bit) !== 0 && a.altKeycode.kind !== "none";
+  return back
+    ? `No last key: after ${memberName(a.altKeycode, names)}, Alt Repeat sends nothing.${off}`
+    : `No last key, so it does nothing.${off}`;
 }
 
 function layerCounts(layers: number[], names: Names): string {
@@ -116,19 +154,17 @@ export function previewSections(preview: LayoutFilePreview, ctx: PreviewContext)
     sections.push(section("layoutOptions", "Layout options", items));
   }
   sections.push(
-    section("tapDance", "Tap dances", preview.tapDance.map(({ after }) =>
-      `Tap dance ${after.index}: ${tapDanceIsSet(after) ? tapDanceSentence(after, names, model) : "cleared"}`)),
+    section("tapDance", "Tap dances", preview.tapDance.map(({ before, after }) =>
+      `Tap dance ${after.index}: ${tapDanceText(before, after, ctx)}`)),
     section("combos", "Combos", preview.combos.map(({ after }) => {
       if (!comboIsSet(after)) return `Combo ${after.index}: cleared`;
       const keys = after.keys.filter((k) => k.kind !== "none").map((k) => shortAction(k, names)).join(" + ");
       return `Combo ${after.index}: ${keys || "no keys"} → ${shortAction(after.output, names)}`;
     })),
     section("keyOverrides", "Key overrides", preview.keyOverrides.map(({ after }) =>
-      `Key override ${after.index}: ${keyOverrideIsSet(after)
-        ? `${keyOverrideSentence(after, layerCount, names)}${after.enabled ? "" : " Switched off."}` : "cleared"}`)),
+      `Key override ${after.index}: ${keyOverrideIsSet(after) ? keyOverrideText(after, layerCount, names) : "cleared"}`)),
     section("altRepeatKeys", "Alt-repeat keys", preview.altRepeatKeys.map(({ after }) =>
-      `Alt-repeat key ${after.index}: ${altRepeatIsSet(after)
-        ? `${altRepeatSentence(after, names)}${after.enabled ? "" : " Switched off."}` : "cleared"}`)),
+      `Alt-repeat key ${after.index}: ${altRepeatIsSet(after) ? altRepeatText(after, names) : "cleared"}`)),
     section("macros", "Macros", preview.macros.map(({ after }) => {
       const steps = after.actions.length;
       return `Macro ${after.index}: ${steps === 0 ? "cleared" : `${after.name} (${steps} ${steps === 1 ? "step" : "steps"})`}`;
