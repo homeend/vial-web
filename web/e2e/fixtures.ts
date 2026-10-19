@@ -290,3 +290,46 @@ export async function unlockAgain(page: Page): Promise<void> {
   await expect.poll(() => unlockState(page), { timeout: 20_000 }).toBe("unlocked");
   await simulatorUnlock(page, { keysHeld: false });
 }
+
+/** A key override as the server takes it */
+export async function keyOverrideAt(page: Page, index: number) {
+  const o = (await keyboardModel(page)).keyOverrides[index];
+  return { trigger: o.trigger.code, replacement: o.replacement.code, layers: o.layers, triggerMods: o.triggerMods,
+    negativeModMask: o.negativeModMask, suppressedMods: o.suppressedMods, options: o.options };
+}
+
+/** Sets a key override through the API */
+export async function setKeyOverride(page: Page, index: number, body: Awaited<ReturnType<typeof keyOverrideAt>>) {
+  await put(page, `/api/key-overrides/${index}`, body);
+}
+
+/** An alt-repeat key as the server takes it */
+export async function altRepeatAt(page: Page, index: number) {
+  const a = (await keyboardModel(page)).altRepeatKeys[index];
+  return { keycode: a.keycode.code, altKeycode: a.altKeycode.code, allowedMods: a.allowedMods, options: a.options };
+}
+
+/** Sets an alt-repeat key through the API */
+export async function setAltRepeat(page: Page, index: number, body: Awaited<ReturnType<typeof altRepeatAt>>) {
+  await put(page, `/api/alt-repeat/${index}`, body);
+}
+
+/** The keyboard's QMK settings, by qsid */
+export async function settingsOf(page: Page): Promise<Record<number, number>> {
+  const settings: { qsid: number; value: number }[] = (await keyboardModel(page)).settings;
+  return Object.fromEntries(settings.map((s) => [s.qsid, s.value]));
+}
+
+/** Puts QMK settings back through the API, those that differ */
+export async function setSettings(page: Page, settings: Record<number, number>): Promise<void> {
+  const now = await settingsOf(page);
+  for (const [qsid, value] of Object.entries(settings)) {
+    if (now[Number(qsid)] !== value) await put(page, `/api/qmk-settings/${qsid}`, { value });
+  }
+}
+
+/** Shows a section from the navigation and waits for its heading */
+export async function openSection(page: Page, name: string): Promise<void> {
+  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: new RegExp(`^${name}`) }).click();
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+}
