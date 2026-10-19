@@ -151,6 +151,9 @@ def test_keycode_catalogue_before_any_keyboard_was_connected(tmp_path, monkeypat
         response = c.get("/api/keycodes")
         assert response.status_code == 200
         assert any(k["code"] == "KC_A" for k in response.json()[0]["keycodes"])
+        # protocol 5's tables give the keycodes it doesn't have placeholders above 16 bits: they aren't offered
+        offered = {k["code"] for group in response.json() for k in group["keycodes"]}
+        assert "QK_REPEAT_KEY" not in offered and "MAGIC_TOGGLE_GUI" not in offered
         parsed = c.post("/api/keycodes/parse", json={"expression": "KC_A"})
         assert parsed.status_code == 200 and parsed.json()["code"] == "KC_A"
 

@@ -162,15 +162,21 @@ def uid_of(kb):
 
 
 def catalogue_keycode(keycode):
+    """ The keycode as the picker offers it; None when the keyboard's protocol has no such keycode: protocol 5's
+    tables (also used before any keyboard is read) give those placeholders above 16 bits, e.g. QK_REPEAT_KEY """
     described = describe(keycode.qmk_id)
+    if not 0 <= described["value"] <= 0xFFFF:
+        return None
     return schemas.CatalogueKeycode(**described, aliases=[a for a in keycode.alias if a != described["code"]])
 
 
 def keycode_catalogue():
-    """ Keycodes the picker offers, grouped; hidden (unsupported) keycodes are left out """
+    """ Keycodes the picker offers, grouped; hidden (unsupported) keycodes are left out, as are those the keyboard's
+    protocol doesn't have (see catalogue_keycode) """
     out = []
     for name, keycodes in KEYCODE_CATEGORIES:
         items = [catalogue_keycode(kc) for kc in keycodes if not kc.hidden and "(kc)" not in kc.qmk_id]
+        items = [item for item in items if item is not None]
         masks = [kc.qmk_id for kc in keycodes if not kc.hidden and "(kc)" in kc.qmk_id]
         if items or masks:
             out.append({"name": name, "keycodes": items, "templates": masks})
