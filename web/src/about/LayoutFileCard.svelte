@@ -28,7 +28,7 @@
   /** the file chosen, and what loading it would change */
   let chosen = $state<{ name: string; text: string; preview: LayoutFilePreview } | null>(null);
   /** reading or checking a file, or saving one */
-  let working = $state(false);
+  let working = $state<"reading" | "saving" | null>(null);
   /** why the file chosen can't be loaded */
   let problem = $state<string | null>(null);
   /** what was done last: "Saved Simulated Corne.vil." */
@@ -39,22 +39,26 @@
     model, names: namesOf(model), positions: analysis.positions, definitions,
   });
 
-  // another keyboard: a file checked against the one before isn't checked against it
+  // another keyboard: a file checked against the one before isn't checked against it. The focus, if it was in the
+  // preview, goes back to the Load button.
   let shownUid = untrack(() => model.uid);
   $effect.pre(() => {
     const uid = model.uid;
     untrack(() => {
       if (uid === shownUid) return;
       shownUid = uid;
+      const box = document.getElementById("layout-preview-title")?.closest('[role="group"]');
+      const hadFocus = box?.contains(document.activeElement) ?? false;
       chosen = null;
       problem = null;
       done = "";
+      if (hadFocus) void tick().then(() => document.getElementById("load-layout")?.focus());
     });
   });
 
   async function saveFile() {
     if (working) return;
-    working = true;
+    working = "saving";
     done = "";
     try {
       const { blob, name } = await api.layoutFile();
@@ -70,15 +74,17 @@
     } catch (error) {
       toasts.error(`Saving the layout failed: ${causeMessage(error)}`);
     } finally {
-      working = false;
+      working = null;
     }
   }
 
   async function check(file: File) {
-    working = true;
+    working = "reading";
     problem = null;
     done = "";
     chosen = null;
+    // the keyboard the file is checked against: another one plugged in meanwhile makes the answer stale
+    const uid = model.uid;
     try {
       if (file.size > MAX_BYTES) {
         problem = `${file.name} can't be loaded: it is too large for a layout file (at most ${MAX_BYTES / 1024} KiB).`;
@@ -88,11 +94,11 @@
       // the setting names, for the changes to them (the preview says "Setting 7" without them)
       const [preview] = await Promise.all([api.previewLayoutFile(text),
         settingDefinitions().then((d) => (definitions = d), () => undefined)]);
-      chosen = { name: file.name, text, preview };
+      if (model.uid === uid) chosen = { name: file.name, text, preview };
     } catch (error) {
-      problem = `${file.name} can't be loaded: ${causeMessage(error)}`;
+      if (model.uid === uid) problem = `${file.name} can't be loaded: ${causeMessage(error)}`;
     } finally {
-      working = false;
+      working = null;
     }
   }
 
@@ -100,11 +106,16 @@
     if (!chosen || busy) return;
     const { name, preview } = chosen;
     const total = changeTotal(previewSections(preview, context));
+    problem = null;
     if (await keyboard.loadLayoutFile(chosen.text)) {
       chosen = null;
       done = `Loaded ${name}: ${total} ${total === 1 ? "change" : "changes"} written to the keyboard.`;
       await tick();
       document.getElementById("load-layout")?.focus();
+    } else if (chosen?.name === name) {
+      // the store said why in a message of its own (or the keyboard can't be changed just now)
+      problem = `Nothing was loaded from ${name}${keyboard.canEdit ? ": the message that came up says why." :
+        ": the keyboard can't be changed just now."}`;
     }
   }
 
@@ -123,10 +134,10 @@
     first.
   </p>
   <div class="buttons">
-    <Button id="save-layout" aria-disabled={working || undefined} onclick={() => void saveFile()}>Save layout</Button>
+    <Button id="save-layout" aria-disabled={working !== null || undefined} onclick={() => void saveFile()}>Save layout</Button>
     <!-- never disabled: it takes the focus back after a load, while the keyboard is read again (and can't be edited) -->
-    <Button id="load-layout" aria-disabled={working || busy || !canEdit || undefined} onclick={() => {
-      if (!working && !busy && canEdit) fileInput?.click();
+    <Button id="load-layout" aria-disabled={working !== null || busy || !canEdit || undefined} onclick={() => {
+      if (working === null && !busy && canEdit) fileInput?.click();
     }}>Load layout…</Button>
     <input
       bind:this={fileInput}
@@ -142,7 +153,9 @@
       }}
     />
   </div>
-  <p class="status" role="status">{working && !chosen ? "Reading the file…" : done}</p>
+  <p class="status" role="status">
+    {working === "saving" ? "Saving the layout…" : working === "reading" && !chosen ? "Reading the file…" : done}
+  </p>
   {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
   {#if chosen}
     <LayoutPreview name={chosen.name} preview={chosen.preview} {context} unlocked={keyboard.unlock.state.state === "unlocked"}

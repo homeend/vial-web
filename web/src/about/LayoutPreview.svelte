@@ -73,8 +73,10 @@
       if (!busy) oncancel();
     }}>{total === 0 ? "Close" : "Cancel"}</Button>
     {#if total > 0}
-      <Button variant="primary" disabled={!canLoad} aria-disabled={busy || undefined} onclick={() => {
-        if (!busy) onload();
+      <!-- never disabled: it keeps the focus while the keyboard can't take it (read again after a change made
+           elsewhere, say) -->
+      <Button variant="primary" aria-disabled={busy || !canLoad || undefined} onclick={() => {
+        if (!busy && canLoad) onload();
       }}>Load it</Button>
     {/if}
   </div>
@@ -141,7 +143,8 @@
     padding: 0 7px;
     border-radius: 999px;
     background: var(--accent-weak);
-    color: var(--accent);
+    /* --accent alone is too light on --accent-weak in the light theme */
+    color: color-mix(in srgb, var(--accent) 80%, var(--text));
     font-size: 11.5px;
     font-variant-numeric: tabular-nums;
   }
