@@ -35,19 +35,52 @@ function detailOf(body: unknown): string | undefined {
 export async function request<P extends keyof paths, M extends Method>(
   method: M,
   path: P,
-  options: { params?: PathParams<Operation<P, M>>; body?: Body<Operation<P, M>> } = {},
+  options: {
+    params?: PathParams<Operation<P, M>>;
+    body?: Body<Operation<P, M>>;
+    /** a JSON document sent as it is, for routes that read the request themselves (a .vil file) */
+    raw?: string;
+  } = {},
 ): Promise<Reply<Operation<P, M>>> {
-  let response: Response;
+  const body = options.raw ?? (options.body === undefined ? undefined : JSON.stringify(options.body));
+  const response = await send(url(path, options.params as Record<string, string | number> | undefined), {
+    method: method.toUpperCase(),
+    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    body,
+  });
+  const reply: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new ApiError(response.status, detailOf(reply));
+  return reply as Reply<Operation<P, M>>;
+}
+
+async function send(target: string, init: RequestInit): Promise<Response> {
   try {
-    response = await fetch(url(path, options.params as Record<string, string | number> | undefined), {
-      method: method.toUpperCase(),
-      headers: options.body === undefined ? {} : { "Content-Type": "application/json" },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
+    return await fetch(target, init);
   } catch {
     throw new ApiError(0);
   }
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(response.status, detailOf(body));
-  return body as Reply<Operation<P, M>>;
+}
+
+/** The file name a Content-Disposition header gives: the UTF-8 one (filename*) if there is one; null if none */
+export function attachmentName(disposition: string | null): string | null {
+  if (!disposition) return null;
+  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(disposition);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1].trim());
+    } catch {
+      // not percent-encoded right: the plain name, if any
+    }
+  }
+  return /filename\s*=\s*"([^"]*)"/i.exec(disposition)?.[1] ?? /filename\s*=\s*([^;\s]+)/i.exec(disposition)?.[1] ?? null;
+}
+
+/** A file the server sends to save (GET), with the name it gives it, or `fallback` */
+export async function download(path: keyof paths, fallback: string): Promise<{ blob: Blob; name: string }> {
+  const response = await send(url(path, undefined), { method: "GET" });
+  if (!response.ok) {
+    const reply: unknown = await response.json().catch(() => null);
+    throw new ApiError(response.status, detailOf(reply));
+  }
+  return { blob: await response.blob(), name: attachmentName(response.headers.get("Content-Disposition")) ?? fallback };
 }

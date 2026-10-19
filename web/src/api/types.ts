@@ -26,6 +26,15 @@ export type Macro = Schemas["Macro"];
 export type Macros = Schemas["Macros"];
 export type MacroAction = Schemas["MacroAction"];
 export type MacroActionIn = Schemas["MacroActionIn"];
+export type KeyOverride = Schemas["KeyOverride"];
+export type KeyOverrideIn = Schemas["KeyOverrideIn"];
+export type AltRepeatKey = Schemas["AltRepeatKey"];
+export type AltRepeatKeyIn = Schemas["AltRepeatKeyIn"];
+export type QmkSetting = Schemas["QmkSetting"];
+export type SettingField = Schemas["SettingField"];
+export type SettingsTab = Schemas["SettingsTab"];
+export type SettingsDefinitions = Schemas["SettingsDefinitions"];
+export type LayoutFilePreview = Schemas["LayoutFilePreview"];
 export type UnlockState = Schemas["UnlockState"];
 export type MatrixPosition = Schemas["MatrixPosition"];
 /** what /api/events sends */

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_LANGUAGE, request, setRequestLanguage } from "./client";
+import { attachmentName, DEFAULT_LANGUAGE, download, request, setRequestLanguage } from "./client";
 import { ApiError } from "./errors";
 
 function reply(status: number, body: unknown): Response {
@@ -94,5 +94,41 @@ describe("request", () => {
     const error = await failure(request("get", "/api/keyboard"));
     expect(error.status).toBe(0);
     expect(error.message).toBe("Can't reach Vial. Is it still running?");
+  });
+});
+
+describe("raw bodies and downloads", () => {
+  it("sends a JSON document as it is", async () => {
+    fetchMock.mockResolvedValue(reply(200, { keys: [] }));
+    await request("post", "/api/layout-file/preview", { raw: '{"layout": []}' });
+    const { url, init } = sent();
+    expect(url).toBe("/api/layout-file/preview");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(init.body).toBe('{"layout": []}');
+  });
+
+  it("downloads a file with the name the server gives it", async () => {
+    fetchMock.mockResolvedValue(new Response("{}", { status: 200, headers: {
+      "Content-Disposition": "attachment; filename=\"Simulated Corne.vil\"; filename*=UTF-8''Simulated%20Corne.vil",
+    } }));
+    const file = await download("/api/layout-file", "keyboard.vil");
+    expect(file.name).toBe("Simulated Corne.vil");
+    expect(await file.blob.text()).toBe("{}");
+  });
+
+  it("fails a download the server refuses, with its reason", async () => {
+    fetchMock.mockResolvedValue(reply(503, { detail: "no keyboard" }));
+    const error = await failure(download("/api/layout-file", "keyboard.vil"));
+    expect(error.status).toBe(503);
+  });
+
+  it("reads the file name from a Content-Disposition header", () => {
+    expect(attachmentName("attachment; filename*=UTF-8''Za%C5%BC%C3%B3%C5%82%C4%87.vil")).toBe("Zażółć.vil");
+    expect(attachmentName('attachment; filename="a b.vil"')).toBe("a b.vil");
+    expect(attachmentName("attachment; filename=plain.vil")).toBe("plain.vil");
+    expect(attachmentName("attachment; filename*=UTF-8''%E0%A4%A; filename=\"fallback.vil\"")).toBe("fallback.vil");
+    expect(attachmentName(null)).toBeNull();
+    expect(attachmentName("attachment")).toBeNull();
   });
 });

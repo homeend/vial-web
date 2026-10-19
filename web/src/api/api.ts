@@ -1,6 +1,6 @@
 // The server's routes the UI uses.
-import { request } from "./client";
-import type { ComboIn, MacroActionIn, Named, TapDanceIn } from "./types";
+import { download, request } from "./client";
+import type { AltRepeatKeyIn, ComboIn, KeyOverrideIn, MacroActionIn, Named, TapDanceIn } from "./types";
 
 export const api = {
   session: () => request("get", "/api/session"),
@@ -15,8 +15,22 @@ export const api = {
   setTapDance: (index: number, body: TapDanceIn) =>
     request("put", "/api/tap-dance/{index}", { params: { index }, body }),
   setCombo: (index: number, body: ComboIn) => request("put", "/api/combos/{index}", { params: { index }, body }),
+  setKeyOverride: (index: number, body: KeyOverrideIn) =>
+    request("put", "/api/key-overrides/{index}", { params: { index }, body }),
+  setAltRepeatKey: (index: number, body: AltRepeatKeyIn) =>
+    request("put", "/api/alt-repeat/{index}", { params: { index }, body }),
   /** every macro: they share the keyboard's macro memory */
   setMacros: (items: MacroActionIn[][]) => request("put", "/api/macros", { body: { items } }),
+  settingDefinitions: () => request("get", "/api/qmk-settings/definitions"),
+  setSetting: (qsid: number, value: number) =>
+    request("put", "/api/qmk-settings/{qsid}", { params: { qsid }, body: { value } }),
+  resetSettings: () => request("post", "/api/qmk-settings/reset"),
+  /** the keyboard's layout as a .vil file, named after the keyboard */
+  layoutFile: () => download("/api/layout-file", "keyboard.vil"),
+  /** what loading a .vil file would change; nothing is written */
+  previewLayoutFile: (text: string) => request("post", "/api/layout-file/preview", { raw: text }),
+  /** writes a .vil file to the keyboard: the whole file, or nothing when it doesn't fit */
+  loadLayoutFile: (text: string) => request("post", "/api/layout-file", { raw: text }),
   setName: (kind: Named["kind"], index: number, name: string) =>
     request("put", "/api/names/{kind}/{index}", { params: { kind, index }, body: { name } }),
   unlockStart: () => request("post", "/api/unlock/start"),
