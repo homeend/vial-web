@@ -7,7 +7,8 @@ import time
 from collections import namedtuple
 from dataclasses import dataclass
 
-from protocol.constants import CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_KEYBOARD_ID, VIAL_PROTOCOL_MATRIX_TESTER
+from protocol.constants import CMD_VIA_BOOTLOADER_JUMP, CMD_VIA_VIAL_PREFIX, CMD_VIAL_GET_KEYBOARD_ID, \
+    VIA_ID_UNHANDLED, VIAL_PROTOCOL_MATRIX_TESTER
 from protocol.keyboard_comm import Keyboard
 from simulator.device import SimulatedHidDevice
 
@@ -533,7 +534,7 @@ class DeviceManager:
                 self.pending_events.append("unlock")
             return self.unlock_state()
 
-    # ---------- matrix tester ----------
+    # ---------- matrix tester, bootloader ----------
 
     def poll_matrix(self):
         """ Read which keys are held: one request, under the device lock. The firmware hides them (a would-be
@@ -549,6 +550,23 @@ class DeviceManager:
                 return MatrixReading("locked")
             data = self._io(keyboard, lambda kb: kb.matrix_poll())
             return MatrixReading("testing", tuple(matrix_pressed(data, keyboard.rows, keyboard.cols)))
+
+    def reboot_to_bootloader(self):
+        """ Restart the keyboard into its bootloader, as Qt's Security > Reboot to bootloader does: the keyboard must
+        be unlocked (KeyboardLocked otherwise), and then jumps (via.c id_bootloader_jump), leaving Vial: it is closed,
+        with a "disconnected" event. A firmware built without the jump (VIAL_INSECURE) answers that it doesn't know the
+        command: KeyboardRefused, and the keyboard stays. """
+        with self.lock:
+            def jump(kb):
+                require_unlocked(kb)
+                # one try: the firmware answers, waits 100 ms and jumps; sent again, it would reach the bootloader
+                return kb.usb_send(kb.dev, struct.pack("B", CMD_VIA_BOOTLOADER_JUMP))
+            reply = self.run(jump)
+            if reply[0] == VIA_ID_UNHANDLED:
+                raise KeyboardRefused("this keyboard's firmware can't restart into its bootloader from Vial (it is "
+                                      "built without that)")
+            log.info("%s restarted into its bootloader", self.title)
+            self._close_reporting()
 
     # ---------- hot-plug ----------
 

@@ -662,6 +662,16 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         await broadcast_events(await asyncio.to_thread(manager.take_events))
         return unlock_model(state)
 
+    @app.post("/api/bootloader", response_model=schemas.Session)
+    async def reboot_to_bootloader():
+        """ Restart the keyboard into its bootloader (to flash it): it stops working as a keyboard and leaves Vial until
+        it is flashed or plugged in again. Refused (423) while it is locked. Returns the session, without it. """
+        try:
+            await asyncio.to_thread(manager.reboot_to_bootloader)
+        finally:
+            await broadcast_events(await asyncio.to_thread(manager.take_events))
+        return session()
+
     @app.websocket("/api/events")
     async def events(ws: WebSocket):
         if ws.headers.get("host") not in allowed_hosts or \

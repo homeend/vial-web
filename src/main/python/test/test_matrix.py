@@ -1,5 +1,7 @@
-""" The matrix tester (the keys held, read while a tab watches), against the simulated keyboard """
+""" The matrix tester (the keys held, read while a tab watches) and the reboot to the bootloader, against the simulated
+keyboard """
 import asyncio
+import threading
 import time
 
 import pytest
@@ -9,8 +11,8 @@ import transport
 from protocol.constants import CMD_VIA_GET_KEYBOARD_VALUE, VIA_SWITCH_MATRIX_STATE
 from protocol.unlock_hook import set_unlock_handler
 from server.app import MatrixWatcher, create_app
-from server.device import DeviceManager, FakeBackend, MatrixReading, has_matrix_tester, matrix_pressed, \
-    require_unlocked
+from server.device import DeviceManager, FakeBackend, KeyboardLocked, KeyboardRefused, MatrixReading, \
+    has_matrix_tester, matrix_pressed, require_unlocked
 from server.names import NamesStore
 from simulator.corne import UNLOCK_KEYS, make_corne
 from simulator.virtual_keyboard import VirtualKeyboard
@@ -341,3 +343,89 @@ def test_the_simulator_hook_presses_and_lets_go(served):
     assert manager.backend.virtual.pressed == {(2, 3)}
     assert press(client, 2, 3, False) == {"pressed": []}
     assert client.put("/api/simulator/matrix", json={"row": 256, "col": 0, "pressed": True}).status_code == 422
+
+
+# ---------- reboot to the bootloader ----------
+
+def test_rebooting_needs_an_unlocked_keyboard(tmp_path):
+    manager = connected(locked_corne)
+    with pytest.raises(KeyboardLocked):
+        manager.reboot_to_bootloader()
+    vk = manager.backend.virtual
+    assert vk.connected and not vk.bootloader_requested
+    assert manager.connected
+
+
+def test_rebooting_drops_the_keyboard():
+    manager = connected()
+    manager.reboot_to_bootloader()
+    assert manager.backend.virtual.bootloader_requested
+    assert not manager.connected
+    assert manager.take_events() == ["disconnected"]
+    # it isn't found again: in its bootloader it is no Vial keyboard
+    assert manager.check() == []
+
+
+def test_firmware_without_the_jump_says_so_and_stays():
+    manager = connected(lambda: VirtualKeyboard(make_corne().definition, bootloader_jump=False))
+    with pytest.raises(KeyboardRefused, match="can't restart into its bootloader"):
+        manager.reboot_to_bootloader()
+    assert manager.connected
+    assert manager.run(lambda kb: kb.get_unlock_status()) == 1
+
+
+def test_the_bootloader_route(served):
+    client, manager = served
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        assert ws.receive_json() == {"type": "connected"}
+        session = client.post("/api/bootloader").json()
+        assert (session["status"], session["device"], session["error"]) == ("disconnected", None, None)
+        assert ws.receive_json() == {"type": "disconnected"}
+    assert manager.backend.virtual.bootloader_requested
+    assert client.get("/api/keyboard").status_code == 503
+
+
+def test_the_bootloader_route_refuses_a_locked_keyboard(tmp_path):
+    manager = connected(locked_corne)
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN)
+        response = client.post("/api/bootloader")
+        assert response.status_code == 423
+        assert response.json()["detail"] == "the keyboard is locked: unlock it to make this change"
+        assert client.get("/api/session").json()["status"] == "connected"
+        assert not manager.backend.virtual.bootloader_requested
+
+
+def test_the_bootloader_route_with_firmware_without_the_jump(tmp_path):
+    manager = connected(lambda: VirtualKeyboard(make_corne().definition, bootloader_jump=False))
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN)
+        response = client.post("/api/bootloader")
+        assert response.status_code == 422
+        assert "built without that" in response.json()["detail"]
+        assert client.get("/api/session").json()["status"] == "connected"
+
+
+def test_waiting_reboot_requests_wait_for_the_device_lock():
+    """ A reboot sent while another request holds the keyboard waits for it, then jumps """
+    manager = connected()
+    release = threading.Event()
+    holding = threading.Event()
+
+    def hold(kb):
+        holding.set()
+        release.wait(5)
+    worker = threading.Thread(target=manager.run, args=(hold,))
+    worker.start()
+    assert holding.wait(5)
+    done = []
+    rebooter = threading.Thread(target=lambda: done.append(manager.reboot_to_bootloader()))
+    rebooter.start()
+    pause(0.05)
+    assert not done and not manager.backend.virtual.bootloader_requested
+    release.set()
+    worker.join(5)
+    rebooter.join(5)
+    assert manager.backend.virtual.bootloader_requested
