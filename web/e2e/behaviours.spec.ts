@@ -370,7 +370,7 @@ test("375 px wide (a phone): the list pages don't scroll sideways, nor do the ed
 
 test.describe("screenshots of the behaviour pages", () => {
   for (const [width, height] of [[800, 900], [1280, 800], [2560, 1440], [1920, 950]]) {
-    test(`${width} x ${height}: no sideways scroll, at most 860 px wide, nothing off the bottom`, async ({ app }) => {
+    test(`${width} x ${height}: no sideways scroll, at most 860 px wide, the keycode picker in the window`, async ({ app }) => {
       await app.setViewportSize({ width, height });
       for (const [name, id] of [["Tap dance", "tap-dance"], ["Combos", "combos"], ["Macros", "macros"]] as const) {
         await openSection(app, name);
