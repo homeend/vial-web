@@ -161,8 +161,8 @@ def test_another_keyboards_file_is_refused_and_nothing_is_written(client, virtua
 def test_a_uid_that_is_not_a_keyboard_id_is_refused(client, virtual, vil, uid):
     vil["uid"] = uid
     before = snapshot(virtual)
-    response = upload(client, vil)
-    assert response.status_code == 422 and "uid must be a number" in response.json()["detail"]
+    for response in (preview(client, vil), upload(client, vil)):
+        assert response.status_code == 422 and "uid must be a number" in response.json()["detail"]
     assert snapshot(virtual) == before
 
 
@@ -172,6 +172,16 @@ def test_a_file_that_does_not_say_its_keyboard_is_taken(client, virtual, vil):
     assert preview(client, vil).json()["uid"] is None
     assert upload(client, vil).status_code == 200
     assert virtual.keymap[0][0][0] == encode("KC_Z")
+
+
+def test_layout_options_are_not_listed_for_a_keyboard_without_any(client, virtual, vil):
+    del vil["uid"]
+    vil["layout_options"] = 3
+    before = snapshot(virtual)
+    assert preview(client, vil).json()["layoutOptions"] is None
+    assert upload(client, vil).status_code == 200
+    assert snapshot(virtual) == before
+    assert virtual.writes == []
 
 
 # ---------- a locked keyboard ----------

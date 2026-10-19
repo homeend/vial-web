@@ -446,6 +446,8 @@ def load_layout_file(manager, path):
     """ Write a .vil file to the keyboard, checked as a whole first like an upload through the API: nothing is written
     if it doesn't fit the keyboard. Returns None, or why it failed. """
     from server import edits
+    if not manager.backend.fake:
+        raise RuntimeError("a layout file for any keyboard is loaded into the simulator only")  # any_keyboard below
     try:
         with open(path, "rb") as inf:
             data = inf.read()

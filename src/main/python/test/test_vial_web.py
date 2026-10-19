@@ -601,6 +601,16 @@ def test_another_keyboards_layout_file_is_loaded_into_the_simulator(tmp_path, co
     assert simulated[0].keymap[0][0][0] == encode("KC_Q")
 
 
+def test_a_layout_file_is_never_loaded_into_a_real_keyboard(tmp_path):
+    """ any keyboard's file is for the simulator only: a real backend refuses before reading or running anything """
+    class Real:
+        backend = HidBackend()
+        def run(self, fn):
+            raise AssertionError("touched the keyboard")
+    with pytest.raises(RuntimeError, match="simulator only"):
+        vial_web.load_layout_file(Real(), str(tmp_path / "any.vil"))
+
+
 def test_layout_file_is_checked_before_anything_is_written(tmp_path, corne_keyboard, simulated, capsys):
     data = json.loads(corne_keyboard[1].save_layout())
     data["layout"][0][0][0] = "KC_Q"

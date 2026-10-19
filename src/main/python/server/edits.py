@@ -551,7 +551,7 @@ def preview_layout_file(kb, data, names):
                   for (layer, index, direction), keycode in sorted(changes["encoders"].items())
                   if kb.encoder_layout[(layer, index, direction)] != keycode],
         layoutOptions=schemas.LayoutOptionsChange(before=kb.layout_options, after=options)
-        if options != -1 and options != kb.layout_options else None,
+        if options != -1 and kb.layout_options != -1 and options != kb.layout_options else None,
         tapDance=[schemas.TapDanceChange(before=model.tap_dance(i, kb.tap_dance_entries[i], names),
                                          after=model.tap_dance(i, e, names))
                   for i, e in changes["tap_dance"] if kb.tap_dance_entries[i] != e],
