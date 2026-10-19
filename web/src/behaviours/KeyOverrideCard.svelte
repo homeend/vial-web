@@ -36,9 +36,10 @@
   /** a new one: nothing of it is on the keyboard yet */
   const isNew = $derived(!keyOverrideIsSet(override));
   const mods = $derived(modNames(shown.triggerMods));
-  /** why it can't work: not for an empty one not being edited, nor when the sentence says it has no trigger yet */
+  /** why it can't work: not for an empty one not being edited, nor while a draft has no trigger yet (its sentence
+   * says so, and it can't be saved); one on the keyboard with no trigger is told that it starts on every key press */
   const showProblems = $derived(problems.length > 0 && (!isNew || draft !== null) &&
-    !(shown.trigger.kind === "none" && shown.triggerMods === 0));
+    !(draft !== null && shown.trigger.kind === "none" && shown.triggerMods === 0));
 
   function face(d: Described) {
     const f = keyFace(d, names);
