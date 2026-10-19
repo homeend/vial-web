@@ -1,11 +1,11 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { analyse, comboMarksOf } from "../analysis/analysis";
+  import { comboMarksOf, type Analysis } from "../analysis/analysis";
   import { combosUsing } from "../analysis/combos";
   import { findOnKeymap, foundKeys, queryOf, type Place } from "../analysis/find";
   import { comboMarkLabel, foundLabel, type PhraseContext } from "../analysis/phrases";
   import type { KeyboardModel } from "../api/types";
-  import { placeKeyboard } from "../keyboard/geometry";
+  import type { Placement } from "../keyboard/geometry";
   import Keyboard from "../keyboard/Keyboard.svelte";
   import { EMPTY_FACE, keyFace, keyLabel, layerLabel, namesOf } from "../keyboard/labels";
   import { actionAt, refId, whereIs, type KeyRef } from "../keyboard/refs";
@@ -24,9 +24,12 @@
 
   interface Props {
     model: KeyboardModel;
+    placement: Placement;
+    /** layers reached, combo keys, usage: worked out again from the model after every edit */
+    analysis: Analysis;
   }
 
-  let { model }: Props = $props();
+  let { model, placement, analysis }: Props = $props();
 
   let view = $state<KeymapView>(readView(browserStorage()));
   let reachOpen = $state(readReachOpen(browserStorage()));
@@ -40,9 +43,6 @@
   });
 
   const names = $derived(namesOf(model));
-  const placement = $derived(placeKeyboard(model));
-  // layers reached, combo keys, usage: worked out again from the model after every edit
-  const analysis = $derived(analyse(model, placement));
   const phrases = $derived<PhraseContext>({ model, names, positions: analysis.positions });
   // what the find box looks for, everywhere the keymap produces it (in the keyboard language's legends)
   const found = $derived(

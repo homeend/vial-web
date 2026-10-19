@@ -1,16 +1,28 @@
 <script lang="ts">
+  import { analyse } from "./analysis/analysis";
+  import { placeKeyboard } from "./keyboard/geometry";
   import KeymapPage from "./keymap/KeymapPage.svelte";
   import { keyboard } from "./lib/keyboard.svelte";
+  import type { SectionId } from "./lib/route";
+  import { router } from "./lib/router.svelte";
   import Banner from "./shell/Banner.svelte";
   import Nav, { type Section } from "./shell/Nav.svelte";
   import Toasts from "./shell/Toasts.svelte";
   import TopBar from "./shell/TopBar.svelte";
 
   $effect(() => keyboard.start());
+  $effect(() => router.start());
 
-  // only the sections that are built; later phases add theirs
+  // worked out once for every page, again after every edit
+  const placement = $derived(keyboard.model ? placeKeyboard(keyboard.model) : null);
+  const analysis = $derived(keyboard.model && placement ? analyse(keyboard.model, placement) : null);
+
+  // only the sections that are built; later tasks add theirs
   const sections = $derived<Section[]>([{ id: "keymap", label: "Keymap", count: keyboard.model?.layers.length }]);
-  let section = $state("keymap");
+  // a section this keyboard doesn't have shows the keymap
+  const section = $derived<SectionId>(
+    sections.some((s) => s.id === router.route.section) ? router.route.section : "keymap",
+  );
 
   const status = $derived(
     keyboard.link === "closed"
@@ -35,7 +47,7 @@
 />
 
 <div class="shell">
-  <Nav {sections} active={section} onselect={(id) => (section = id)} />
+  <Nav {sections} active={section} onselect={(id) => router.go(id as SectionId)} />
 
   <main class="content">
     {#if status === "offline"}
@@ -57,9 +69,9 @@
       />
     {/if}
 
-    {#if keyboard.model}
+    {#if keyboard.model && placement && analysis}
       <div class="page" class:blocked inert={blocked}>
-        <KeymapPage model={keyboard.model} />
+        <KeymapPage model={keyboard.model} {placement} {analysis} />
       </div>
     {:else if status === "disconnected"}
       <div class="empty">
