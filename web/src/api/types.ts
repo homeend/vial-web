@@ -37,5 +37,11 @@ export type SettingsDefinitions = Schemas["SettingsDefinitions"];
 export type LayoutFilePreview = Schemas["LayoutFilePreview"];
 export type UnlockState = Schemas["UnlockState"];
 export type MatrixPosition = Schemas["MatrixPosition"];
+export type MatrixState = Schemas["MatrixState"];
+export type Lighting = Schemas["Lighting"];
+export type LightingIn = Schemas["LightingIn"];
+export type VialRgb = Schemas["VialRgb"];
+export type RgbLight = Schemas["RgbLight"];
+export type Backlight = Schemas["Backlight"];
 /** what /api/events sends */
 export type ServerEvent = Schemas["Event"];

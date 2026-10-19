@@ -6,8 +6,8 @@ import { DEFAULT_LANGUAGE, setRequestLanguage } from "../api/client";
 import { ApiError, causeMessage, failureMessage } from "../api/errors";
 import { connectEvents, type EventsLink, type LinkState, type ServerEvent } from "../api/events";
 import type {
-  AltRepeatKeyIn, KeyboardLanguage, KeyboardModel, KeycodeCategory, KeyOverrideIn, MacroActionIn, Named, QmkSetting,
-  Session, TapDanceIn,
+  AltRepeatKeyIn, KeyboardLanguage, KeyboardModel, KeycodeCategory, KeyOverrideIn, LightingIn, MacroActionIn,
+  MatrixState, Named, QmkSetting, Session, TapDanceIn,
 } from "../api/types";
 import { keyTitle, namesOf } from "../keyboard/labels";
 import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
@@ -71,6 +71,11 @@ export class KeyboardStore {
   pending = $state(0);
   /** whether the keyboard is unlocked, and the unlock dialog */
   readonly unlock = new Unlocker();
+  /** the keys held, as the server last read them, while the matrix tester watches (watchMatrix); null before the
+   * first reading */
+  matrix = $state.raw<MatrixState | null>(null);
+  /** this page restarted the keyboard into its bootloader, and it hasn't come back since */
+  inBootloader = $state(false);
 
   canEdit = $derived(this.model !== null && !this.stale && this.connected && this.link === "open");
 
@@ -83,6 +88,8 @@ export class KeyboardStore {
   /** the language list, or null when it couldn't be read */
   #languageList: Promise<KeyboardLanguage[] | null> = Promise.resolve(null);
   #link: EventsLink | null = null;
+  /** pages watching the keys held */
+  #matrixWatchers = 0;
 
   /** Load the language list, then follow the server's events (which start with the keyboard's state) */
   start(): () => void {
@@ -106,14 +113,39 @@ export class KeyboardStore {
     });
   }
 
+  /** Get the keys held, about 20 times a second while the keyboard is unlocked (in `matrix`), until the function it
+   * returns is called. The server reads them while any page of any tab watches. */
+  watchMatrix(): () => void {
+    this.#matrixWatchers++;
+    if (this.#matrixWatchers === 1) this.#link?.send({ type: "matrix", watch: true });
+    let watching = true;
+    return () => {
+      if (!watching) return;
+      watching = false;
+      this.#matrixWatchers--;
+      if (this.#matrixWatchers === 0) {
+        this.#link?.send({ type: "matrix", watch: false });
+        this.matrix = null;
+      }
+    };
+  }
+
   #onLink(state: LinkState): void {
     this.link = state;
-    if (state === "open") this.#opening = true;
+    if (state === "open") {
+      this.#opening = true;
+      // a link opened again starts with nothing asked for
+      if (this.#matrixWatchers > 0) this.#link?.send({ type: "matrix", watch: true });
+    }
   }
 
   #onEvent(event: ServerEvent): void {
     if (event.type === "unlock") {
       if (event.unlock) this.unlock.update(event.unlock);
+      return;
+    }
+    if (event.type === "matrix") {
+      if (event.matrix && this.#matrixWatchers > 0) this.matrix = event.matrix;
       return;
     }
     // the server's first event on a link (re)opened says how the keyboard is: a "connected" there, when it was
@@ -123,6 +155,7 @@ export class KeyboardStore {
     const unchanged = event.type === "reloaded" || (opening && event.type === "connected" && this.connected);
     if (!unchanged) this.#plugs++;
     this.connected = event.type !== "disconnected";
+    if (event.type === "connected") this.inBootloader = false;
     this.stale = true;
     if (this.connected) {
       void this.load();
@@ -290,6 +323,53 @@ export class KeyboardStore {
       return null;
     }
     return (await this.setCode(layer, ref, `TD(${index})`, "Putting the tap dance on the key")) ? index : null;
+  }
+
+  /** Choose the keyboard's layout options (all of them, as one number): the keyboard keeps them at once */
+  setLayoutOptions(value: number, action = "Changing the layout"): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit(action, model, async () => {
+      const set = await api.setLayoutOptions(value);
+      if (model.layoutOptions) model.layoutOptions.value = set.value;
+    });
+  }
+
+  /** Change the lighting: the keyboard shows it at once, and keeps it only once saved (saveLighting). The model gets
+   * what the keyboard shows afterwards, which can differ (its brightness steps, a change it ignores). */
+  setLighting(body: LightingIn, action = "Changing the lighting"): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit(action, model, async () => {
+      model.lighting = await api.setLighting(body);
+    });
+  }
+
+  /** Keep the lighting the keyboard shows when it is unplugged */
+  saveLighting(): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit("Saving the lighting", model, async () => {
+      model.lighting = await api.saveLighting();
+    });
+  }
+
+  /** Restart the keyboard into its bootloader, to flash it: it leaves Vial. A locked keyboard is unlocked first (the
+   * firmware takes it only then). */
+  rebootToBootloader(): Promise<boolean> {
+    const model = this.model;
+    if (!model) return Promise.resolve(false);
+    if (!this.canEdit) {
+      toasts.error("Restarting the keyboard into its bootloader failed: the keyboard can't be changed just now.");
+      return Promise.resolve(false);
+    }
+    return this.#edit("Restarting the keyboard into its bootloader", model, async () => {
+      const session = await api.rebootToBootloader();
+      this.inBootloader = true;
+      // it is gone: the "disconnected" event says so too, maybe after this reply
+      this.connected = session.status === "connected";
+      this.#useSession(session);
+    });
   }
 
   /** Set a tap dance's four slots and its tapping term */

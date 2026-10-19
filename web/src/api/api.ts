@@ -1,6 +1,6 @@
 // The server's routes the UI uses.
 import { download, request } from "./client";
-import type { AltRepeatKeyIn, ComboIn, KeyOverrideIn, MacroActionIn, Named, TapDanceIn } from "./types";
+import type { AltRepeatKeyIn, ComboIn, KeyOverrideIn, LightingIn, MacroActionIn, Named, TapDanceIn } from "./types";
 
 export const api = {
   session: () => request("get", "/api/session"),
@@ -12,6 +12,8 @@ export const api = {
     request("put", "/api/keymap/{layer}/{row}/{col}", { params: { layer, row, col }, body: { code } }),
   setEncoder: (layer: number, index: number, direction: number, code: string) =>
     request("put", "/api/encoders/{layer}/{index}/{direction}", { params: { layer, index, direction }, body: { code } }),
+  /** saved on the keyboard at once (via.c keeps them in its EEPROM) */
+  setLayoutOptions: (value: number) => request("put", "/api/layout-options", { body: { value } }),
   setTapDance: (index: number, body: TapDanceIn) =>
     request("put", "/api/tap-dance/{index}", { params: { index }, body }),
   setCombo: (index: number, body: ComboIn) => request("put", "/api/combos/{index}", { params: { index }, body }),
@@ -25,6 +27,10 @@ export const api = {
   setSetting: (qsid: number, value: number) =>
     request("put", "/api/qmk-settings/{qsid}", { params: { qsid }, body: { value } }),
   resetSettings: () => request("post", "/api/qmk-settings/reset"),
+  /** shown at once, forgotten when the keyboard is unplugged unless saved; answers what the keyboard shows */
+  setLighting: (body: LightingIn) => request("put", "/api/lighting", { body }),
+  /** keeps the lighting the keyboard shows when it is unplugged */
+  saveLighting: () => request("post", "/api/lighting/save"),
   /** the keyboard's layout as a .vil file, named after the keyboard */
   layoutFile: () => download("/api/layout-file", "keyboard.vil"),
   /** what loading a .vil file would change; nothing is written */
@@ -36,4 +42,6 @@ export const api = {
   unlockStart: () => request("post", "/api/unlock/start"),
   unlockCancel: () => request("post", "/api/unlock/cancel"),
   lock: () => request("post", "/api/lock"),
+  /** the keyboard restarts into its bootloader and leaves; answers the session without it */
+  rebootToBootloader: () => request("post", "/api/bootloader"),
 };

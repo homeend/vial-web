@@ -22,6 +22,10 @@ vi.mock("../api/api", () => ({
     unlockStart: vi.fn(),
     unlockCancel: vi.fn(),
     lock: vi.fn(),
+    setLayoutOptions: vi.fn(),
+    setLighting: vi.fn(),
+    saveLighting: vi.fn(),
+    rebootToBootloader: vi.fn(),
   },
 }));
 vi.mock("../api/events", () => ({ connectEvents: vi.fn(() => ({ close: vi.fn(), send: vi.fn() })) }));
@@ -858,5 +862,81 @@ describe("moving keycodes between keys", () => {
     emit("disconnected");
     expect(await store.setCodes(0, swap, ACTION)).toBe(false);
     expect(mocked.setKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("the phase 5b changes", () => {
+  it("sets the layout options and keeps what the keyboard answered", async () => {
+    const { store } = await loaded();
+    store.model!.layoutOptions = { value: 0, labels: ["Split"] };
+    mocked.setLayoutOptions.mockResolvedValueOnce({ value: 1 });
+    expect(await store.setLayoutOptions(1)).toBe(true);
+    expect(mocked.setLayoutOptions).toHaveBeenCalledWith(1);
+    expect(store.model!.layoutOptions!.value).toBe(1);
+  });
+
+  it("changes and saves the lighting, showing what the keyboard answered", async () => {
+    const { store } = await loaded();
+    const shown = { vialrgb: { mode: 3, speed: 9, hsv: [1, 2, 3], maxBrightness: 200, supportedEffects: [0, 3] } };
+    mocked.setLighting.mockResolvedValueOnce(shown as never);
+    expect(await store.setLighting({ vialrgb: { mode: 3 } })).toBe(true);
+    expect(store.model!.lighting).toEqual(shown);
+    mocked.saveLighting.mockResolvedValueOnce(shown as never);
+    expect(await store.saveLighting()).toBe(true);
+    mocked.setLighting.mockRejectedValueOnce(new ApiError(502));
+    expect(await store.setLighting({ vialrgb: { mode: 4 } }, "Choosing the effect")).toBe(false);
+    expect(toasts.items.map((t) => t.message)).toEqual(["Choosing the effect failed: The keyboard didn't respond."]);
+  });
+
+  it("restarts the keyboard into its bootloader after unlocking it, and shows it gone", async () => {
+    const { store, send, emit } = await loaded();
+    mocked.rebootToBootloader.mockRejectedValueOnce(new ApiError(423, "the keyboard is locked"))
+      .mockResolvedValueOnce({ status: "disconnected", fake: true, unlock: LOCKED } as never);
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    const rebooting = store.rebootToBootloader();
+    await settle();
+    expect(store.unlock.open).toBe(true);
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await rebooting).toBe(true);
+    expect(mocked.rebootToBootloader).toHaveBeenCalledTimes(2);
+    expect(store.inBootloader).toBe(true);
+    expect(store.connected).toBe(false);
+    expect(store.canEdit).toBe(false);
+    emit("disconnected");
+    expect(store.inBootloader).toBe(true);
+    // flashed or plugged in again: back
+    emit("connected");
+    expect(store.inBootloader).toBe(false);
+  });
+
+  it("says why a keyboard that can't be changed isn't restarted", async () => {
+    const { store, emit } = await loaded();
+    emit("disconnected");
+    expect(await store.rebootToBootloader()).toBe(false);
+    expect(mocked.rebootToBootloader).not.toHaveBeenCalled();
+    expect(toasts.items.map((t) => t.message))
+      .toEqual(["Restarting the keyboard into its bootloader failed: the keyboard can't be changed just now."]);
+  });
+
+  it("asks for the keys held while a page watches, and again on a new link", async () => {
+    const { store, sent, link, send } = await loaded();
+    const stopFirst = store.watchMatrix();
+    const stopSecond = store.watchMatrix();
+    expect(sent.mock.calls).toEqual([[{ type: "matrix", watch: true }]]);
+    const matrix = { state: "testing" as const, pressed: [{ row: 0, col: 1 }] };
+    send({ type: "matrix", matrix });
+    expect(store.matrix).toEqual(matrix);
+    link("closed");
+    link("open");
+    expect(sent.mock.calls.at(-1)).toEqual([{ type: "matrix", watch: true }]);
+    stopFirst();
+    stopFirst();
+    expect(sent.mock.calls.filter(([m]) => !m.watch)).toEqual([]);
+    stopSecond();
+    expect(sent.mock.calls.at(-1)).toEqual([{ type: "matrix", watch: false }]);
+    expect(store.matrix).toBeNull();
+    // a late reading after the page stopped watching is dropped
+    send({ type: "matrix", matrix });
+    expect(store.matrix).toBeNull();
   });
 });
