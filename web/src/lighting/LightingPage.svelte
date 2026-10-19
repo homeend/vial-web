@@ -7,7 +7,7 @@
   import SaveBar from "../ui/SaveBar.svelte";
   import BacklightCard from "./BacklightCard.svelte";
   import {
-    lightingKinds, mergePatch, patchRequest, restorePatches, sameLighting, withPatch, type LightingPatch,
+    lightingKinds, mergePatch, patchRequest, restorePatches, withPatch, type LightingPatch,
   } from "./lighting";
   import RgbLightCard from "./RgbLightCard.svelte";
   import { lightingBaseline as baseline } from "./state.svelte";
@@ -31,7 +31,10 @@
   /** Undo is putting the lighting back, in more than one write maybe: the draft shows where it ends meanwhile */
   let undoing = $state(false);
   const writer = new LatestWriter<LightingPatch>(
-    (patch) => keyboard.setLighting(patchRequest(patch, model.lighting)),
+    async (patch) => {
+      const before = model.lighting;
+      if (await keyboard.setLighting(patchRequest(patch, before))) baseline.confirmed(before, model.lighting);
+    },
     mergePatch,
     WRITE_GAP_MS,
     (busy) => {
@@ -51,7 +54,10 @@
     const [uid, lighting] = [model.uid, model.lighting];
     untrack(() => baseline.follow(uid, lighting));
   });
-  const changed = $derived(baseline.lighting !== null && !sameLighting(model.lighting, baseline.lighting));
+  /** Undo has something to put back */
+  const changed = $derived(baseline.changed(model.lighting));
+  /** the keyboard would lose a change unplugged: all but a change of backlight breathing, which it keeps at once */
+  const unsaved = $derived(baseline.unsaved(model.lighting));
 
   function change(patch: LightingPatch) {
     if (!canEdit) return;
@@ -60,7 +66,7 @@
   }
 
   /** nothing to save: what the keyboard shows was saved here */
-  const saved = $derived(baseline.saved && !changed);
+  const saved = $derived(baseline.saved && !unsaved);
 
   async function save() {
     if (busy || saved || !canEdit) return;
@@ -84,9 +90,15 @@
   }
 
   const status = $derived(sending || undoing ? "Sending the change to the keyboard…"
-    : changed ? "The keyboard shows changes not saved: unplugged, it goes back to the lighting saved before."
+    : unsaved ? "The keyboard shows changes not saved: unplugged, it goes back to the lighting saved before."
+    : changed ? "The backlight is kept as it is: the keyboard keeps a change of breathing at once."
     : baseline.saved ? "Saved: the keyboard keeps this lighting when it is unplugged."
     : "No changes since this page first showed the keyboard's lighting.");
+
+  const note = $derived("Changes show on the keyboard at once, and it keeps them only once you Save: unplugged before "
+    + "that, it goes back to the lighting it had saved. "
+    + (model.lighting.backlight ? "Backlight breathing is the exception: the keyboard keeps it at once. " : "")
+    + "Undo puts back the lighting saved here last, or what it showed when this page first opened.");
 </script>
 
 <section class="page" aria-labelledby="lighting-title">
@@ -94,7 +106,7 @@
     id="lighting-title"
     title="Lighting"
     description="This keyboard's {kinds.join(' and ')}. Only what its firmware has is shown."
-    note="Changes show on the keyboard at once, and it keeps them only once you Save: unplugged before that, it goes back to the lighting it had saved. Undo puts back the lighting saved here last, or what it showed when this page first opened."
+    {note}
   />
 
   {#if shown.vialrgb}

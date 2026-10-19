@@ -27,6 +27,7 @@
   <Switch label="Breathing" checked={value.effect !== 0} {disabled} describedby="{uid}-breathing"
     onchange={(on) => onchange({ backlight: { effect: on ? 1 : 0 } })} />
   <p class="note" id="{uid}-breathing">
-    Only a keyboard whose firmware is built with breathing can breathe; on another, the switch turns back off.
+    Only a keyboard whose firmware is built with breathing can breathe; on another, the switch turns back off. The
+    keyboard keeps a change of breathing at once, without a Save, with the brightness it runs at.
   </p>
 </LightingCard>

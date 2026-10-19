@@ -335,8 +335,9 @@ export class KeyboardStore {
     });
   }
 
-  /** Change the lighting: the keyboard shows it at once, and keeps it only once saved (saveLighting). The model gets
-   * what the keyboard shows afterwards, which can differ (its brightness steps, a change it ignores). */
+  /** Change the lighting: the keyboard shows it at once, and keeps it only once saved (saveLighting), but for backlight
+   * breathing, which the firmware keeps at once with the backlight level it runs at. The model gets what the keyboard
+   * shows afterwards, which can differ (its brightness steps, a change it ignores). */
   setLighting(body: LightingIn, action = "Changing the lighting"): Promise<boolean> {
     const model = this.model;
     if (!model || !this.canEdit) return Promise.resolve(false);

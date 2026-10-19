@@ -27,7 +27,8 @@ export const api = {
   setSetting: (qsid: number, value: number) =>
     request("put", "/api/qmk-settings/{qsid}", { params: { qsid }, body: { value } }),
   resetSettings: () => request("post", "/api/qmk-settings/reset"),
-  /** shown at once, forgotten when the keyboard is unplugged unless saved; answers what the keyboard shows */
+  /** shown at once, forgotten when the keyboard is unplugged unless saved (but backlight breathing, which the firmware
+   * keeps at once with the backlight level it runs at); answers what the keyboard shows */
   setLighting: (body: LightingIn) => request("put", "/api/lighting", { body }),
   /** keeps the lighting the keyboard shows when it is unplugged */
   saveLighting: () => request("post", "/api/lighting/save"),
