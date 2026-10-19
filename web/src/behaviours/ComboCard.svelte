@@ -7,6 +7,7 @@
   import ComboKeys from "./ComboKeys.svelte";
   import EntryHead from "./EntryHead.svelte";
   import { MAX_COMBO_KEYS, membersOf } from "./members";
+  import { replayed } from "./target.svelte";
 
   interface Props {
     combo: Combo;
@@ -67,7 +68,7 @@
   }
 </script>
 
-<article class="card" class:target class:editing={draft !== null} id="combo-{combo.index}" aria-labelledby={headingId}
+<article class="card behaviour-card" class:target class:again={target && replayed()} class:editing={draft !== null} id="combo-{combo.index}" aria-labelledby={headingId}
   style="--colour: var(--combo-{colour})">
   <EntryHead id="Combo {combo.index}" {headingId} name={null} tone="combo" {canEdit}>
     {#snippet actions()}
@@ -139,29 +140,11 @@
 </article>
 
 <style>
+  /* its frame and highlight: .behaviour-card (app.css), in the combo's colour, which also marks its left edge */
   .card {
-    display: grid;
-    gap: 10px;
-    min-width: 0;
-    padding: 14px 16px 14px 18px;
-    border: 1px solid var(--border);
+    --card-accent: var(--colour);
+    padding-left: 18px;
     border-left: 4px solid var(--colour);
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    scroll-margin-top: 80px;
-  }
-
-  /* the card opened from elsewhere is drawn out for a moment, then fades back to the others' look */
-  .card.target {
-    animation: target 2.4s ease-in;
-  }
-
-  @keyframes target {
-    0%,
-    50% {
-      box-shadow: 0 0 0 2px color-mix(in srgb, var(--colour) 55%, transparent), var(--shadow);
-    }
   }
 
   .sentence {

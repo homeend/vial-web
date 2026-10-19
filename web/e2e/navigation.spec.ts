@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { comboAt, expect, keyIndex, serverUrl, setCombo, test } from "./fixtures";
+import { comboAt, expect, keyIndex, serverUrl, setCombo, setTapDance, tapDanceAt, test } from "./fixtures";
 
 // Going between the sections: the address, the back button, the page's title, where the focus goes, and what the
 // Keymap page keeps while another page shows.
@@ -77,4 +77,33 @@ test("an address naming a section the keyboard doesn't have shows the keymap, an
   await expect(heading(macropad, "Keymap")).toBeVisible();
   await expect(macropad).toHaveURL(/#keymap$/);
   await expect(macropad).toHaveTitle("Keymap · Vial");
+});
+
+test("a card opened again while it already is the one shown is focused and drawn out again", async ({ app }) => {
+  const before = await tapDanceAt(app, 1);
+  try {
+    // tap dance 1 taps tap dance 0: tap dance 0's card goes to it, on the same page
+    await setTapDance(app, 1, { ...before, tap: "TD(0)" });
+    await app.reload();
+    await openSection(app, "Tap dance");
+    const go = app.locator("#tap-dance-0").getByRole("button", { name: "tap dance 1, tap" });
+    const title = app.locator("#tap-dance-1-title");
+    const highlight = () => app.locator("#tap-dance-1")
+      .evaluate((card) => card.getAnimations().map((a) => (a as CSSAnimation).animationName));
+
+    await go.click();
+    await expect(app).toHaveURL(/#tap-dance\/1$/);
+    await expect(title).toBeFocused();
+    const first = await highlight();
+    expect(first).toHaveLength(1);
+
+    await go.click();
+    await expect(title).toBeFocused();
+    const again = await highlight();
+    expect(again).toHaveLength(1);
+    // another name: the animation started over
+    expect(again[0]).not.toBe(first[0]);
+  } finally {
+    await setTapDance(app, 1, before);
+  }
 });

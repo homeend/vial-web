@@ -12,6 +12,9 @@ export class Router {
   /** the route shown last came from the address (the back or forward button, a link, an address typed), rather than
    * from go() */
   fromAddress = false;
+  /** routes shown so far, the same one shown again included: a card opened again while it already is the one shown is
+   * shown again (useTarget scrolls to it, and its highlight starts over) */
+  visits = $state(0);
 
   /** Follow the address (the back button too); returns a function that stops */
   start(): () => void {
@@ -23,6 +26,7 @@ export class Router {
         if (route.section !== this.route.section || route.item !== this.route.item) {
           this.fromAddress = true;
           this.route = route;
+          this.visits++;
         }
       };
       read();
@@ -37,6 +41,7 @@ export class Router {
     const route = { section, item };
     this.fromAddress = false;
     this.route = route;
+    this.visits++;
     if (!hasAddress()) return;
     const hash = routeHash(route);
     if (location.hash === hash) return;

@@ -205,6 +205,45 @@ code {
   white-space: nowrap;
 }
 
+/* A tap dance, combo or macro card. The one opened from elsewhere (.target) is drawn out for a moment in its
+   --card-accent, then fades back to the others' look. Opened again while it already is (see behaviours/target.svelte.ts
+   replayed), .again changes the animation's name, which starts it over. */
+.behaviour-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  scroll-margin-top: 80px;
+}
+
+.behaviour-card.target {
+  animation: card-target 2.4s ease-in;
+}
+
+.behaviour-card.target.again {
+  animation-name: card-target-again;
+}
+
+@keyframes card-target {
+  0%,
+  50% {
+    border-color: var(--card-accent);
+    box-shadow: 0 0 0 1px var(--card-accent), var(--shadow);
+  }
+}
+
+@keyframes card-target-again {
+  0%,
+  50% {
+    border-color: var(--card-accent);
+    box-shadow: 0 0 0 1px var(--card-accent), var(--shadow);
+  }
+}
+
 /* Key colours by kind (see keyboard/labels.ts toneOf): any element with data-tone gets --tone (the kind's colour),
    --fill and --line (its key face and outline) */
 [data-tone] {

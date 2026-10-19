@@ -97,6 +97,23 @@ describe("Router", () => {
     expect(router.fromAddress).toBe(false);
   });
 
+  it("counts every route shown, the same one shown again too, but not its own address change", async () => {
+    const address = fakeAddress();
+    const router = new Router();
+    router.start();
+    const first = router.visits;
+    router.go("combos", 1);
+    await settle();
+    expect(router.visits).toBe(first + 1);
+    // a card opened again while it is the one shown: shown again
+    router.go("combos", 1, { replace: true });
+    await settle();
+    expect(router.visits).toBe(first + 2);
+    address.visit("#macros");
+    await settle();
+    expect(router.visits).toBe(first + 3);
+  });
+
   it("hands a key to the keymap once", () => {
     fakeAddress("#combos");
     const router = new Router();

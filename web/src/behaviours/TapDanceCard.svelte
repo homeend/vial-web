@@ -4,6 +4,7 @@
   import { actionSummary, keyFace, type Names } from "../keyboard/labels";
   import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
   import EntryHead from "./EntryHead.svelte";
+  import { replayed } from "./target.svelte";
   import { tapDanceSentence } from "./sentences";
   import UsedOn from "./UsedOn.svelte";
 
@@ -83,7 +84,7 @@
   }
 </script>
 
-<article class="card" class:target id="tap-dance-{td.index}" aria-labelledby={headingId}>
+<article class="card behaviour-card" class:target class:again={target && replayed()} id="tap-dance-{td.index}" aria-labelledby={headingId}>
   <EntryHead id="TD {td.index}" {headingId} name={td.name} tone="tap-dance" {canEdit} {onrename}
     renameLabel="Rename tap dance {td.index}" />
 
@@ -152,29 +153,9 @@
 </article>
 
 <style>
+  /* its frame and highlight: .behaviour-card (app.css) */
   .card {
-    display: grid;
-    gap: 10px;
-    min-width: 0;
-    padding: 14px 16px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    scroll-margin-top: 80px;
-  }
-
-  /* the card opened from elsewhere is drawn out for a moment, then fades back to the others' look */
-  .card.target {
-    animation: target 2.4s ease-in;
-  }
-
-  @keyframes target {
-    0%,
-    50% {
-      border-color: var(--tone-tap-dance);
-      box-shadow: 0 0 0 1px var(--tone-tap-dance), var(--shadow);
-    }
+    --card-accent: var(--tone-tap-dance);
   }
 
   .plain {
