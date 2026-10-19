@@ -72,7 +72,8 @@ test("a new key override: trigger, replacement, modifiers, an option and layers,
     await card.getByRole("switch", { name: "Enabled" }).uncheck();
     await card.getByRole("button", { name: "Save" }).click();
     await expect(card.getByText("Off", { exact: true })).toBeVisible();
-    expect((await keyOverrideAt(app, 2)).options).toBe(0x0f);
+    // "Off" can show before the save has reached the keyboard: wait for it there
+    await expect.poll(async () => (await keyOverrideAt(app, 2)).options).toBe(0x0f);
     await card.getByRole("button", { name: "Edit" }).click();
     await card.getByRole("button", { name: "Remove" }).click();
     await expect.poll(() => keyOverrideAt(app, 2)).toEqual(EMPTY_OVERRIDE);
