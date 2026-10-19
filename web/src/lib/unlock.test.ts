@@ -265,3 +265,70 @@ describe("Unlocker", () => {
     expect(unlocker.open).toBe(false);
   });
 });
+
+describe("Unlocker, when something goes wrong while the dialog shows", () => {
+  it("says in the dialog why a cancel failed (its toast is behind it), until another request is sent", async () => {
+    const unlocker = new Unlocker();
+    unlocker.update(UNLOCKING);
+    mocked.unlockCancel.mockRejectedValueOnce(new ApiError(502));
+    await unlocker.cancel();
+    expect(unlocker.open).toBe(true);
+    expect(unlocker.problem).toBe("Cancelling the unlock failed: The keyboard didn't respond.");
+    unlocker.update(state({ ...UNLOCKING, remaining: 40, total: 50 })); // the countdown goes on: still said
+    expect(unlocker.problem).toBe("Cancelling the unlock failed: The keyboard didn't respond.");
+
+    const cancelling = deferred<UnlockState>();
+    mocked.unlockCancel.mockReturnValueOnce(cancelling.promise);
+    const cancel = unlocker.cancel();
+    expect(unlocker.problem).toBeNull();
+    cancelling.resolve(CANCELLED);
+    await cancel;
+    expect(unlocker.open).toBe(false);
+    expect(unlocker.problem).toBeNull();
+  });
+
+  it("says nothing in a dialog that doesn't show", async () => {
+    const unlocker = new Unlocker();
+    unlocker.update(UNLOCKED);
+    mocked.lock.mockRejectedValueOnce(new ApiError(502));
+    await unlocker.lock();
+    expect(unlocker.problem).toBeNull();
+  });
+
+  it("closes the dialog when asked: the unlock that runs doesn't show it again until an unlock is asked for", async () => {
+    const unlocker = new Unlocker();
+    unlocker.update(UNLOCKING);
+    mocked.unlockCancel.mockRejectedValueOnce(new ApiError(502));
+    await unlocker.cancel();
+    const waiting = unlocker.unlock();
+    unlocker.dismiss();
+    expect(unlocker.open).toBe(false);
+    expect(unlocker.problem).toBeNull();
+    expect(await waiting).toBe(false);
+    unlocker.update(UNLOCKING); // the server still follows it
+    expect(unlocker.open).toBe(false);
+
+    const again = unlocker.unlock();
+    expect(unlocker.open).toBe(true);
+    expect(mocked.unlockStart).not.toHaveBeenCalled(); // it runs already
+    unlocker.update(UNLOCKED);
+    expect(await again).toBe(true);
+    expect(unlocker.open).toBe(false);
+  });
+
+  it("shows the dialog again for start(), and for the next unlock", async () => {
+    const unlocker = new Unlocker();
+    unlocker.update(UNLOCKING);
+    unlocker.dismiss();
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    const starting = unlocker.start();
+    expect(unlocker.open).toBe(true);
+    await starting;
+    expect(unlocker.open).toBe(true);
+
+    unlocker.dismiss();
+    unlocker.update(LOCKED); // unplugged meanwhile
+    unlocker.update(UNLOCKING); // started again elsewhere
+    expect(unlocker.open).toBe(true);
+  });
+});

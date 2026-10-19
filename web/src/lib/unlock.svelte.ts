@@ -32,6 +32,8 @@ export class Unlocker {
   open = $state(false);
   /** a request to the server is on its way */
   busy = $state(false);
+  /** why a request sent while the dialog showed failed (its toast is behind the dialog), until another is sent */
+  problem = $state<string | null>(null);
   /** callers of unlock() and unlockQuietly(): told whether the keyboard got unlocked */
   #waiting: Waiter[] = [];
   /** requests sent to the server so far */
@@ -42,6 +44,8 @@ export class Unlocker {
   #starting: Promise<void> | null = null;
   /** the start on its way was asked for by start() too: its failure is shown, whoever else waits for it */
   #startShown = false;
+  /** the user closed the dialog while the keyboard still waited: the unlock that runs doesn't show it again */
+  #dismissed = false;
 
   /** The keyboard's unlock state changed (an event, or a session read): an unlock that runs shows the dialog, wherever
    * it was started; one that ends closes it */
@@ -65,12 +69,34 @@ export class Unlocker {
 
   #wait(waiter: Waiter): void {
     this.#waiting.push(waiter);
+    this.#undismiss();
     if (this.state.state !== "unlocking") void this.#start(false);
   }
 
   /** Starts an unlock; the server answers "unlocked" without starting one when the keyboard is unlocked already */
   start(): Promise<void> {
+    this.#undismiss();
     return this.#start(true);
+  }
+
+  /** Closes the dialog (it offers that once something went wrong) while the keyboard may still wait for its keys: the
+   * unlock that runs doesn't show it again until an unlock is asked for, and those waiting for it are told false */
+  dismiss(): void {
+    this.#dismissed = true;
+    this.open = false;
+    this.problem = null;
+    this.#settle(false);
+  }
+
+  /** An unlock is asked for: one that runs shows the dialog again */
+  #undismiss(): void {
+    this.#dismissed = false;
+    if (this.state.state === "unlocking") this.#show();
+  }
+
+  #show(): void {
+    if (!this.open) this.problem = null; // said by a dialog shown earlier
+    this.open = true;
   }
 
   /** `shown`: a failure is shown even when only quiet callers wait (the start was asked for by start()) */
@@ -107,8 +133,9 @@ export class Unlocker {
   #apply(state: UnlockState): void {
     this.state = state;
     if (state.state === "unlocking") {
-      this.open = true;
+      if (!this.#dismissed) this.#show();
     } else {
+      this.#dismissed = false;
       this.open = false;
       this.#settle(state.state === "unlocked");
     }
@@ -131,6 +158,7 @@ export class Unlocker {
     const sent = ++this.#sent;
     const updates = this.#updates;
     this.busy = true;
+    this.problem = null;
     let state: UnlockState;
     try {
       state = await request();
@@ -140,7 +168,9 @@ export class Unlocker {
       this.busy = false;
       const current = updates === this.#updates;
       const quiet = current && (on.quiet?.() ?? false);
-      if (!quiet) toasts.error(failureMessage(action, error));
+      const message = failureMessage(action, error);
+      if (!quiet) toasts.error(message);
+      if (this.open) this.problem = message;
       if (current) on.failed?.(quiet ? error : undefined);
       return;
     }
