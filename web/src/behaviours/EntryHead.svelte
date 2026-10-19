@@ -8,7 +8,7 @@
     headingId: string;
     /** the name, cut short with a tooltip when it is long; null for an entry without names (a combo) */
     name: string | null;
-    tone: "tap-dance" | "macro" | "combo";
+    tone: "tap-dance" | "macro" | "combo" | "override";
     /** renames it, when it can be named */
     onrename?: () => void;
     renameLabel?: string;
@@ -74,6 +74,12 @@
   .id.combo {
     background: color-mix(in srgb, var(--colour, var(--combo-0)) 16%, transparent);
     color: color-mix(in srgb, var(--colour, var(--combo-0)) 75%, var(--text));
+  }
+
+  /* key overrides and alt-repeat keys */
+  .id.override {
+    background: var(--accent-weak);
+    color: var(--accent);
   }
 
   /* a long name is cut short; the tooltip has all of it */
