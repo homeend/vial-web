@@ -25,6 +25,11 @@
       oninput={(event) => {
         const picked = pickedHueSat(event.currentTarget.value, hue);
         if (picked) onchange(picked);
+      }}
+      onchange={(event) => {
+        // once picked, the swatch shows the colour the keyboard takes: the picked colour at full brightness. A darker
+        // one has the same hue and saturation, so `full` doesn't change and Svelte wouldn't write it back.
+        event.currentTarget.value = full;
       }} />
     <span>Pick a colour…</span>
   </label>
@@ -59,6 +64,10 @@
     gap: 10px;
     font-size: 13px;
     cursor: pointer;
+  }
+
+  .pick:has(input:disabled) {
+    cursor: not-allowed;
   }
 
   input {
