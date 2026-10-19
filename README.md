@@ -100,8 +100,11 @@ python main.py
 Python tests, from `src/main/python`:
 
 ```sh
-QT_QPA_PLATFORM=offscreen python -m pytest -q -p no:cacheprovider test
+QT_QPA_PLATFORM=offscreen python -m pytest -q -p no:cacheprovider -n auto --dist worksteal test
 ```
+
+`-n auto --dist worksteal` (pytest-xdist, in `test-requirements.txt`) runs the tests on every core; leave it out to
+run them in one process, e.g. to debug a single test.
 
 Web UI: see [`web/README.md`](web/README.md) for the dev workflow, the type check, unit tests, end-to-end tests and the
 generated API types.

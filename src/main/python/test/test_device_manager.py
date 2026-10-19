@@ -234,7 +234,10 @@ def test_explicit_connect_ignores_the_backoff():
     assert backend.opened == 2
 
 
-def test_failed_load_survives_close_failing():
+def test_failed_load_survives_close_failing(monkeypatch):
+    # the dead device is retried: without its waits
+    monkeypatch.setattr(transport.time, "sleep", lambda s: None)
+
     class BadClose(FakeBackend):
         def open(self, candidate):
             dev, title = super().open(candidate)
