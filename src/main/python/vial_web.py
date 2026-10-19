@@ -396,7 +396,9 @@ def run(args, sock):
         return 1
     manager = DeviceManager(backend, unlock_poll_gap=SAFE_UNLOCK_POLL_GAP)
     try:
-        manager.connect()
+        # a dry run leaves a keyboard waiting for an unlock started earlier as it is: unlock_start would start its
+        # countdown over
+        manager.connect(resume_unlock=not args.dry_run)
         if args.layout:
             error = load_layout_file(manager, args.layout)
             if error:
@@ -405,6 +407,11 @@ def run(args, sock):
 
         if args.dry_run:
             status = manager.status()
+            if not status.connected and manager.unlock_state().state != "locked":
+                # found, but it answers nothing else until its unlock keys are held
+                print("keyboard found: {}, waiting for its unlock keys (an unlock started earlier); it can't be read "
+                      "until they are held: run without --dry-run to unlock it".format(status.title))
+                return 1
             if not status.connected:
                 print("no keyboard found" + (": " + status.error if status.error else ""))
                 return 1

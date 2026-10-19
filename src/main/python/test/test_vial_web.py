@@ -87,6 +87,30 @@ def test_fake_mode_with_custom_definition(tmp_path, capsys):
     assert (summary["name"], summary["keys"]) == ("Tiny", 4)
 
 
+def test_dry_run_says_a_keyboard_waits_for_its_unlock_and_leaves_it_waiting(monkeypatch, capsys):
+    """ A simulated Corne still waiting for an unlock started earlier: it is found, but can't be read until its unlock
+    keys are held. --dry-run says so, and sends it nothing that would start its countdown over. """
+    from protocol.keyboard_comm import Keyboard
+    from simulator import corne
+    vk = corne.make_corne()
+    vk.unlocked = False
+    kb = Keyboard(SimulatedHidDevice(vk))
+    kb.reload()
+    kb.unlock_start()
+    vk.unlock_counter -= 1  # partway through its countdown
+    counter = vk.unlock_counter
+    monkeypatch.setattr(corne, "make_corne", lambda **kwargs: vk)
+    starts = []
+    monkeypatch.setattr(Keyboard, "unlock_start", lambda self: starts.append(self))
+
+    assert vial_web.main(["--fake", "--dry-run"]) == 1
+    out = capsys.readouterr().out
+    assert "keyboard found: Simulated: Simulated Corne, waiting for its unlock keys" in out
+    assert "no keyboard found" not in out
+    assert starts == []
+    assert vk.unlock_in_progress and vk.unlock_counter == counter
+
+
 def test_definition_requires_fake():
     with pytest.raises(SystemExit):
         vial_web.parse_args(["--definition", "x.json"])
@@ -454,12 +478,12 @@ def test_instance_is_claimed_before_connecting_and_released_at_exit(home, fake_s
     claimed_while_connecting = []
     connect = DeviceManager.connect
 
-    def check_claim(manager):
+    def check_claim(manager, **kwargs):
         claim = vial_web.claim_instance(True)
         claimed_while_connecting.append(claim is None)
         if claim is not None:
             vial_web.release_instance(claim)
-        return connect(manager)
+        return connect(manager, **kwargs)
     monkeypatch.setattr(DeviceManager, "connect", check_claim)
     fake_server.while_serving = lambda: claimed_while_connecting.append(vial_web.claim_instance(True) is None)
     assert vial_web.main(["--fake", "--no-browser"]) == 0

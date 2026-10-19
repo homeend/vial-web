@@ -195,6 +195,18 @@ def test_an_interrupted_unlock_is_finished_on_connect_before_the_keyboard_is_rea
     assert m.run(lambda kb: kb.layout[(0, 0, 0)]) == "KC_TAB"
 
 
+def test_an_interrupted_unlock_can_be_left_as_it_is_on_connect():
+    vk = interrupted_corne()
+    counter = vk.unlock_counter
+    m = DeviceManager(FakeBackend(lambda: vk))
+    assert not m.connect(resume_unlock=False)
+    # found and waiting, but not followed: nothing was sent that would start its countdown over
+    assert m.status().title == "Simulated: Simulated Corne"
+    assert m.unlock_state() == UnlockState("cancelled", KEYS)
+    assert vk.unlock_in_progress and vk.unlock_counter == counter
+    assert m.unlock_sent is None
+
+
 def test_a_keyboard_that_cant_be_read_once_unlocked_is_reported_gone_with_why():
     m = DeviceManager(FakeBackend(interrupted_corne))
     m.connect()

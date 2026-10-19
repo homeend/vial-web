@@ -254,11 +254,15 @@ class DeviceManager:
         with self.lock:
             return Status(self.keyboard is not None, self.title, self.unlocked, self.error)
 
-    def connect(self):
-        """ Open the first keyboard found and load everything from it. Returns True when connected. """
-        return self._connect(wait_after_failures=False)
+    def connect(self, resume_unlock=True):
+        """ Open the first keyboard found and load everything from it. Returns True when connected.
 
-    def _connect(self, wait_after_failures):
+        A keyboard found waiting for an unlock started earlier can't be read until it is unlocked: it is sent
+        unlock_start, as Qt's unlocker does, and the unlock is followed (unlock_state() "unlocking"). With
+        resume_unlock False (a dry run) it is sent nothing: the unlock is left as it is, not followed ("cancelled"). """
+        return self._connect(wait_after_failures=False, resume_unlock=resume_unlock)
+
+    def _connect(self, wait_after_failures, resume_unlock=True):
         with self.lock:
             self._close()
             try:
@@ -284,8 +288,9 @@ class DeviceManager:
                     keyboard = Keyboard(handle)
                     unlock_keys = interrupted_unlock_keys(keyboard)
                     if unlock_keys is not None:
-                        keyboard.unlock_start()  # as Qt's unlocker does for every unlock
-                        self.unlock_sent = self.clock()
+                        if resume_unlock:
+                            keyboard.unlock_start()  # as Qt's unlocker does for every unlock
+                            self.unlock_sent = self.clock()
                     else:
                         keyboard.reload()
                         unlocked = keyboard.get_unlock_status() == 1
@@ -299,9 +304,10 @@ class DeviceManager:
                 self.failures.pop(key, None)
                 self.device, self.handle, self.candidate, self.title, self.error = dev, handle, candidate, title, None
                 if unlock_keys is not None:
-                    log.info("%s is waiting to be unlocked: finishing that before reading it", title)
+                    log.info("%s is waiting to be unlocked: %s", title,
+                             "finishing that before reading it" if resume_unlock else "left as it is")
                     self.waiting = keyboard
-                    self.unlocking = _Unlock(unlock_keys)
+                    self.unlocking = _Unlock(unlock_keys, following=resume_unlock)
                     self.pending_events.append("unlock")
                     return False
                 self.keyboard, self.unlocked = keyboard, unlocked
