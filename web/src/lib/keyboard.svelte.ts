@@ -9,7 +9,8 @@ import type {
   AltRepeatKeyIn, KeyboardLanguage, KeyboardModel, KeycodeCategory, KeyOverrideIn, MacroActionIn, Named, QmkSetting,
   Session, TapDanceIn,
 } from "../api/types";
-import { actionAt, type KeyRef } from "../keyboard/refs";
+import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
+import type { Change } from "../keymap/move";
 import { freeTapDance } from "../keymap/tapdance";
 import { toasts } from "./toasts.svelte";
 import { LOCKED, Unlocker, type UnlockOutcome } from "./unlock.svelte";
@@ -30,6 +31,16 @@ function saveLanguage(lang: string): void {
   } catch {
     // not remembered (private window): still used until the page is closed
   }
+}
+
+/** Whether a key or encoder direction has a matrix position (or encoder and direction) to write to */
+function hasPosition(model: KeyboardModel, ref: KeyRef): boolean {
+  if (ref.kind === "key") {
+    const key = model.keys[ref.index];
+    return key?.row != null && key.col != null;
+  }
+  const encoder = model.encoders[ref.index];
+  return encoder?.encoder != null && encoder.direction != null;
 }
 
 export class KeyboardStore {
@@ -172,24 +183,58 @@ export class KeyboardStore {
   async setCode(layer: number, ref: KeyRef, code: string, action = "Changing the key"): Promise<boolean> {
     const model = this.model;
     if (!model || !this.canEdit) return false;
+    if (!hasPosition(model, ref)) return this.#noPosition(action);
+    return this.#edit(action, model, async () => {
+      await this.#writeCode(model, layer, ref, code);
+    });
+  }
+
+  /** Set several keycodes on a layer, one after another (a swap: both keys), as one change: busy until all are
+   * written. A locked keyboard is unlocked for the one it refused, and the rest are written. When one can't be
+   * written, those written before it are put back, last first; the failure's message says so, or names each key that
+   * kept its change. Returns whether all were written. */
+  async setCodes(layer: number, changes: Change[], action: string): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return false;
+    if (!changes.every((c) => hasPosition(model, c.ref))) return this.#noPosition(action);
+    const written: Change[] = [];
+    const write = async () => {
+      for (const change of changes.slice(written.length)) {
+        await this.#writeCode(model, layer, change.ref, change.code);
+        written.push(change);
+      }
+    };
+    const putBack = async () => {
+      const notes: string[] = [];
+      for (const change of [...written].reverse()) {
+        const { where } = whereIs(model, change.ref);
+        try {
+          await this.#writeCode(model, layer, change.ref, change.was);
+          notes.push(`The key at ${where} was put back as it was.`);
+        } catch {
+          notes.push(`The key at ${where} is now ${change.code}: putting it back failed too.`);
+        }
+      }
+      return notes.join(" ");
+    };
+    return this.#edit(action, model, write, putBack);
+  }
+
+  /** Write a keycode to a key or encoder direction and put the keyboard's reply into the model */
+  async #writeCode(model: KeyboardModel, layer: number, ref: KeyRef, code: string): Promise<void> {
     if (ref.kind === "key") {
       const { row, col } = model.keys[ref.index];
-      if (row == null || col == null) return this.#noPosition(action);
-      return this.#edit(action, model, async () => {
-        const result = await api.setKey(layer, row, col, code);
-        // keys of different layout options can share a matrix position
-        model.keys.forEach((k, i) => {
-          if (k.row === row && k.col === col) model.layers[layer].keys[i] = result;
-        });
+      const result = await api.setKey(layer, row!, col!, code);
+      // keys of different layout options can share a matrix position
+      model.keys.forEach((k, i) => {
+        if (k.row === row && k.col === col) model.layers[layer].keys[i] = result;
       });
+      return;
     }
     const { encoder, direction } = model.encoders[ref.index];
-    if (encoder == null || direction == null) return this.#noPosition(action);
-    return this.#edit(action, model, async () => {
-      const result = await api.setEncoder(layer, encoder, direction, code);
-      model.encoders.forEach((e, i) => {
-        if (e.encoder === encoder && e.direction === direction) model.layers[layer].encoders[i] = result;
-      });
+    const result = await api.setEncoder(layer, encoder!, direction!, code);
+    model.encoders.forEach((e, i) => {
+      if (e.encoder === encoder && e.direction === direction) model.layers[layer].encoders[i] = result;
     });
   }
 
@@ -327,21 +372,26 @@ export class KeyboardStore {
 
   /** Runs write, which puts the keyboard's reply into model. A change refused because the keyboard is locked unlocks
    * it (the user holds its unlock keys) and is sent again, once, unless the keyboard was unplugged or another one
-   * plugged in meanwhile: the change was for the one that went. */
-  async #edit(action: string, model: KeyboardModel, write: () => Promise<void>): Promise<boolean> {
+   * plugged in meanwhile: the change was for the one that went. When it fails, putBack (if given) undoes what write
+   * got done on the same keyboard, and says what it did: that follows the failure's message. */
+  async #edit(
+    action: string, model: KeyboardModel, write: () => Promise<void>, putBack?: () => Promise<string>,
+  ): Promise<boolean> {
     this.pending++;
     const loads = this.#loads;
     const plugs = this.#plugs;
+    const fail = async (message: string) => {
+      const note = putBack && this.#plugs === plugs ? await putBack() : "";
+      toasts.error(note ? `${message} ${note}` : message);
+      return false;
+    };
     try {
       try {
         await write();
       } catch (error) {
         if (!(error instanceof ApiError && error.status === 423)) throw error;
         const outcome = await this.unlock.unlockQuietly();
-        if (!outcome.unlocked || this.#plugs !== plugs) {
-          toasts.error(this.#notUnlocked(action, outcome));
-          return false;
-        }
+        if (!outcome.unlocked || this.#plugs !== plugs) return await fail(this.#notUnlocked(action, outcome));
         await write();
       }
       // a load started or landed meanwhile and may have read the keyboard before this edit (it can land after it,
@@ -350,8 +400,7 @@ export class KeyboardStore {
       return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 503) this.connected = false;
-      toasts.error(failureMessage(action, error));
-      return false;
+      return await fail(failureMessage(action, error));
     } finally {
       this.pending--;
     }

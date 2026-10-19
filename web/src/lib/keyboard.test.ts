@@ -696,3 +696,117 @@ describe("a locked keyboard", () => {
       .toEqual(["Saving the macro failed: The keyboard is locked, and unlocking it failed: The keyboard didn't respond."]);
   });
 });
+
+describe("moving keycodes between keys", () => {
+  const A = { kind: "key" as const, index: 0 };
+  const B = { kind: "key" as const, index: 1 };
+  // swapping KC_A (row 0, column 0) and KC_B (row 0, column 1): B first, then A
+  const swap = [{ ref: B, code: "KC_A", was: "KC_B" }, { ref: A, code: "KC_B", was: "KC_A" }];
+  const ACTION = "Swapping the keys";
+
+  /** A loaded store with KC_A at (0, 0) and KC_B at (0, 1); the keyboard takes every keycode it is sent */
+  async function twoKeys() {
+    const two = model("KC_A");
+    two.keys = [{ row: 0, col: 0 }, { row: 0, col: 1 }] as never;
+    two.layers[0].keys = [described("KC_A"), described("KC_B")];
+    mocked.keyboard.mockResolvedValue(two);
+    mocked.setKey.mockImplementation(async (_layer, _row, _col, code) => described(code));
+    const s = await loaded();
+    return { ...s, codes: () => s.store.model!.layers[0].keys.map((k) => k.code) };
+  }
+
+  const sent = () => mocked.setKey.mock.calls.map(([layer, row, col, code]) => `${layer}:${row},${col}=${code}`);
+  const messages = () => toasts.items.map((t) => t.message);
+
+  it("writes each key in turn, and shows what the keyboard confirmed", async () => {
+    const { store, codes } = await twoKeys();
+    const moving = store.setCodes(0, swap, ACTION);
+    expect(store.pending).toBe(1);
+    expect(await moving).toBe(true);
+    expect(sent()).toEqual(["0:0,1=KC_A", "0:0,0=KC_B"]);
+    expect(codes()).toEqual(["KC_B", "KC_A"]);
+    expect(store.pending).toBe(0);
+    expect(messages()).toEqual([]);
+  });
+
+  it("puts the first key back when the second can't be written, and says so", async () => {
+    const { store, codes } = await twoKeys();
+    mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => described(code))
+      .mockRejectedValueOnce(new ApiError(502));
+    expect(await store.setCodes(0, swap, ACTION)).toBe(false);
+    expect(sent()).toEqual(["0:0,1=KC_A", "0:0,0=KC_B", "0:0,1=KC_B"]);
+    expect(codes()).toEqual(["KC_A", "KC_B"]);
+    expect(messages()).toEqual([
+      "Swapping the keys failed: The keyboard didn't respond. The key at row 0, column 1 was put back as it was.",
+    ]);
+    expect(store.pending).toBe(0);
+  });
+
+  it("says which key kept its change when putting it back fails too", async () => {
+    const { store, codes } = await twoKeys();
+    mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => described(code))
+      .mockRejectedValue(new ApiError(502));
+    expect(await store.setCodes(0, swap, ACTION)).toBe(false);
+    expect(codes()).toEqual(["KC_A", "KC_A"]);
+    expect(messages()).toEqual([
+      "Swapping the keys failed: The keyboard didn't respond. The key at row 0, column 1 is now KC_A: putting it " +
+        "back failed too.",
+    ]);
+  });
+
+  it("writes nothing more, and puts nothing back, when the first key can't be written", async () => {
+    const { store, codes } = await twoKeys();
+    mocked.setKey.mockRejectedValueOnce(new ApiError(502));
+    expect(await store.setCodes(0, swap, ACTION)).toBe(false);
+    expect(sent()).toEqual(["0:0,1=KC_A"]);
+    expect(codes()).toEqual(["KC_A", "KC_B"]);
+    expect(messages()).toEqual(["Swapping the keys failed: The keyboard didn't respond."]);
+  });
+
+  it("goes on from the key a locked keyboard refused once it is unlocked", async () => {
+    const { store, send, codes } = await twoKeys();
+    mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => described(code))
+      .mockRejectedValueOnce(new ApiError(423, "the keyboard is locked"));
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    const moving = store.setCodes(0, swap, ACTION);
+    await settle();
+    expect(store.unlock.open).toBe(true);
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await moving).toBe(true);
+    expect(sent()).toEqual(["0:0,1=KC_A", "0:0,0=KC_B", "0:0,0=KC_B"]);
+    expect(codes()).toEqual(["KC_B", "KC_A"]);
+    expect(messages()).toEqual([]);
+  });
+
+  it("puts the first key back when the keyboard wasn't unlocked for the second", async () => {
+    const { store, codes } = await twoKeys();
+    mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => described(code))
+      .mockRejectedValueOnce(new ApiError(423, "the keyboard is locked"));
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    mocked.unlockCancel.mockResolvedValueOnce({ ...UNLOCKING, state: "cancelled" });
+    const moving = store.setCodes(0, swap, ACTION);
+    await settle();
+    await store.unlock.cancel();
+    expect(await moving).toBe(false);
+    expect(codes()).toEqual(["KC_A", "KC_B"]);
+    expect(messages()).toEqual([
+      "Swapping the keys failed: The keyboard is locked, and it wasn't unlocked. The key at row 0, column 1 was put " +
+        "back as it was.",
+    ]);
+  });
+
+  it("refuses keys with no matrix position, writing none of them", async () => {
+    const { store } = await loaded();
+    const noPosition = [{ ref: A, code: "KC_B", was: "KC_A" }, { ref: { kind: "key" as const, index: 1 }, code: "KC_A", was: "KC_NO" }];
+    expect(await store.setCodes(0, noPosition, ACTION)).toBe(false);
+    expect(mocked.setKey).not.toHaveBeenCalled();
+    expect(messages().join()).toContain("that key has no matrix position");
+  });
+
+  it("does nothing while the keyboard can't be changed", async () => {
+    const { store, emit } = await twoKeys();
+    emit("disconnected");
+    expect(await store.setCodes(0, swap, ACTION)).toBe(false);
+    expect(mocked.setKey).not.toHaveBeenCalled();
+  });
+});
