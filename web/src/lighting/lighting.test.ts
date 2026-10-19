@@ -5,10 +5,11 @@ import {
   saturationTrack,
 } from "./colour";
 import {
-  RGBLIGHT_EFFECTS, rgbLightChoices, rgbLightNote, VIALRGB_EFFECTS, vialRgbChoices, vialRgbNote,
+  RGBLIGHT_EFFECTS, rgbLightChoices, rgbLightIgnores, rgbLightNote, VIALRGB_EFFECTS, vialRgbChoices, vialRgbIgnores,
+  vialRgbNote,
 } from "./effects";
 import {
-  hasLighting, lightingKinds, mergePatch, patchRequest, restorePatch, sameLighting, withPatch,
+  hasLighting, lightingKinds, mergePatch, patchRequest, restorePatch, restorePatches, sameLighting, withPatch,
 } from "./lighting";
 import { LatestWriter, type Clock } from "./writer";
 
@@ -45,6 +46,18 @@ describe("effects", () => {
     expect([2, 5].map(rgbLightNote).every((n) => n?.includes("brightness"))).toBe(true);
     expect([6, 14].map(rgbLightNote).every((n) => n?.includes("hue"))).toBe(true);
     expect(rgbLightNote(15)).toBeNull();
+  });
+
+  it("says which parts of the colour the firmware ignores under an effect", () => {
+    expect(vialRgbIgnores(0)).toEqual(["hue", "saturation", "brightness"]);
+    expect(vialRgbIgnores(2)).toEqual([]);
+    expect(rgbLightIgnores(0)).toEqual(["hue", "saturation", "brightness"]);
+    expect(rgbLightIgnores(1)).toEqual([]);
+    expect(rgbLightIgnores(2)).toEqual(["brightness"]);
+    expect(rgbLightIgnores(5)).toEqual(["brightness"]);
+    expect(rgbLightIgnores(6)).toEqual(["hue"]);
+    expect(rgbLightIgnores(14)).toEqual(["hue"]);
+    expect(rgbLightIgnores(15)).toEqual([]);
   });
 });
 
@@ -136,6 +149,86 @@ describe("patches", () => {
       backlight: { brightness: 170, effect: 0 },
     });
     expect(restorePatch({ backlight: ALL.backlight })).toEqual({ backlight: { brightness: 170, effect: 0 } });
+  });
+});
+
+describe("restorePatches", () => {
+  const vialrgb = (mode: number, hsv: [number, number, number], supportedEffects = [0, 1, 2, 3]): Lighting => ({
+    vialrgb: { mode, speed: 128, hsv, maxBrightness: 200, supportedEffects },
+  });
+  const rgblight = (effect: number, hue: number, saturation: number, brightness: number): Lighting => ({
+    rgblight: { effect, speed: 0, hue, saturation, brightness },
+  });
+
+  it("is one patch when the effect brought back takes every colour value that differs", () => {
+    expect(restorePatches(ALL, ALL)).toEqual([restorePatch(ALL)]);
+    const shown = { ...ALL, vialrgb: { ...ALL.vialrgb!, mode: 0, hsv: [9, 9, 9] as [number, number, number] } };
+    expect(restorePatches(shown, ALL)).toEqual([restorePatch(ALL)]);
+  });
+
+  it("puts back a VialRGB colour under Solid Color before turning the matrix off", () => {
+    const kept = vialrgb(0, [10, 20, 30]);
+    expect(restorePatches(vialrgb(2, [99, 99, 99]), kept)).toEqual([
+      { vialrgb: { mode: 2, hsv: [10, 20, 30] } },
+      { vialrgb: { mode: 0, speed: 128, hsv: [10, 20, 30] } },
+    ]);
+    // off already, with another colour: the same two steps
+    expect(restorePatches(vialrgb(0, [99, 99, 99]), kept)).toHaveLength(2);
+    // the same colour: nothing to put back first
+    expect(restorePatches(vialrgb(3, [10, 20, 30]), kept)).toEqual([restorePatch(kept)]);
+  });
+
+  it("uses another VialRGB effect the keyboard has when it lacks Solid Color, and gives up without any", () => {
+    const shown = vialrgb(3, [99, 99, 99], [0, 3, 5]);
+    expect(restorePatches(shown, vialrgb(0, [10, 20, 30], [0, 3, 5]))[0])
+      .toEqual({ vialrgb: { mode: 3, hsv: [10, 20, 30] } });
+    const kept = vialrgb(0, [10, 20, 30], [0]);
+    expect(restorePatches(vialrgb(0, [99, 99, 99], [0]), kept)).toEqual([restorePatch(kept)]);
+  });
+
+  it("puts back an RGB light colour under Solid Color before turning the light off", () => {
+    const kept = rgblight(0, 10, 20, 30);
+    expect(restorePatches(rgblight(1, 99, 20, 30), kept)).toEqual([
+      { rgblight: { effect: 1, hue: 10, saturation: 20, brightness: 30 } },
+      { rgblight: { effect: 0, hue: 10, saturation: 20, brightness: 30 } },
+    ]);
+    expect(restorePatches(rgblight(1, 10, 99, 30), kept)).toHaveLength(2);
+    expect(restorePatches(rgblight(1, 10, 20, 99), kept)).toHaveLength(2);
+    expect(restorePatches(rgblight(0, 99, 99, 99), kept)).toHaveLength(2);
+    expect(restorePatches(rgblight(1, 10, 20, 30), kept)).toEqual([restorePatch(kept)]);
+  });
+
+  it("puts back a brightness before Breathing, which keeps its own", () => {
+    for (const effect of [2, 5]) {
+      const kept = rgblight(effect, 10, 20, 30);
+      expect(restorePatches(rgblight(1, 10, 20, 99), kept)).toEqual([
+        { rgblight: { effect: 1, hue: 10, saturation: 20, brightness: 30 } },
+        restorePatch(kept),
+      ]);
+      // Breathing takes a hue and a saturation
+      expect(restorePatches(rgblight(1, 99, 99, 30), kept)).toEqual([restorePatch(kept)]);
+    }
+  });
+
+  it("puts back a hue before Rainbow Mood or Swirl, which run through the hues themselves", () => {
+    for (const effect of [6, 14]) {
+      const kept = rgblight(effect, 10, 20, 30);
+      expect(restorePatches(rgblight(1, 99, 20, 30), kept)).toEqual([
+        { rgblight: { effect: 1, hue: 10, saturation: 20, brightness: 30 } },
+        restorePatch(kept),
+      ]);
+      // they take a saturation and a brightness
+      expect(restorePatches(rgblight(1, 10, 99, 99), kept)).toEqual([restorePatch(kept)]);
+    }
+    // Snake takes every value
+    expect(restorePatches(rgblight(1, 99, 99, 99), rgblight(15, 10, 20, 30))).toHaveLength(1);
+  });
+
+  it("puts back first only the kinds that need it, and only those both have", () => {
+    const kept: Lighting = { ...ALL, ...vialrgb(0, [10, 20, 30]) };
+    const shown: Lighting = { ...ALL, ...vialrgb(2, [99, 99, 99]), backlight: { brightness: 0, effect: 1 } };
+    expect(restorePatches(shown, kept)).toEqual([{ vialrgb: { mode: 2, hsv: [10, 20, 30] } }, restorePatch(kept)]);
+    expect(restorePatches({ backlight: ALL.backlight }, kept)).toEqual([restorePatch(kept)]);
   });
 });
 

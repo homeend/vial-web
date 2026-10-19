@@ -47,18 +47,49 @@ export function rgbLightChoices(current: number): EffectChoice[] {
   return values.map((value) => ({ value, label: nameOf(RGBLIGHT_EFFECTS, value) }));
 }
 
+/** VialRGB's "Solid Color": it takes every part of the colour */
+export const VIALRGB_SOLID = 2;
+
+/** QMK RGB light's "Solid Color" (the static light): it takes every part of the colour */
+export const RGBLIGHT_STATIC = 1;
+
+/** A part of a colour as the keyboard takes it */
+export type ColourPart = "hue" | "saturation" | "brightness";
+
+const EVERY_PART: ColourPart[] = ["hue", "saturation", "brightness"];
+
+/** The parts of the colour the keyboard ignores under a VialRGB effect: all of them while the matrix is off
+ * (rgb_matrix_sethsv_noeeprom does nothing then); the speed is always taken */
+export function vialRgbIgnores(mode: number): ColourPart[] {
+  return mode === VIALRGB_OFF ? [...EVERY_PART] : [];
+}
+
+/** The parts of the colour the keyboard ignores under a QMK RGB light effect (rgblight_sethsv_eeprom_helper): all of
+ * them while the light is off, the brightness under Breathing, the hue under Rainbow Mood and Rainbow Swirl. By the
+ * numbers of a keyboard with every effect built in. */
+export function rgbLightIgnores(effect: number): ColourPart[] {
+  if (effect === 0) return [...EVERY_PART];
+  if (effect >= 2 && effect <= 5) return ["brightness"];
+  if (effect >= 6 && effect <= 14) return ["hue"];
+  return [];
+}
+
 /** What the keyboard does with colour changes under a VialRGB effect, when it ignores some; null otherwise */
 export function vialRgbNote(mode: number): string | null {
-  // rgb_matrix_sethsv_noeeprom does nothing while the matrix is off
-  if (mode === VIALRGB_OFF) return "The lights are off: the keyboard takes no colour or brightness until an effect is chosen.";
+  if (vialRgbIgnores(mode).length === EVERY_PART.length) {
+    return "The lights are off: the keyboard takes no colour or brightness until an effect is chosen.";
+  }
   return null;
 }
 
 /** What the keyboard does with colour changes under a QMK RGB light effect, when it ignores some; null otherwise.
  * By the numbers of a keyboard with every effect built in (rgblight_sethsv_eeprom_helper). */
 export function rgbLightNote(effect: number): string | null {
-  if (effect === 0) return "The light is off: the keyboard takes no colour or brightness until an effect is chosen.";
-  if (effect >= 2 && effect <= 5) return "Breathing keeps its brightness: the keyboard ignores brightness changes while it runs.";
-  if (effect >= 6 && effect <= 14) return "This effect runs through the hues itself: the keyboard ignores hue changes while it runs.";
+  const ignored = rgbLightIgnores(effect);
+  if (ignored.length === EVERY_PART.length) {
+    return "The light is off: the keyboard takes no colour or brightness until an effect is chosen.";
+  }
+  if (ignored.includes("brightness")) return "Breathing keeps its brightness: the keyboard ignores brightness changes while it runs.";
+  if (ignored.includes("hue")) return "This effect runs through the hues itself: the keyboard ignores hue changes while it runs.";
   return null;
 }

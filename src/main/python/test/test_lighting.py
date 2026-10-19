@@ -220,6 +220,69 @@ def test_rgblight_reply_shows_what_the_firmware_ignores(lit):
     assert (rainbow["hue"], rainbow["saturation"]) == (0, 33)
 
 
+
+# ---------- Undo: the web page's restorePatches (web/src/lighting/lighting.ts) ----------
+
+# (kind, the lighting to bring back, the changes made since, the first of the two patches restorePatches sends)
+UNDO_CASES = {
+    "vialrgb off": ("vialrgb", {"mode": 0, "hsv": [10, 20, 30]},
+                    [{"mode": 2}, {"hsv": [99, 99, 99]}], {"mode": 2, "hsv": [10, 20, 30]}),
+    "rgblight off": ("rgblight", {"effect": 0, "hue": 10, "saturation": 20, "brightness": 30},
+                     [{"effect": 1}, {"hue": 99, "saturation": 99, "brightness": 99}],
+                     {"effect": 1, "hue": 10, "saturation": 20, "brightness": 30}),
+    "rgblight breathing": ("rgblight", {"effect": 2, "hue": 10, "saturation": 20, "brightness": 30},
+                           [{"effect": 1}, {"brightness": 99}],
+                           {"effect": 1, "hue": 10, "saturation": 20, "brightness": 30}),
+    "rgblight rainbow": ("rgblight", {"effect": 6, "hue": 10, "saturation": 20, "brightness": 30},
+                         [{"effect": 1}, {"hue": 99}],
+                         {"effect": 1, "hue": 10, "saturation": 20, "brightness": 30}),
+}
+
+
+def settable(kind, lighting):
+    """ What a patch can set (lighting.ts settable) """
+    keys = ("mode", "speed", "hsv") if kind == "vialrgb" else ("effect", "hue", "saturation", "brightness")
+    return {key: lighting[kind][key] for key in keys}
+
+
+def changed_since(client, kind, baseline, changes):
+    """ The keyboard set to `baseline`, then changed; what it showed at the baseline """
+    if kind == "vialrgb":
+        # the colour is taken under an effect that takes it, then the effect is set
+        client.put("/api/lighting", json={kind: {"mode": 2, "hsv": baseline["hsv"]}})
+    else:
+        client.put("/api/lighting", json={kind: {"effect": 1, **{k: v for k, v in baseline.items() if k != "effect"}}})
+    kept = client.put("/api/lighting", json={kind: baseline}).json()
+    assert {k: kept[kind][k] for k in baseline} == baseline
+    for change in changes:
+        client.put("/api/lighting", json={kind: change})
+    return settable(kind, kept)
+
+
+@pytest.mark.parametrize("lit, case", [(UNDO_CASES[name][0].replace("rgblight", "qmk_rgblight"), name)
+                                       for name in UNDO_CASES], indirect=["lit"])
+def test_undo_in_one_patch_leaves_what_the_effect_brought_back_ignores(lit, case):
+    client, virtual = lit
+    kind, baseline, changes, _ = UNDO_CASES[case]
+    kept = changed_since(client, kind, baseline, changes)
+    # restorePatch: the server sets the effect first, which then ignores the colour sent with it
+    after = client.put("/api/lighting", json={kind: kept}).json()
+    assert settable(kind, after) != kept
+
+
+@pytest.mark.parametrize("lit, case", [(UNDO_CASES[name][0].replace("rgblight", "qmk_rgblight"), name)
+                                       for name in UNDO_CASES], indirect=["lit"])
+def test_undo_in_two_patches_brings_everything_back(lit, case):
+    client, virtual = lit
+    kind, baseline, changes, first = UNDO_CASES[case]
+    kept = changed_since(client, kind, baseline, changes)
+    # restorePatches: the colour under an effect that takes it, then restorePatch
+    client.put("/api/lighting", json={kind: first})
+    after = client.put("/api/lighting", json={kind: kept}).json()
+    assert settable(kind, after) == kept
+    assert settable(kind, client.get("/api/keyboard").json()["lighting"]) == kept
+
+
 # ---------- backlight ----------
 
 @pytest.mark.parametrize("lit", ["qmk_backlight"], indirect=True)
