@@ -1,6 +1,8 @@
 <script lang="ts" module>
+  import type { SectionId } from "../lib/route";
+
   export interface Section {
-    id: string;
+    id: SectionId;
     label: string;
     /** shown next to the label, e.g. how many layers */
     count?: number;
@@ -10,8 +12,8 @@
 <script lang="ts">
   interface Props {
     sections: Section[];
-    active: string;
-    onselect: (id: string) => void;
+    active: SectionId;
+    onselect: (id: SectionId) => void;
   }
 
   let { sections, active, onselect }: Props = $props();

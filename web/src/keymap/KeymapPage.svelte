@@ -8,7 +8,7 @@
   import type { Placement } from "../keyboard/geometry";
   import Keyboard from "../keyboard/Keyboard.svelte";
   import { EMPTY_FACE, keyFace, keyLabel, layerLabel, namesOf } from "../keyboard/labels";
-  import { actionAt, refId, whereIs, type KeyRef } from "../keyboard/refs";
+  import { actionAt, refId, whereIs } from "../keyboard/refs";
   import { keyboard } from "../lib/keyboard.svelte";
   import { router } from "../lib/router.svelte";
   import { browserStorage } from "../lib/theme";
@@ -20,7 +20,8 @@
   import { neighbour, type Direction } from "./navigation";
   import Overview from "./Overview.svelte";
   import ReachList from "./ReachList.svelte";
-  import { readReachOpen, readView, saveReachOpen, saveView, type KeymapView } from "./view";
+  import { keymapState } from "./state.svelte";
+  import { readReachOpen, saveReachOpen, saveView, type KeymapView } from "./view";
   import ViewSwitch from "./ViewSwitch.svelte";
 
   interface Props {
@@ -32,11 +33,11 @@
 
   let { model, placement, analysis }: Props = $props();
 
-  let view = $state<KeymapView>(readView(browserStorage()));
+  // the layer, the selected key, the find text and the view outlast the page (see state.svelte.ts)
+  const kept = keymapState;
+  untrack(() => kept.follow(model.uid));
+  $effect.pre(() => kept.follow(model.uid));
   let reachOpen = $state(readReachOpen(browserStorage()));
-  let findText = $state("");
-  let layer = $state(0);
-  let selection = $state<KeyRef | null>(null);
   let pickerOpen = $state(false);
   // a pick can't be applied while the keyboard is unplugged or being re-read: close the picker
   $effect(() => {
@@ -47,7 +48,7 @@
   const phrases = $derived<PhraseContext>({ model, names, positions: analysis.positions });
   // what the find box looks for, everywhere the keymap produces it (in the keyboard language's legends)
   const found = $derived(
-    findOnKeymap(model, placement, queryOf(findText, keyboard.catalogue), analysis.combos, analysis.usage,
+    findOnKeymap(model, placement, queryOf(kept.findText, keyboard.catalogue), analysis.combos, analysis.usage,
       analysis.codes[0]),
   );
   const foundResults = $derived(
@@ -57,10 +58,10 @@
     })),
   );
   const highlighted = $derived(foundKeys(found, model.layers.length));
-  const actions = $derived(placement.items.map((item) => actionAt(model, layer, item)));
+  const actions = $derived(placement.items.map((item) => actionAt(model, kept.layer, item)));
   const faces = $derived(actions.map((d) => (d ? keyFace(d, names) : EMPTY_FACE)));
-  const comboMarks = $derived(comboMarksOf(analysis, placement, layer));
-  const highlights = $derived(placement.items.map((item) => highlighted[layer]?.has(refId(item)) ?? false));
+  const comboMarks = $derived(comboMarksOf(analysis, placement, kept.layer));
+  const highlights = $derived(placement.items.map((item) => highlighted[kept.layer]?.has(refId(item)) ?? false));
   // what each key does, in words: what screen readers say, and the tooltip (with names a key cap may cut short)
   const labels = $derived(
     placement.items.map((item, i) => {
@@ -69,27 +70,28 @@
       return `${label}${comboMarkLabel(comboMarks.combos[i])}${highlights[i] ? " · matches the search" : ""}`;
     }),
   );
-  const selectedIndex = $derived(
-    selection ? placement.items.findIndex((i) => i.kind === selection?.kind && i.index === selection.index) : -1,
-  );
+  const selectedIndex = $derived.by(() => {
+    const selection = kept.selection;
+    return selection ? placement.items.findIndex((i) => i.kind === selection.kind && i.index === selection.index) : -1;
+  });
 
   // a layer or key that no longer exists (another keyboard, other layout options) falls back to the first one
   $effect(() => {
-    if (layer >= model.layers.length) layer = 0;
+    if (kept.layer >= model.layers.length) kept.layer = 0;
     if (selectedIndex === -1 && placement.items.length > 0) {
       const first = placement.items[0];
-      selection = { kind: first.kind, index: first.index };
+      kept.selection = { kind: first.kind, index: first.index };
     }
   });
 
   function changeView(next: KeymapView) {
-    view = next;
+    kept.view = next;
     saveView(browserStorage(), next);
   }
 
   /** From the Overview: the layer, in the Edit view, with the focus on its tab */
   async function openLayer(index: number) {
-    layer = index;
+    kept.layer = index;
     changeView("edit");
     await tick();
     document.getElementById(`layer-tab-${index}`)?.focus();
@@ -107,34 +109,37 @@
 
   /** From a find result or another page: the key, selected in the Edit view on its layer */
   async function openKey(place: Place) {
-    layer = place.layer;
-    selection = place.ref;
+    kept.layer = place.layer;
+    kept.selection = place.ref;
     changeView("edit");
     await focusSelected();
   }
 
   function select(index: number) {
     const item = placement.items[index];
-    if (item) selection = { kind: item.kind, index: item.index };
+    if (item) kept.selection = { kind: item.kind, index: item.index };
   }
 
   async function focusSelected() {
     await tick();
-    if (selection) document.querySelector<HTMLElement>(`[data-ref="${refId(selection)}"]`)?.focus();
+    if (kept.selection) document.querySelector<HTMLElement>(`[data-ref="${refId(kept.selection)}"]`)?.focus();
   }
 
   function setCode(code: string, action = "Changing the key") {
-    return selection ? keyboard.setCode(layer, selection, code, action) : Promise.resolve(false);
+    return kept.selection ? keyboard.setCode(kept.layer, kept.selection, code, action) : Promise.resolve(false);
   }
 
   /** Runs an action of the Inspector. Its buttons take nothing meanwhile (they stay enabled, keeping the focus), and
    * the one pressed may go away or be disabled once it is done: the focus would fall to the page. The selected key
    * gets it back: when it fell, or when the action worked and the focus is still where it started (not somewhere the
-   * user moved it meanwhile). */
+   * user moved it meanwhile). Not when it showed another page (a tap dance made opens on its page): that page has the
+   * focus, or takes it, whatever order the two pages' updates run in. */
   async function fromInspector(run: () => Promise<boolean>): Promise<boolean> {
     const origin = document.activeElement;
     const done = await run();
+    if (router.route.section !== "keymap") return done;
     await tick();
+    if (router.route.section !== "keymap") return done;
     const now = document.activeElement;
     if (!now || now === document.body || (done && now === origin)) await focusSelected();
     return done;
@@ -142,7 +147,7 @@
 
   /** The tap dance made opens on its page */
   async function turnIntoTapDance() {
-    const index = selection ? await keyboard.turnIntoTapDance(layer, selection) : null;
+    const index = kept.selection ? await keyboard.turnIntoTapDance(kept.layer, kept.selection) : null;
     if (index !== null) router.go("tap-dance", index);
     return index !== null;
   }
@@ -151,7 +156,7 @@
 
   function onkeydown(event: KeyboardEvent) {
     // a dialog that is open (the picker) has the keyboard; its "close" event comes a moment after it closes
-    if (view !== "edit" || document.querySelector("dialog[open]") || event.defaultPrevented || event.altKey ||
+    if (kept.view !== "edit" || document.querySelector("dialog[open]") || event.defaultPrevented || event.altKey ||
       event.ctrlKey || event.metaKey) {
       return;
     }
@@ -170,24 +175,26 @@
       event.preventDefault();
       select(neighbour(placement.items, selectedIndex, direction));
       void focusSelected();
-    } else if (event.key === "Enter" && onKey && selection && keyboard.canEdit) {
+    } else if (event.key === "Enter" && onKey && kept.selection && keyboard.canEdit) {
       event.preventDefault();
       pickerOpen = true;
-    } else if ((event.key === "Delete" || event.key === "Backspace") && onKey && selection) {
+    } else if ((event.key === "Delete" || event.key === "Backspace") && onKey && kept.selection) {
       // Backspace too: the Mac's "delete" key
       event.preventDefault();
       void setCode("KC_NO", "Clearing the key");
     }
   }
 
-  const current = $derived(selection ? actionAt(model, layer, selection) : undefined);
+  const current = $derived(kept.selection ? actionAt(model, kept.layer, kept.selection) : undefined);
   const comboUses = $derived(
-    selection ? combosUsing(analysis.combos, model, analysis.codes[layer] ?? new Map(), layer, selection) : [],
+    kept.selection
+      ? combosUsing(analysis.combos, model, analysis.codes[kept.layer] ?? new Map(), kept.layer, kept.selection)
+      : [],
   );
   const subject = $derived.by(() => {
-    if (!selection) return "";
-    const { what, where } = whereIs(model, selection);
-    return `${what} ${where} on ${layerLabel(layer, names)}`;
+    if (!kept.selection) return "";
+    const { what, where } = whereIs(model, kept.selection);
+    return `${what} ${where} on ${layerLabel(kept.layer, names)}`;
   });
 </script>
 
@@ -196,24 +203,25 @@
 <section class="keymap" aria-labelledby="keymap-title">
   <header class="head">
     <div class="title">
-      <h1 id="keymap-title">Keymap</h1>
-      {#if view === "edit"}
+      <!-- focusable from script: it takes the focus when the page is shown from the back button (App.svelte) -->
+      <h1 id="keymap-title" tabindex="-1">Keymap</h1>
+      {#if kept.view === "edit"}
         <p>Click a key to see what it does. Arrow keys move, Enter changes it, Delete or Backspace clears it.</p>
       {:else}
         <p>Every layer at once, and how each one is reached. Click a layer to edit it.</p>
       {/if}
     </div>
-    <ViewSwitch {view} onchange={changeView} />
+    <ViewSwitch view={kept.view} onchange={changeView} />
   </header>
 
   {#snippet find()}
-    <FindBox bind:text={findText} results={foundResults} onopen={(place) => void openKey(place)} />
+    <FindBox bind:text={kept.findText} results={foundResults} onopen={(place) => void openKey(place)} />
   {/snippet}
 
-  {#if view === "overview"}
+  {#if kept.view === "overview"}
     {@render find()}
     <Overview
-      {model} {phrases} {placement} {analysis} {highlighted} current={layer} onopen={(i) => void openLayer(i)}
+      {model} {phrases} {placement} {analysis} {highlighted} current={kept.layer} onopen={(i) => void openLayer(i)}
     />
   {:else}
     <!-- the Inspector beside everything from the find box down, so that it starts high enough to fit the window -->
@@ -222,15 +230,15 @@
         {@render find()}
         <LayerTabs
           layers={model.layers}
-          active={layer}
+          active={kept.layer}
           canRename={keyboard.canEdit}
-          onselect={(i) => (layer = i)}
+          onselect={(i) => (kept.layer = i)}
           onrename={(i, name) => keyboard.rename("layers", i, name)}
         />
-        <div class="layer" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
-          {#if analysis.reach[layer]}
+        <div class="layer" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{kept.layer}">
+          {#if analysis.reach[kept.layer]}
             <ReachList
-              reach={analysis.reach[layer]}
+              reach={analysis.reach[kept.layer]}
               ctx={phrases}
               open={reachOpen}
               ontoggle={(open) => {
@@ -247,13 +255,13 @@
         </div>
       </div>
 
-      {#if selection && current}
-        {#key refId(selection)}
+      {#if kept.selection && current}
+        {#key refId(kept.selection)}
           <Inspector
             {model}
             {names}
-            {layer}
-            {selection}
+            layer={kept.layer}
+            selection={kept.selection}
             canEdit={keyboard.canEdit}
             busy={keyboard.pending > 0}
             {comboUses}
@@ -263,7 +271,7 @@
             onsetcode={(code, action) => fromInspector(() => setCode(code, action))}
             ontapdance={() => fromInspector(turnIntoTapDance)}
             onjump={(i) => {
-              layer = i;
+              kept.layer = i;
               void focusSelected();
             }}
           />
@@ -273,7 +281,7 @@
   {/if}
 </section>
 
-{#if view === "edit" && selection && current}
+{#if kept.view === "edit" && kept.selection && current}
   <Picker
     bind:open={pickerOpen}
     {subject}
@@ -300,6 +308,10 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 10px 16px;
+  }
+
+  .head h1:focus {
+    outline: none;
   }
 
   .head h1 {

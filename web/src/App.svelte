@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick, untrack } from "svelte";
   import { analyse } from "./analysis/analysis";
   import CombosPage from "./behaviours/CombosPage.svelte";
   import { behaviourCounts } from "./behaviours/entries";
@@ -40,6 +41,30 @@
   const section = $derived<SectionId>(
     sections.some((s) => s.id === router.route.section) ? router.route.section : "keymap",
   );
+  // ... and the address says so, once the keyboard is read (before, no section but the keymap is known)
+  $effect(() => {
+    if (keyboard.model && router.route.section !== section) untrack(() => router.go(section, null, { replace: true }));
+  });
+
+  $effect(() => {
+    document.title = `${sections.find((s) => s.id === section)?.label ?? "Keymap"} · Vial`;
+  });
+
+  // another page shown from the address (the back or forward button): the focus, which was on the page that went,
+  // goes to the new page's heading. A card the address names takes it itself (useTarget).
+  let sectionShown: SectionId | null = null;
+  $effect(() => {
+    const now = section;
+    untrack(() => {
+      const before = sectionShown;
+      sectionShown = now;
+      if (before === null || before === now || !router.fromAddress || router.route.item !== null) return;
+      void tick().then(() => {
+        const focused = document.activeElement;
+        if (!focused || focused === document.body) document.getElementById(`${now}-title`)?.focus();
+      });
+    });
+  });
 
   const status = $derived(
     keyboard.link === "closed"
@@ -72,7 +97,7 @@
 />
 
 <div class="shell">
-  <Nav {sections} active={section} onselect={(id) => router.go(id as SectionId)} />
+  <Nav {sections} active={section} onselect={(id) => router.go(id)} />
 
   <main class="content">
     {#if status === "offline"}

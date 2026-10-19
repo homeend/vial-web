@@ -15,7 +15,8 @@
 
 <header class="head">
   <div class="title">
-    <h1 {id}>{title}</h1>
+    <!-- focusable from script: it takes the focus when the page is shown from the back button (App.svelte) -->
+    <h1 {id} tabindex="-1">{title}</h1>
     <p>{description}</p>
   </div>
   {#if action}<div class="action">{@render action()}</div>{/if}
@@ -33,6 +34,10 @@
   .title {
     flex: 1 1 320px;
     min-width: 0;
+  }
+
+  h1:focus {
+    outline: none;
   }
 
   h1 {

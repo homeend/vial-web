@@ -82,6 +82,21 @@ describe("Router", () => {
     expect(router.route).toBe(shown);
   });
 
+  it("tells whether the route shown came from the address or from go()", async () => {
+    const address = fakeAddress("#combos");
+    const router = new Router();
+    router.start();
+    expect(router.fromAddress).toBe(false);
+    router.go("macros");
+    await settle();
+    expect(router.fromAddress).toBe(false);
+    address.visit("#combos");
+    await settle();
+    expect(router.fromAddress).toBe(true);
+    router.go("tap-dance", 1);
+    expect(router.fromAddress).toBe(false);
+  });
+
   it("hands a key to the keymap once", () => {
     fakeAddress("#combos");
     const router = new Router();

@@ -147,7 +147,8 @@
   function newCombo() {
     if (free === null || busy) return;
     opened = [...opened, free];
-    router.go("combos", free);
+    // on the page shown: no step back, which would look like it did nothing
+    router.go("combos", free, { replace: true });
     edit(free);
   }
 

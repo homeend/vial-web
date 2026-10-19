@@ -9,6 +9,9 @@ export class Router {
   route = $state<Route>(hasAddress() ? parseRoute(location.hash) : HOME);
   /** a key to select in the keymap's Edit view: the keymap takes it when it shows */
   keyTarget = $state<Place | null>(null);
+  /** the route shown last came from the address (the back or forward button, a link, an address typed), rather than
+   * from go() */
+  fromAddress = false;
 
   /** Follow the address (the back button too); returns a function that stops */
   start(): () => void {
@@ -17,7 +20,10 @@ export class Router {
       // the route (scrolling to a card) run once
       const read = () => {
         const route = parseRoute(location.hash);
-        if (route.section !== this.route.section || route.item !== this.route.item) this.route = route;
+        if (route.section !== this.route.section || route.item !== this.route.item) {
+          this.fromAddress = true;
+          this.route = route;
+        }
       };
       read();
       window.addEventListener("hashchange", read);
@@ -29,6 +35,7 @@ export class Router {
    * on the page shown */
   go(section: SectionId, item: number | null = null, { replace = false }: { replace?: boolean } = {}): void {
     const route = { section, item };
+    this.fromAddress = false;
     this.route = route;
     if (!hasAddress()) return;
     const hash = routeHash(route);

@@ -120,7 +120,8 @@
   function newMacro() {
     if (free === null || busy) return;
     opened = [...opened, free];
-    router.go("macros", free);
+    // on the page shown: no step back, which would look like it did nothing
+    router.go("macros", free, { replace: true });
     edit(free);
   }
 

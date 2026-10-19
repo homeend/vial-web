@@ -89,7 +89,8 @@
   function newTapDance() {
     if (free === null) return;
     opened = [...opened, free];
-    router.go("tap-dance", free);
+    // on the page shown: no step back, which would look like it did nothing
+    router.go("tap-dance", free, { replace: true });
   }
 </script>
 
