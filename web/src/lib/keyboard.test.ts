@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
-import type { Described, KeyboardLanguage, KeyboardModel, ServerEvent } from "../api/types";
+import type { Described, KeyboardLanguage, KeyboardModel, ServerEvent, UnlockState } from "../api/types";
 
 vi.mock("../api/api", () => ({
   api: {
@@ -11,7 +11,12 @@ vi.mock("../api/api", () => ({
     setKey: vi.fn(),
     setEncoder: vi.fn(),
     setTapDance: vi.fn(),
-    setLayerName: vi.fn(),
+    setCombo: vi.fn(),
+    setMacros: vi.fn(),
+    setName: vi.fn(),
+    unlockStart: vi.fn(),
+    unlockCancel: vi.fn(),
+    lock: vi.fn(),
   },
 }));
 vi.mock("../api/events", () => ({ connectEvents: vi.fn(() => () => undefined) }));
@@ -61,6 +66,10 @@ function model(code: string): KeyboardModel {
   } as unknown as KeyboardModel;
 }
 
+const LOCKED: UnlockState = { state: "locked", keys: [], remaining: 0, total: 0 };
+const UNLOCKING: UnlockState = { state: "unlocking", keys: [{ row: 0, col: 0 }], remaining: 0, total: 0 };
+const UNLOCKED: UnlockState = { state: "unlocked", keys: [], remaining: 0, total: 0 };
+
 const LANGUAGES: KeyboardLanguage[] = [{ id: "en-us", name: "English (US)" }, { id: "pl", name: "Polish (QWERTY)" }];
 
 let storage: Record<string, string>;
@@ -75,7 +84,7 @@ beforeEach(() => {
       storage[key] = value;
     },
   });
-  mocked.session.mockResolvedValue({ fake: true } as never);
+  mocked.session.mockResolvedValue({ fake: true, unlock: LOCKED } as never);
   mocked.keycodes.mockResolvedValue([]);
   mocked.languages.mockResolvedValue(LANGUAGES);
   mocked.keyboard.mockResolvedValue(model("KC_A"));
@@ -347,8 +356,83 @@ describe("refused edits", () => {
     mocked.keyboard.mockReturnValueOnce(new Promise(() => undefined)); // still reading when the tap dance is made
     emit("reloaded");
     made.resolve({ ...free, tap: described("KC_A") } as never);
-    expect(await turning).toBe(false);
+    expect(await turning).toBeNull();
     expect(mocked.setKey).not.toHaveBeenCalled();
     expect(toasts.items.map((t) => t.message).join()).toContain("couldn't be changed");
+  });
+});
+
+describe("behaviour edits", () => {
+  it("fill a combo's empty slots and put the keyboard's reply into the model", async () => {
+    const { store } = await loaded();
+    store.model!.combos = [{ index: 0, keys: [], output: described("KC_NO") }] as never;
+    const reply = { index: 0, keys: ["KC_K", "KC_Y", "KC_NO", "KC_NO"].map(described), output: described("KC_ESC") };
+    mocked.setCombo.mockResolvedValueOnce(reply);
+    expect(await store.setCombo(0, ["KC_K", "KC_Y"], "KC_ESC")).toBe(true);
+    expect(mocked.setCombo).toHaveBeenCalledWith(0, { keys: ["KC_K", "KC_Y", "KC_NO", "KC_NO"], output: "KC_ESC" });
+    expect(store.model!.combos[0].output.code).toBe("KC_ESC");
+  });
+
+  it("name a tap dance or a macro", async () => {
+    const { store } = await loaded();
+    store.model!.macros = { count: 1, memory: 100, used: 1, items: [{ index: 0, name: "", customName: false, actions: [] }] };
+    mocked.setName.mockResolvedValueOnce({ kind: "macros", index: 0, name: "git status", customName: true });
+    expect(await store.rename("macros", 0, "git status")).toBe(true);
+    expect(mocked.setName).toHaveBeenCalledWith("macros", 0, "git status");
+    expect(store.model!.macros.items[0]).toMatchObject({ name: "git status", customName: true });
+  });
+});
+
+describe("a locked keyboard", () => {
+  const macros = { count: 1, memory: 100, used: 4, items: [] };
+
+  it("follows the unlock state from the session and the events", async () => {
+    const { store, send } = await loaded();
+    expect(store.unlock.state).toEqual(LOCKED);
+    send({ type: "unlock", unlock: UNLOCKING });
+    expect(store.unlock.state).toEqual(UNLOCKING);
+    expect(store.unlock.open).toBe(true);
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(store.unlock.open).toBe(false);
+    expect(mocked.keyboard).toHaveBeenCalledTimes(1); // an unlock event doesn't read the keyboard again
+  });
+
+  it("is unlocked when a change is refused, and the change is sent again once it is", async () => {
+    const { store, send } = await loaded();
+    mocked.setMacros.mockRejectedValueOnce(new ApiError(423, "the keyboard is locked")).mockResolvedValueOnce(macros);
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    const saving = store.setMacros([[]]);
+    await settle();
+    expect(mocked.unlockStart).toHaveBeenCalledTimes(1);
+    expect(store.unlock.open).toBe(true);
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await saving).toBe(true);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(2);
+    expect(store.model!.macros).toEqual(macros);
+    expect(toasts.items).toEqual([]);
+  });
+
+  it("fails the change when the unlock is cancelled", async () => {
+    const { store } = await loaded();
+    mocked.setMacros.mockRejectedValueOnce(new ApiError(423, "the keyboard is locked"));
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    mocked.unlockCancel.mockResolvedValueOnce({ ...UNLOCKING, state: "cancelled" });
+    const saving = store.setMacros([[]]);
+    await settle();
+    await store.unlock.cancel();
+    expect(await saving).toBe(false);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(1);
+    expect(toasts.items.map((t) => t.message)).toEqual(["Saving the macro failed: The keyboard is locked, and it wasn't unlocked."]);
+  });
+
+  it("sends a change refused while another unlock runs again once that one ends", async () => {
+    const { store, send } = await loaded();
+    send({ type: "unlock", unlock: UNLOCKING });
+    mocked.setMacros.mockRejectedValueOnce(new ApiError(423, "waiting for its unlock keys")).mockResolvedValueOnce(macros);
+    const saving = store.setMacros([[]]);
+    await settle();
+    expect(mocked.unlockStart).not.toHaveBeenCalled();
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await saving).toBe(true);
   });
 });

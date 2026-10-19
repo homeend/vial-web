@@ -20,6 +20,12 @@ export type TapDance = Schemas["TapDance"];
 export type TapDanceIn = Schemas["TapDanceIn"];
 export type Legend = Schemas["Legend"];
 export type Named = Schemas["Named"];
+export type Combo = Schemas["Combo"];
+export type ComboIn = Schemas["ComboIn"];
+export type Macro = Schemas["Macro"];
+export type Macros = Schemas["Macros"];
+export type MacroAction = Schemas["MacroAction"];
+export type MacroActionIn = Schemas["MacroActionIn"];
 export type UnlockState = Schemas["UnlockState"];
 export type MatrixPosition = Schemas["MatrixPosition"];
 /** what /api/events sends */

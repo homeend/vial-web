@@ -5,10 +5,13 @@ import { api } from "../api/api";
 import { DEFAULT_LANGUAGE, setRequestLanguage } from "../api/client";
 import { ApiError, failureMessage } from "../api/errors";
 import { connectEvents, type LinkState, type ServerEvent } from "../api/events";
-import type { KeyboardLanguage, KeyboardModel, KeycodeCategory, Session } from "../api/types";
+import type {
+  KeyboardLanguage, KeyboardModel, KeycodeCategory, MacroActionIn, Named, Session, TapDanceIn,
+} from "../api/types";
 import { actionAt, type KeyRef } from "../keyboard/refs";
 import { freeTapDance } from "../keymap/tapdance";
 import { toasts } from "./toasts.svelte";
+import { Unlocker } from "./unlock.svelte";
 
 const LANGUAGE_KEY = "vial.keyboardLanguage";
 
@@ -45,6 +48,8 @@ export class KeyboardStore {
   loadError = $state<string | null>(null);
   /** edits waiting for the keyboard */
   pending = $state(0);
+  /** whether the keyboard is unlocked, and the unlock dialog */
+  readonly unlock = new Unlocker();
 
   canEdit = $derived(this.model !== null && !this.stale && this.connected && this.link === "open");
 
@@ -70,7 +75,10 @@ export class KeyboardStore {
   }
 
   #onEvent(event: ServerEvent): void {
-    if (event.type === "unlock") return; // the unlock state: the unlock dialog follows it
+    if (event.type === "unlock") {
+      if (event.unlock) this.unlock.update(event.unlock);
+      return;
+    }
     this.connected = event.type !== "disconnected";
     this.stale = true;
     if (this.connected) {
@@ -78,7 +86,7 @@ export class KeyboardStore {
     } else {
       this.#loads++; // a load in flight is for the keyboard that went away
       this.loadError = null;
-      api.session().then((s) => (this.session = s), () => undefined);
+      api.session().then((s) => this.#useSession(s), () => undefined);
     }
   }
 
@@ -88,7 +96,7 @@ export class KeyboardStore {
     try {
       const [session, model, catalogue] = await Promise.all([api.session(), api.keyboard(), api.keycodes()]);
       if (load !== this.#loads) return;
-      this.session = session;
+      this.#useSession(session);
       this.model = model;
       this.catalogue = catalogue;
       this.loadError = null;
@@ -107,6 +115,11 @@ export class KeyboardStore {
       }
       this.loadError = failureMessage("Loading the keyboard", error);
     }
+  }
+
+  #useSession(session: Session): void {
+    this.session = session;
+    this.unlock.update(session.unlock);
   }
 
   async setLanguage(lang: string): Promise<void> {
@@ -162,44 +175,81 @@ export class KeyboardStore {
     return false;
   }
 
-  /** Put the key's current action into a free tap dance's tap slot, then put that tap dance on the key */
-  async turnIntoTapDance(layer: number, ref: KeyRef): Promise<boolean> {
+  /** Put the key's current action into a free tap dance's tap slot, then put that tap dance on the key. Returns the
+   * tap dance's index, or null when it didn't work. */
+  async turnIntoTapDance(layer: number, ref: KeyRef): Promise<number | null> {
     const model = this.model;
     const current = model ? actionAt(model, layer, ref) : undefined;
     const index = model ? freeTapDance(model) : null;
-    if (!model || !current || index === null || !this.canEdit) return false;
+    if (!model || !current || index === null || !this.canEdit) return null;
     const entry = model.tapDance[index];
-    const created = await this.#edit("Making a tap dance", model, async () => {
-      model.tapDance[index] = await api.setTapDance(index, {
-        tap: current.code, hold: "KC_NO", doubleTap: "KC_NO", tapHold: "KC_NO", tappingTerm: entry.tappingTerm,
-      });
-    });
-    if (!created) return false;
+    const created = await this.setTapDance(index, {
+      tap: current.code, hold: "KC_NO", doubleTap: "KC_NO", tapHold: "KC_NO", tappingTerm: entry.tappingTerm,
+    }, "Making a tap dance");
+    if (!created) return null;
     if (!this.canEdit) {
       // setCode reports its own failures, but would refuse this one without a word
       toasts.error(`Tap dance ${index} was made, but the key couldn't be changed to TD(${index}).`);
-      return false;
+      return null;
     }
-    return this.setCode(layer, ref, `TD(${index})`, "Putting the tap dance on the key");
+    return (await this.setCode(layer, ref, `TD(${index})`, "Putting the tap dance on the key")) ? index : null;
   }
 
-  async renameLayer(index: number, name: string): Promise<boolean> {
+  /** Set a tap dance's four slots and its tapping term */
+  setTapDance(index: number, body: TapDanceIn, action = "Changing the tap dance"): Promise<boolean> {
     const model = this.model;
-    if (!model || !this.canEdit) return false;
-    return this.#edit("Renaming the layer", model, async () => {
-      // the reply is the name to show: the new one, or the default name when it was cleared
-      const named = await api.setLayerName(index, name);
-      model.layers[index].name = named.name;
-      model.layers[index].customName = named.customName;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit(action, model, async () => {
+      model.tapDance[index] = await api.setTapDance(index, body);
     });
   }
 
-  /** Runs write, which puts the keyboard's reply into model */
+  /** Set a combo: its keycodes (at most 4; the empty slots are filled in) and its output */
+  setCombo(index: number, keys: string[], output: string, action = "Changing the combo"): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    const slots = [...keys, "KC_NO", "KC_NO", "KC_NO", "KC_NO"].slice(0, 4);
+    return this.#edit(action, model, async () => {
+      model.combos[index] = await api.setCombo(index, { keys: slots, output });
+    });
+  }
+
+  /** Set every macro: they share the macro memory (the keyboard keeps the bytes of those that didn't change) */
+  setMacros(items: MacroActionIn[][], action = "Saving the macro"): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    return this.#edit(action, model, async () => {
+      model.macros = await api.setMacros(items);
+    });
+  }
+
+  /** Name a layer, tap dance or macro; an empty name gives it its default one back */
+  rename(kind: Named["kind"], index: number, name: string): Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return Promise.resolve(false);
+    const what = { layers: "layer", tapDance: "tap dance", macros: "macro" }[kind];
+    return this.#edit(`Renaming the ${what}`, model, async () => {
+      // the reply is the name to show: the new one, or the default name when it was cleared
+      const named = await api.setName(kind, index, name);
+      const item = kind === "layers" ? model.layers[index]
+        : kind === "tapDance" ? model.tapDance[index] : model.macros.items[index];
+      item.name = named.name;
+      item.customName = named.customName;
+    });
+  }
+
+  /** Runs write, which puts the keyboard's reply into model. A change refused because the keyboard is locked unlocks
+   * it (the user holds its unlock keys) and is sent again, once. */
   async #edit(action: string, model: KeyboardModel, write: () => Promise<void>): Promise<boolean> {
     this.pending++;
     const loads = this.#loads;
     try {
-      await write();
+      try {
+        await write();
+      } catch (error) {
+        if (!(error instanceof ApiError && error.status === 423) || !(await this.unlock.unlock())) throw error;
+        await write();
+      }
       // a load started or landed meanwhile and may have read the keyboard before this edit (it can land after it,
       // too): read it again, unless the keyboard is gone
       if ((this.#loads !== loads || this.model !== model) && this.connected) void this.load();

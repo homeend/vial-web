@@ -20,7 +20,7 @@ export function errorMessage(status: number, detail?: string): string {
     case 401:
       return "This page's session has ended. Open Vial again from the link in its terminal.";
     case 423:
-      return "This change needs the keyboard unlocked; unlocking isn't supported yet.";
+      return "The keyboard is locked, and it wasn't unlocked.";
     case 422:
       return detail || "The keyboard can't take this change.";
     case 500:

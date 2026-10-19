@@ -129,7 +129,7 @@
   }
 
   function turnIntoTapDance() {
-    return selection ? keyboard.turnIntoTapDance(layer, selection) : Promise.resolve(false);
+    return selection ? keyboard.turnIntoTapDance(layer, selection).then((index) => index !== null) : Promise.resolve(false);
   }
 
   const ARROWS: Record<string, Direction> = { ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down" };
@@ -210,7 +210,7 @@
           active={layer}
           canRename={keyboard.canEdit}
           onselect={(i) => (layer = i)}
-          onrename={(i, name) => keyboard.renameLayer(i, name)}
+          onrename={(i, name) => keyboard.rename("layers", i, name)}
         />
         <div class="layer" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{layer}">
           {#if analysis.reach[layer]}

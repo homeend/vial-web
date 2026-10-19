@@ -4,7 +4,7 @@ import { ApiError, errorMessage, failureMessage } from "./errors";
 describe("errorMessage", () => {
   it.each([
     [503, "no keyboard connected", "The keyboard isn't connected."],
-    [423, "locked", "This change needs the keyboard unlocked; unlocking isn't supported yet."],
+    [423, "locked", "The keyboard is locked, and it wasn't unlocked."],
     [422, "not a valid keycode: FOO", "not a valid keycode: FOO"],
     [502, "the keyboard didn't respond: timeout", "The keyboard didn't respond."],
     [500, "unexpected error, see vial.log", "Unexpected error, see vial.log."],

@@ -1,6 +1,6 @@
 // The server's routes the UI uses.
 import { request } from "./client";
-import type { TapDanceIn } from "./types";
+import type { ComboIn, MacroActionIn, Named, TapDanceIn } from "./types";
 
 export const api = {
   session: () => request("get", "/api/session"),
@@ -14,8 +14,11 @@ export const api = {
     request("put", "/api/encoders/{layer}/{index}/{direction}", { params: { layer, index, direction }, body: { code } }),
   setTapDance: (index: number, body: TapDanceIn) =>
     request("put", "/api/tap-dance/{index}", { params: { index }, body }),
-  setLayerName: (index: number, name: string) =>
-    request("put", "/api/names/{kind}/{index}", { params: { kind: "layers", index }, body: { name } }),
+  setCombo: (index: number, body: ComboIn) => request("put", "/api/combos/{index}", { params: { index }, body }),
+  /** every macro: they share the keyboard's macro memory */
+  setMacros: (items: MacroActionIn[][]) => request("put", "/api/macros", { body: { items } }),
+  setName: (kind: Named["kind"], index: number, name: string) =>
+    request("put", "/api/names/{kind}/{index}", { params: { kind, index }, body: { name } }),
   unlockStart: () => request("post", "/api/unlock/start"),
   unlockCancel: () => request("post", "/api/unlock/cancel"),
   lock: () => request("post", "/api/lock"),
