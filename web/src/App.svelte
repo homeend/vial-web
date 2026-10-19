@@ -97,6 +97,22 @@
   const lock = $derived(
     status !== "connected" || !keyboard.model ? null : unlock.state === "unlocked" ? "unlocked" : "locked",
   );
+
+  // the banner that says why the keyboard can't be edited, if any. The bootloader's takes the focus (BootloaderCard);
+  // when it goes (the keyboard is back), the focus, which would fall to the page's body, goes to the page's heading.
+  // This runs before the banner leaves the page, while it still has the focus.
+  const why = $derived(
+    status === "offline" ? "offline" : blocked && keyboard.inBootloader ? "bootloader" : blocked ? "unplugged" : null,
+  );
+  $effect.pre(() => {
+    void why;
+    const banner = document.getElementById("bootloader-banner");
+    if (!banner || banner !== document.activeElement) return;
+    void tick().then(() => {
+      const focused = document.activeElement;
+      if (!focused || focused === document.body) document.getElementById(`${section}-title`)?.focus();
+    });
+  });
 </script>
 
 <TopBar
