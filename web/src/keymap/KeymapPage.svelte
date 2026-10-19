@@ -1,9 +1,9 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { analyse } from "../analysis/analysis";
+  import { analyse, comboMarksOf } from "../analysis/analysis";
   import { combosUsing } from "../analysis/combos";
   import { findOnKeymap, foundKeys, queryOf, type Place } from "../analysis/find";
-  import { foundLabel, type PhraseContext } from "../analysis/phrases";
+  import { comboMarkLabel, foundLabel, type PhraseContext } from "../analysis/phrases";
   import type { KeyboardModel } from "../api/types";
   import { placeKeyboard } from "../keyboard/geometry";
   import Keyboard from "../keyboard/Keyboard.svelte";
@@ -58,14 +58,14 @@
   const highlighted = $derived(foundKeys(found, model.layers.length));
   const actions = $derived(placement.items.map((item) => actionAt(model, layer, item)));
   const faces = $derived(actions.map((d) => (d ? keyFace(d, names) : EMPTY_FACE)));
-  const combos = $derived(placement.items.map((item) => analysis.comboKeys[layer]?.has(refId(item)) ?? false));
+  const comboMarks = $derived(comboMarksOf(analysis, placement, layer));
   const highlights = $derived(placement.items.map((item) => highlighted[layer]?.has(refId(item)) ?? false));
   // what each key does, in words: what screen readers say, and the tooltip (with names a key cap may cut short)
   const labels = $derived(
     placement.items.map((item, i) => {
       const { what, where } = whereIs(model, item);
       const label = keyLabel(actions[i], names, `${what.toLowerCase()} ${where}`);
-      return `${label}${combos[i] ? " · part of a combo" : ""}${highlights[i] ? " · matches the search" : ""}`;
+      return `${label}${comboMarkLabel(comboMarks.combos[i])}${highlights[i] ? " · matches the search" : ""}`;
     }),
   );
   const selectedIndex = $derived(
@@ -225,7 +225,8 @@
             />
           {/if}
           <div class="board">
-            <Keyboard {placement} {faces} {labels} {combos} {highlights} selected={selectedIndex} onselect={select} />
+            <Keyboard {placement} {faces} {labels} combos={comboMarks.colours} {highlights} selected={selectedIndex}
+              onselect={select} />
             <KindLegend />
           </div>
         </div>
@@ -240,6 +241,7 @@
             {selection}
             canEdit={keyboard.canEdit && keyboard.pending === 0}
             {comboUses}
+            comboColours={analysis.comboColours}
             onchangekey={() => (pickerOpen = true)}
             onsetcode={(code, action) => fromInspector(() => setCode(code, action))}
             ontapdance={() => fromInspector(turnIntoTapDance)}

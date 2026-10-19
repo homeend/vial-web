@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PlacedKey } from "./geometry";
   import { compactLegendSize, legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
+  import { comboMarks, dotSizes } from "./marks";
   import { refId } from "./refs";
   import { legendFont } from "./textWidth.svelte";
 
@@ -14,10 +15,17 @@
     label: string;
     /** reaches the key with Tab (the selected one, or the first) */
     focusable: boolean;
-    /** part of a combo: underlined */
-    combo?: boolean;
+    /** the colours (palette indexes) of the combos it is part of, in combo order: one is an underline, several a row
+     * of dots */
+    combos?: number[];
     /** produces what the find box looks for: highlighted */
     found?: boolean;
+    /** a ring around the key in this colour (a CSS colour), as the found ring is drawn: marks the keys of a combo */
+    ring?: string | null;
+    /** drawn faintly: a key that doesn't matter here */
+    faded?: boolean;
+    /** a key to choose (pressed) or not: aria-pressed says this instead of whether it is selected */
+    chosen?: boolean;
     /** a key to click; otherwise only a picture (the keyboard as a whole is labelled) */
     interactive?: boolean;
     /** a small key showing its main legend only, as large as it fits */
@@ -26,8 +34,11 @@
   }
 
   let {
-    item, face, u, selected, label, focusable, combo = false, found = false, interactive = true, compact = false, onselect,
+    item, face, u, selected, label, focusable, combos = [], found = false, ring = null, faded = false, chosen,
+    interactive = true, compact = false, onselect,
   }: Props = $props();
+
+  const combo = $derived(combos.length > 0);
 
   const GAP = 0.09;
   /** space around the labels, in key units */
@@ -54,12 +65,38 @@
     return shapes.map((s) => ({ x: s.x * u + g / 2, y: s.y * u + g / 2, w: s.w * u - g, h: s.h * u - g }));
   });
 
-  // the legends fit inside the primary rectangle, less the gap between keys and the padding
+  // a line along the bottom of the primary rectangle, inside its outline: where the combo marks go
+  const underline = $derived.by(() => {
+    const r = rects[0];
+    const thickness = Math.max(2, u * 0.07);
+    const inset = Math.max(2, u * 0.12);
+    const bottom = r.y + r.h - Math.max(1.5, u * 0.05);
+    return { x: r.x + inset, y: bottom - thickness, w: Math.max(0, r.w - 2 * inset), h: thickness, bottom };
+  });
+  const dots = $derived(dotSizes(u));
+  const marks = $derived(comboMarks(combos, underline.w, dots));
+  // the marks keep their own space at the bottom of the key, which the legends don't go into
+  const markSpace = $derived(
+    marks.type === "none" ? 0 : rects[0].y + rects[0].h - (marks.type === "line" ? underline.y : underline.bottom - dots.dot),
+  );
+  const dotRow = $derived.by(() => {
+    if (marks.type !== "dots") return null;
+    const step = dots.dot + dots.gap;
+    const width = marks.colours.length * step - dots.gap + (marks.more > 0 ? dots.more : 0);
+    const left = underline.x + (underline.w - width) / 2;
+    const cy = underline.bottom - dots.dot / 2;
+    return {
+      dots: marks.colours.map((colour, i) => ({ cx: left + i * step + dots.dot / 2, cy, colour })),
+      more: marks.more > 0 ? { x: left + width, y: cy, text: `+${marks.more}` } : null,
+    };
+  });
+
+  // the legends fit inside the primary rectangle, less the gap between keys, the padding and the combo marks
   // a small key keeps less space around its only legend
   const pad = $derived(compact ? COMPACT_PAD : PAD);
   const sizes = $derived.by(() => {
     const width = (item.w - GAP - 2 * pad) * u;
-    const height = (item.h - GAP - 2 * pad) * u;
+    const height = (item.h - GAP - 2 * pad) * u - markSpace;
     return compact
       ? { main: compactLegendSize(face.main, width, height, u, legendFont.width), shifted: 0, hold: 0, holdLines: 0 }
       : legendSizes(face, width, height, u, legendFont.width);
@@ -68,7 +105,7 @@
   // a found key also gets a ring outside its outline, apart from it: found shows by shape as well as colour, on keys
   // of any kind and next to the selection's outline (5 px wide, so 2.5 px out). One shape: the key grown by the gap
   // and the ring, less the key grown by the gap (a mask), so that the two rectangles of an ISO Enter get one ring
-  const ring = $derived.by(() => {
+  const ringShape = $derived.by(() => {
     const grow = (r: { x: number; y: number; w: number; h: number }, by: number) => ({
       x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by, rx: ROUND * u + by,
     });
@@ -97,35 +134,29 @@
     ].filter(Boolean).join("; "),
   );
 
-  // a line along the bottom of the primary rectangle, inside its outline
-  const underline = $derived.by(() => {
-    const r = rects[0];
-    const thickness = Math.max(2, u * 0.07);
-    const inset = Math.max(2, u * 0.12);
-    const bottom = r.y + r.h - Math.max(1.5, u * 0.05);
-    return { x: r.x + inset, y: bottom - thickness, w: Math.max(0, r.w - 2 * inset), h: thickness };
-  });
-
   const legendStyle = $derived(
-    `left: ${rects[0].x}px; top: ${rects[0].y}px; width: ${rects[0].w}px; height: ${rects[0].h}px; ` +
+    `left: ${rects[0].x}px; top: ${rects[0].y}px; width: ${rects[0].w}px; height: ${rects[0].h - markSpace}px; ` +
       `padding: ${pad * u}px`,
   );
+
+  const ringColour = $derived(found ? "var(--find)" : ring);
 </script>
 
 {#snippet cap()}
   <svg class="cap" width={box.width * u} height={box.height * u} aria-hidden="true">
-    {#if found}
+    {#if ringColour}
       <!-- white keeps, black cuts away: mask values, not colours that show -->
       <mask id={ringMask}>
-        {#each ring.outer as r, i (i)}
+        {#each ringShape.outer as r, i (i)}
           <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={r.rx} fill="white" />
         {/each}
-        {#each ring.inner as r, i (i)}
+        {#each ringShape.inner as r, i (i)}
           <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={r.rx} fill="black" />
         {/each}
       </mask>
-      {#each ring.outer as r, i (i)}
-        <rect class="find-ring" x={r.x} y={r.y} width={r.w} height={r.h} rx={r.rx} mask="url(#{ringMask})" />
+      {#each ringShape.outer as r, i (i)}
+        <rect class="ring" x={r.x} y={r.y} width={r.w} height={r.h} rx={r.rx} mask="url(#{ringMask})"
+          style="fill: {ringColour}" />
       {/each}
     {/if}
     <!-- outlines first, then the fills over them: two rectangles read as one key (ISO Enter) -->
@@ -135,9 +166,17 @@
     {#each rects as r, i (i)}
       <rect class="face" x={r.x} y={r.y} width={r.w} height={r.h} rx={ROUND * u} />
     {/each}
-    {#if combo}
+    {#if marks.type === "line"}
       <rect class="combo-mark" x={underline.x} y={underline.y} width={underline.w} height={underline.h}
-        rx={underline.h / 2} />
+        rx={underline.h / 2} style="fill: var(--combo-{marks.colour})" />
+    {:else if dotRow}
+      {#each dotRow.dots as d, i (i)}
+        <circle class="combo-dot" cx={d.cx} cy={d.cy} r={dots.dot / 2} style="fill: var(--combo-{d.colour})" />
+      {/each}
+      {#if dotRow.more}
+        <text class="combo-more" x={dotRow.more.x} y={dotRow.more.y} text-anchor="end" dominant-baseline="central"
+          font-size={Math.max(8, dots.dot * 1.5)}>{dotRow.more.text}</text>
+      {/if}
     {/if}
   </svg>
   <span class="legend" style={legendStyle}>
@@ -157,10 +196,12 @@
     class:notched={item.hasSecond}
     class:combo
     class:found
+    class:ringed={ringColour !== null}
+    class:faded
     {style}
     aria-label={label}
     title={label}
-    aria-pressed={selected}
+    aria-pressed={chosen ?? selected}
     tabindex={focusable ? 0 : -1}
     data-ref={refId(item)}
     onclick={onselect}
@@ -168,7 +209,8 @@
     {@render cap()}
   </button>
 {:else}
-  <div class="key static tone-{face.tone}" data-tone={face.tone} class:combo class:found {style}>
+  <div class="key static tone-{face.tone}" data-tone={face.tone} class:combo class:found class:ringed={ringColour !== null}
+    class:faded {style}>
     {@render cap()}
   </div>
 {/if}
@@ -224,8 +266,13 @@
     fill: color-mix(in srgb, var(--key-bg) 55%, var(--board-bg));
   }
 
-  .combo-mark {
-    fill: var(--combo);
+  .combo-more {
+    fill: var(--text-2);
+    font-weight: 700;
+  }
+
+  .faded {
+    opacity: 0.38;
   }
 
   .static {
@@ -246,13 +293,9 @@
     filter: drop-shadow(0 0 calc(var(--u) * 0.12) color-mix(in srgb, var(--find) 70%, transparent));
   }
 
-  /* the ring reaches into the gap between keys (past it, on small keys): a found key sits above its neighbours */
-  .found {
+  /* the ring reaches into the gap between keys (past it, on small keys): a ringed key sits above its neighbours */
+  .ringed {
     z-index: 1;
-  }
-
-  .find-ring {
-    fill: var(--find);
   }
 
   .selected .edge {
@@ -269,7 +312,7 @@
     outline-offset: 2px;
   }
 
-  .found:focus-visible {
+  .ringed:focus-visible {
     outline-offset: max(2px, var(--ring-clear));
   }
 

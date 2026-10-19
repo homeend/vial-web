@@ -95,18 +95,23 @@ test("a combo of two layer keys whose output is a layer key reaches that layer",
   }
 });
 
-test("combo keys are underlined, in the Edit view and the Overview", async ({ app }) => {
-  // K + Y and M + C on the base layer
+test("combo keys are underlined in their combo's colour, in the Edit view and the Overview", async ({ app }) => {
+  // K + Y (combo 0) and M + C (combo 1) on the base layer
   const members = await Promise.all([[6, 2], [6, 1], [2, 2], [2, 3]].map(([r, c]) => keyIndex(app, r, c)));
-  for (const index of members) {
+  const fills: string[] = [];
+  for (const [i, index] of members.entries()) {
     const key = app.locator(`[data-ref="key:${index}"]`);
     await expect(key).toHaveClass(/\bcombo\b/);
-    await expect(key).toHaveAccessibleName(/· part of a combo$/);
+    await expect(key).toHaveAccessibleName(i < 2 ? /· in combo 0$/ : /· in combo 1$/);
     await expect(key.locator(".combo-mark")).toHaveCount(1);
+    fills.push(await key.locator(".combo-mark").evaluate((r) => getComputedStyle(r).fill));
   }
   await expect(app.locator("button.key.combo")).toHaveCount(4);
-  const fill = await app.locator("button.key.combo .combo-mark").first().evaluate((r) => getComputedStyle(r).fill);
-  expect(fill).toMatch(/^rgb\((2[0-5]\d), \d{1,2}, \d{2,3}\)$/); // red
+  // one colour a combo, a different one for each
+  expect(fills[0]).toBe(fills[1]);
+  expect(fills[2]).toBe(fills[3]);
+  expect(fills[0]).not.toBe(fills[2]);
+  expect(fills[0]).toMatch(/^rgb\((2[0-5]\d), \d{1,2}, \d{2,3}\)$/); // red, the palette's first
   await app.locator(`[data-ref="key:${members[0]}"]`).click();
   await expect(app.getByRole("region", { name: "Combos with this key" })).toContainText("with Y → Esc");
 

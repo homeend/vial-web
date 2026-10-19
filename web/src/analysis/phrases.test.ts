@@ -4,7 +4,7 @@ import { placeKeyboard } from "../keyboard/geometry";
 import { namesOf } from "../keyboard/labels";
 import { codesOn, combosOf, combosUsing } from "./combos";
 import {
-  comboName, comboUseLabel, memberName, missingPartners, tapName, unreachedReason, wayDetail, wayLabel,
+  comboMarkLabel, comboName, comboUseLabel, memberName, missingPartners, tapName, unreachedReason, wayDetail, wayLabel,
   type PhraseContext,
 } from "./phrases";
 import { positionNames } from "./positions";
@@ -329,5 +329,13 @@ describe("comboUseLabel and missingPartners", () => {
     expect(used.map((u) => missingPartners(u, namesOf(twice)))).toEqual([
       "It has A twice, so it never fires", "It has A and Q twice, so it never fires",
     ]);
+  });
+});
+
+describe("comboMarkLabel", () => {
+  it("names the combos a key is part of", () => {
+    expect(comboMarkLabel([])).toBe("");
+    expect(comboMarkLabel([2])).toBe(" · in combo 2");
+    expect(comboMarkLabel([0, 1, 3])).toBe(" · in combos 0, 1 and 3");
   });
 });

@@ -19,6 +19,8 @@
     canEdit: boolean;
     /** the combos the key is part of on the layer */
     comboUses: ComboUse[];
+    /** each combo's colour (a palette index), by combo index */
+    comboColours: Map<number, number>;
     onchangekey: () => void;
     onsetcode: (code: string, action: string) => Promise<boolean>;
     ontapdance: () => void;
@@ -26,7 +28,7 @@
   }
 
   let {
-    model, names, layer, selection, canEdit, comboUses, onchangekey, onsetcode, ontapdance, onjump,
+    model, names, layer, selection, canEdit, comboUses, comboColours, onchangekey, onsetcode, ontapdance, onjump,
   }: Props = $props();
 
   let editingHold = $state(false);
@@ -181,7 +183,7 @@
   {/if}
 
   {#if comboUses.length > 0}
-    <ComboList uses={comboUses} {names} through={current.kind === "transparent"} />
+    <ComboList uses={comboUses} {names} colours={comboColours} through={current.kind === "transparent"} />
   {/if}
 </aside>
 

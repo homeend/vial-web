@@ -13,7 +13,8 @@
     warning: string | null;
     placement: Placement;
     faces: KeyFace[];
-    combos: boolean[];
+    /** the colours of the combos each key is part of */
+    combos: number[][];
     /** keys the find box highlights */
     highlights: boolean[];
     /** the layer the Edit view shows */

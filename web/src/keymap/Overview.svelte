@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Analysis } from "../analysis/analysis";
+  import { comboMarksOf, type Analysis } from "../analysis/analysis";
   import { unreachedReason, wayLabel, type PhraseContext } from "../analysis/phrases";
   import type { KeyboardModel } from "../api/types";
   import type { Placement } from "../keyboard/geometry";
@@ -38,7 +38,7 @@
           const d = actionAt(model, layer.index, item);
           return d ? keyFace(d, names) : EMPTY_FACE;
         }),
-        combos: placement.items.map((item) => analysis.comboKeys[layer.index]?.has(refId(item)) ?? false),
+        combos: comboMarksOf(analysis, placement, layer.index).colours,
       };
     }),
   );

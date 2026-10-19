@@ -71,24 +71,55 @@ export function comboLayers(combo: ComboInfo, layerCodes: Map<string, KeyRef[]>[
   return layerCodes.flatMap((codes, layer) => (combo.members.every((m) => codes.has(m.action.code)) ? [layer] : []));
 }
 
-/** The keys (by refId) that are part of a combo on a layer: those whose keycode there is one of a combo's. A
- * transparent key isn't marked (it would mark every empty layer); the combo goes through it all the same.
- * codes must be the same layer's: codesOn(model, placement, layer). */
-export function comboKeysOn(
+/** The keys that are part of a combo on a layer, by refId, each with the combos (their indexes, in order) it is part
+ * of: the keys whose keycode there is one of a combo's. A transparent key isn't marked (it would mark every empty
+ * layer); the combo goes through it all the same. Nor are the keys of a combo that lists a keycode twice: it never
+ * fires (see repeatedCodes). codes must be the same layer's: codesOn(model, placement, layer). */
+export function comboMarksOn(
   combos: ComboInfo[],
   codes: Map<string, KeyRef[]>,
   model: Pick<KeyboardModel, "layers">,
   layer: number,
-): Set<string> {
-  const keys = new Set<string>();
+): Map<string, number[]> {
+  const marks = new Map<string, number[]>();
   for (const combo of combos) {
+    if (repeatedCodes(combo).length > 0) continue;
     for (const member of combo.members) {
       for (const ref of codes.get(member.action.code) ?? []) {
-        if (actionAt(model, layer, ref)?.kind !== "transparent") keys.add(refId(ref));
+        if (actionAt(model, layer, ref)?.kind === "transparent") continue;
+        const id = refId(ref);
+        const on = marks.get(id) ?? [];
+        if (!on.includes(combo.index)) on.push(combo.index);
+        marks.set(id, on);
       }
     }
   }
-  return keys;
+  return marks;
+}
+
+/** How many colours combos are marked in (app.css: --combo-0 to --combo-5) */
+export const COMBO_COLOURS = 6;
+
+/** The colour of each combo (an index into the palette), by combo index: the same everywhere it is shown. Different
+ * combos with keys on the same layer get different colours: in combo order, each takes the palette's first colour
+ * that no combo before it with keys on one of its layers has. With more such combos than colours, colours repeat
+ * in palette order: the combo takes the colour at its place among the set combos, round the palette. marks: by
+ * layer, as comboMarksOn gives them. */
+export function comboColours(combos: ComboInfo[], marks: Map<string, number[]>[], size = COMBO_COLOURS): Map<number, number> {
+  const layersOf = new Map<number, Set<number>>(combos.map((c) => [c.index, new Set<number>()]));
+  marks.forEach((onLayer, layer) => {
+    for (const indexes of onLayer.values()) for (const index of indexes) layersOf.get(index)?.add(layer);
+  });
+  const colours = new Map<number, number>();
+  combos.forEach((combo, rank) => {
+    const layers = layersOf.get(combo.index) ?? new Set<number>();
+    const taken = new Set(combos.slice(0, rank)
+      .filter((other) => [...(layersOf.get(other.index) ?? [])].some((l) => layers.has(l)))
+      .map((other) => colours.get(other.index)));
+    const free = Array.from({ length: size }, (_, c) => c).find((c) => !taken.has(c));
+    colours.set(combo.index, free ?? rank % size);
+  });
+  return colours;
 }
 
 export interface ComboUse {

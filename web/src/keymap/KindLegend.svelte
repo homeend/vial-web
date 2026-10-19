@@ -5,7 +5,8 @@
   <li><i class="tap-dance"></i>tap dance</li>
   <li><i class="macro"></i>macro</li>
   <li><i class="transparent"></i>transparent (falls through)</li>
-  <li><i class="combo"></i>part of a combo</li>
+  <li><i class="combo"></i>in a combo (each combo its colour)</li>
+  <li><i class="combos"><b></b><b></b></i>in several combos</li>
 </ul>
 
 <style>
@@ -61,6 +62,25 @@
   }
 
   .combo {
-    box-shadow: inset 0 -3px 0 var(--combo);
+    box-shadow: inset 0 -3px 0 var(--combo-0);
+  }
+
+  .combos {
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 2px;
+    padding-bottom: 1px;
+  }
+
+  .combos b {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--combo-0);
+  }
+
+  .combos b + b {
+    background: var(--combo-1);
   }
 </style>

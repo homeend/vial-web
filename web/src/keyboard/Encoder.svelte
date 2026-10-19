@@ -14,6 +14,8 @@
     focusable: boolean;
     /** produces what the find box looks for: highlighted */
     found?: boolean;
+    /** drawn faintly: a knob that doesn't matter here */
+    faded?: boolean;
     /** a knob to click; otherwise only a picture (the keyboard as a whole is labelled) */
     interactive?: boolean;
     /** a small knob showing its main legend only, as large as it fits */
@@ -22,7 +24,8 @@
   }
 
   let {
-    item, face, u, selected, label, focusable, found = false, interactive = true, compact = false, onselect,
+    item, face, u, selected, label, focusable, found = false, faded = false, interactive = true, compact = false,
+    onselect,
   }: Props = $props();
 
   const clockwise = $derived(item.geometry.direction === 1);
@@ -68,6 +71,7 @@
     class="encoder tone-{face.tone}" data-tone={face.tone}
     class:selected
     class:found
+    class:faded
     {style}
     aria-label={label}
     title={label}
@@ -79,7 +83,7 @@
     {@render knob()}
   </button>
 {:else}
-  <div class="encoder static tone-{face.tone}" data-tone={face.tone} class:found {style}>
+  <div class="encoder static tone-{face.tone}" data-tone={face.tone} class:found class:faded {style}>
     {@render knob()}
   </div>
 {/if}
@@ -203,5 +207,9 @@
     line-height: 1.1;
     text-align: center;
     overflow-wrap: anywhere;
+  }
+
+  .faded {
+    opacity: 0.38;
   }
 </style>

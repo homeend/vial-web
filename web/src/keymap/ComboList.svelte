@@ -8,20 +8,30 @@
     /** the combos the selected key is part of, on the layer shown */
     uses: ComboUse[];
     names: Names;
+    /** each combo's colour (a palette index), by combo index */
+    colours: Map<number, number>;
     /** the key is transparent: the combos are those of the key below, which it falls through to */
     through?: boolean;
   }
 
-  let { uses, names, through = false }: Props = $props();
+  let { uses, names, colours, through = false }: Props = $props();
+
+  const entries = $derived(uses.map((use) => ({ use, missing: missingPartners(use, names) })));
+  // a transparent key lets the combos of the key below through: those that can fire at all
+  const firing = $derived(entries.filter((e) => e.missing === null).length);
 </script>
 
 <section class="combos" aria-labelledby="combos-title">
   <SectionTitle id="combos-title">Combos with this key</SectionTitle>
-  {#if through}<p class="through">It falls through to the base layer's key, so these combos still fire.</p>{/if}
+  {#if through && firing > 0}
+    <p class="through">
+      It falls through to the base layer's key, so {firing === entries.length ? "these combos still fire"
+        : "the combos that can fire still do"}.
+    </p>
+  {/if}
   <ul>
-    {#each uses as use (use.combo.index)}
-      {@const missing = missingPartners(use, names)}
-      <li>
+    {#each entries as { use, missing } (use.combo.index)}
+      <li style="--colour: var(--combo-{colours.get(use.combo.index) ?? 0})">
         <span class="what">{comboUseLabel(use, names)}</span>
         <span class="detail">Combo {use.combo.index}{missing ? ` · ${missing}` : ""}</span>
       </li>
@@ -48,7 +58,7 @@
     display: grid;
     gap: 1px;
     padding-left: 10px;
-    border-left: 3px solid var(--combo);
+    border-left: 3px solid var(--colour);
   }
 
   .what {

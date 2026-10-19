@@ -16,8 +16,9 @@
     onselect: (index: number) => void;
     /** largest key size, in pixels */
     maxUnit?: number;
-    /** which placed keys are part of a combo (underlined), aligned with placement.items */
-    combos?: boolean[];
+    /** for each placed key, the colours of the combos it is part of (an underline, or dots), aligned with
+     * placement.items */
+    combos?: number[][];
     /** keys to click and move between; otherwise a picture, hidden from screen readers (what shows it says what it
      * is) */
     interactive?: boolean;
@@ -25,11 +26,17 @@
     compact?: boolean;
     /** which placed keys produce what the find box looks for (highlighted), aligned with placement.items */
     highlights?: boolean[];
+    /** a ring in a colour (CSS) around some keys, aligned with placement.items */
+    rings?: (string | null)[];
+    /** which placed keys are drawn faintly, aligned with placement.items */
+    faded?: boolean[];
+    /** keys to choose: whether each is chosen (its aria-pressed), aligned with placement.items */
+    chosen?: boolean[];
   }
 
   let {
     placement, faces, labels, selected, onselect, maxUnit = 72, combos = [], interactive = true, compact = false,
-    highlights = [],
+    highlights = [], rings = [], faded = [], chosen,
   }: Props = $props();
 
   let width = $state(0);
@@ -60,10 +67,11 @@
       {#each placement.items as item, i (refId(item))}
         {#if item.kind === "key"}
           <Key {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
-            combo={combos[i] ?? false} found={highlights[i] ?? false} {interactive} {compact} onselect={() => onselect(i)} />
+            combos={combos[i] ?? []} found={highlights[i] ?? false} ring={rings[i] ?? null} faded={faded[i] ?? false}
+            chosen={chosen?.[i]} {interactive} {compact} onselect={() => onselect(i)} />
         {:else}
           <Encoder {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
-            found={highlights[i] ?? false} {interactive} {compact} onselect={() => onselect(i)} />
+            found={highlights[i] ?? false} faded={faded[i] ?? false} {interactive} {compact} onselect={() => onselect(i)} />
         {/if}
       {/each}
     {/if}

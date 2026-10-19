@@ -33,8 +33,14 @@
   --tone-layer: #1872e8;
   --tone-tap-dance: #9a43cf;
   --tone-macro: #e07f00;
-  /* the underline of a key that is part of a combo */
-  --combo: #e8264a;
+  /* each combo's colour, on the keys it is made of (analysis/combos.ts comboColours): at least 3:1 on every key
+     face, and never the find box's amber. In order: red, blue, teal, magenta, green, violet */
+  --combo-0: #d0103a;
+  --combo-1: #1d5bd8;
+  --combo-2: #00796b;
+  --combo-3: #b0168f;
+  --combo-4: #4c7d0a;
+  --combo-5: #7b3fe4;
   /* keys that produce what the find box looks for: a dark amber, at least 3:1 against every key face and the board */
   --find: #9e6c00;
   /* how much of a kind's colour goes into a key's face and outline */
@@ -88,7 +94,12 @@
   --tone-layer: #5ba2ff;
   --tone-tap-dance: #c98af2;
   --tone-macro: #ffaa3d;
-  --combo: #ff6685; /* 3:1 or more on every key fill, macro and modifier keys included */
+  --combo-0: #ff6685;
+  --combo-1: #6aa8ff;
+  --combo-2: #2fd3c0;
+  --combo-3: #f472d0;
+  --combo-4: #a3d65a;
+  --combo-5: #b69bff;
   --find: #ffcc33;
   --tone-fill: 22%;
   --tone-line: 70%;
@@ -130,7 +141,12 @@
     --tone-layer: #5ba2ff;
     --tone-tap-dance: #c98af2;
     --tone-macro: #ffaa3d;
-    --combo: #ff6685; /* 3:1 or more on every key fill, macro and modifier keys included */
+    --combo-0: #ff6685;
+    --combo-1: #6aa8ff;
+    --combo-2: #2fd3c0;
+    --combo-3: #f472d0;
+    --combo-4: #a3d65a;
+    --combo-5: #b69bff;
     --find: #ffcc33;
     --tone-fill: 22%;
     --tone-line: 70%;

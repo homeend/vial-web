@@ -264,3 +264,9 @@ export function foundLabel(found: Found, ctx: PhraseContext): string {
       return `macro ${found.macro} presses ${howText(found.how, found.action)}`;
   }
 }
+
+/** What a key's combo marks say, after its name: " · in combo 0", " · in combos 0 and 2", or "" */
+export function comboMarkLabel(combos: number[]): string {
+  if (combos.length === 0) return "";
+  return combos.length === 1 ? ` · in combo ${combos[0]}` : ` · in combos ${andList(combos.map(String))}`;
+}
