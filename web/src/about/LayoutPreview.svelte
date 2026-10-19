@@ -14,11 +14,13 @@
     canLoad: boolean;
     /** a change is being saved: the buttons keep the focus, but take nothing until it is done */
     busy: boolean;
+    /** the Settings page has changes not saved yet, which loading drops */
+    settingsKept: boolean;
     onload: () => void;
     oncancel: () => void;
   }
 
-  let { name, preview, context, unlocked, canLoad, busy, onload, oncancel }: Props = $props();
+  let { name, preview, context, unlocked, canLoad, busy, settingsKept, onload, oncancel }: Props = $props();
 
   const sections = $derived(previewSections(preview, context));
   const total = $derived(changeTotal(sections));
@@ -61,6 +63,9 @@
   {/if}
   {#if !preview.uid}
     <p class="note">The file doesn't say which keyboard it was saved from.</p>
+  {/if}
+  {#if settingsKept && total > 0}
+    <p class="note">Changes on the Settings page not saved yet are dropped when it is loaded.</p>
   {/if}
   {#if preview.needsUnlock && !unlocked}
     <p class="note">

@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import {
-  codeAt, expect, keyIndex, macrosOf, openSection, restoreAll, screenshots, setCodeAt, setMacros, simulatorUnlock,
-  test, unlockAgain,
+  api, codeAt, expect, keyIndex, macrosOf, openSection, restoreAll, screenshots, setCodeAt, setMacros, setSettings,
+  settingsOf, simulatorUnlock, test, unlockAgain,
 } from "./fixtures";
 
 // Saving the layout to a .vil file and loading it back, with the preview of what changes. Every test puts back what it
@@ -107,5 +107,47 @@ test("a file that changes the macros, loaded on a locked keyboard, asks to unloc
     expect(await macrosOf(app)).toEqual(before);
   } finally {
     await restoreAll(() => unlockAgain(app), () => setMacros(app, before));
+  }
+});
+
+test("settings changed but not saved are dropped when a layout file is loaded: the file's values show", async ({ app }, info) => {
+  const before = await settingsOf(app);
+  try {
+    // a file whose Tapping Term is 300, while the keyboard holds 200
+    await setSettings(app, { 7: 300 });
+    await openSection(app, "Keyboard");
+    const file = await saveLayout(app, info.outputPath("term.vil"));
+    await setSettings(app, { 7: 200 });
+    expect((await api(app).post("/api/reload")).ok()).toBe(true);
+
+    await openSection(app, "Settings");
+    const term = app.getByRole("textbox", { name: "Tapping Term" });
+    const status = app.locator(".savebar [role=status]");
+    await expect(term).toHaveValue("200");
+    await term.fill("250");
+    await expect(status).toHaveText("1 change not saved yet");
+
+    await openSection(app, "Keyboard");
+    await chooseFile(app, file);
+    const preview = app.getByRole("group", { name: /^Load term\.vil\?/ });
+    await expect(preview).toContainText("Loading it makes 1 change");
+    await expect(preview).toContainText("Changes on the Settings page not saved yet are dropped when it is loaded.");
+    await preview.getByRole("button", { name: "Load it" }).click();
+    await expect(app.getByText("Loaded term.vil: 1 change written to the keyboard.")).toBeVisible();
+
+    await openSection(app, "Settings");
+    await expect(term).toHaveValue("300");
+    await expect(status).toHaveText("No changes: the form shows what the keyboard holds.");
+    expect((await settingsOf(app))[7]).toBe(300);
+
+    // with nothing kept, the preview doesn't say so
+    await setSettings(app, { 7: 200 });
+    expect((await api(app).post("/api/reload")).ok()).toBe(true);
+    await openSection(app, "Keyboard");
+    await chooseFile(app, file);
+    await expect(preview).toContainText("Loading it makes 1 change");
+    await expect(preview).not.toContainText("not saved yet");
+  } finally {
+    await setSettings(app, before);
   }
 });

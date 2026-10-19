@@ -81,6 +81,13 @@ export class SettingsEdits {
     }
   }
 
+  /** Whether there are changes not saved for this keyboard (its uid): a number that can't be saved counts, as the form
+   * shows it */
+  keptFor(uid: string): boolean {
+    return this.#uid === uid && Object.keys(this.switches).length + Object.keys(this.numbers).length +
+      Object.keys(this.texts).length > 0;
+  }
+
   clear(): void {
     this.switches = {};
     this.numbers = {};

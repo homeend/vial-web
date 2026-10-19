@@ -8,6 +8,7 @@
   import { keyboard } from "../lib/keyboard.svelte";
   import { toasts } from "../lib/toasts.svelte";
   import { settingDefinitions } from "../settings/definitions";
+  import { settingsEdits } from "../settings/state.svelte";
   import Button from "../ui/Button.svelte";
   import { changeTotal, layoutFileName, previewSections, type PreviewContext } from "./layoutFile";
   import LayoutPreview from "./LayoutPreview.svelte";
@@ -108,6 +109,8 @@
     const total = changeTotal(previewSections(preview, context));
     problem = null;
     if (await keyboard.loadLayoutFile(chosen.text)) {
+      // the Settings page's changes not saved yet would go over the file's settings: what was loaded is what shows
+      settingsEdits.clear();
       chosen = null;
       done = `Loaded ${name}: ${total} ${total === 1 ? "change" : "changes"} written to the keyboard.`;
       await tick();
@@ -159,7 +162,7 @@
   {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
   {#if chosen}
     <LayoutPreview name={chosen.name} preview={chosen.preview} {context} unlocked={keyboard.unlock.state.state === "unlocked"}
-      canLoad={canEdit} {busy} onload={() => void load()} oncancel={() => void cancel()} />
+      canLoad={canEdit} {busy} settingsKept={settingsEdits.keptFor(model.uid)} onload={() => void load()} oncancel={() => void cancel()} />
   {/if}
 </section>
 

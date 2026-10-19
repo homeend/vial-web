@@ -81,4 +81,18 @@ describe("SettingsEdits", () => {
     edits.clear();
     expect([edits.form(held({ 7: 200, 21: 0 })), edits.texts]).toEqual([held({ 7: 200, 21: 0 }), {}]);
   });
+
+  it("says whether there are changes not saved for a keyboard: a layout file loaded would drop them", () => {
+    const edits = new SettingsEdits();
+    edits.follow("A");
+    expect(edits.keptFor("A")).toBe(false);
+    edits.toggle(swap, true, 0);
+    expect([edits.keptFor("A"), edits.keptFor("B")]).toEqual([true, false]);
+    edits.clear();
+    // a number that can't be saved is in the form too
+    edits.type(term, "25x", 200);
+    expect(edits.keptFor("A")).toBe(true);
+    edits.clear();
+    expect(edits.keptFor("A")).toBe(false);
+  });
 });
