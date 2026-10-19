@@ -1,5 +1,7 @@
 import type { Page } from "@playwright/test";
-import { codeAt, expect, keyIndex, open, restoreAll, screenshots, setCodeAt, test } from "./fixtures";
+import {
+  codeAt, expect, keyIndex, open, restoreAll, screenshots, setCodeAt, simulatorUnlock, test, unlockAgain,
+} from "./fixtures";
 
 // Moving a key onto another of the layer shown: dragged there with the mouse, or chosen from the Inspector with the
 // keyboard. A worker's server is shared by the tests it runs: each puts back every key it changed, in its `finally`.
@@ -151,6 +153,8 @@ test("without a mouse: the Inspector's Swap and Copy choose the other key with t
   const inspector = app.getByRole("complementary", { name: "Selected key" });
   const hint = app.getByRole("status").filter({ hasText: "Esc cancels" });
   try {
+    // the hint's live region is there before it has anything to say, so that screen readers say it when it does
+    await expect(app.locator(".pick-hint [role=status]")).toHaveText("");
     await keyOf(app, a).click();
     await inspector.getByRole("button", { name: "Swap with another key…" }).click();
     await expect(hint).toContainText("Choose the key to swap");
@@ -177,8 +181,16 @@ test("without a mouse: the Inspector's Swap and Copy choose the other key with t
     await expect(hint).toBeHidden();
     await expect(keyOf(app, b)).toBeFocused();
 
+    // Copy pressed again gives up, as Esc does
+    const copy = inspector.getByRole("button", { name: "Copy to another key…" });
+    await copy.click();
+    await expect(copy).toHaveAttribute("aria-pressed", "true");
+    await copy.click();
+    await expect(hint).toBeHidden();
+    await expect(copy).toHaveAttribute("aria-pressed", "false");
+
     // Copy, then a click on the other key
-    await inspector.getByRole("button", { name: "Copy to another key…" }).click();
+    await copy.click();
     await keyOf(app, a).click();
     await expect.poll(() => codeAt(app, 0, a)).toBe(codeA);
     expect(await codeAt(app, 0, b)).toBe(codeA);
@@ -266,4 +278,79 @@ test("a finger drags a key once it has held it still, and a swipe across the key
     await restore();
     await context.close();
   }
+});
+
+test("a drag whose mouse release was lost ends at the next move with no button held: the next click opens no menu", async ({ app }) => {
+  const { a, b, codeA, codeB } = await twoKeys(app);
+  const to = await centreOf(app, b);
+  await pickUp(app, a, to);
+  await expect(app.locator(".drag-ghost")).toBeVisible();
+  // the release went somewhere the page didn't see (another window, say): the mouse moves again, no button held
+  await app.evaluate(({ x, y }) => {
+    window.dispatchEvent(new PointerEvent("pointermove", {
+      pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 0, clientX: x + 5, clientY: y, bubbles: true,
+    }));
+  }, to);
+  await expect(app.locator(".drag-ghost")).toHaveCount(0);
+  await expect(keyOf(app, b)).not.toHaveClass(/ringed/);
+  await app.mouse.up();
+  await keyOf(app, b).click();
+  await expect(app.getByRole("menu")).toHaveCount(0);
+  await expect(keyOf(app, b)).toHaveAttribute("aria-pressed", "true");
+  expect(await codesOf(app, a, b)).toEqual([codeA, codeB]);
+
+  // the window losing the focus ends a drag too
+  await pickUp(app, a, to);
+  await expect(app.locator(".drag-ghost")).toBeVisible();
+  await app.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(app.locator(".drag-ghost")).toHaveCount(0);
+  await app.mouse.up();
+  await expect(app.getByRole("menu")).toHaveCount(0);
+});
+
+test("a swap with the bootloader key on a locked keyboard writes nothing when its unlock is cancelled", async ({ app }) => {
+  const { a, b, codeA, codeB, restore } = await twoKeys(app);
+  try {
+    await setCodeAt(app, 0, b, "QK_BOOT"); // the simulated keyboard starts unlocked
+    await app.reload();
+    await expect(keyOf(app, b)).toContainText("Boot");
+    await simulatorUnlock(app, { locked: true });
+    await expect(app.getByRole("button", { name: "Keyboard locked: unlock it" })).toBeVisible();
+
+    // QK_BOOT goes where the key dragged was: the firmware refuses it while locked, so it is written first
+    const menu = await dragOnto(app, a, b);
+    await menu.getByRole("menuitem", { name: "Swap both" }).click();
+    const dialog = app.getByRole("dialog", { name: "Unlock the keyboard" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(toasts(app)).toContainText("Swapping the keys failed: The keyboard is locked, and it wasn't unlocked.");
+    await expect(toasts(app)).not.toContainText("put back");
+    expect(await codesOf(app, a, b)).toEqual([codeA, "QK_BOOT"]);
+  } finally {
+    await restoreAll(() => unlockAgain(app), () => restore());
+  }
+  expect(await codesOf(app, a, b)).toEqual([codeA, codeB]);
+});
+
+test("choosing the other key while another change is being saved says why nothing happened", async ({ app }) => {
+  const { a, b, codeA, codeB, restore } = await twoKeys(app);
+  const inspector = app.getByRole("complementary", { name: "Selected key" });
+  try {
+    await keyOf(app, a).click();
+    await inspector.getByRole("button", { name: "Copy to another key…" }).click();
+    // a slow change, started meanwhile: the key being copied is cleared
+    await app.route("**/api/keymap/**", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await route.continue();
+    });
+    await inspector.getByRole("button", { name: "Clear" }).click();
+    await keyOf(app, b).click();
+    await expect(toasts(app)).toContainText("Copying the key failed: another change was still being saved. Try again.");
+    await expect.poll(() => codeAt(app, 0, a)).toBe("KC_NO");
+    expect(await codeAt(app, 0, b)).toBe(codeB);
+  } finally {
+    await app.unroute("**/api/keymap/**");
+    await restore();
+  }
+  expect(await codesOf(app, a, b)).toEqual([codeA, codeB]);
 });
