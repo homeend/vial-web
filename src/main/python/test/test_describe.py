@@ -454,3 +454,18 @@ def test_layer_mod_names_the_modifiers_of_the_protocol(monkeypatch, protocol, me
 def test_every_mod_tap_combination_has_its_tapped_keycode_in_protocol_5(rebuilt_tables, bits):
     rebuilt_tables(5, 4)  # protocol 5's own tables: some protocol 6 names have these values, e.g. M4 is 0x7704
     assert describe(Keycode.serialize(0x6000 | (bits << 8) | 0x04))["tapCode"] == "KC_A"
+
+
+@pytest.mark.parametrize("protocol, code, value", [
+    (5, "M0", 0x5F12), (6, "M0", 0x7700),
+    (5, "USER00", 0x5F80), (6, "USER00", 0x7E00),
+    (5, "0x7E05", 0x7E05), (6, "0x7E05", 0x7E05),
+])
+def test_value_follows_the_protocol(rebuilt_tables, protocol, code, value):
+    """ The value is what the keyboard stores for the keycode, in the connected keyboard's protocol: the same number a
+    macro step encodes (macro_action), which the web counts macro bytes with """
+    from macro.macro_action import ActionTap
+    rebuilt_tables(protocol, 4)
+    result = describe(code)
+    assert result["value"] == value
+    assert ActionTap([result["code"]]).serialize(2) == ActionTap([code]).serialize(2)
