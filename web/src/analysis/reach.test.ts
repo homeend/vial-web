@@ -251,12 +251,12 @@ describe("layerReach", () => {
     expect(layers[2].ways).toEqual([]);
   });
 
-  it("never holds a layer from an encoder, which is only ever tapped: TT toggles, MO, LT and held slots do nothing", () => {
+  it("never holds a layer from an encoder, which is only ever tapped: TT toggles, OSL works, MO, LT and held slots do nothing", () => {
     const model: KeyboardModel = corne({
       layers: [layer({}, "KC_NO"), layer({}), layer({}), layer({}), layer({})],
       tapDances: [["KC_A", "MO(3)", "TG(4)", "MO(3)"]],
     });
-    const codes = ["MO(1)", "TT(2)", "LT3(KC_A)", "TD(0)", "LM(1, MOD_LSFT)"];
+    const codes = ["MO(1)", "TT(2)", "LT3(KC_A)", "TD(0)", "LM(1, MOD_LSFT)", "OSL(3)"];
     model.encoders = codes.map((_, i) => ({ ...model.keys[0], row: null, col: null, encoder: i, direction: 1, x: 20 + 2 * i }));
     for (const l of model.layers) l.encoders = codes.map((code) => described(l.index === 0 ? code : "KC_TRNS"));
     const layers = layerReach(model, placeKeyboard(model));
@@ -264,9 +264,20 @@ describe("layerReach", () => {
       ["default"],
       [],
       ["encoder 1 on 0: toggle from 0,1,3,4"],
-      [],
+      ["encoder 5 on 0: one-shot from 0,1,2,4"],
       ["encoder 3 on 0 TD 0 Double tap: toggle from 0,1,2,3"],
     ]);
+  });
+
+  it("never pairs a tri-layer key on an encoder with one on a key: the encoder's layer is never held", () => {
+    const model: KeyboardModel = corne({
+      layers: [layer({ [AT.rightInnerThumb]: "FN_MO23" }, "KC_NO"), layer({}), layer({}), layer({})],
+    });
+    model.encoders = [{ ...model.keys[0], row: null, col: null, encoder: 0, direction: 1, x: 20 }];
+    for (const l of model.layers) l.encoders = [described(l.index === 0 ? "FN_MO13" : "KC_TRNS")];
+    const layers = layerReach(model, placeKeyboard(model));
+    expect(layers[3].ways).toEqual([]);
+    expect(layers[3].reachable).toBe(false);
   });
 
   it("works for 8 layers, each reached from the one before", () => {

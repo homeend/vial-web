@@ -69,7 +69,8 @@ export function layerTargets(model: Pick<KeyboardModel, "layers" | "tapDance">, 
 
 /** What a target does when its key can only be tapped, as an encoder direction is (turning the knob taps it): it is
  * never held, so a layer held while the key is down (MO, LT, LM, a tap dance's held slots) is never on, and TT only
- * toggles. null: never reached that way. */
+ * toggles (after the firmware's tapping-toggle count of quick turns, 5 by default). One-shot layers work as on a key.
+ * null: never reached that way. */
 function tapped(target: Target): Target | null {
   if (target.slot && (target.slot.slot === "Hold" || target.slot.slot === "Tap, then hold")) return null;
   if (target.action === "while held" || target.action === "while held, with modifiers") return null;
@@ -144,7 +145,8 @@ export function layerReach(model: Model, placement: Placement): LayerReach[] {
       if (!action || action.layer !== layer) continue;
       const worksOn = Array.from({ length: count }, (_, l) => l).filter((l) => effectiveAt(model, l, ref)?.layer === layer);
       const d = action.action;
-      if (d.kind === "layer" && isLayer(model, d.layer) && isLayer(model, d.triLayer)) {
+      // a tri-layer key on an encoder is never held, so it never makes up the pair
+      if (ref.kind !== "encoder" && d.kind === "layer" && isLayer(model, d.layer) && isLayer(model, d.triLayer)) {
         fnKeys.push({ ref, layer, own: d.layer, tri: d.triLayer, worksOn });
       }
       for (const found of layerTargets(model, action.action)) {
