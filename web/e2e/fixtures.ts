@@ -34,16 +34,18 @@ function serverOf(
 
 /** The page, opened from a server's link, with the keyboard drawn: `app` shows the simulated Corne, `macropad` the
  * simulated macropad with encoders, `eightLayers` the simulated Corne with 8 layers (4-7 empty), `qmkLighting` the
- * simulated Corne with QMK's RGB light and backlight. `corneUrl` is the simulated Corne's link, for a test that opens
- * it itself. */
+ * simulated Corne with QMK's RGB light and backlight, `twoKeyboards` the simulated Corne of a server whose second
+ * keyboard (the macropad) is plugged in by secondKeyboard(). `corneUrl` is the simulated Corne's link, for a test that
+ * opens it itself. */
 export const test = base.extend<
-  { app: Page; macropad: Page; eightLayers: Page; qmkLighting: Page },
-  { corneUrl: string; macropadUrl: string; eightLayersUrl: string; qmkLightingUrl: string }
+  { app: Page; macropad: Page; eightLayers: Page; qmkLighting: Page; twoKeyboards: Page },
+  { corneUrl: string; macropadUrl: string; eightLayersUrl: string; qmkLightingUrl: string; twoKeyboardsUrl: string }
 >({
   corneUrl: serverOf(SERVERS.corne),
   macropadUrl: serverOf(SERVERS.macropad),
   eightLayersUrl: serverOf(SERVERS.eightLayers),
   qmkLightingUrl: serverOf(SERVERS.qmkLighting),
+  twoKeyboardsUrl: serverOf(SERVERS.twoKeyboards),
   app: async ({ page, corneUrl }, use) => {
     await use(await open(page, corneUrl));
   },
@@ -55,6 +57,9 @@ export const test = base.extend<
   },
   qmkLighting: async ({ page, qmkLightingUrl }, use) => {
     await use(await open(page, qmkLightingUrl));
+  },
+  twoKeyboards: async ({ page, twoKeyboardsUrl }, use) => {
+    await use(await open(page, twoKeyboardsUrl));
   },
 });
 
@@ -73,7 +78,7 @@ export function api(page: Page) {
   return {
     get: (path: string) => page.request.get(serverUrl(page, path), { headers }),
     put: (path: string, data: unknown) => page.request.put(serverUrl(page, path), { data, headers }),
-    post: (path: string) => page.request.post(serverUrl(page, path), { headers }),
+    post: (path: string, data?: unknown) => page.request.post(serverUrl(page, path), { data, headers }),
   };
 }
 
@@ -353,6 +358,12 @@ export async function pressKey(page: Page, row: number, col: number, pressed = t
 /** The fake server's test hook: the simulated keyboard is plugged in, or unplugged */
 export async function plugIn(page: Page, connected: boolean): Promise<void> {
   await put(page, "/api/simulator/connection", { connected });
+}
+
+/** The fake server's test hook: its second simulated keyboard is plugged in (unreadable: with firmware this Vial can't
+ * read), or unplugged */
+export async function secondKeyboard(page: Page, connected: boolean, unreadable = false): Promise<void> {
+  await put(page, "/api/simulator/second-keyboard", { connected, unreadable });
 }
 
 /** Shows a section from the navigation and waits for its heading */
