@@ -13,7 +13,7 @@ from protocol.constants import CMD_VIA_BOOTLOADER_JUMP, CMD_VIA_GET_KEYBOARD_VAL
     VIA_SWITCH_MATRIX_STATE
 from protocol.unlock_hook import set_unlock_handler
 from server.app import MATRIX_FAILURE_PAUSE, MatrixWatcher, create_app
-from server.device import MATRIX_STRAYS_MAX, DeviceManager, FakeBackend, JumpUnanswered, KeyboardLocked, \
+from server.device import MATRIX_STRAYS_MAX, RETRY_FIRST, DeviceManager, FakeBackend, JumpUnanswered, KeyboardLocked, \
     KeyboardRefused, MatrixReading, NotConnected, has_matrix_tester, matrix_pressed, require_unlocked
 from server.names import NamesStore
 from simulator.corne import UNLOCK_KEYS, make_corne
@@ -635,8 +635,11 @@ def test_the_jump_is_sent_once_when_the_reply_is_lost():
 
 def test_a_lost_reply_from_a_keyboard_still_plugged_in_closes_it_until_it_is_found_again():
     """ The reply lost, but the keyboard still there (it didn't jump after all): it is closed all the same, as most
-    likely gone, and the hot-plug poll opens it again """
-    manager = connected()
+    likely gone, and the hot-plug poll opens it again once it has had the time to go """
+    now = [0.0]
+    manager = DeviceManager(FakeBackend(make_corne), clock=lambda: now[0])
+    assert manager.connect()
+    manager.take_events()
     vk = manager.backend.virtual
     jump_requests(manager, lose_reply=True)
     # it answers, and stays
@@ -645,7 +648,65 @@ def test_a_lost_reply_from_a_keyboard_still_plugged_in_closes_it_until_it_is_fou
         manager.reboot_to_bootloader()
     assert not manager.connected
     assert manager.take_events() == ["disconnected"]
+    assert manager.check() == []
+    now[0] += RETRY_FIRST
     assert manager.check() == ["connected"]
+
+
+def jumping_keyboard():
+    """ (manager, the paths it opens from now on, its clock) of a simulated keyboard that answers the jump to its bootloader and
+    stays listed, as a real one does for a moment before it leaves the bus: opened again meanwhile, it answers nothing.
+    The clock (a list of one: seconds) stands still until the test moves it. """
+    now = [0.0]
+    manager = DeviceManager(FakeBackend(make_corne), clock=lambda: now[0])
+    assert manager.connect()
+    manager.take_events()
+    vk = manager.backend.virtual
+    opens = []
+    backend_open = manager.backend.open
+
+    def opening(candidate):
+        opens.append(candidate["path"])
+        dev, title = backend_open(candidate)
+        if vk.bootloader_requested:
+            dev.read = lambda length, timeout_ms=0: []  # on its way to the bootloader: no answer
+        return dev, title
+    manager.backend.open = opening
+
+    def jump(msg):
+        vk.bootloader_requested = True  # and it stays plugged in, for now
+        return msg
+    vk._bootloader = jump
+    return manager, opens, now
+
+
+@pytest.mark.parametrize("lose_reply", [False, True])
+def test_a_keyboard_still_listed_while_it_jumps_is_not_opened_again(lose_reply):
+    """ The firmware answers the jump and leaves the bus 100 ms later, and the system drops it later still: a hot-plug
+    poll meanwhile lists it. It isn't opened again then (it would answer nothing: the device lock would be held through
+    the protocol's retries, seconds long, and its read error shown); once it has gone from the list, it is opened as
+    soon as it is back """
+    manager, opens, now = jumping_keyboard()
+    vk = manager.backend.virtual
+    if lose_reply:
+        jump_requests(manager, lose_reply=True)
+        with pytest.raises(JumpUnanswered):
+            manager.reboot_to_bootloader()
+    else:
+        manager.reboot_to_bootloader()
+    assert manager.take_events() == ["disconnected"]
+    assert manager.check() == []
+    now[0] += RETRY_FIRST / 2
+    assert manager.check() == []
+    assert opens == [] and not manager.connected
+    assert manager.error is None
+    assert [e.plugged for e in manager.keyboard_list().entries] == [True]
+    # it leaves the bus, and is flashed and plugged back in: opened at once, not RETRY_FIRST seconds after the jump
+    vk.connected = False
+    assert manager.check() == []
+    manager.backend.set_connected(True)
+    assert manager.check() == ["connected"]
+    assert opens == ["simulated:1"]
 
 
 def test_a_jump_that_could_not_be_sent_is_no_lost_reply():

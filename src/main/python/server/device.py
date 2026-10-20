@@ -938,10 +938,18 @@ class DeviceManager:
         be unlocked (KeyboardLocked otherwise), and then jumps (via.c id_bootloader_jump), leaving Vial: it is closed,
         with a "disconnected" event. Firmware built without the bootloader jump answers id_unhandled: KeyboardRefused,
         and the keyboard stays. A jump sent whose answer doesn't come (the keyboard dropped off the bus first) is most
-        likely taken: the keyboard is closed all the same (the hot-plug poll opens it again if it is still there), and
-        JumpUnanswered says so; a jump that couldn't be sent fails as any request does. """
+        likely taken: the keyboard is closed all the same, and JumpUnanswered says so; a jump that couldn't be sent
+        fails as any request does.
+
+        After a jump, the keyboard closed isn't opened again while it is still listed, for RETRY_FIRST seconds: the
+        firmware leaves the bus only 100 ms after its answer, and the system drops it later still, so a hot-plug poll
+        meanwhile may list it. Opened again, it would answer nothing: the device lock would be held through the
+        protocol's retries (seconds), and its read error shown next to the bootloader. Once it is gone from the list,
+        it is opened as soon as it is back; still there after that wait (it didn't jump after all), it is opened
+        again. """
         with self.lock:
             written = _WriteWatch()
+            key = candidate_key(self.candidate)
 
             def jump(kb):
                 require_unlocked(kb)
@@ -956,6 +964,7 @@ class DeviceManager:
                 log.warning("%s didn't answer the jump to its bootloader (%s): most likely it jumped", self.title, e)
                 if self.keyboard is not None:
                     self._close_reporting()
+                self._wait_after_jump(key)
                 raise JumpUnanswered("the keyboard didn't answer: it has most likely rebooted into its bootloader "
                                      "(it shows up again once it is flashed, or unplugged and plugged back in)") from e
             # an echoed command is ambiguous (a locked keyboard's `goto skip` echoes it in via.c too); accepted, as the
@@ -965,6 +974,13 @@ class DeviceManager:
                                       "built without that)")
             log.info("%s restarted into its bootloader", self.title)
             self._close_reporting()
+            self._wait_after_jump(key)
+
+    def _wait_after_jump(self, key):
+        """ The keyboard of this candidate key was sent the jump to its bootloader: it isn't opened again for
+        RETRY_FIRST seconds while it is still listed (see reboot_to_bootloader). _connect forgets this once it is gone
+        from the list, as it does a failure. """
+        self.failures[key] = (0, self.clock() + RETRY_FIRST)
 
     # ---------- hot-plug ----------
 
