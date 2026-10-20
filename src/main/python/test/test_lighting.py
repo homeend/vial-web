@@ -340,6 +340,43 @@ def test_a_failed_write_leaves_the_model_as_the_keyboard_shows(lit):
     assert (lighting["rgblight"]["effect"], lighting["backlight"]["brightness"]) == (4, 255)
 
 
+@pytest.mark.parametrize("lit", ["qmk_backlight_rgblight"], indirect=True)
+def test_a_keyboard_unplugged_during_a_write_is_read_back_once_at_most(lit):
+    """ The read-back after a failed write runs with the device lock held, before the unplug is noticed: each query is
+    tried once, not with the protocol's 20 retries (about 10 s with the lock held for a keyboard that is gone) """
+    client, virtual = lit
+    process = virtual.process
+    after = []
+
+    def unplugging(msg):
+        if (msg[0], msg[1]) == (CMD_VIA_LIGHTING_SET_VALUE, QMK_BACKLIGHT_BRIGHTNESS):
+            virtual.connected = False
+        if not virtual.connected:
+            after.append(bytes(msg[:2]))
+        return process(msg)
+    virtual.process = unplugging
+    assert client.put("/api/lighting", json={"backlight": {"brightness": 0}}).status_code == 503
+    # the write itself (with the protocol's own retries), then one query of the read-back, which fails
+    write = bytes([CMD_VIA_LIGHTING_SET_VALUE, QMK_BACKLIGHT_BRIGHTNESS])
+    assert [m for m in after if m != write] == [after[-1]] and after[-1] != write
+    assert client.get("/api/session").json()["status"] == "disconnected"
+
+
+@pytest.mark.parametrize("lit", ["qmk_backlight_rgblight"], indirect=True)
+def test_the_read_back_after_a_failed_write_keeps_the_protocols_retries_afterwards(lit):
+    client, virtual = lit
+    process = virtual.process
+    send = client.app.state.manager.keyboard.usb_send
+
+    def failing(msg):
+        if (msg[0], msg[1]) == (CMD_VIA_LIGHTING_SET_VALUE, QMK_BACKLIGHT_BRIGHTNESS):
+            raise OSError("the cable came loose")
+        return process(msg)
+    virtual.process = failing
+    assert client.put("/api/lighting", json={"backlight": {"brightness": 0}}).status_code == 502
+    assert client.app.state.manager.keyboard.usb_send is send
+
+
 # ---------- kept only once saved ----------
 
 @pytest.mark.parametrize("lit", LIGHTING[1:], indirect=True)

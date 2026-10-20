@@ -259,7 +259,7 @@ def set_lighting(kb, body):
         # the protocol layer keeps each value before it sends it: what the keyboard shows is read back instead, if
         # it still answers
         try:
-            kb.reload_rgb()
+            _read_back_once(kb)
         except Exception:
             pass
         raise
@@ -267,6 +267,17 @@ def set_lighting(kb, body):
     # otherwise (the backlight's few brightness steps, a colour while the light is off, breathing it doesn't have)
     kb.reload_rgb()
     return model.lighting(kb)
+
+
+def _read_back_once(kb):
+    """ kb.reload_rgb(), each query tried once rather than with the protocol's 20 retries: after a failed write the
+    keyboard may be gone, which the device manager notices only afterwards, and the device lock is held meanwhile """
+    send = kb.usb_send
+    kb.usb_send = lambda dev, msg, retries=1: send(dev, msg, retries=1)
+    try:
+        kb.reload_rgb()
+    finally:
+        kb.usb_send = send
 
 
 def _rgblight_effect_now(kb):
