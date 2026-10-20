@@ -377,7 +377,7 @@
     </div>
     <!-- a span to focus again once the dialog closes: Button doesn't hand out its element -->
     <span class="text-button" bind:this={textButton}>
-      <Button size="sm" disabled={recordingNow} aria-disabled={busy || undefined} onclick={openText}>Edit as text…</Button>
+      <Button size="sm" disabled={recordingNow} aria-disabled={busy || undefined} onclick={openText}>Open as text…</Button>
     </span>
   </div>
 

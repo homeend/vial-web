@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { expect, macrosOf, screenshots, setMacros, test } from "./fixtures";
 
-// A macro as text, as Qt's text editor has it ("Edit as text…" in the macro editor): the same JSON, applied to the
+// A macro as text, as Qt's text editor has it ("Open as text…" in the macro editor): the same JSON, applied to the
 // macro being edited, then saved with the page's Save. Each test puts the macros back in its `finally`.
 
 async function openMacros(page: Page) {
@@ -29,7 +29,7 @@ test("the text editor shows the macro as Qt does; Apply puts its steps in the ma
     await openMacros(app);
     const card = macroCard(app, 0);
     await card.getByRole("button", { name: "Edit" }).click();
-    const opener = card.getByRole("button", { name: "Edit as text…" });
+    const opener = card.getByRole("button", { name: "Open as text…" });
     await opener.click();
     const dialog = app.getByRole("dialog", { name: "Macro 0 as text" });
     const box = dialog.getByRole("textbox", { name: "Macro 0 as text" });
@@ -98,7 +98,7 @@ test("the text editor saves the text as a .vim file and loads one, without apply
     await openMacros(app);
     const card = macroCard(app, 1);
     await card.getByRole("button", { name: "Edit" }).click();
-    await card.getByRole("button", { name: "Edit as text…" }).click();
+    await card.getByRole("button", { name: "Open as text…" }).click();
     const dialog = app.getByRole("dialog", { name: "Macro 1 as text" });
     const box = dialog.getByRole("textbox", { name: "Macro 1 as text" });
 
@@ -136,7 +136,7 @@ for (const [width, height] of [[1920, 950], [375, 812]] as const) {
     await record.scrollIntoViewIfNeeded();
     await screenshots(app, `macro-record-choice-${width}x${height}`);
 
-    await card.getByRole("button", { name: "Edit as text…" }).click();
+    await card.getByRole("button", { name: "Open as text…" }).click();
     const dialog = app.getByRole("dialog", { name: "Macro 1 as text" });
     await dialog.getByRole("textbox").fill('[["tapp", "KC_A"]]');
     await dialog.getByRole("button", { name: "Apply" }).click();
