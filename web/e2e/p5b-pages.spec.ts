@@ -48,10 +48,13 @@ test("1920 x 950: the matrix tester while testing, and the reboot confirmation, 
     await pressKey(app, 2, 2, false);
     await pressKey(app, 3, 0);
     await expect(app.locator(".board .key.pressed")).toHaveCount(1);
-    // the drawing and the switch matrix together in one window (a bounding box is where it is in the window)
-    const grid = (await app.locator("table").boundingBox())!;
-    expect(grid.y).toBeGreaterThanOrEqual(0);
-    expect(grid.y + grid.height).toBeLessThanOrEqual(950);
+    // the drawing and the whole switch matrix card (with its line about the position held that has no key) together
+    // in one window (a bounding box is where it is in the window)
+    await expect(app.locator(".strays")).toBeVisible();
+    const card = (await app.locator("section.card", { has: app.locator("table") }).boundingBox())!;
+    const board = (await app.locator(".board").boundingBox())!;
+    expect(board.y).toBeGreaterThanOrEqual(0);
+    expect(card.y + card.height).toBeLessThanOrEqual(950);
     await screenshots(app, "matrix-testing-1920x950", { fullPage: true });
     await app.getByRole("button", { name: "Stop testing" }).click();
 

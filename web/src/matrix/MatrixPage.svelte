@@ -240,7 +240,7 @@
 
   .card {
     display: grid;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
     padding: 14px 16px;
     border: 1px solid var(--border);

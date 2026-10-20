@@ -55,7 +55,7 @@
 
   table {
     border-collapse: separate;
-    border-spacing: 4px;
+    border-spacing: 3px;
     margin: 0 auto;
   }
 
@@ -74,8 +74,8 @@
   .cell {
     position: relative;
     display: block;
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     border: 2px solid var(--key-border);
     border-radius: 5px;
     background: var(--key-bg);
