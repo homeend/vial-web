@@ -59,13 +59,6 @@ export function chosenAway(list: KeyboardList | null): KeyboardEntry | null {
   return list.keyboards.find((k) => k.id === list.chosen && !k.plugged) ?? null;
 }
 
-/** A reason from the server ("could not list keyboards: ...") as a sentence: capitalised, with a full stop */
-export function asSentence(reason: string): string {
-  const text = reason.trim();
-  if (!text) return text;
-  return text.charAt(0).toUpperCase() + text.slice(1) + (/[.!?…]$/.test(text) ? "" : ".");
-}
-
 /** Why the keyboard shown (greyed out: it can't be changed) is blocked: "list", looking for keyboards failed; "unread",
  * it is plugged in, but couldn't be read (the error is about it); else "unplugged". An error about another keyboard
  * (one plugged in beside it, tried when none is chosen) doesn't make it unreadable. */
@@ -77,3 +70,14 @@ export function blockedWhy(
   const plugged = shown !== null && (list?.keyboards.some((k) => k.id === shown && k.plugged) ?? false);
   return session.errorKind === "read" && plugged ? "unread" : "unplugged";
 }
+
+/** What the page says when the keyboard can't be read, in the banner over a keyboard shown and on the empty page alike:
+ * looking for keyboards failed ("list", the session's errorKind), or one found couldn't be read ("unread"). The
+ * server's reason goes between the title and `retry`. */
+export const READ_PROBLEMS = {
+  list: { title: "Vial couldn't look for keyboards", retry: "Vial tries again by itself, about once a second." },
+  unread: {
+    title: "A keyboard was found, but couldn't be read",
+    retry: "Vial tries again by itself, and when it is plugged in again.",
+  },
+} as const;

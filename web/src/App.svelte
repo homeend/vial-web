@@ -16,9 +16,10 @@
   import LightingPage from "./lighting/LightingPage.svelte";
   import MatrixPage from "./matrix/MatrixPage.svelte";
   import { keyboard } from "./lib/keyboard.svelte";
-  import { asSentence, blockedWhy, chosenAway, keyboardOptions, shownKeyboard } from "./lib/keyboards";
+  import { blockedWhy, chosenAway, keyboardOptions, READ_PROBLEMS, shownKeyboard } from "./lib/keyboards";
   import type { SectionId } from "./lib/route";
   import { router } from "./lib/router.svelte";
+  import { asSentence } from "./lib/text";
   import { isWaiting } from "./lib/unlock.svelte";
   import { unsavedWork } from "./lib/unsaved";
   import Banner from "./shell/Banner.svelte";
@@ -213,7 +214,9 @@
 
   <main class="content">
     {#if opening !== null}
-      <p class="opening" role="status" aria-busy="true">Opening {opening}…</p>
+      <!-- no aria-busy here (the selector has it): it would hold back what the live region says, and this goes once
+           the keyboard is open -->
+      <p class="opening" role="status">Opening {opening}…</p>
     {/if}
     {#if status === "offline"}
       <Banner tone="warning" title="Lost contact with Vial" message="Reconnecting… If this lasts, check that Vial is still running." />
@@ -226,10 +229,8 @@
           : "The keyboard is in its bootloader"}
         message="{keyboard.bootloaderUnanswered ? "It went without answering the reboot. " : ""}It usually doesn't work as a keyboard until it is flashed, or unplugged and plugged back in. It shows up here again then."
       />
-    {:else if blocked && error && blockedBy === "list"}
-      <Banner tone="danger" title="Vial couldn't look for keyboards" message="{error} Vial tries again by itself, about once a second." />
-    {:else if blocked && error && blockedBy === "unread"}
-      <Banner tone="danger" title="A keyboard was found, but couldn't be read" message="{error} Vial tries again by itself." />
+    {:else if blocked && error && blockedBy !== "unplugged"}
+      <Banner tone="danger" title={READ_PROBLEMS[blockedBy].title} message="{error} {READ_PROBLEMS[blockedBy].retry}" />
     {:else if blocked}
       <Banner
         tone="danger"
@@ -303,16 +304,11 @@
             {/if}
           </div>
         {:else if status === "disconnected" && error}
+          {@const problem = READ_PROBLEMS[keyboard.session?.errorKind === "list" ? "list" : "unread"]}
           <div class="empty">
-            {#if keyboard.session?.errorKind === "list"}
-              <h1>Vial couldn't look for keyboards</h1>
-              <p>{error}</p>
-              <p>Vial tries again by itself, about once a second.</p>
-            {:else}
-              <h1>A keyboard was found, but couldn't be read</h1>
-              <p>{error}</p>
-              <p>Vial tries again by itself, and when it is plugged in again.</p>
-            {/if}
+            <h1>{problem.title}</h1>
+            <p>{error}</p>
+            <p>{problem.retry}</p>
           </div>
         {:else if status === "disconnected"}
           <div class="empty">

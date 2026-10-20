@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MatrixRun } from "./run.svelte";
+import { DIALOG_TAKING_KEYS, MatrixRun } from "./run.svelte";
 
 /** A key event as the browser sends it */
 function key(type: string, code: string): Event {
@@ -61,6 +61,40 @@ describe("a run of the matrix tester", () => {
     doc.dispatchEvent(new Event("visibilitychange"));
     expect(run.testing).toBe(false);
     expect(watching.stopped).toBe(1);
+  });
+
+  it("stops when a dialog takes the focus (another keyboard picked asks first): the dialog's keys work", () => {
+    const { doc, run, watching, send } = setup();
+    /** the focus moves to an element: in a dialog whose keys must work, in the unlock dialog (which keeps every key
+     * from the page itself), or in neither */
+    const focusIn = (inDialog: boolean | "unlock") => {
+      const event = new Event("focusin");
+      const dialog = inDialog === true ? "dialog" : inDialog === "unlock" ? "dialog[data-keys-guarded]" : null;
+      Object.defineProperty(event, "target", {
+        value: {
+          closest: (selector: string) =>
+            dialog === null || !selector.startsWith("dialog") ? null
+            : selector === DIALOG_TAKING_KEYS ? (dialog === "dialog" ? {} : null) : {},
+        },
+      });
+      doc.dispatchEvent(event);
+    };
+    run.start("kb1");
+    focusIn(false);
+    expect(run.testing).toBe(true);
+    // a locked keyboard is unlocked first: the test goes on behind the unlock dialog
+    focusIn("unlock");
+    expect(run.testing).toBe(true);
+    focusIn(true);
+    expect(run.testing).toBe(false);
+    expect(watching.stopped).toBe(1);
+    expect(send(key("keydown", "Escape"))).toBe(false);
+    expect(send(key("keydown", "Tab"))).toBe(false);
+    // once stopped, a dialog is no business of it
+    run.start("kb1");
+    run.stop();
+    focusIn(true);
+    expect(watching).toEqual({ started: 2, stopped: 2 });
   });
 
   it("listens to the window only while it tests", () => {

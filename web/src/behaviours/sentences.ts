@@ -3,6 +3,7 @@
 import { comboLayers, repeatedCodes, type ComboInfo } from "../analysis/combos";
 import { andList, comboName, layerList, memberName } from "../analysis/phrases";
 import { layerTargets } from "../analysis/reach";
+import { capitalised } from "../lib/text";
 import type { Use } from "../analysis/usage";
 import type { Described, KeyboardModel, LayerAction, TapDance } from "../api/types";
 import { actionSummary, layerLabel, type Names } from "../keyboard/labels";
@@ -111,10 +112,6 @@ function layerOutcome(d: Described, index: number, names: Names): string {
     default:
       return `for ${layer}`;
   }
-}
-
-function capitalised(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** Why a layer held while its key is down is never on from a tap dance slot the firmware never keeps held */

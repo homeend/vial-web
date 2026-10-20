@@ -1123,6 +1123,26 @@ describe("the keyboard selector", () => {
     expect(store.canEdit).toBe(true);
   });
 
+  it("keeps the latest session read: one a list reading brings after a load's newer one is older", async () => {
+    const { store, send } = await loaded();
+    const older = deferred<Session>();
+    mocked.keyboards.mockResolvedValue(TWO);
+    mocked.session.mockReturnValueOnce(older.promise);
+    send({ type: "keyboards" });
+    mocked.session.mockResolvedValue(session());
+    await store.load();
+    expect(store.session?.error ?? null).toBeNull();
+    older.resolve(session({ error: "gone by now" }));
+    await settle();
+    expect(store.keyboards).toEqual(TWO);
+    expect(store.session?.error ?? null).toBeNull();
+    // the next reading is newer
+    mocked.session.mockResolvedValue(session({ error: "now" }));
+    send({ type: "keyboards" });
+    await settle();
+    expect(store.session?.error).toBe("now");
+  });
+
   it("shows an error that appears or clears while no keyboard is loaded", async () => {
     const { store, emit, send } = started();
     mocked.session.mockResolvedValue(session({ status: "disconnected", keyboard: null }));

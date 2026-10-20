@@ -3,6 +3,7 @@
   import type { Described } from "../api/types";
   import { ApiError, failureMessage } from "../api/errors";
   import { keyboard } from "../lib/keyboard.svelte";
+  import { asSentence } from "../lib/text";
   import Button from "../ui/Button.svelte";
   import {
     changeKind, macroBytes, moveStep, newStep, parseDelay, STEP_KINDS, stepBytes, stepProblem, STEPS_MAX, type Step,
@@ -199,7 +200,7 @@
       made = await parseText(text);
     } catch (error) {
       if (error instanceof ApiError && error.status === 422 && typeof error.detail === "string") {
-        return `The text wasn't applied. ${capitalised(error.detail)}${/[.!?]$/.test(error.detail) ? "" : "."}`;
+        return `The text wasn't applied. ${asSentence(error.detail)}`;
       }
       return failureMessage("Reading the text", error);
     }
@@ -210,8 +211,6 @@
     steps = made;
     return null;
   }
-
-  const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
   function onkeydown(event: KeyboardEvent) {
     if (!recording || keyboard.unlock.open) return;

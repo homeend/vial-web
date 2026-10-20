@@ -103,7 +103,7 @@ describe("aboutFacts of the USB device", () => {
   });
 
   it("gives the product name the keyboard gives, as Qt does: not the name it is shown by when it gives none", () => {
-    expect(usbFacts({ ...usb, product: "", name: "Wcorne" })?.facts[1]).toMatchObject({ label: "Product", value: "—" });
+    expect(usbFacts({ ...usb, product: "", name: "Wcorne" })?.facts[1]).toMatchObject({ label: "Product", value: "none given" });
   });
 
   it("isn't there when the keyboard isn't listed (unplugged, and not the one chosen)", () => {

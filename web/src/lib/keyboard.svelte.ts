@@ -17,6 +17,7 @@ import { hasLighting } from "../lighting/lighting";
 import { offeredCategories } from "../picker/offered";
 import { toasts } from "./toasts.svelte";
 import { LOCKED, Unlocker, type UnlockOutcome } from "./unlock.svelte";
+import { capitalised } from "./text";
 import { dropUnsavedWork } from "./unsaved";
 
 const LANGUAGE_KEY = "vial.keyboardLanguage";
@@ -42,8 +43,6 @@ function defaultPlace(model: KeyboardModel, ref: KeyRef): string {
   const { what, where } = whereIs(model, ref);
   return ref.kind === "key" ? `the key at ${where}` : `${what.toLowerCase()}, ${where}`;
 }
-
-const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** Whether a key or encoder direction has a matrix position (or encoder and direction) to write to */
 function hasPosition(model: KeyboardModel, ref: KeyRef): boolean {
@@ -126,6 +125,10 @@ export class KeyboardStore {
   #modelKeyboard = $state<string | null>(null);
   /** readings of the keyboard list so far: only the latest is kept */
   #listReads = 0;
+  /** readings of the session asked for so far, and the one (by that count) the session shown came from: one answered
+   * after a reading asked later was kept is older, and isn't */
+  #sessionReads = 0;
+  #sessionKept = 0;
   /** told once no edit is on its way */
   #editsDone: (() => void)[] = [];
 
@@ -223,13 +226,15 @@ export class KeyboardStore {
       // the server says "disconnected" only for a loaded keyboard, or for one it couldn't read once it was unlocked
       // (the session says why): an unlock it ran is over, even if the session can't be read
       this.unlock.update(LOCKED);
-      api.session().then((s) => this.#useSession(s), () => undefined);
+      const at = ++this.#sessionReads;
+      api.session().then((s) => this.#useSession(s, at), () => undefined);
     }
   }
 
   /** Read the keyboard (and its keycode catalogue) from the server; only the latest load is kept */
   async load(): Promise<void> {
     const load = ++this.#loads;
+    const at = ++this.#sessionReads;
     try {
       const [session, model, catalogue] = await Promise.all([api.session(), api.keyboard(), api.keycodes()]);
       if (load !== this.#loads) return;
@@ -240,7 +245,7 @@ export class KeyboardStore {
         this.#plugs++;
         this.#anotherKeyboard();
       }
-      this.#useSession(session);
+      this.#useSession(session, at);
       this.model = model;
       this.#showKeyboard(opened);
       this.catalogue = catalogue;
@@ -262,9 +267,18 @@ export class KeyboardStore {
     }
   }
 
-  #useSession(session: Session): void {
+  /** Show the session read (`at`: which reading it is, #sessionReads), unless a reading asked for later was shown
+   * already; and the unlock state of the one shown */
+  #useSession(session: Session, at: number): void {
+    this.#keepSession(session, at);
+    this.unlock.update((this.session ?? session).unlock);
+  }
+
+  /** Show the session read, unless a reading asked for later was shown already */
+  #keepSession(session: Session, at: number): void {
+    if (at < this.#sessionKept) return;
+    this.#sessionKept = at;
     this.session = session;
-    this.unlock.update(session.unlock);
   }
 
   /** Read the list of keyboards, and the session (why none could be read): only the latest reading is kept. A model
@@ -272,12 +286,13 @@ export class KeyboardStore {
    * another tab maybe, and couldn't be opened: the page says why). */
   async #readKeyboards(): Promise<void> {
     const read = ++this.#listReads;
+    const at = ++this.#sessionReads;
     try {
       const [list, session] = await Promise.all([api.keyboards(), api.session()]);
       if (read !== this.#listReads) return;
       this.keyboards = list;
       // the unlock state comes with its own events
-      this.session = session;
+      this.#keepSession(session, at);
       const chosen = list.chosen ?? null;
       if (this.model !== null && !this.connected && chosen !== null && chosen !== this.#modelKeyboard) {
         this.#forgetKeyboard();
@@ -352,9 +367,10 @@ export class KeyboardStore {
         if (this.connected) void this.load();
         return false;
       }
+      const at = ++this.#sessionReads;
       const session = await api.session().catch(() => null);
       if (session) {
-        this.#useSession(session);
+        this.#useSession(session, at);
         this.connected = session.status === "connected";
       }
       // the "connected" event loads it too: the latest load is kept
@@ -532,6 +548,7 @@ export class KeyboardStore {
       this.rebooting = true;
       try {
         let session: Session | null = null;
+        const at = ++this.#sessionReads;
         try {
           session = await api.rebootToBootloader();
         } catch (error) {
@@ -542,7 +559,7 @@ export class KeyboardStore {
         this.bootloaderUnanswered = session === null;
         // it is gone: the "disconnected" event says so too, maybe after this reply. Not answered, the server closed it.
         this.connected = session !== null && session.status === "connected";
-        if (session) this.#useSession(session);
+        if (session) this.#useSession(session, at);
       } finally {
         this.rebooting = false;
       }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { KeyboardEntry, KeyboardList } from "../api/types";
-import { asSentence, blockedWhy, chosenAway, keyboardOptions, shownKeyboard } from "./keyboards";
+import { blockedWhy, chosenAway, keyboardOptions, shownKeyboard } from "./keyboards";
 
 function entry(id: string, name: string, more: Partial<KeyboardEntry> = {}): KeyboardEntry {
   return {
@@ -96,13 +96,5 @@ describe("blockedWhy", () => {
     expect(blockedWhy(error, away, "a")).toBe("unplugged");
     expect(blockedWhy(error, plugged, null)).toBe("unplugged");
     expect(blockedWhy(error, null, "a")).toBe("unplugged");
-  });
-});
-
-describe("asSentence", () => {
-  it("capitalises a reason and ends it with a full stop", () => {
-    expect(asSentence("unsupported keyboard")).toBe("Unsupported keyboard.");
-    expect(asSentence("a newer Vial may read it.")).toBe("A newer Vial may read it.");
-    expect(asSentence("")).toBe("");
   });
 });

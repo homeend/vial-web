@@ -190,6 +190,52 @@ test("a keyboard chosen with an arrow key on the closed selector is asked about 
   }
 });
 
+test("the selector gone while it has the focus (the keyboard closed unplugged) leaves it on the keyboard's name", async ({
+  twoKeyboards: page,
+}) => {
+  try {
+    await plugSecond(page);
+    await selector(page).selectOption({ label: "Simulated Macropad" });
+    await expect(section(page, "Layout")).toBeVisible();
+    await selector(page).focus();
+    // the Corne, closed, is unplugged: one keyboard is left, and the selector goes
+    await plugIn(page, false);
+    await expect(selector(page)).toHaveCount(0, { timeout: 10_000 });
+    const name = page.locator(".topbar .name");
+    await expect(name).toHaveText("Simulated Macropad");
+    await expect(name).toBeFocused();
+  } finally {
+    await restoreAll(() => plugIn(page, true), async () => {
+      await expect.poll(async () => (await listed(page)).keyboards.some((k) => k.name === "Simulated Corne"),
+        { timeout: 10_000 }).toBe(true);
+    }, () => putBack(page));
+  }
+});
+
+test("another keyboard picked while the matrix tester tests stops the test: the question it asks takes keys", async ({
+  twoKeyboards: page,
+}) => {
+  try {
+    await plugSecond(page);
+    await openSection(page, "Settings");
+    await page.getByRole("textbox", { name: "Tapping Term" }).fill("250");
+    await openSection(page, "Matrix tester");
+    await page.getByRole("button", { name: "Start testing" }).click();
+    await expect(page.getByRole("button", { name: "Stop testing" })).toBeVisible();
+
+    await selector(page).selectOption({ label: "Simulated Macropad" });
+    const dialog = page.getByRole("dialog", { name: "Switch to Simulated Macropad?" });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start testing" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(shown(page)).toHaveText("Simulated Corne");
+    expect((await listed(page)).keyboards.find((k) => k.open)?.name).toBe("Simulated Corne");
+  } finally {
+    await putBack(page);
+  }
+});
+
 test("the chosen keyboard unplugged is waited for, and opened again once it is back", async ({
   twoKeyboards: page,
 }) => {

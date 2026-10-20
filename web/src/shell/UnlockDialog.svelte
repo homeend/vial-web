@@ -79,9 +79,11 @@
     `${andList(keys.map((k) => `row ${k.row}, column ${k.col}`))} of the keyboard's matrix.`);
 </script>
 
+<!-- data-keys-guarded: it keeps every key from the page itself, so the matrix tester goes on behind it -->
 <dialog
   bind:this={dialog}
   class="unlock"
+  data-keys-guarded
   aria-labelledby="unlock-title"
   aria-describedby="unlock-help"
   oncancel={(event) => {

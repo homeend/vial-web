@@ -54,7 +54,7 @@ function usbFacts(usb: UsbDevice): FactGroup {
     facts: [
       { label: "Manufacturer", value: usb.manufacturer || "none given" },
       // the product name it gives, as Qt shows it: not the name it is shown by, made up when it gives none
-      { label: "Product", value: usb.product || "—" },
+      { label: "Product", value: usb.product || "none given" },
       { label: "VID", value: usbId(usb.vendorId), code: true },
       { label: "PID", value: usbId(usb.productId), code: true },
       { label: "Device", value: usb.path, copy: true, code: true, long: true },

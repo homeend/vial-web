@@ -38,6 +38,23 @@
 
   const shownKeyboard = $derived(keyboards.find((k) => k.id === keyboardId));
 
+  let nameShown = $state<HTMLElement>();
+  // the selector goes while it has the focus (a keyboard unplugged leaves one to choose from): the focus, which would
+  // fall to the page's body, goes to the keyboard's name in its place, else to the page's main heading. This runs
+  // before the selector leaves the page.
+  $effect.pre(() => {
+    if (keyboards.length > 1) return;
+    const select = document.getElementById("keyboard-select");
+    if (!select || select !== document.activeElement) return;
+    void tick().then(() => {
+      const focused = document.activeElement;
+      if (focused && focused !== document.body) return;
+      const heading = document.querySelector<HTMLElement>("main h1");
+      if (!nameShown && heading && !heading.hasAttribute("tabindex")) heading.tabIndex = -1;
+      (nameShown ?? heading)?.focus();
+    });
+  });
+
   /** when a key that moves the choice was last pressed on the selector (event time stamp), or null */
   let keyedAt: number | null = null;
   /** a change this soon after such a key comes from it. Firefox's open list sends the select no pointerdown: arrows in
@@ -114,7 +131,8 @@
         </label>
       {:else if name}
         <span class="sep" aria-hidden="true">/</span>
-        <span class="name">{name}</span>
+        <!-- focusable from code only: it takes the focus when the selector goes while it has it -->
+        <span class="name" tabindex="-1" bind:this={nameShown}>{name}</span>
       {/if}
     </div>
 
