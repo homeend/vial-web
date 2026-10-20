@@ -436,6 +436,8 @@ MACRO_BUFFER_MAX = 0xFFFF
 MACRO_DELAY_LIMIT = 254 + 254 * 255
 """ the longest delay the macro format can encode """
 MACROS_MAX = 256
+MACRO_TEXT_MAX = 16 * MACRO_BUFFER_MAX
+""" the longest macro text taken: room for a whole macro memory of keys written out by name """
 
 KeycodeStr = Annotated[str, Field(max_length=KEYCODE_MAX_LENGTH)]
 Byte = Annotated[int, Field(ge=0, le=255)]
@@ -493,6 +495,11 @@ class MacroActionIn(Request):
     text: Optional[str] = Field(default=None, max_length=MACRO_BUFFER_MAX)
     keys: list[KeycodeStr] = Field(default=[], max_length=MACRO_BUFFER_MAX // 2)
     delay: Optional[int] = Field(default=None, ge=0, le=MACRO_DELAY_LIMIT)
+
+
+class MacroTextIn(Request):
+    """ A macro as Qt's text editor has it (POST /api/macros/parse) """
+    text: str = Field(max_length=MACRO_TEXT_MAX)
 
 
 class MacrosIn(Request):

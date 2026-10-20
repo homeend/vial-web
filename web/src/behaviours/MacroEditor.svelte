@@ -1,12 +1,15 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import type { Described } from "../api/types";
+  import { ApiError, failureMessage } from "../api/errors";
   import { keyboard } from "../lib/keyboard.svelte";
   import Button from "../ui/Button.svelte";
   import {
     changeKind, macroBytes, moveStep, newStep, parseDelay, STEP_KINDS, stepBytes, stepProblem, STEPS_MAX, type Step,
     type StepKind,
   } from "./macro";
+  import { appliedNote, macroText } from "./macroText";
+  import MacroTextDialog from "./MacroTextDialog.svelte";
   import { recordedNote, Recording, stepsRecorded, type RecordMode, type Recorded } from "./recorder";
 
   interface Props {
@@ -19,6 +22,8 @@
     onpickkey: (step: number) => void;
     /** a recorded keycode, described as the server does */
     describe: (code: string) => Promise<Described>;
+    /** a macro as Qt's text editor has it, read by the server as steps (rejects with an ApiError saying why not) */
+    parseText: (text: string) => Promise<Step[]>;
     /** why it can't be saved, beyond its steps (the macro memory is full), or null */
     blocked: string | null;
     canSave: boolean;
@@ -30,7 +35,7 @@
   }
 
   let {
-    index, steps = $bindable(), vialProtocol, onpickkey, describe, blocked, canSave, busy, onsave, oncancel,
+    index, steps = $bindable(), vialProtocol, onpickkey, describe, parseText, blocked, canSave, busy, onsave, oncancel,
   }: Props = $props();
 
   let list = $state<HTMLOListElement>();
@@ -172,6 +177,38 @@
       finishing = false;
     }
   }
+
+  // the steps as text, in a dialog (Qt's "Open Text Editor...")
+  let textOpen = $state(false);
+  /** the steps as text when the dialog opened */
+  let textShown = $state("");
+  let textButton = $state<HTMLSpanElement>();
+
+  function openText() {
+    if (locked) return;
+    textShown = macroText(steps);
+    textOpen = true;
+  }
+
+  /** Puts the text's steps in place of the steps there: null when it did, else what is wrong with the text */
+  async function applyText(text: string): Promise<string | null> {
+    if (locked) return "The macro is being saved: apply the text once that is done.";
+    let made: Step[];
+    try {
+      made = await parseText(text);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 422 && typeof error.detail === "string") {
+        return `The text wasn't applied. ${capitalised(error.detail)}${/[.!?]$/.test(error.detail) ? "" : "."}`;
+      }
+      return failureMessage("Reading the text", error);
+    }
+    if (locked) return "The macro is being saved: apply the text once that is done.";
+    recordNote = appliedNote(made.length, steps.length);
+    steps = made;
+    return null;
+  }
+
+  const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
   function onkeydown(event: KeyboardEvent) {
     if (!recording || keyboard.unlock.open) return;
@@ -321,21 +358,27 @@
     {/each}
   </div>
 
-  <!-- Qt's Record macro menu, as two buttons: with no step yet, both would do the same -->
-  <div class="add" role="group" aria-label="Record from keyboard">
-    <Button size="sm" variant={recording && recordMode === "append" ? "primary" : "secondary"}
-      disabled={recording !== null && recordMode !== "append"} aria-disabled={busy || finishing || undefined}
-      onclick={() => toggleRecording("append")}>
-      {#if recording && recordMode === "append"}Stop recording{:else}<span class="dot" aria-hidden="true"></span>{steps.length > 0
-          ? "Record, adding to the end" : "Record from keyboard"}{/if}
-    </Button>
-    {#if steps.length > 0}
-      <Button size="sm" variant={recording && recordMode === "replace" ? "primary" : "secondary"}
-        disabled={recording !== null && recordMode !== "replace"} aria-disabled={busy || finishing || undefined}
-        onclick={() => toggleRecording("replace")}>
-        {#if recording && recordMode === "replace"}Stop recording{:else}<span class="dot" aria-hidden="true"></span>Record, replacing the steps{/if}
+  <div class="tools">
+    <!-- Qt's Record macro menu, as two buttons: with no step yet, both would do the same -->
+    <div class="add" role="group" aria-label="Record from keyboard">
+      <Button size="sm" variant={recording && recordMode === "append" ? "primary" : "secondary"}
+        disabled={recording !== null && recordMode !== "append"} aria-disabled={busy || finishing || undefined}
+        onclick={() => toggleRecording("append")}>
+        {#if recording && recordMode === "append"}Stop recording{:else}<span class="dot" aria-hidden="true"></span>{steps.length > 0
+            ? "Record, adding to the end" : "Record from keyboard"}{/if}
       </Button>
-    {/if}
+      {#if steps.length > 0}
+        <Button size="sm" variant={recording && recordMode === "replace" ? "primary" : "secondary"}
+          disabled={recording !== null && recordMode !== "replace"} aria-disabled={busy || finishing || undefined}
+          onclick={() => toggleRecording("replace")}>
+          {#if recording && recordMode === "replace"}Stop recording{:else}<span class="dot" aria-hidden="true"></span>Record, replacing the steps{/if}
+        </Button>
+      {/if}
+    </div>
+    <!-- a span to focus again once the dialog closes: Button doesn't hand out its element -->
+    <span class="text-button" bind:this={textButton}>
+      <Button size="sm" disabled={recordingNow} aria-disabled={busy || undefined} onclick={openText}>Edit as text…</Button>
+    </span>
   </div>
 
   {#if recording}
@@ -377,6 +420,17 @@
     </Button>
   </div>
 </div>
+
+<MacroTextDialog
+  open={textOpen}
+  {index}
+  text={textShown}
+  onapply={applyText}
+  onclose={() => {
+    textOpen = false;
+    textButton?.querySelector("button")?.focus();
+  }}
+/>
 
 <style>
   .editor {
@@ -607,6 +661,18 @@
     padding: 8px 16px;
     border-top: 1px solid var(--border);
     background: var(--surface);
+  }
+
+  /* the record buttons, and the macro as text after them */
+  .tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 16px;
+  }
+
+  .text-button {
+    display: inline-flex;
   }
 
   .size {

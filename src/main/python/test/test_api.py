@@ -259,6 +259,78 @@ def test_macros(client, virtual):
     assert client.put("/api/macros", json={"items": items[:3]}).status_code == 422
 
 
+# ---------- a macro as text (Qt's text editor) ----------
+
+QT_MACRO = ('[["text", "git status"], ["tap", "KC_ENTER"], ["down", "KC_LSHIFT"], ["tap", "KC_HOME", "KC_END"], '
+            '["up", "KC_LSHIFT"], ["delay", 50], ["tap", "LCTL(KC_C)"]]')
+
+
+def steps_of(response):
+    assert response.status_code == 200, response.text
+    return [(s["type"], s["text"], [k["code"] for k in s["keys"]], s["delay"]) for s in response.json()]
+
+
+def test_a_macro_as_qt_writes_it_is_read_as_steps(client, virtual):
+    before = virtual.macros()
+    assert steps_of(client.post("/api/macros/parse", json={"text": QT_MACRO})) == [
+        ("text", "git status", [], None), ("tap", None, ["KC_ENTER"], None), ("down", None, ["KC_LSHIFT"], None),
+        ("tap", None, ["KC_HOME", "KC_END"], None), ("up", None, ["KC_LSHIFT"], None), ("delay", None, [], 50),
+        ("tap", None, ["LCTL(KC_C)"], None)]
+    assert virtual.macros() == before  # read, not written
+    # keys described as the page shows them, and aliases taken
+    tap = client.post("/api/macros/parse", json={"text": '[["tap", "KC_ENT"]]'}).json()[0]["keys"][0]
+    assert (tap["code"], tap["tap"]) == ("KC_ENTER", "Enter")
+
+
+def test_every_macro_qt_would_write_reads_back_as_the_same_steps(client, setup):
+    """ Qt's text editor: json.dumps([act.save() for act in actions]) (macro_tab.py on_text_window) """
+    manager = setup[2].state.manager
+    kb = manager.keyboard
+    held = client.get("/api/keyboard").json()["macros"]["items"]
+    for index, actions in enumerate(kb.macros_deserialize(kb.macro)):
+        text = json.dumps([act.save() for act in actions])
+        assert client.post("/api/macros/parse", json={"text": text}).json() == held[index]["actions"], text
+
+
+def test_a_macro_text_shorter_than_six_characters_is_no_step_as_in_qt(client):
+    for text in ["", "[]", " [ ] ", "12345"]:
+        assert steps_of(client.post("/api/macros/parse", json={"text": text})) == []
+
+
+@pytest.mark.parametrize("text, problem", [
+    ('[["text", "hi"]', "not JSON: Expecting ',' delimiter (line 1, column 16)"),
+    ('{"text": "hi"}', 'the text must be a list of steps, such as [["text", "hi"], ["tap", "KC_ENTER"]]'),
+    ('[["text", "hi"], ["tapp", "KC_A"]]', "step 2: unknown macro step 'tapp'"),
+    ('[["tap", "KC_NOPE"]]', "step 1: not a valid keycode: 'KC_NOPE'"),
+    ('[["text", "hi"], "tap"]', "step 2: a macro step must be a list"),
+    ('[["tap"]]', "step 1: a tap step needs at least one key"),
+    ('[["delay", 70000]]', "step 1: a delay step needs a delay from 0 to 64000 ms"),
+    ('[["text", "été"]]', "step 1: macro text can only hold printable ASCII characters"),
+    ('[["tap", "MO(9)"]]', "step 1: MO(9) refers to layer 9, but this keyboard's layers are 0 to 3"),
+])
+def test_a_macro_text_that_cant_be_read_says_why(client, virtual, text, problem):
+    before = virtual.macros()
+    response = client.post("/api/macros/parse", json={"text": text})
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith(problem), response.json()["detail"]
+    assert virtual.macros() == before
+
+
+def test_a_macro_text_of_too_many_steps_says_so(client):
+    response = client.post("/api/macros/parse", json={"text": json.dumps([["tap", "KC_A"]] * 257)})
+    assert (response.status_code, response.json()["detail"]) == (422, "a macro holds at most 256 steps")
+
+
+def test_a_macro_text_keeps_to_what_old_firmware_can_do(setup):
+    """ Before Vial protocol 2 a macro has no delays (the save refuses them alike) """
+    from server import edits
+    kb = setup[2].state.manager.keyboard
+    kb.vial_protocol = 1
+    with pytest.raises(ValueError, match="step 1: this keyboard's firmware doesn't support delays in macros"):
+        edits.parse_macro_text(kb, '[["delay", 10]]')
+    assert edits.parse_macro_text(kb, '[["tap", "KC_A"]]')[0].keys[0].code == "KC_A"
+
+
 def test_settings_and_lighting(client, virtual):
     assert client.put("/api/qmk-settings/7", json={"value": 180}).json() == {"qsid": 7, "value": 180}
     assert virtual.settings[7] == 180

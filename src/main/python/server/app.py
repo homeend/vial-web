@@ -633,6 +633,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     def set_macros(body: schemas.MacrosIn, lang: Lang = languages.DEFAULT):
         return run(lambda kb: edits.set_macros(kb, body, names_for(kb)), lang)
 
+    @app.post("/api/macros/parse", response_model=list[schemas.MacroAction])
+    def parse_macro_text(body: schemas.MacroTextIn, lang: Lang = languages.DEFAULT):
+        """ A macro as Qt's text editor has it (JSON: [["text", "hi"], ["tap", "KC_ENTER"], ["delay", 50]...]) read
+        as steps for this keyboard, checked as a save checks them; 422 says what is wrong. Nothing is written: the
+        page puts the steps in the macro being edited, and saves them with PUT /api/macros. """
+        return read(lambda kb: edits.parse_macro_text(kb, body.text), lang)
+
     @app.get("/api/qmk-settings/definitions", response_model=schemas.SettingsDefinitions)
     def setting_definitions():
         """ Every QMK setting Vial knows, grouped as qmk_settings.json has them; the keyboard's model lists those it

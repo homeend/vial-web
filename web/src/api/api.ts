@@ -27,6 +27,8 @@ export const api = {
     request("put", "/api/alt-repeat/{index}", { params: { index }, body }),
   /** every macro: they share the keyboard's macro memory */
   setMacros: (items: MacroActionIn[][]) => request("put", "/api/macros", { body: { items } }),
+  /** a macro as Qt's text editor has it, read as steps for this keyboard (422: what is wrong); nothing is written */
+  parseMacroText: (text: string) => request("post", "/api/macros/parse", { body: { text } }),
   settingDefinitions: () => request("get", "/api/qmk-settings/definitions"),
   setSetting: (qsid: number, value: number) =>
     request("put", "/api/qmk-settings/{qsid}", { params: { qsid }, body: { value } }),

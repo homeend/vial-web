@@ -193,6 +193,7 @@
       vialProtocol={model.vialProtocol}
       onpickkey={pickKey}
       describe={(code) => describeCode(keyboard.catalogue, code, api.parse)}
+      parseText={(text) => api.parseMacroText(text)}
       {blocked}
       canSave={canEdit}
       {busy}

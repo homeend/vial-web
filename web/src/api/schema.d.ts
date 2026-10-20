@@ -300,6 +300,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/macros/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Parse Macro Text
+         * @description A macro as Qt's text editor has it (JSON: [["text", "hi"], ["tap", "KC_ENTER"], ["delay", 50]...]) read
+         *     as steps for this keyboard, checked as a save checks them; 422 says what is wrong. Nothing is written: the
+         *     page puts the steps in the macro being edited, and saves them with PUT /api/macros.
+         */
+        post: operations["parse_macro_text_api_macros_parse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/qmk-settings/definitions": {
         parameters: {
             query?: never;
@@ -1052,6 +1074,14 @@ export interface components {
         MacroChange: {
             before: components["schemas"]["Macro"];
             after: components["schemas"]["Macro"];
+        };
+        /**
+         * MacroTextIn
+         * @description A macro as Qt's text editor has it (POST /api/macros/parse)
+         */
+        MacroTextIn: {
+            /** Text */
+            text: string;
         };
         /** Macros */
         Macros: {
@@ -1898,6 +1928,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Macros"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    parse_macro_text_api_macros_parse_post: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MacroTextIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MacroAction"][];
                 };
             };
             /** @description Validation Error */

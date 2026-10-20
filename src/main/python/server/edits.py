@@ -378,6 +378,32 @@ def _vil_macro_action(kb, act):
     return _macro_action(kb, kind, keys=act[1:])
 
 
+QT_MACRO_TEXT_SHORT = 6
+""" Qt's text editor reads a text shorter than this as no step at all (macro_tab.py on_dlg_finished) """
+
+
+def parse_macro_text(kb, text):
+    """ A macro as Qt's text editor has it: the JSON of each step's save() (macro_tab.py on_text_window), e.g.
+    [["text", "hi"], ["tap", "KC_ENTER", "KC_A"], ["down", "KC_LSHIFT"], ["delay", 50]] -> its steps
+    (schemas.MacroAction), checked as a .vil file's macro is (and as a save checks them). Nothing is written. Where Qt
+    skips what it can't read (another kind of step) or ignores the whole text (not a list), ValueError says what is
+    wrong instead, and where. """
+    if len(text) < QT_MACRO_TEXT_SHORT:
+        return []
+    try:
+        steps = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError("not JSON: {} (line {}, column {})".format(e.msg, e.lineno, e.colno))
+    if not isinstance(steps, list):
+        raise ValueError('the text must be a list of steps, such as [["text", "hi"], ["tap", "KC_ENTER"]]')
+    _check_steps(steps)
+    try:
+        actions = [_at("step {}".format(n), _vil_macro_action, kb, act) for n, act in enumerate(steps, 1)]
+    except _Invalid as e:
+        raise ValueError(str(e))
+    return [model.macro_action(action) for action in actions]
+
+
 def _vil_settings(kb, settings, ignored):
     """ {qsid: value} to write; settings this keyboard doesn't have are skipped, as the Qt app does, and listed in
     ignored """
