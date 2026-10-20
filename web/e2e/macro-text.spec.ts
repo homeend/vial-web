@@ -235,13 +235,17 @@ test("a text being applied when the dialog is closed (Esc twice) is dropped", as
     await dialog.getByRole("textbox").fill('[["text", "late"]]');
     await dialog.getByRole("button", { name: "Apply" }).click();
     await expect(dialog.getByRole("button", { name: "Apply…" })).toBeVisible();
-    // the first Esc waits for the text being read; a second one closes the dialog all the same
-    await app.keyboard.press("Escape");
-    await app.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
+    // the first Esc waits for the text being read; a second one closes the dialog all the same. The reply is let go
+    // at once: it can come before the dialog's close event, which waits for the next frame.
     const parsed = app.waitForResponse(route);
+    await app.keyboard.press("Escape");
+    await app.keyboard.press("Escape");
     answer();
     await parsed;
+    await expect(dialog).toBeHidden();
+    // the reply was taken (the closed dialog's Apply is no longer busy): only then do the steps tell
+    await expect(app.getByRole("dialog", { name: "Macro 1 as text", includeHidden: true })
+      .getByRole("button", { name: "Apply", exact: true, includeHidden: true })).toBeAttached();
     await expect(card.locator(".steps > li")).toHaveCount(steps);
     await expect(card).not.toContainText("from the text");
     await card.getByRole("button", { name: "Cancel" }).click();

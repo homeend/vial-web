@@ -192,8 +192,9 @@
     textOpen = true;
   }
 
-  /** Puts the text's steps in place of the steps there: null when it did, else what is wrong with the text */
-  async function applyText(text: string): Promise<string | null> {
+  /** Puts the text's steps in place of the steps there: null when it did, else what is wrong with the text.
+   * showing(): whether the dialog still shows (see MacroTextDialog's onapply) */
+  async function applyText(text: string, showing: () => boolean): Promise<string | null> {
     if (locked) return "The macro is being saved: apply the text once that is done.";
     let made: Step[];
     try {
@@ -205,8 +206,9 @@
       return failureMessage("Reading the text", error);
     }
     if (locked) return "The macro is being saved: apply the text once that is done.";
-    // the dialog was closed meanwhile (Esc, twice): what it was applying goes with it
-    if (!textOpen) return null;
+    // the dialog was closed meanwhile (Esc, twice): what it was applying goes with it. Asked of the dialog: textOpen
+    // turns false only with its close event, a frame later, and a reply can come before that
+    if (!textOpen || !showing()) return null;
     recordNote = appliedNote(made.length, steps.length);
     steps = made;
     return null;

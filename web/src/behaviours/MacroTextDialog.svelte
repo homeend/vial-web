@@ -11,8 +11,10 @@
     index: number;
     /** the steps being edited, as text: what the box starts with */
     text: string;
-    /** reads the text into the macro being edited: null when it was, else what is wrong (the dialog stays open) */
-    onapply: (text: string) => Promise<string | null>;
+    /** reads the text into the macro being edited: null when it was, else what is wrong (the dialog stays open).
+     * showing(): whether the dialog still shows, once the text is read: a second Esc closes it meanwhile, and the
+     * text is dropped then. It says so at once, while `onclose` (the close event) comes only with the next frame. */
+    onapply: (text: string, showing: () => boolean) => Promise<string | null>;
     /** closed, applied or not: the caller gives the focus back to whatever opened it */
     onclose: () => void;
   }
@@ -64,7 +66,7 @@
     working = true;
     let result: string | null;
     try {
-      result = await onapply(value);
+      result = await onapply(value, () => dialog?.open === true);
     } finally {
       working = false;
     }
