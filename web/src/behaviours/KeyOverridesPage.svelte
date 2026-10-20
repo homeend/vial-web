@@ -192,7 +192,7 @@
   <Picker
     bind:open={pickerOpen}
     subject="{picking === 'trigger' ? 'Trigger' : 'Replacement'} of key override {draft.index}"
-    categories={keyboard.catalogue}
+    categories={keyboard.pickerCatalogue}
     current={draft.value[picking].code}
     {names}
     onpick={(_, d) => {

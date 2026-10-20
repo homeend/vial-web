@@ -173,7 +173,7 @@
   <Picker
     bind:open={pickerOpen}
     subject="Tap dance {picking.index}, {picking.slot.toLowerCase()}"
-    categories={keyboard.catalogue}
+    categories={keyboard.pickerCatalogue}
     current={pickingCurrent}
     {names}
     onpick={(code) => {

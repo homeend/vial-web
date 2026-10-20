@@ -217,7 +217,7 @@
   <Picker
     bind:open={pickerOpen}
     subject={picking === "output" ? `Output of combo ${draft.index}` : `A key of combo ${draft.index}`}
-    categories={keyboard.catalogue}
+    categories={keyboard.pickerCatalogue}
     current={picking === "output" ? draft.output.code : "KC_NO"}
     {names}
     onpick={(_, d) => {

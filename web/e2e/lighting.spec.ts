@@ -1,5 +1,7 @@
 import type { Page } from "@playwright/test";
-import { api, expect, lightingOf, openSection, plugIn, restoreAll, setLighting, test } from "./fixtures";
+import {
+  api, codeAt, expect, keyIndex, lightingOf, open, openSection, plugIn, restoreAll, setCodeAt, setLighting, test,
+} from "./fixtures";
 
 // The Lighting page against the simulated keyboards: the Corne's VialRGB, and QMK's RGB light and backlight on the
 // other Corne. Changes show at once and are kept only once saved: a replug (the simulator starts over with what its
@@ -212,13 +214,57 @@ test("a keyboard without lighting has no Lighting page and says nothing of light
   await macropad.goto(macropad.url().replace(/#.*$/, "") + "#lighting");
   await expect(macropad).toHaveURL(/#keymap$/);
   await expect(macropad.getByRole("heading", { level: 1, name: "Keymap" })).toBeVisible();
-  // every other page in the navigation (the macropad has no tap dances, combos, key overrides, alt-repeat keys or QMK
-  // settings). The Keymap is left out: its keycode picker always has a Lighting category of
-  // keycodes, as Qt's has, whatever the keyboard. (Outside <main>, the theme switch's "Light" is no lighting either.)
-  const names = (await nav.locator("button > span").allTextContents()).filter((name) => name !== "Keymap");
-  expect(names).toEqual(["Layout", "Macros", "Matrix tester", "Keyboard"]);
+  // every page in the navigation (the macropad has no tap dances, combos, key overrides, alt-repeat keys or QMK
+  // settings), the Keymap too: its keycode picker offers no lighting keys on a keyboard without lighting, though Qt's
+  // always does. (Outside <main>, the theme switch's "Light" is no lighting either.)
+  const names = await nav.locator("button > span").allTextContents();
+  expect(names).toEqual(["Keymap", "Layout", "Macros", "Matrix tester", "Keyboard"]);
   for (const name of names) {
     await openSection(macropad, name);
     await expect(macropad.locator("main")).not.toContainText(/lighting|RGB|backlight/i);
   }
 });
+
+test("the keycode picker has no Lighting category on a keyboard without lighting, nor finds lighting keys",
+  async ({ macropad, corneUrl }) => {
+    const categories = async (page: Page) => {
+      await openSection(page, "Keymap");
+      await page.locator("button.key").first().click();
+      await page.getByRole("complementary", { name: "Selected key" }).getByRole("button", { name: "Change key" }).click();
+      const picker = page.getByRole("dialog");
+      const tabs = await picker.getByRole("tablist", { name: "Keycode categories" }).getByRole("tab").allTextContents();
+      await picker.getByRole("searchbox", { name: "Search keycodes" }).fill("rgb");
+      const found = await picker.locator(".grid button.kc").count();
+      await picker.getByRole("button", { name: "Close" }).click();
+      await expect(picker).toBeHidden();
+      return { tabs: tabs.map((t) => t.trim()), found };
+    };
+    const without = await categories(macropad);
+    expect(without.tabs).not.toContain("Lighting");
+    expect(without.tabs).toContain("Media");
+    expect(without.found).toBe(0);
+    // the Corne has lighting: it is offered there (the fixtures share a page: the Corne gets a page of its own)
+    const lit = await categories(await open(await macropad.context().newPage(), corneUrl));
+    expect(lit.tabs).toContain("Lighting");
+    expect(lit.found).toBeGreaterThan(0);
+  });
+
+test("on a keyboard without lighting, Any keycode still takes a lighting key, and the key shows it",
+  async ({ macropad }) => {
+    const index = await keyIndex(macropad, 0, 0);
+    const before = await codeAt(macropad, 0, index);
+    try {
+      const key = macropad.locator(`[data-ref="key:${index}"]`);
+      await key.click();
+      await macropad.getByRole("button", { name: "Change key" }).click();
+      const picker = macropad.getByRole("dialog");
+      await picker.getByLabel("Any keycode").fill("RGB_TOG");
+      await expect(picker.locator("#any-keycode-result")).toContainText("RGB_TOG");
+      await picker.getByRole("button", { name: "Use", exact: true }).click();
+      await expect(picker).toBeHidden();
+      await expect.poll(() => codeAt(macropad, 0, index)).toBe("RGB_TOG");
+      await expect(key).toContainText("RGB");
+    } finally {
+      await setCodeAt(macropad, 0, index, before);
+    }
+  });

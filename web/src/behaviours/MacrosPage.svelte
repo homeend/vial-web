@@ -206,7 +206,7 @@
   <Picker
     bind:open={pickerOpen}
     subject="Macro {draft.index}, step {pickingStep + 1}"
-    categories={keyboard.catalogue}
+    categories={keyboard.pickerCatalogue}
     current={draft.steps[pickingStep]?.keys.at(-1)?.code ?? "KC_NO"}
     {names}
     onpick={(_, d) => {

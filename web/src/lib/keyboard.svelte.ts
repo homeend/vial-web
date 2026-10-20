@@ -13,6 +13,8 @@ import { keyTitle, namesOf } from "../keyboard/labels";
 import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
 import { unlockFirst, type Change } from "../keymap/move";
 import { freeTapDance } from "../keymap/tapdance";
+import { hasLighting } from "../lighting/lighting";
+import { offeredCategories } from "../picker/offered";
 import { toasts } from "./toasts.svelte";
 import { LOCKED, Unlocker, type UnlockOutcome } from "./unlock.svelte";
 import { dropUnsavedWork } from "./unsaved";
@@ -86,6 +88,13 @@ export class KeyboardStore {
    * the same uid (one alike, KeyboardEntry.id), took its place. What was opened or offered for the one before (pages,
    * an Undo) must not be used for it. */
   opened = $state(0);
+
+  /** whether the keyboard has lighting of any kind (true before one is read): a value, so the catalogue offered is
+   * worked out again only when it changes, not on every lighting change */
+  #lit = $derived(this.model === null || hasLighting(this.model.lighting));
+  /** the keycode categories the picker offers: the catalogue, without the Lighting category on a keyboard without
+   * lighting. Finding keys and describing keycodes still use the whole catalogue. */
+  pickerCatalogue = $derived(offeredCategories(this.catalogue, this.#lit));
 
   canEdit = $derived(
     this.model !== null && !this.stale && this.connected && this.link === "open" && this.switching === null,

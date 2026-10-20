@@ -42,6 +42,8 @@
     if (open && !dialog.open) {
       query = "";
       anyKeycode = "";
+      // the categories may be fewer than when it was last open (another keyboard, without lighting)
+      if (category >= categories.length) category = 0;
       dialog.showModal(); // the search box has autofocus: it gets the focus straight away
     } else if (!open && dialog.open) {
       dialog.close();

@@ -190,7 +190,7 @@
   <Picker
     bind:open={pickerOpen}
     subject="{picking === 'keycode' ? 'Last key' : 'Alt key'} of alt-repeat key {draft.index}"
-    categories={keyboard.catalogue}
+    categories={keyboard.pickerCatalogue}
     current={draft.value[picking].code}
     {names}
     onpick={(_, d) => {

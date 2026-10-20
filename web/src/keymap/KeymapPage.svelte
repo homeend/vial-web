@@ -350,7 +350,7 @@
   <Picker
     bind:open={pickerOpen}
     {subject}
-    categories={keyboard.catalogue}
+    categories={keyboard.pickerCatalogue}
     current={current.code}
     {names}
     onpick={(code) => {
