@@ -128,6 +128,19 @@
   /** the USB device of the keyboard shown, as the keyboard list has it (for the Keyboard page's About card) */
   const shownUsb = $derived(keyboard.keyboards?.keyboards.find((k) => k.id === keyboard.modelKeyboard) ?? null);
   const blockedBy = $derived(blockedWhy(keyboard.session, keyboard.keyboards, keyboard.modelKeyboard));
+  /** the keyboard being opened, by name, or null: the page (still the keyboard before) is greyed out meanwhile */
+  const opening = $derived(
+    keyboard.switching === null
+      ? null
+      : (keyboardChoices.find((k) => k.id === keyboard.switching)?.name ?? "the keyboard"),
+  );
+  const greyed = $derived(blocked || opening !== null);
+  // the page goes inert while another keyboard is opened: the focus, if it was in it, would fall to the page's body;
+  // it goes to the selector instead
+  $effect.pre(() => {
+    if (opening === null || !document.activeElement?.closest(".page")) return;
+    void tick().then(() => document.getElementById("keyboard-select")?.focus());
+  });
 
   /** another keyboard chosen while there is work not saved: the confirmation asks first */
   let asking = $state<{ id: string; title: string; message: string } | null>(null);
@@ -187,6 +200,9 @@
   <Nav {sections} active={section} onselect={(id) => router.go(id)} />
 
   <main class="content">
+    {#if opening !== null}
+      <p class="opening" role="status" aria-busy="true">Opening {opening}…</p>
+    {/if}
     {#if status === "offline"}
       <Banner tone="warning" title="Lost contact with Vial" message="Reconnecting… If this lasts, check that Vial is still running." />
     {:else if blocked && keyboard.inBootloader}
@@ -229,7 +245,7 @@
     {#if keyboard.model && placement && analysis}
       <!-- made anew for another keyboard, even one alike (the same uid): an editor open was for the one before -->
       {#key keyboard.opened}
-        <div class="page" class:list={section !== "keymap"} class:blocked inert={blocked}>
+        <div class="page" class:list={section !== "keymap"} class:blocked={greyed} inert={greyed}>
           {#if section === "tap-dance"}
             <TapDancePage model={keyboard.model} {analysis} item={router.route.item} />
           {:else if section === "combos"}
@@ -345,6 +361,12 @@
   .page.blocked {
     filter: grayscale(1);
     opacity: 0.55;
+  }
+
+  .opening {
+    margin: 0;
+    color: var(--text-2);
+    font-size: 13.5px;
   }
 
   .empty {

@@ -481,10 +481,14 @@ describe("key overrides, alt-repeat keys, QMK settings and layout files", () => 
       emit("connected"); // another keyboard, while the first setting's reply is on its way
       return { qsid: 7, value: 250 };
     });
+    const listReads = mocked.keyboards.mock.calls.length;
     expect(await store.setSettings([{ qsid: 7, value: 250 }, { qsid: 22, value: 5 }])).toBe(false);
     expect(mocked.setSetting.mock.calls).toEqual([[7, 250]]);
     expect(toasts.items.map((t) => t.message)).toEqual([
       "Saving the settings failed: another keyboard was plugged in; the settings not yet saved were left as they were"]);
+    // not the server's refusal of a change meant for another keyboard (409): the list isn't read for it
+    await settle();
+    expect(mocked.keyboards.mock.calls.length).toBe(listReads);
   });
 
   it("reset the QMK settings to what the keyboard says they are now", async () => {
@@ -1102,6 +1106,17 @@ describe("the keyboard selector", () => {
       expect(settingsEdits.keptFor("same")).toBe(false);
       expect(store.opened).toBeGreaterThan(opened);
     });
+
+  it("drops a toast whose action is on the keyboard shown (a move's Undo) once another keyboard is shown", async () => {
+    mocked.session.mockResolvedValue(session());
+    const { store } = await loaded();
+    toasts.info("Swapped", { label: "Undo", run: () => true, onKeyboardShown: true });
+    toasts.error("Something failed");
+    mocked.selectKeyboard.mockResolvedValueOnce({ keyboards: [entry("a"), entry("b", { open: true })], chosen: "b" });
+    mocked.session.mockResolvedValue(session({ keyboard: "b" }));
+    expect(await store.selectKeyboard("b")).toBe(true);
+    expect(toasts.items.map((t) => t.message)).toEqual(["Something failed"]);
+  });
 
   it("takes a keyboard alike (the same uid) opened from another tab for another keyboard", async () => {
     const alike = { ...model("KC_A"), uid: "same" } as KeyboardModel;

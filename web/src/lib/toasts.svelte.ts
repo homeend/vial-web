@@ -8,6 +8,9 @@
 export interface ToastAction {
   label: string;
   run: () => boolean | Promise<boolean>;
+  /** it acts on the keyboard shown (a move's Undo): the toast goes once another keyboard is shown
+   * (dropKeyboardActions), where it would make no sense */
+  onKeyboardShown?: boolean;
 }
 
 export interface Toast {
@@ -75,6 +78,11 @@ export class Toasts {
     clearTimeout(this.#timers.get(id));
     this.#timers.delete(id);
     if (holds.size === 0) this.#countDown(id);
+  }
+
+  /** Another keyboard is shown: the toasts whose action acts on the keyboard shown go */
+  dropKeyboardActions(): void {
+    for (const toast of this.items.filter((t) => t.action?.onKeyboardShown)) this.dismiss(toast.id);
   }
 
   #countDown(id: number): void {

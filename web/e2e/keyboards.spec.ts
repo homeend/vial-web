@@ -83,6 +83,40 @@ test("a second keyboard brings the selector; switching shows its keymap; unplugg
   }
 });
 
+test("while another keyboard opens, the page shown is greyed out and says so; the focus goes to the selector", async ({
+  twoKeyboards: page,
+}) => {
+  try {
+    await plugSecond(page);
+    // the server's answer held back, as a real keyboard takes seconds to read
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    await page.route("**/api/keyboards/select", async (route) => {
+      await answered;
+      await route.continue();
+    });
+    // chosen while the focus is in the page (the keymap's heading), which then goes inert
+    await page.locator("#keymap-title").focus();
+    await selector(page).evaluate((select: HTMLSelectElement) => {
+      select.value = Array.from(select.options).find((o) => o.text === "Simulated Macropad")!.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const status = page.locator("main .opening");
+    await expect(status).toHaveText("Opening Simulated Macropad…");
+    await expect(status).toHaveAttribute("role", "status");
+    await expect(page.locator(".page.blocked")).toHaveAttribute("inert", "");
+    await expect(page.locator("#keymap-title")).toHaveText("Keymap"); // still the Corne's keymap
+    await expect(selector(page)).toBeFocused();
+    answer();
+    await expect(section(page, "Layout")).toBeVisible();
+    await expect(status).toHaveCount(0);
+    await expect(page.locator(".page.blocked")).toHaveCount(0);
+    await page.unroute("**/api/keyboards/select");
+  } finally {
+    await putBack(page);
+  }
+});
+
 test("work not saved is asked about first: Cancel keeps the keyboard, Switch keyboard opens the other", async ({
   twoKeyboards: page,
 }) => {

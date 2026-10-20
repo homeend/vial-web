@@ -55,6 +55,10 @@ function hasPosition(model: KeyboardModel, ref: KeyRef): boolean {
   return encoder?.encoder != null && encoder.direction != null;
 }
 
+/** An edit of several writes stopped as another keyboard was plugged in meanwhile: the page's own failure, not the
+ * server's refusal of a change meant for another keyboard (409), so nothing more is read for it */
+class PluggedMeanwhile extends Error {}
+
 export class KeyboardStore {
   model = $state<KeyboardModel | null>(null);
   // only ever replaced, never changed in place (the picker's search caches by the catalogue array)
@@ -290,10 +294,11 @@ export class KeyboardStore {
   }
 
   /** The keyboard shown is another one now (or none): what was kept for the one before goes, the work not saved on it
-   * included (the caller asked about it, if it was this tab's choice) */
+   * included (the caller asked about it, if it was this tab's choice), and the toasts offering to act on it (Undo) */
   #anotherKeyboard(): void {
     this.opened++;
     dropUnsavedWork();
+    toasts.dropKeyboardActions();
   }
 
   /** Use another keyboard: the one open is closed and the chosen one opened, as if it had just been plugged in. The
@@ -556,7 +561,9 @@ export class KeyboardStore {
       for (const { qsid, value } of values) {
         // the rest were chosen for the keyboard that went: not for another one
         if (this.#plugs !== plugs) {
-          throw new ApiError(409, "another keyboard was plugged in; the settings not yet saved were left as they were");
+          throw new PluggedMeanwhile(
+            "another keyboard was plugged in; the settings not yet saved were left as they were",
+          );
         }
         const set = await api.setSetting(qsid, value);
         const at = model.settings.findIndex((s) => s.qsid === set.qsid);
@@ -657,7 +664,9 @@ export class KeyboardStore {
         void this.#readKeyboards();
         if (this.connected) void this.load();
       }
-      return await fail(failureMessage(action, error));
+      return await fail(
+        error instanceof PluggedMeanwhile ? `${action} failed: ${error.message}` : failureMessage(action, error),
+      );
     } finally {
       this.pending--;
       if (this.pending === 0) for (const done of this.#editsDone.splice(0)) done();

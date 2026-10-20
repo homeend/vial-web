@@ -40,7 +40,9 @@
 
   /** when a key that moves the choice was last pressed on the selector (event time stamp), or null */
   let keyedAt: number | null = null;
-  /** a change this soon after such a key comes from it */
+  /** a change this soon after such a key comes from it. Firefox's open list sends the select no pointerdown: arrows in
+   * the open list, then a pick with the mouse within this time, is asked about as a keyed choice. Asking once too
+   * often is harmless, so it is left so. */
   const KEYED_WITHIN = 500;
 
   function keyOnSelector(event: KeyboardEvent) {

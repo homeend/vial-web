@@ -114,6 +114,17 @@ describe("toasts that say something went well", () => {
     expect(messages()).toEqual([]);
   });
 
+  it("go when another keyboard is shown, if their action is on the keyboard shown", () => {
+    toasts.info("swapped", { label: "Undo", run: () => true, onKeyboardShown: true });
+    toasts.info("saved", { label: "Open", run: () => true });
+    toasts.error("failed");
+    toasts.dropKeyboardActions();
+    expect(messages()).toEqual(["saved", "failed"]);
+    vi.advanceTimersByTime(ACTION_SHOW_MS);
+    expect(messages()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("don't run the action of a toast that has gone", async () => {
     const run = vi.fn(() => true);
     toasts.info("swapped", { label: "Undo", run });

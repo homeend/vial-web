@@ -356,7 +356,9 @@ export class KeyMover {
     const placeOf = (ref: KeyRef) => this.#placeOf(ref);
     if (!(await keyboard.setCodes(layer, changes, WHAT[kind], placeOf))) return false;
     const opened = keyboard.opened;
-    toasts.info(said, { label: "Undo", run: () => this.#undo(opened, layer, changes, kind, placeOf) });
+    toasts.info(said, {
+      label: "Undo", run: () => this.#undo(opened, layer, changes, kind, placeOf), onKeyboardShown: true,
+    });
     return true;
   }
 
@@ -366,7 +368,12 @@ export class KeyMover {
   async #undo(opened: number, layer: number, changes: Change[], kind: MoveKind, placeOf: (ref: KeyRef) => string) {
     const action = UNDO[kind];
     const now = keyboard.model;
-    if (!now || keyboard.opened !== opened || !stillApplies(now, layer, changes)) {
+    // seldom: its toast goes once another keyboard is shown (dropKeyboardActions)
+    if (!now || keyboard.opened !== opened) {
+      toasts.error(`${action} failed: another keyboard is shown now.`);
+      return true;
+    }
+    if (!stillApplies(now, layer, changes)) {
       toasts.error(`${action} failed: the keys were changed since.`);
       return true;
     }
