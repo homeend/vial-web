@@ -13,6 +13,11 @@ export const SECTIONS: readonly SectionId[] = [
 /** sections that show one page of their own, with no entries for the address to name */
 const WHOLE: readonly SectionId[] = ["keymap", "layout", "settings", "lighting", "matrix", "keyboard"];
 
+/** Whether a section shows one page of its own, with no entries */
+export function isWhole(section: SectionId): boolean {
+  return WHOLE.includes(section);
+}
+
 export interface Route {
   section: SectionId;
   /** the entry to show (a tap dance, combo, macro, key override or alt-repeat key), or null */

@@ -215,6 +215,9 @@ describe("withLayoutChoice", () => {
     expect(() => withLayoutChoice({ value: 0, labels }, 0, 2)).toThrow(RangeError);
     expect(() => withLayoutChoice({ value: 0, labels }, 2, 3)).toThrow(RangeError); // 2 bits, 3 choices
     expect(() => withLayoutChoice({ value: 0, labels }, 1, 1.5)).toThrow(RangeError);
+    // an option index that isn't a whole number is no option either (not a TypeError from what it would read)
+    expect(() => withLayoutChoice({ value: 0, labels }, 0.5, 0)).toThrow(RangeError);
+    expect(() => withLayoutChoice({ value: 0, labels }, Number.NaN, 0)).toThrow(RangeError);
   });
 
   it("counts the choices of each kind of option", () => {

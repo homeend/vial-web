@@ -1,4 +1,4 @@
-import { api, codeAt, expect, keyIndex, layerNameOf, screenshots, setCodeAt, setLayerName, test } from "./fixtures";
+import { api, codeAt, expect, keyIndex, layerNameOf, plugIn, screenshots, setCodeAt, setLayerName, test } from "./fixtures";
 
 // A worker's server is shared by the tests it runs: a test that changes a key or a name puts it back in its `finally`
 
@@ -114,11 +114,10 @@ test("layer tabs switch layers, and a renamed layer keeps its name", async ({ ap
 });
 
 test("an unplugged keyboard greys out the keymap and blocks edits until it is back", async ({ app }) => {
-  const plug = (connected: boolean) => api(app).put("/api/simulator/connection", { connected });
   const index = await keyIndex(app, 0, 1);
   const before = await codeAt(app, 0, index);
   try {
-    expect((await plug(false)).ok()).toBe(true);
+    await plugIn(app, false);
     await expect(app.getByRole("alert")).toContainText("Keyboard unplugged");
     await expect(app.locator(".page")).toHaveAttribute("inert", "");
     await expect(app.getByRole("button", { name: "Change key" })).toBeDisabled();
@@ -127,7 +126,7 @@ test("an unplugged keyboard greys out the keymap and blocks edits until it is ba
     expect(edit.status()).toBe(503);
     await screenshots(app, "unplugged");
   } finally {
-    await plug(true);
+    await plugIn(app, true);
   }
   await expect(app.getByRole("alert")).toBeHidden();
   await expect(app.getByRole("button", { name: "Change key" })).toBeEnabled();

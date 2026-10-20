@@ -60,24 +60,34 @@
   const section = $derived<SectionId>(
     sections.some((s) => s.id === router.route.section) ? router.route.section : "keymap",
   );
+  /** the section shown fell back to the keymap, as the keyboard (another one, plugged in) has no such section */
+  let fellBack = false;
   // ... and the address says so, once the keyboard is read (before, no section but the keymap is known)
   $effect(() => {
-    if (keyboard.model && router.route.section !== section) untrack(() => router.go(section, null, { replace: true }));
+    if (keyboard.model && router.route.section !== section) {
+      untrack(() => {
+        fellBack = true;
+        router.go(section, null, { replace: true });
+      });
+    }
   });
 
   $effect(() => {
     document.title = `${sections.find((s) => s.id === section)?.label ?? "Keymap"} · Vial`;
   });
 
-  // another page shown from the address (the back or forward button): the focus, which was on the page that went,
-  // goes to the new page's heading. A card the address names takes it itself (useTarget).
+  // another page shown from the address (the back or forward button), or the keymap shown as another keyboard has no
+  // such section as the one shown: the focus, which was on the page that went, goes to the new page's heading. A card
+  // the address names takes it itself (useTarget).
   let sectionShown: SectionId | null = null;
   $effect(() => {
     const now = section;
     untrack(() => {
       const before = sectionShown;
       sectionShown = now;
-      if (before === null || before === now || !router.fromAddress || router.route.item !== null) return;
+      const fell = fellBack || router.route.section !== now;
+      fellBack = false;
+      if (before === null || before === now || !(router.fromAddress || fell) || router.route.item !== null) return;
       void tick().then(() => {
         const focused = document.activeElement;
         if (!focused || focused === document.body) document.getElementById(`${now}-title`)?.focus();

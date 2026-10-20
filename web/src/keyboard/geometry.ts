@@ -65,7 +65,9 @@ export function layoutChoices(options: LayoutOptions | null | undefined): number
  * the options (which nothing reads) are kept as the keyboard holds them. */
 export function withLayoutChoice(options: LayoutOptions, index: number, choice: number): number {
   const choices = layoutChoices(options);
-  if (index < 0 || index >= choices.length) throw new RangeError(`there is no layout option ${index}`);
+  if (!Number.isInteger(index) || index < 0 || index >= choices.length) {
+    throw new RangeError(`there is no layout option ${index}`);
+  }
   if (!Number.isInteger(choice) || choice < 0 || choice >= choiceCount(options.labels[index])) {
     throw new RangeError(`layout option ${index} has no choice ${choice}`);
   }

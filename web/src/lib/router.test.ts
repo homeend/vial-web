@@ -124,6 +124,31 @@ describe("Router", () => {
     expect(router.takeKeyTarget()).toBeNull();
   });
 
+  it("drops an entry from the address of a section that shows one page, which names none", async () => {
+    const address = fakeAddress("#lighting/3");
+    const router = new Router();
+    router.start();
+    expect(router.route).toEqual({ section: "lighting", item: null });
+    expect(location.hash).toBe("#lighting");
+    expect(address.counts()).toEqual({ pushes: 0, replaces: 1 });
+    address.visit("#keyboard/0");
+    await settle();
+    expect(location.hash).toBe("#keyboard");
+    // what the address leaves alone: an entry of a section that has entries, and an address that isn't one
+    address.visit("#combos/2");
+    await settle();
+    expect(location.hash).toBe("#combos/2");
+    address.visit("#nothing/2");
+    await settle();
+    expect(location.hash).toBe("#nothing/2");
+  });
+
+  it("keeps no entry for a section that shows one page", () => {
+    const router = new Router();
+    router.go("lighting", 3);
+    expect(router.route).toEqual({ section: "lighting", item: null });
+  });
+
   it("keeps the route without an address", () => {
     const router = new Router();
     router.go("macros", 0);

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { api, expect, openSection, restoreAll, screenshots, secondKeyboard, test } from "./fixtures";
+import { api, expect, openSection, plugIn, restoreAll, screenshots, secondKeyboard, test } from "./fixtures";
 
 // The keyboard selector: in the top bar only while there is more than one keyboard to choose from (the server's second
 // simulated keyboard, the macropad, plugged in by the test hook). Switching shows the other keyboard as if it had just
@@ -223,6 +223,28 @@ test("the chosen keyboard unplugged is waited for, and opened again once it is b
     await expect(shown(page)).toHaveText("Simulated Macropad");
   } finally {
     await putBack(page);
+  }
+});
+
+test("another keyboard plugged in without the page shown: the Keymap shows, its heading with the focus", async ({
+  twoKeyboards: page,
+}) => {
+  try {
+    await plugSecond(page);
+    await openSection(page, "Lighting");
+    await page.getByLabel("Effect").focus();
+    // the Corne goes: none was chosen, so the macropad (no lighting) is opened in its place
+    await plugIn(page, false);
+    await expect(page.locator(".topbar .name, #keyboard-select option:checked").first())
+      .toContainText("Simulated Macropad", { timeout: 10_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "Keymap" })).toBeFocused({ timeout: 10_000 });
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+    await expect(page).toHaveURL(/#keymap$/);
+  } finally {
+    await restoreAll(() => plugIn(page, true), async () => {
+      await expect.poll(async () => (await listed(page)).keyboards.some((k) => k.name === "Simulated Corne"),
+        { timeout: 10_000 }).toBe(true);
+    }, () => putBack(page));
   }
 });
 
