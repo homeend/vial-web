@@ -31,8 +31,8 @@ navigation, as Qt hides the tabs whose `valid()` is false.
 
 | Qt | Web UI | Notes |
 |---|---|---|
-| Keyboard list and Refresh | **Later** (phase 5b, the keyboard selector): until then the first Vial keyboard found is used | Choosing among several Vial keyboards plugged in at once comes with the keyboard selector, the last part of phase 5b. Hot-plug is automatic (`DeviceManager.check`, about once a second), so Qt's Refresh isn't needed. |
-| "No devices detected", the udev hint (Linux only) | The "No keyboard found" page (`App.svelte`), with the udev link | The web UI shows the hint on every system; it says it is for Linux. |
+| Keyboard list and Refresh | The keyboard selector, "Keyboard" in the top bar (`shell/TopBar.svelte`; `GET /api/keyboards`, `POST /api/keyboards/select`) | Shown in place of the keyboard's name only while more than one Vial keyboard is plugged in; with one, nothing changes. Keyboards of the same name are told apart by serial number, else by order. Switching closes the keyboard open and opens the chosen one (`server/device.py DeviceManager.select`), asking first when an editor is open or the Settings page's changes or the lighting aren't saved (`lib/unsaved.ts`). The choice is kept while Vial runs, by the keyboard's serial number (else its USB IDs and name), across a replug: the chosen keyboard unplugged is waited for, and no other is opened instead. Until one is chosen, the first Vial keyboard found is used, as before. Hot-plug is automatic (`DeviceManager.check`, about once a second: the list follows keyboards plugged in or out, "keyboards" event), so Qt's Refresh isn't needed. |
+| "No devices detected", the udev hint (Linux only) | The "No keyboard found" page (`App.svelte`), with the udev link | Only on Linux, as in Qt (the session says the server's platform). A keyboard found but unreadable, a failed listing and the chosen keyboard unplugged each have their own page. |
 
 ## Menus
 

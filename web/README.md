@@ -35,7 +35,10 @@ its lock, log and names out of your user folders. With `--fake`, `--layers N` (1
 simulated keyboard N layers (the sample keymap fills the first four, the others are empty),
 `--definition FILE` simulates another keyboard, `--layout FILE` loads a `.vil` layout into it, and
 `--lighting KIND` gives it other lighting (`none`, `qmk_backlight`, `qmk_rgblight`,
-`qmk_backlight_rgblight` or `vialrgb`; the sample Corne has VialRGB).
+`qmk_backlight_rgblight` or `vialrgb`; the sample Corne has VialRGB). A fake server also has a
+second simulated keyboard, unplugged until a test hook plugs it in (below): by default one like the
+first, or the keyboard of `--second-definition FILE`. Each simulated keyboard has a serial number of
+its own, so the keyboard selector remembers the choice across a replug as it does for real ones.
 
 The simulated Corne starts unlocked, as nobody can hold its keys. Its unlock keys are the outermost
 keys of both top rows (Tab and Backspace). A fake server has test hooks for the e2e tests, which
@@ -51,6 +54,12 @@ exist for no real keyboard and are left out of the OpenAPI schema (so of `schema
   bootloader, as a real keyboard does.
 - `PUT /api/simulator/matrix` with `{"row": 0, "col": 1, "pressed": true}` (or `false`) presses a key
   of its matrix (or lets go of it): the matrix tester shows it.
+- `PUT /api/simulator/second-keyboard` with `{"connected": true}` (or `false`) plugs the second
+  simulated keyboard in (or unplugs it); the top bar then shows the keyboard selector.
+  `{"connected": true, "unreadable": true}` plugs it in with firmware this Vial can't read (a newer
+  Vial protocol): it is listed, and fails to load until it is plugged in again without that.
+
+The unlock, connection and matrix hooks act on the first simulated keyboard.
 
 `--fake` keeps the firmware's unlock timing: the countdown (50 steps) only goes down on a poll that
 comes more than 100 ms after the start or the last step (a sooner one starts it over), and the
@@ -80,8 +89,9 @@ CI runs `npm run check:api`.
 
 `e2e/servers.ts` starts `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
 default Corne, with VialRGB; `e2e/fixtures/macropad.vial.json` with encoders, a layout option and no
-lighting; the Corne with `--layers 8`, as the owner's keyboard has; and the Corne with
-`--lighting qmk_backlight_rgblight`), reads the links with the session token from their output and stops them. Each
+lighting; the Corne with `--layers 8`, as the owner's keyboard has; the Corne with
+`--lighting qmk_backlight_rgblight`; and the Corne with the macropad as its second keyboard,
+`--second-definition`), reads the links with the session token from their output and stops them. Each
 Playwright worker starts the ones its tests use (fixtures in `e2e/fixtures.ts`) and stops them when it ends. Screenshots, each in the
 light and the dark theme (`*-light.png`, `*-dark.png`), go to `e2e/screenshots/` (not committed); a
 full-page one is taken from the top, with the sticky top bar and macro editor footer drawn where they are in the
@@ -106,6 +116,7 @@ page.
 | `bootloader` | Reboot to bootloader: the confirmation (Cancel and Esc send nothing), the unlock, the jump sent to the keyboard once, the keyboard shown gone and back; a cancelled unlock sending nothing more; a firmware without the bootloader jump |
 | `bootloader-focus` | The focus going to the page heading when the bootloader banner goes |
 | `p5b-pages` | The Lighting, Layout, Matrix tester and Keyboard pages at five window sizes, in both themes |
+| `keyboards` | The keyboard selector (`PUT /api/simulator/second-keyboard`): none with one keyboard; switching to the second and back, the selector going when it is unplugged; work not saved asked about first (Cancel keeps the keyboard); the chosen keyboard unplugged, unreadable and back; the empty page's error appearing and clearing; the top bar at 1920 and 375 px |
 
 The tests run in parallel: half the cores by default, or `E2E_WORKERS=<n> npx playwright test`
 (`E2E_WORKERS=1` runs them one after another). A worker runs its tests one at a time on its own servers,
