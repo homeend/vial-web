@@ -149,16 +149,21 @@ class VirtualKeyboard:
         self.unlock_counter = 0
 
         lighting = definition.get("lighting", "none")
-        # what the firmware runs with, kept as each kind's lighting code keeps it (see _lighting_set)
-        self.rgblight = {"enable": True, "mode": 1, "hue": 0, "sat": 255, "val": 128, "speed": 0} \
+        # what the firmware runs with, kept as each kind's lighting code keeps it (see _lighting_set). It starts as
+        # the firmware's EEPROM defaults do: the RGB light at RGBLIGHT_DEFAULT_VAL (RGBLIGHT_LIMIT_VAL, 255) and speed
+        # 0; the backlight at BACKLIGHT_DEFAULT_LEVEL (its top level); the RGB matrix (VialRGB) at its maximum
+        # brightness and RGB_MATRIX_DEFAULT_SPD (127)
+        self.rgblight = {"enable": True, "mode": 1, "hue": 0, "sat": 255, "val": 255, "speed": 0} \
             if lighting in ["qmk_rgblight", "qmk_backlight_rgblight"] else None
         if not 1 <= backlight_levels <= 31:
             raise SimulatorError("the backlight has 1 to 31 levels")
-        self.backlight = {"level": min(2, backlight_levels), "breathing": False, "levels": backlight_levels,
+        self.backlight = {"level": backlight_levels, "breathing": False, "levels": backlight_levels,
                           "has_breathing": backlight_breathing} \
             if lighting in ["qmk_backlight", "qmk_backlight_rgblight"] else None
-        self.vialrgb = {"enable": True, "mode": 2, "speed": 128, "hsv": (0, 255, 128), "max_brightness": 200,
-                        "supported": [1, 2, 3, 4, 5, 6, 7, 8]} if lighting == "vialrgb" else None
+        max_brightness = 200
+        self.vialrgb = {"enable": True, "mode": 2, "speed": 127, "hsv": (0, 255, max_brightness),
+                        "max_brightness": max_brightness, "supported": [1, 2, 3, 4, 5, 6, 7, 8]} \
+            if lighting == "vialrgb" else None
         self.lighting_saved = None
         """ what the last lighting save kept (each kind's state, as its EEPROM copy would hold it); None before one.
         A change of backlight breathing keeps the backlight at once, without a save: a kind not kept yet is None. """

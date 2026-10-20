@@ -209,11 +209,11 @@ def test_rgblight_reply_shows_what_the_firmware_ignores(lit):
     # off: no colour is taken
     client.put("/api/lighting", json={"rgblight": {"effect": 0}})
     off = client.put("/api/lighting", json={"rgblight": {"hue": 10, "saturation": 10, "brightness": 10}}).json()
-    assert (off["rgblight"]["hue"], off["rgblight"]["brightness"]) == (0, 128)
+    assert (off["rgblight"]["hue"], off["rgblight"]["brightness"]) == (0, 255)
     # breathing keeps its brightness
     client.put("/api/lighting", json={"rgblight": {"effect": 3}})
     breathing = client.put("/api/lighting", json={"rgblight": {"brightness": 10}}).json()["rgblight"]
-    assert breathing["brightness"] == 128
+    assert breathing["brightness"] == 255
     # a rainbow keeps its hue, takes the saturation
     client.put("/api/lighting", json={"rgblight": {"effect": 7}})
     rainbow = client.put("/api/lighting", json={"rgblight": {"hue": 77, "saturation": 33}}).json()["rgblight"]
@@ -318,8 +318,8 @@ def test_backlight_without_breathing_reads_it_off(tmp_path):
 @pytest.mark.parametrize("lit", ["qmk_backlight_rgblight"], indirect=True)
 def test_both_kinds_change_in_one_request(lit):
     client, virtual = lit
-    reply = client.put("/api/lighting", json={"rgblight": {"effect": 4}, "backlight": {"brightness": 255}}).json()
-    assert (reply["rgblight"]["effect"], reply["backlight"]["brightness"]) == (4, 255)
+    reply = client.put("/api/lighting", json={"rgblight": {"effect": 4}, "backlight": {"brightness": 0}}).json()
+    assert (reply["rgblight"]["effect"], reply["backlight"]["brightness"]) == (4, 0)
 
 
 @pytest.mark.parametrize("lit", ["qmk_backlight_rgblight"], indirect=True)
@@ -336,8 +336,8 @@ def test_a_failed_write_leaves_the_model_as_the_keyboard_shows(lit):
     assert client.put("/api/lighting", json=change).status_code == 502
     virtual.process = process
     lighting = client.get("/api/keyboard").json()["lighting"]
-    # the effect was taken, the brightness not: still level 2 of 3
-    assert (lighting["rgblight"]["effect"], lighting["backlight"]["brightness"]) == (4, 170)
+    # the effect was taken, the brightness not: still level 3 of 3
+    assert (lighting["rgblight"]["effect"], lighting["backlight"]["brightness"]) == (4, 255)
 
 
 # ---------- kept only once saved ----------
@@ -347,8 +347,8 @@ def test_changes_are_kept_only_once_saved(lit):
     client, virtual = lit
     kind = virtual.definition["lighting"]
     change = {"vialrgb": {"vialrgb": {"mode": 4}}, "qmk_rgblight": {"rgblight": {"effect": 4}},
-              "qmk_backlight": {"backlight": {"brightness": 255}},
-              "qmk_backlight_rgblight": {"rgblight": {"effect": 4}, "backlight": {"brightness": 255}}}[kind]
+              "qmk_backlight": {"backlight": {"brightness": 0}},
+              "qmk_backlight_rgblight": {"rgblight": {"effect": 4}, "backlight": {"brightness": 0}}}[kind]
     log = sent(virtual)
     shown = client.put("/api/lighting", json=change).json()
     assert virtual.lighting_saved is None
@@ -393,12 +393,14 @@ def test_lighting_reads_back_with_the_protocol_code(kind):
     assert (kb.lighting_vialrgb, kb.lighting_qmk_rgblight, kb.lighting_qmk_backlight) == \
         (kind == "vialrgb", "rgblight" in kind, "backlight" in kind)
     if kb.lighting_qmk_rgblight:
-        assert (kb.underglow_effect, kb.underglow_brightness, kb.underglow_color) == (1, 128, (0, 255))
+        # the firmware's defaults: RGBLIGHT_LIMIT_VAL
+        assert (kb.underglow_effect, kb.underglow_brightness, kb.underglow_color) == (1, 255, (0, 255))
     if kb.lighting_qmk_backlight:
-        # level 2 of 3
-        assert (kb.backlight_brightness, kb.backlight_effect) == (170, 0)
+        # level 3 of 3: BACKLIGHT_DEFAULT_LEVEL is the top one
+        assert (kb.backlight_brightness, kb.backlight_effect) == (255, 0)
     if kb.lighting_vialrgb:
-        assert (kb.rgb_mode, kb.rgb_speed, kb.rgb_hsv, kb.rgb_maximum_brightness) == (2, 128, (0, 255, 128), 200)
+        # the RGB matrix at its maximum brightness, RGB_MATRIX_DEFAULT_SPD
+        assert (kb.rgb_mode, kb.rgb_speed, kb.rgb_hsv, kb.rgb_maximum_brightness) == (2, 127, (0, 255, 200), 200)
 
 
 @pytest.mark.parametrize("lit", LIGHTING[1:], indirect=True)
@@ -406,11 +408,11 @@ def test_plugged_in_again_the_keyboard_has_the_lighting_saved(lit):
     client, virtual = lit
     kind = virtual.definition["lighting"]
     first = {"vialrgb": {"vialrgb": {"mode": 4}}, "qmk_rgblight": {"rgblight": {"effect": 4}},
-             "qmk_backlight": {"backlight": {"brightness": 255}},
-             "qmk_backlight_rgblight": {"rgblight": {"effect": 4}, "backlight": {"brightness": 255}}}[kind]
+             "qmk_backlight": {"backlight": {"brightness": 0}},
+             "qmk_backlight_rgblight": {"rgblight": {"effect": 4}, "backlight": {"brightness": 0}}}[kind]
     second = {"vialrgb": {"vialrgb": {"mode": 5}}, "qmk_rgblight": {"rgblight": {"effect": 5}},
-              "qmk_backlight": {"backlight": {"brightness": 0}},
-              "qmk_backlight_rgblight": {"rgblight": {"effect": 5}, "backlight": {"brightness": 0}}}[kind]
+              "qmk_backlight": {"backlight": {"brightness": 255}},
+              "qmk_backlight_rgblight": {"rgblight": {"effect": 5}, "backlight": {"brightness": 255}}}[kind]
     before = client.get("/api/keyboard").json()["lighting"]
     # not saved: gone after a replug
     client.put("/api/lighting", json=first)
@@ -428,9 +430,9 @@ def test_plugged_in_again_the_keyboard_has_the_lighting_saved(lit):
 def test_plugged_in_again_the_keyboard_keeps_the_breathing_it_wrote_at_once(lit):
     client, virtual = lit
     # backlight_enable_breathing writes the backlight's config, with the level it runs at, to EEPROM without a save
-    client.put("/api/lighting", json={"backlight": {"brightness": 255}})
+    client.put("/api/lighting", json={"backlight": {"brightness": 170}})
     kept = client.put("/api/lighting", json={"backlight": {"effect": 1}}).json()["backlight"]
-    assert kept == {"brightness": 255, "effect": 1}
+    assert kept == {"brightness": 170, "effect": 1}
     # a later brightness is only shown
     client.put("/api/lighting", json={"backlight": {"brightness": 0}})
     replug(client)

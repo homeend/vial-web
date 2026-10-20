@@ -475,7 +475,7 @@ def test_backlight_levels_are_checked(levels):
 
 
 @pytest.mark.parametrize("levels, start, level, brightness", [
-    (5, 102, 3, 153),  # starts at level 2: 2 * 255 / 5; 160 * 5 / 255 = level 3
+    (5, 255, 3, 153),  # starts at the top level (BACKLIGHT_DEFAULT_LEVEL); 160 * 5 / 255 = level 3
     (1, 255, 0, 0),  # one level: starts on it; 160 * 1 / 255 = level 0
 ])
 def test_backlight_brightness_steps_follow_the_levels(levels, start, level, brightness):

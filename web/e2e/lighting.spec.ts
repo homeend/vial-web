@@ -85,10 +85,11 @@ test("VialRGB: Undo puts back the lighting, and the brightness stops at the keyb
     const brightness = app.getByRole("slider", { name: "Brightness" });
     await expect(brightness).toHaveAttribute("max", "200");
     await expect(app.getByText("100 % is the brightest this keyboard's firmware allows: 78 % of what its lights can do.")).toBeVisible();
-    await expect(brightness).toHaveAttribute("aria-valuetext", "64 %");
+    // the firmware starts at its most (RGB_MATRIX_MAXIMUM_BRIGHTNESS)
+    await expect(brightness).toHaveAttribute("aria-valuetext", "100 %");
     await app.getByRole("slider", { name: "Speed" }).fill("10");
-    await brightness.fill("200");
-    await expect.poll(async () => (await lightingOf(app)).vialrgb.hsv[2]).toBe(200);
+    await brightness.fill("100");
+    await expect.poll(async () => (await lightingOf(app)).vialrgb.hsv[2]).toBe(100);
     expect((await lightingOf(app)).vialrgb.speed).toBe(10);
     const undo = app.locator(".savebar").getByRole("button", { name: "Undo" });
     await undo.click();
