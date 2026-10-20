@@ -134,7 +134,7 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | Folder | What |
 |---|---|
 | `src/api/` | Typed HTTP client, error messages, WebSocket events, generated schema types |
-| `src/lib/` | The keyboard store (loaded model, connection, edits, the keys held for the matrix tester), unlocking, keys doing nothing on the page (`keyGuard.ts`), the section shown (the address's `#combos/2`), toasts, and the theme (System, Light, Dark) |
+| `src/lib/` | The keyboard store (loaded model, connection, edits, the keys held for the matrix tester, switching keyboards), the keyboard selector's choices and why a keyboard can't be read (`keyboards.ts`), the work not saved that switching asks about (`unsaved.ts`), unlocking, keys doing nothing on the page (`keyGuard.ts`), the section shown (the address's `#combos/2`), toasts, sentence helpers (`text.ts`), and the theme (System, Light, Dark) |
 | `src/keyboard/` | Drawing any keyboard from its geometry (and the layout options' choices, `geometry.ts`); key labels; combo marks on keys (`marks.ts`: underlines and dots) |
 | `src/layout/` | The Layout page: the keyboard's layout options |
 | `src/lighting/` | The Lighting page: effects by name, colours, changes sent without flooding the keyboard (`writer.ts`), Save and Undo |
@@ -145,5 +145,5 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | `src/settings/` | The QMK settings form (Settings): the groups `qmk_settings.json` defines, what changed, Save, Undo and Reset; what the page keeps while another one shows (`state.svelte.ts`) |
 | `src/about/` | The Keyboard page: what the keyboard is (Qt's About keyboard), saving and loading `.vil` layout files with a preview of what changes, and reboot to bootloader |
 | `src/picker/` | Keycode picker: search, categories (no Lighting category on a keyboard without lighting, `offered.ts`), any-keycode entry |
-| `src/shell/` | Top bar (with the Lock/Unlock control), navigation, banners, toasts, the unlock dialog |
+| `src/shell/` | Top bar (with the keyboard selector, shown while there is more than one keyboard to choose from, and the Lock/Unlock control), navigation, banners, toasts, the unlock dialog |
 | `src/ui/` | Small shared controls (a switch, a list, a slider, the Save bar), the name dialog (layers, tap dances, macros) and a confirmation dialog |
