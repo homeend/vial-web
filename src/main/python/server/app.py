@@ -836,32 +836,37 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
                 manager.backend.set_second_connected(body.connected, unreadable=body.unreadable)
             return {"connected": body.connected}
 
-        def open_virtual():
-            """ The simulated keyboard open (loaded, or waiting for its unlock), the device lock held; NotConnected (503,
-            as for any request) while none is """
-            if manager.candidate is None:
-                raise NotConnected("no simulated keyboard is open")
-            return manager.backend.virtual_of(manager.candidate)
+        def shown_virtual():
+            """ The simulated keyboard the page is about, the device lock held: the one open (loaded, or waiting for
+            its unlock); with none open, the chosen one (unplugged: the user may still let go of its keys), else the
+            first. NotConnected (503) before any is made. """
+            candidate = manager.candidate
+            if candidate is None and manager.chosen_info is not None:
+                candidate = manager.chosen_info.candidate
+            virtual = manager.backend.virtual if candidate is None else manager.backend.virtual_of(candidate)
+            if virtual is None:  # nothing has looked for the keyboard yet
+                raise NotConnected("no simulated keyboard yet")
+            return virtual
 
-        # for UI tests: a key of the matrix of the simulated keyboard open is pressed or let go (the matrix tester shows
-        # it). Never exists for real keyboards.
+        # for UI tests: a key of the matrix of the simulated keyboard shown is pressed or let go (the matrix tester
+        # shows it). Never exists for real keyboards.
         @app.put("/api/simulator/matrix", include_in_schema=False)
         def set_simulator_press(body: schemas.SimulatorPress):
             with manager.lock:
-                virtual = open_virtual()
+                virtual = shown_virtual()
                 if body.row >= virtual.rows or body.col >= virtual.cols:
                     raise HTTPException(422, "the simulated keyboard's matrix is {} x {}: it has no key at row {}, "
                                              "column {}".format(virtual.rows, virtual.cols, body.row, body.col))
                 (virtual.press if body.pressed else virtual.release)(body.row, body.col)
                 return {"pressed": sorted(virtual.pressed)}
 
-        # for UI tests: the user holds the unlock keys of the simulated keyboard open, or lets go of them; or it is
+        # for UI tests: the user holds the unlock keys of the simulated keyboard shown, or lets go of them; or it is
         # locked, as plugging it in again would. Never exists for real keyboards.
         @app.put("/api/simulator/unlock", include_in_schema=False)
         async def set_simulator_unlock(body: schemas.SimulatorUnlock):
             def change():
                 with manager.lock:
-                    virtual = open_virtual()
+                    virtual = shown_virtual()
                     if body.keysHeld is not None:
                         virtual.hold_unlock_keys(body.keysHeld)
                     if body.locked:

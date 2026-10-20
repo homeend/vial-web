@@ -664,9 +664,9 @@ def test_the_second_keyboard_hook_is_fake_only_and_not_in_the_schema(setup, tmp_
         assert other.get("/api/keyboards").json() == {"keyboards": [], "chosen": None}
 
 
-def test_the_simulator_hooks_act_on_the_keyboard_open(setup):
-    """ The matrix and unlock hooks act on the simulated keyboard open, whichever it is: refused while none is (503, as
-    any request), and for a key outside its matrix (422) """
+def test_the_simulator_hooks_act_on_the_keyboard_shown(setup):
+    """ The matrix and unlock hooks act on the simulated keyboard open, whichever it is; with none open, on the chosen
+    one (its keys can still be let go). A key outside its matrix is refused (422). """
     client, manager, app = setup
     corne = manager.backend.virtual
     client.post("/api/keyboards/select", json={"id": second_id(manager)})
@@ -684,9 +684,9 @@ def test_the_simulator_hooks_act_on_the_keyboard_open(setup):
     manager.backend.set_second_connected(False)
     manager.check()
     assert not manager.connected
-    assert client.put("/api/simulator/matrix", json=press).status_code == 503
-    assert client.put("/api/simulator/unlock", json={"keysHeld": False}).status_code == 503
-    assert pad.pressed == {(0, 0), (0, 1)}
+    assert client.put("/api/simulator/unlock", json={"keysHeld": False}).status_code == 200
+    assert client.put("/api/simulator/matrix", json=dict(press, pressed=False)).json() == {"pressed": []}
+    assert pad.pressed == set() and corne.pressed == set()
 
 
 # ---------- a change meant for the keyboard closed ----------
