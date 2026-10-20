@@ -152,3 +152,121 @@ for (const [width, height] of [[1920, 950], [375, 812]] as const) {
     await card.getByRole("button", { name: "Cancel" }).click();
   });
 }
+
+test("steps not finished come and go as text, flagged as the editor flags them; a wait without its number stays so", async ({
+  app,
+}) => {
+  const before = await macrosOf(app);
+  try {
+    await openMacros(app);
+    const card = macroCard(app, 1);
+    await card.getByRole("button", { name: "Edit" }).click();
+    const opener = card.getByRole("button", { name: "Open as text…" });
+    await opener.click();
+    const dialog = app.getByRole("dialog", { name: "Macro 1 as text" });
+    const box = dialog.getByRole("textbox", { name: "Macro 1 as text" });
+    // as Qt writes a step just added (an empty text step), a key step without keys and a wait without its number;
+    // what follows the text of a text step is ignored, as Qt does
+    await box.fill('[["text", ""], ["tap"], ["delay", null], ["text", "a", "extra"]]');
+    await dialog.getByRole("button", { name: "Apply" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(card.locator(".steps > li")).toHaveCount(4);
+    await expect(card).toContainText("Type the text to send.");
+    await expect(card).toContainText("Choose a key.");
+    await expect(card).toContainText("Wait 0 to 64000 ms.");
+    await expect(card.getByRole("button", { name: "Save" })).toBeDisabled();
+    await opener.click();
+    await expect(box).toHaveValue('[["text", ""], ["tap"], ["delay", null], ["text", "a"]]');
+    await app.keyboard.press("Escape");
+    await card.getByRole("button", { name: "Cancel" }).click();
+    expect(await macrosOf(app)).toEqual(before);
+  } finally {
+    await setMacros(app, before);
+  }
+});
+
+test("a text too long for a macro says so, and isn't sent", async ({ app }) => {
+  const before = await macrosOf(app);
+  const parses: string[] = [];
+  app.on("request", (r) => {
+    if (new URL(r.url()).pathname === "/api/macros/parse") parses.push(r.url());
+  });
+  try {
+    await openMacros(app);
+    const card = macroCard(app, 1);
+    await card.getByRole("button", { name: "Edit" }).click();
+    await card.getByRole("button", { name: "Open as text…" }).click();
+    const dialog = app.getByRole("dialog", { name: "Macro 1 as text" });
+    const box = dialog.getByRole("textbox", { name: "Macro 1 as text" });
+    await box.evaluate((element: HTMLTextAreaElement) => {
+      element.value = `[["text", "${"x".repeat(16 * 0xffff)}"]]`;
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await dialog.getByRole("button", { name: "Apply" }).click();
+    await expect(dialog.getByRole("alert"))
+      .toHaveText("The text wasn't applied: it is too long for a macro (at most 1023 KiB).");
+    await expect(box).toBeFocused();
+    expect(parses).toHaveLength(0);
+    await app.keyboard.press("Escape");
+    await card.getByRole("button", { name: "Cancel" }).click();
+  } finally {
+    await setMacros(app, before);
+  }
+});
+
+test("a text being applied when the dialog is closed (Esc twice) is dropped", async ({ app }) => {
+  const before = await macrosOf(app);
+  const route = "**/api/macros/parse";
+  let answer!: () => void;
+  const answered = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  try {
+    await openMacros(app);
+    const card = macroCard(app, 1);
+    await card.getByRole("button", { name: "Edit" }).click();
+    const steps = await card.locator(".steps > li").count();
+    await app.route(route, async (r) => {
+      await answered;
+      await r.continue();
+    });
+    await card.getByRole("button", { name: "Open as text…" }).click();
+    const dialog = app.getByRole("dialog", { name: "Macro 1 as text" });
+    await dialog.getByRole("textbox").fill('[["text", "late"]]');
+    await dialog.getByRole("button", { name: "Apply" }).click();
+    await expect(dialog.getByRole("button", { name: "Apply…" })).toBeVisible();
+    // the first Esc waits for the text being read; a second one closes the dialog all the same
+    await app.keyboard.press("Escape");
+    await app.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    const parsed = app.waitForResponse(route);
+    answer();
+    await parsed;
+    await expect(card.locator(".steps > li")).toHaveCount(steps);
+    await expect(card).not.toContainText("from the text");
+    await card.getByRole("button", { name: "Cancel" }).click();
+    expect(await macrosOf(app)).toEqual(before);
+  } finally {
+    answer();
+    await app.unroute(route);
+    await setMacros(app, before);
+  }
+});
+
+test("Ctrl+S saves the text as a file on a layout whose letters aren't Latin too (by the key where S is)", async ({
+  app,
+}) => {
+  await openMacros(app);
+  const card = macroCard(app, 1);
+  await card.getByRole("button", { name: "Edit" }).click();
+  await card.getByRole("button", { name: "Open as text…" }).click();
+  const dialog = app.getByRole("dialog", { name: "Macro 1 as text" });
+  await expect(dialog).toContainText("Ctrl+S saves the text as a file, Ctrl+O loads one.");
+  const saving = app.waitForEvent("download");
+  // a Russian layout: the key where S is types "ы"
+  await dialog.getByRole("textbox").evaluate((element) => element.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "ы", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true })));
+  expect((await saving).suggestedFilename()).toBe("macro-1.vim");
+  await app.keyboard.press("Escape");
+  await card.getByRole("button", { name: "Cancel" }).click();
+});

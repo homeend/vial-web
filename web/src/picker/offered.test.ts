@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogueKeycode, KeycodeCategory } from "../api/types";
-import { LIGHTING_CATEGORY, offeredCategories } from "./offered";
+import { categoryIndex, LIGHTING_CATEGORY, offeredCategories } from "./offered";
 import { codesNamed, searchKeycodes } from "./search";
 
 function k(code: string, tap: string): CatalogueKeycode {
@@ -15,6 +15,18 @@ const catalogue: KeycodeCategory[] = [
   { name: LIGHTING_CATEGORY, templates: [], keycodes: [k("RGB_TOG", "RGB Toggle"), k("BL_TOGG", "BL Toggle")] },
   { name: "Media", templates: [], keycodes: [k("KC_VOLU", "Vol +")] },
 ];
+
+describe("categoryIndex", () => {
+  it("finds the category shown last by its name, wherever it is now (another keyboard offers other categories)", () => {
+    expect(categoryIndex(catalogue, "Media")).toBe(2);
+    expect(categoryIndex(offeredCategories(catalogue, false), "Media")).toBe(1);
+  });
+
+  it("is the first category when the one shown last isn't offered, or none was shown yet", () => {
+    expect(categoryIndex(offeredCategories(catalogue, false), LIGHTING_CATEGORY)).toBe(0);
+    expect(categoryIndex(catalogue, null)).toBe(0);
+  });
+});
 
 describe("offeredCategories", () => {
   it("leaves out the Lighting category on a keyboard without lighting", () => {

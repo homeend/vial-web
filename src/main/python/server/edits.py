@@ -393,26 +393,62 @@ QT_MACRO_TEXT_SHORT = 6
 """ Qt's text editor reads a text shorter than this as no step at all (macro_tab.py on_dlg_finished) """
 
 
+KEY_STEPS = ("tap", "down", "up")
+
+
+def _qt_text_step(kb, act):
+    """ One step of Qt's text editor, read as Qt's loader reads it (macro_tab.py on_dlg_finished, then the action's
+    restore()): what follows the text of a text step or the delay of a delay step is ignored. A step not finished (a
+    text step without text, as Qt's "Add action" starts one; a key step without keys; a delay step without a delay)
+    comes back unfinished, for the page to flag as its editor does. The rest is checked as a .vil file's macro step is.
+    Returns a schemas.MacroAction. """
+    act = _list(act, "a macro step")
+    if not act:
+        raise _Invalid("empty macro step")
+    kind = act[0]
+    if kind == "text":
+        text = act[1] if len(act) > 1 else ""
+        if text == "":
+            return schemas.MacroAction(type="text", text="")
+        return model.macro_action(_macro_action(kb, kind, text=text))
+    if kind == "delay":
+        delay = act[1] if len(act) > 1 else None
+        if delay is None:
+            return schemas.MacroAction(type="delay", delay=None)
+        return model.macro_action(_macro_action(kb, kind, delay=delay))
+    if kind in KEY_STEPS and len(act) == 1:
+        return schemas.MacroAction(type=kind, keys=[])
+    return model.macro_action(_macro_action(kb, kind, keys=act[1:]))
+
+
 def parse_macro_text(kb, text):
     """ A macro as Qt's text editor has it: the JSON of each step's save() (macro_tab.py on_text_window), e.g.
     [["text", "hi"], ["tap", "KC_ENTER", "KC_A"], ["down", "KC_LSHIFT"], ["delay", 50]] -> its steps
-    (schemas.MacroAction), checked as a .vil file's macro is (and as a save checks them). Nothing is written. Where Qt
-    skips what it can't read (another kind of step) or ignores the whole text (not a list), ValueError says what is
-    wrong instead, and where. """
+    (schemas.MacroAction), read as Qt reads them (_qt_text_step), checked as a .vil file's macro is (and as a save
+    checks them). Nothing is written. Where Qt skips what it can't read (another kind of step) or ignores the whole
+    text (not a list), ValueError says what is wrong instead, and where. More keys than the macro memory can hold are
+    refused before any is read: reading a keycode takes a while, and the device lock is held. """
     if len(text) < QT_MACRO_TEXT_SHORT:
         return []
     try:
         steps = json.loads(text)
     except json.JSONDecodeError as e:
         raise ValueError("not JSON: {} (line {}, column {})".format(e.msg, e.lineno, e.colno))
+    except ValueError:
+        # an integer of more digits than Python converts (sys.set_int_max_str_digits): its message names that
+        raise ValueError("not JSON this Vial can read: a number in it is too long")
     if not isinstance(steps, list):
         raise ValueError('the text must be a list of steps, such as [["text", "hi"], ["tap", "KC_ENTER"]]')
     _check_steps(steps)
+    # every key takes two bytes at least (its action and its keycode)
+    keys = sum(len(act) - 1 for act in steps if isinstance(act, list) and act and act[0] in KEY_STEPS)
+    if keys > kb.macro_memory // 2:
+        raise ValueError("the text has {} keys: more than this keyboard's macro memory ({} bytes) holds".format(
+            keys, kb.macro_memory))
     try:
-        actions = [_at("step {}".format(n), _vil_macro_action, kb, act) for n, act in enumerate(steps, 1)]
+        return [_at("step {}".format(n), _qt_text_step, kb, act) for n, act in enumerate(steps, 1)]
     except _Invalid as e:
         raise ValueError(str(e))
-    return [model.macro_action(action) for action in actions]
 
 
 def _vil_settings(kb, settings, ignored):

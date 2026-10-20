@@ -172,7 +172,8 @@
       steps = stepsRecorded(steps, made, recordMode);
       recordNote = why + recordedNote(made.length, done.skipped, recordMode, stepsBefore);
     } catch {
-      recordNote = `${why}The keys recorded couldn't all be read: nothing was added.`;
+      recordNote = `${why}The keys recorded couldn't all be read: ` +
+        (recordMode === "replace" ? "nothing was replaced." : "nothing was added.");
     } finally {
       finishing = false;
     }
@@ -203,6 +204,8 @@
       return failureMessage("Reading the text", error);
     }
     if (locked) return "The macro is being saved: apply the text once that is done.";
+    // the dialog was closed meanwhile (Esc, twice): what it was applying goes with it
+    if (!textOpen) return null;
     recordNote = appliedNote(made.length, steps.length);
     steps = made;
     return null;

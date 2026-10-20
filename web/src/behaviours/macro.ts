@@ -139,7 +139,8 @@ export function stepRequest(step: Step): MacroActionIn {
     case "text":
       return { type: "text", text: step.text ?? "", keys: [], delay: null };
     case "delay":
-      return { type: "delay", text: null, keys: [], delay: step.delay ?? 0 };
+      // a wait without its number is sent so: refused, not taken for 0 ms
+      return { type: "delay", text: null, keys: [], delay: step.delay ?? null };
     default:
       return { type: step.type, text: null, keys: step.keys.map((k) => k.code), delay: null };
   }

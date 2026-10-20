@@ -19,8 +19,10 @@
 
   let { open, index, text, onapply, onclose }: Props = $props();
 
-  /** the most a file loaded may hold, as the server takes (schemas.MACRO_TEXT_MAX) */
-  const MAX_BYTES = 16 * 0xffff;
+  /** the most text the server reads (schemas.MACRO_TEXT_MAX characters), and so the most a file loaded may hold */
+  const MAX_TEXT = 16 * 0xffff;
+  /** ... said in whole KiB */
+  const MAX_KIB = Math.floor(MAX_TEXT / 1024);
 
   let dialog = $state<HTMLDialogElement>();
   let box = $state<HTMLTextAreaElement>();
@@ -52,14 +54,25 @@
 
   async function apply() {
     if (working) return;
-    working = true;
     done = "";
+    // checked here: the server would refuse it with a message of its own that isn't about the text
+    if (value.length > MAX_TEXT) {
+      problem = `The text wasn't applied: it is too long for a macro (at most ${MAX_KIB} KiB).`;
+      box?.focus();
+      return;
+    }
+    working = true;
+    let result: string | null;
     try {
-      problem = await onapply(value);
+      result = await onapply(value);
     } finally {
       working = false;
     }
-    if (problem === null) dialog?.close();
+    // closed meanwhile (a second Esc closes it, whatever the page says): the text was dropped (onapply doesn't use
+    // it then), and nothing is said
+    if (!dialog?.open) return;
+    problem = result;
+    if (problem === null) dialog.close();
     else box?.focus();
   }
 
@@ -94,8 +107,8 @@
   /** Reads a file into the box; Apply then takes it */
   async function loadFile(file: File) {
     done = "";
-    if (file.size > MAX_BYTES) {
-      problem = `${file.name} can't be loaded: it is too large for a macro (at most ${MAX_BYTES / 1024} KiB).`;
+    if (file.size > MAX_TEXT) {
+      problem = `${file.name} can't be loaded: it is too large for a macro (at most ${MAX_KIB} KiB).`;
       return;
     }
     try {
@@ -108,10 +121,14 @@
     }
   }
 
-  /** Ctrl+S saves the text as a file and Ctrl+O loads one, as in Qt's text editor */
+  /** the physical keys of the shortcuts, for a layout whose letters aren't Latin (Cyrillic, Greek...) */
+  const SHORTCUT_CODES: Record<string, string> = { KeyS: "s", KeyO: "o" };
+
+  /** Ctrl+S saves the text as a file and Ctrl+O loads one, as in Qt's text editor: by the letter typed, or by the
+   * key where S or O is on a Latin layout when the letter typed isn't Latin */
   function onkeydown(event: KeyboardEvent) {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
-    const key = event.key.toLowerCase();
+    const key = /^[a-z]$/i.test(event.key) ? event.key.toLowerCase() : SHORTCUT_CODES[event.code];
     if (key === "s") {
       event.preventDefault();
       saveFile();
@@ -137,7 +154,8 @@
   <h2 id="{uid}-title">Macro {index} as text</h2>
   <p id="{uid}-about" class="about">
     Its steps as JSON, as the Vial desktop app's text editor writes them: text copies from one to the other. Apply puts
-    these steps in place of the ones being edited; the page's Save then writes them to the keyboard.
+    these steps in place of the ones being edited; the page's Save then writes them to the keyboard. Ctrl+S saves the
+    text as a file, Ctrl+O loads one.
   </p>
   <textarea
     bind:this={box}

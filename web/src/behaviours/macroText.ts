@@ -5,21 +5,22 @@
 import type { Step } from "./macro";
 import { stepRequest } from "./macro";
 
-/** A step as Qt saves it: its tag, then its text, its delay or its keys */
-export function qtAction(step: Step): (string | number)[] {
+/** A step as Qt saves it: its tag, then its text, its delay or its keys. A wait without its number is written with
+ * null, which the server reads back as a wait not finished, as the editor shows it (not as 0 ms). */
+export function qtAction(step: Step): (string | number | null)[] {
   const r = stepRequest(step);
   switch (r.type) {
     case "text":
       return ["text", r.text ?? ""];
     case "delay":
-      return ["delay", r.delay ?? 0];
+      return ["delay", r.delay ?? null];
     default:
       return [r.type, ...(r.keys ?? [])];
   }
 }
 
 /** A value as Python's json.dumps writes it: what isn't printable ASCII as \uXXXX (DEL too), as ensure_ascii does */
-function pythonJson(value: string | number): string {
+function pythonJson(value: string | number | null): string {
   return JSON.stringify(value).replace(/[\u007f-\uffff]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
 

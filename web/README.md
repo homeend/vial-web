@@ -104,7 +104,7 @@ page.
 | `macropad` | Another keyboard: encoders, rotated keys, an ISO Enter, a decal, a layout option |
 | `behaviours` | The Tap dance, Combos and Macros pages end to end, the top bar's Lock/Unlock, the pages at four window sizes and at 375 px |
 | `tapdance`, `combos`, `macros` | Editing on those pages: where the focus goes, saves that are slow or fail, recording keys (adding to the end, or replacing the steps: undone by Cancel) |
-| `macro-text` | The macro text editor: Qt's JSON shown, Esc and Cancel changing nothing, what can't be read said and not applied, Apply then the page's Save, a `.vim` file saved and loaded; the dialog and the record buttons at 1920 and 375 px |
+| `macro-text` | The macro text editor: Qt's JSON shown, Esc and Cancel changing nothing, what can't be read said and not applied, Apply then the page's Save, a `.vim` file saved and loaded; steps not finished going and coming as text; a text too long refused before it is sent; a text being applied dropped when the dialog closes; Ctrl+S on a layout whose letters aren't Latin; the dialog and the record buttons at 1920 and 375 px |
 | `unlock` | The unlock dialog |
 | `overrides` | The Key overrides and Alt-repeat pages: a new key override built and saved, switched off, removed; an alt-repeat key edited |
 | `settings` | The QMK settings form: a change undone, a number out of range, Save, Reset to defaults with its confirmation |

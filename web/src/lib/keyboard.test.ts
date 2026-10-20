@@ -1093,8 +1093,8 @@ describe("the phase 5b changes", () => {
 describe("the keyboard selector", () => {
   function entry(id: string, more: Partial<KeyboardEntry> = {}): KeyboardEntry {
     return {
-      id, name: id.toUpperCase(), manufacturer: "", vendorId: 1, productId: 2, serial: null, path: `usb-${id}`, open: false,
-      plugged: true, ...more,
+      id, name: id.toUpperCase(), product: id.toUpperCase(), manufacturer: "", vendorId: 1, productId: 2, serial: null,
+      path: `usb-${id}`, open: false, plugged: true, ...more,
     };
   }
   const TWO: KeyboardList = { keyboards: [entry("a", { open: true }), entry("b")], chosen: null };

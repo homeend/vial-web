@@ -41,7 +41,9 @@ describe("macroText", () => {
   it("writes a step not finished yet as Qt would: a key step without keys, a text step without text", () => {
     expect(qtAction({ type: "tap", text: null, keys: [], delay: null })).toEqual(["tap"]);
     expect(qtAction({ type: "text", text: null, keys: [], delay: null })).toEqual(["text", ""]);
-    expect(qtAction({ type: "delay", text: null, keys: [], delay: null })).toEqual(["delay", 0]);
+    // a wait without its number stays without one: not a wait of 0 ms (the server reads null back as unfinished)
+    expect(qtAction({ type: "delay", text: null, keys: [], delay: null })).toEqual(["delay", null]);
+    expect(macroText([{ type: "delay", text: null, keys: [], delay: null }])).toBe('[["delay", null]]');
   });
 });
 

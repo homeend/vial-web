@@ -3,6 +3,7 @@
   import type { CatalogueKeycode, Described, KeycodeCategory } from "../api/types";
   import { keyFace, type Names } from "../keyboard/labels";
   import AnyKeycode from "./AnyKeycode.svelte";
+  import { categoryIndex } from "./offered";
   import { searchKeycodes, searchTemplates } from "./search";
   import { fillTemplate } from "./template";
 
@@ -23,7 +24,9 @@
   let dialog = $state<HTMLDialogElement>();
   let gridArea = $state<HTMLDivElement>();
   let query = $state("");
-  let category = $state(0);
+  /** the category shown, by name: kept when another keyboard offers other categories, whose indexes differ */
+  let categoryName = $state<string | null>(null);
+  const category = $derived(categoryIndex(categories, categoryName));
   let anyKeycode = $state("");
 
   const results = $derived(query.trim() ? searchKeycodes(categories, query) : null);
@@ -42,8 +45,6 @@
     if (open && !dialog.open) {
       query = "";
       anyKeycode = "";
-      // the categories may be fewer than when it was last open (another keyboard, without lighting)
-      if (category >= categories.length) category = 0;
       dialog.showModal(); // the search box has autofocus: it gets the focus straight away
     } else if (!open && dialog.open) {
       dialog.close();
@@ -99,7 +100,7 @@
     } as Record<string, number>)[event.key];
     if (next === undefined || last < 0) return;
     event.preventDefault();
-    category = next;
+    categoryName = categories[next].name;
     document.getElementById(tabId(next))?.focus();
   }
 </script>
@@ -153,7 +154,7 @@
             aria-controls="picker-panel"
             tabindex={i === category ? 0 : -1}
             class:active={i === category}
-            onclick={() => (category = i)}
+            onclick={() => (categoryName = c.name)}
             onkeydown={onTabKey}>{c.name}</button
           >
         {/each}

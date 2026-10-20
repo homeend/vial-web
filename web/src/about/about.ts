@@ -40,7 +40,7 @@ type Model = Pick<KeyboardModel, "name" | "uid" | "viaProtocol" | "vialProtocol"
   "settings" | "features">;
 
 /** The USB device's facts the card shows: those of the keyboard list (KeyboardEntry), as hidapi gave them */
-export type UsbDevice = Pick<KeyboardEntry, "manufacturer" | "name" | "vendorId" | "productId" | "path">;
+export type UsbDevice = Pick<KeyboardEntry, "manufacturer" | "product" | "vendorId" | "productId" | "path">;
 
 /** A USB vendor or product ID as Qt writes it: four hex digits, upper case ("55D4") */
 export function usbId(id: number): string {
@@ -53,7 +53,8 @@ function usbFacts(usb: UsbDevice): FactGroup {
     title: "USB device",
     facts: [
       { label: "Manufacturer", value: usb.manufacturer || "none given" },
-      { label: "Product", value: usb.name },
+      // the product name it gives, as Qt shows it: not the name it is shown by, made up when it gives none
+      { label: "Product", value: usb.product || "—" },
       { label: "VID", value: usbId(usb.vendorId), code: true },
       { label: "PID", value: usbId(usb.productId), code: true },
       { label: "Device", value: usb.path, copy: true, code: true, long: true },

@@ -81,7 +81,7 @@ describe("aboutFacts", () => {
 
 describe("aboutFacts of the USB device", () => {
   const usb = {
-    manufacturer: "Wcorne", name: "W-CORNE", vendorId: 0x55d4, productId: 0x461,
+    manufacturer: "Wcorne", name: "W-CORNE", product: "W-CORNE", vendorId: 0x55d4, productId: 0x461,
     path: "\\\\?\\HID#VID_55D4&PID_0461&MI_01#8&1f2&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}",
   };
   const usbFacts = (entry: typeof usb | null) => aboutFacts(corne(), entry).find((g) => g.title === "USB device");
@@ -100,6 +100,10 @@ describe("aboutFacts of the USB device", () => {
     expect(aboutFacts(corne(), usb).map((g) => g.title))
       .toEqual(["Keyboard", "USB device", "Memory and entries", "Features"]);
     expect(usbFacts({ ...usb, manufacturer: "" })?.facts[0].value).toBe("none given");
+  });
+
+  it("gives the product name the keyboard gives, as Qt does: not the name it is shown by when it gives none", () => {
+    expect(usbFacts({ ...usb, product: "", name: "Wcorne" })?.facts[1]).toMatchObject({ label: "Product", value: "—" });
   });
 
   it("isn't there when the keyboard isn't listed (unplugged, and not the one chosen)", () => {

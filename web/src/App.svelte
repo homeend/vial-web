@@ -126,9 +126,9 @@
   const away = $derived(chosenAway(keyboard.keyboards));
   const awayName = $derived(keyboardChoices.find((k) => k.id === away?.id)?.name ?? away?.name);
   const error = $derived(keyboard.session?.error ? asSentence(keyboard.session.error) : null);
-  /** why the keyboard shown, greyed out, can't be changed: an error about another keyboard isn't about it */
   /** the USB device of the keyboard shown, as the keyboard list has it (for the Keyboard page's About card) */
   const shownUsb = $derived(keyboard.keyboards?.keyboards.find((k) => k.id === keyboard.modelKeyboard) ?? null);
+  /** why the keyboard shown, greyed out, can't be changed: an error about another keyboard isn't about it */
   const blockedBy = $derived(blockedWhy(keyboard.session, keyboard.keyboards, keyboard.modelKeyboard));
   /** the keyboard being opened, by name, or null: the page (still the keyboard before) is greyed out meanwhile */
   const opening = $derived(

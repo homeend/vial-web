@@ -116,6 +116,9 @@ def test_a_path_that_now_has_another_keyboard_is_numbered_afresh():
 
 def test_a_keyboard_without_a_product_name_is_named_by_its_title():
     assert keyboard_infos([hid_desc(b"usb-1", product="")])[0].name == "Wcorne"
+    # what it gives is kept as it is, for the About card: Product (empty)
+    assert keyboard_infos([hid_desc(b"usb-1", product="")])[0].product == ""
+    assert keyboard_infos([hid_desc(b"usb-1", product=" Lily58 ")])[0].product == "Lily58"
     assert keyboard_infos([hid_desc(b"usb-1", product="", manufacturer="")])[0].name == "Vial keyboard"
     assert keyboard_infos([{"path": b"x", "vendor_id": 1, "product_id": 2, "serial_number": None}])[0].name == \
         "Vial keyboard"
@@ -522,7 +525,9 @@ def test_the_list_route(setup):
     assert [(k["id"], k["name"], k["open"], k["plugged"]) for k in listed["keyboards"]] == [
         (corne, "Simulated Corne", True, True), (pad, "Simulated Pad", False, True)]
     first = listed["keyboards"][0]
-    assert set(first) == {"id", "name", "manufacturer", "vendorId", "productId", "serial", "path", "open", "plugged"}
+    assert set(first) == {"id", "name", "product", "manufacturer", "vendorId", "productId", "serial", "path", "open",
+                          "plugged"}
+    assert first["product"] == "Simulated Corne"
     assert first["serial"] == manager.keyboard_list().entries[0].info.serial
     # the USB facts the Keyboard page's About card shows, as the simulator gives them
     assert (first["manufacturer"], first["vendorId"], first["productId"], first["path"]) == (
@@ -659,8 +664,12 @@ def test_a_change_meant_for_another_keyboard_is_refused_and_not_sent(setup):
     writes = len(virtual.writes)
     reply = client.put("/api/keymap/0/0/0", json={"code": "KC_B"}, headers=meant(pad))
     assert reply.status_code == 409
-    assert reply.json()["detail"] == "The keyboard changed (another one was opened): this change was not sent."
+    assert reply.json()["detail"] == "The keyboard changed (another one was opened): nothing was sent to it."
     assert len(virtual.writes) == writes
+    # a request that only reads is refused alike, and says the same, true for it too
+    reply = client.post("/api/macros/parse", json={"text": '[["tap", "KC_A"]]'}, headers=meant(pad))
+    assert (reply.status_code, reply.json()["detail"]) == (
+        409, "The keyboard changed (another one was opened): nothing was sent to it.")
     assert manager.connected and manager.title == "Simulated: Simulated Corne"
 
 

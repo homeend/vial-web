@@ -303,7 +303,6 @@ def test_a_macro_text_shorter_than_six_characters_is_no_step_as_in_qt(client):
     ('[["text", "hi"], ["tapp", "KC_A"]]', "step 2: unknown macro step 'tapp'"),
     ('[["tap", "KC_NOPE"]]', "step 1: not a valid keycode: 'KC_NOPE'"),
     ('[["text", "hi"], "tap"]', "step 2: a macro step must be a list"),
-    ('[["tap"]]', "step 1: a tap step needs at least one key"),
     ('[["delay", 70000]]', "step 1: a delay step needs a delay from 0 to 64000 ms"),
     ('[["text", "été"]]', "step 1: macro text can only hold printable ASCII characters"),
     ('[["tap", "MO(9)"]]', "step 1: MO(9) refers to layer 9, but this keyboard's layers are 0 to 3"),
@@ -314,6 +313,44 @@ def test_a_macro_text_that_cant_be_read_says_why(client, virtual, text, problem)
     assert response.status_code == 422
     assert response.json()["detail"].startswith(problem), response.json()["detail"]
     assert virtual.macros() == before
+
+
+def test_steps_not_finished_come_back_unfinished_as_qt_writes_them(client):
+    """ Qt's "Add action" starts with an empty text step, and its text editor writes it as ["text", ""]; a key step
+    without keys as ["tap"]. They come back as they were, for the page to flag (it does so as its editor does), not
+    refused: a draft copied from Qt goes on being edited here. A wait without its number (null, or left out) too. """
+    text = '[["text", ""], ["tap"], ["down"], ["up"], ["delay", null], ["text"], ["delay"]]'
+    assert steps_of(client.post("/api/macros/parse", json={"text": text})) == [
+        ("text", "", [], None), ("tap", None, [], None), ("down", None, [], None), ("up", None, [], None),
+        ("delay", None, [], None), ("text", "", [], None), ("delay", None, [], None)]
+
+
+def test_items_after_those_a_step_uses_are_ignored_as_in_qt(client):
+    """ Qt's restore() reads a text step's text and a delay step's delay, and nothing after them """
+    text = '[["text", "a", "extra"], ["delay", 50, 1], ["tap", "KC_A", "KC_B"]]'
+    assert steps_of(client.post("/api/macros/parse", json={"text": text})) == [
+        ("text", "a", [], None), ("delay", None, [], 50), ("tap", None, ["KC_A", "KC_B"], None)]
+
+
+def test_a_macro_text_of_more_keys_than_the_memory_holds_is_refused_before_they_are_read(client, setup, monkeypatch):
+    """ Each key takes at least two bytes of the macro memory: more keys than half of it can't be saved. They are
+    counted before any is read (reading a keycode takes a while, with the device lock held) """
+    from server import edits
+    memory = setup[2].state.manager.keyboard.macro_memory
+    read = []
+    monkeypatch.setattr(edits, "code", lambda *args: read.append(args))
+    text = json.dumps([["tap"] + ["KC_A"] * (memory // 4 + 1), ["down"] + ["KC_B"] * (memory // 4)])
+    response = client.post("/api/macros/parse", json={"text": text})
+    assert response.status_code == 422
+    assert response.json()["detail"] == ("the text has {} keys: more than this keyboard's macro memory ({} bytes) "
+                                         "holds".format(memory // 2 + 1, memory))
+    assert read == []
+
+
+def test_a_number_too_long_for_python_says_so_plainly(client):
+    response = client.post("/api/macros/parse", json={"text": '[["delay", ' + "9" * 5000 + "]]"})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "not JSON this Vial can read: a number in it is too long"
 
 
 def test_a_macro_text_of_too_many_steps_says_so(client):

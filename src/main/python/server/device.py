@@ -400,6 +400,8 @@ class KeyboardInfo:
     """ its USB manufacturer name ("" if it gives none) """
     path: str = ""
     """ its HID device path, as text (hidapi gives bytes): what Qt's About keyboard calls the Device """
+    product: str = ""
+    """ its USB product string ("" if it gives none: `name` is then made of what it gives else) """
 
 
 def path_text(path):
@@ -471,7 +473,8 @@ def keyboard_infos(candidates, previous=()):
         number[i] = n
         used.add(n)
     return [KeyboardInfo("{}#{}".format(base, number[i]), name, vid, pid, serial, candidate_key(candidate), candidate,
-                         field(candidate, "manufacturer_string", "").strip(), path_text(candidate_key(candidate)))
+                         field(candidate, "manufacturer_string", "").strip(), path_text(candidate_key(candidate)),
+                         field(candidate, "product_string", "").strip())
             for i, (base, name, vid, pid, serial, candidate) in enumerate(described)]
 
 
@@ -774,7 +777,7 @@ class DeviceManager:
         held. With none open, the request fails as it would anyway. """
         wanted = meant_for.get()
         if wanted is not None and self.open_id is not None and wanted != self.open_id:
-            raise KeyboardChanged("The keyboard changed (another one was opened): this change was not sent.")
+            raise KeyboardChanged("The keyboard changed (another one was opened): nothing was sent to it.")
 
     def _io(self, keyboard, fn):
         """ fn(keyboard), the lock held; a failure that means the keyboard is gone closes it (NotConnected) """

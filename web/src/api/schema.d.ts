@@ -855,6 +855,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Product */
+            product: string;
             /** Manufacturer */
             manufacturer: string;
             /** Vendorid */

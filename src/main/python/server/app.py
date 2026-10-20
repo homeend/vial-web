@@ -550,7 +550,8 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     def keyboard_list():
         listed = manager.keyboard_list()
         return schemas.KeyboardList(
-            keyboards=[schemas.KeyboardEntry(id=e.info.id, name=e.info.name, manufacturer=e.info.manufacturer,
+            keyboards=[schemas.KeyboardEntry(id=e.info.id, name=e.info.name, product=e.info.product,
+                                             manufacturer=e.info.manufacturer,
                                              vendorId=e.info.vendor_id, productId=e.info.product_id,
                                              serial=e.info.serial, path=e.info.path,
                                              open=e.info.id == listed.open, plugged=e.plugged)

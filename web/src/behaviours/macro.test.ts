@@ -148,5 +148,8 @@ describe("editing steps", () => {
   it("sends the steps as the server takes them", () => {
     expect(M1.map(stepRequest)[5]).toEqual({ type: "tap", text: null, keys: ["LCTL(KC_C)"], delay: null });
     expect(stepRequest(text("hi"))).toEqual({ type: "text", text: "hi", keys: [], delay: null });
+    // a wait without its number isn't sent as 0 ms: the server refuses it, as the editor flags it
+    expect(stepRequest({ type: "delay", text: null, keys: [], delay: null }))
+      .toEqual({ type: "delay", text: null, keys: [], delay: null });
   });
 });

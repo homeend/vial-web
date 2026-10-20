@@ -4,8 +4,8 @@ import { asSentence, blockedWhy, chosenAway, keyboardOptions, shownKeyboard } fr
 
 function entry(id: string, name: string, more: Partial<KeyboardEntry> = {}): KeyboardEntry {
   return {
-    id, name, manufacturer: "", vendorId: 1, productId: 2, serial: null, path: `usb-${id}`, open: false, plugged: true,
-    ...more,
+    id, name, product: name, manufacturer: "", vendorId: 1, productId: 2, serial: null, path: `usb-${id}`, open: false,
+    plugged: true, ...more,
   };
 }
 

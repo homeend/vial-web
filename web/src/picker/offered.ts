@@ -12,3 +12,9 @@ export function offeredCategories(catalogue: KeycodeCategory[], hasLighting: boo
   if (hasLighting || !catalogue.some((c) => c.name === LIGHTING_CATEGORY)) return catalogue;
   return catalogue.filter((c) => c.name !== LIGHTING_CATEGORY);
 }
+
+/** Where the category shown last (by its name) is among those offered now: the first one when it isn't offered (or
+ * none was shown yet). A keyboard with other categories (without lighting) puts the others elsewhere. */
+export function categoryIndex(categories: KeycodeCategory[], name: string | null): number {
+  return Math.max(0, categories.findIndex((c) => c.name === name));
+}

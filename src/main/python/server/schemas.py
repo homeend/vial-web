@@ -374,7 +374,9 @@ class KeyboardEntry(BaseModel):
     """ what tells it apart from the others, the same after a replug (opaque: its USB serial number when it has one of
     its own, else its USB IDs and name, and which of the keyboards alike it is) """
     name: str
-    """ its USB product name """
+    """ what it is called: its USB product name, else its manufacturer's, else "Vial keyboard" """
+    product: str
+    """ its USB product name ("" if it gives none) """
     manufacturer: str
     """ its USB manufacturer name ("" if it gives none) """
     vendorId: int
