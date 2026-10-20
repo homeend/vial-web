@@ -4,7 +4,9 @@ import { AT, corne, described, layer } from "../analysis/testing";
 import { placeKeyboard } from "../keyboard/geometry";
 import type { Use } from "../analysis/usage";
 import { namesOf } from "../keyboard/labels";
-import { comboNotes, comboSentence, outcome, tapDanceSentence, useLabel } from "./sentences";
+import {
+  comboNotes, comboSentence, macroRemoveNote, outcome, tapDanceSentence, useLabel, usesCounted,
+} from "./sentences";
 
 const model = corne({
   layers: [layer({}, "KC_NO"), layer({}), layer({}), layer({})],
@@ -253,5 +255,47 @@ describe("useLabel", () => {
       "Base, left inner thumb", "combo 1's output", "combo 1's keys", "tap dance 0, double tap", "macro 2, step 1",
       "key override 0's replacement", "alt-repeat key 1's alt keycode",
     ]);
+  });
+});
+
+describe("usesCounted", () => {
+  it("counts a key once on each layer, and a combo or tap dance once however many of its parts use it", () => {
+    expect(usesCounted([
+      { type: "key", layer: 0, ref: { kind: "key", index: 38 } },
+      { type: "key", layer: 1, ref: { kind: "key", index: 38 } },
+      { type: "key", layer: 1, ref: { kind: "encoder", index: 0 } },
+      { type: "combo", combo: 1, part: "key" },
+      { type: "combo", combo: 1, part: "output" },
+      { type: "tap-dance", tapDance: 0, slot: "Tap" },
+      { type: "tap-dance", tapDance: 0, slot: "Hold" },
+      { type: "tap-dance", tapDance: 2, slot: "Tap" },
+    ])).toEqual({ text: "3 keys, 1 combo and 2 tap dances", total: 6 });
+  });
+
+  it("names every kind, in the same order, and nothing for no use", () => {
+    expect(usesCounted([
+      { type: "alt-repeat", altRepeat: 0, part: "keycode" },
+      { type: "key-override", keyOverride: 3, part: "trigger" },
+      { type: "macro", macro: 2, step: 0 },
+      { type: "macro", macro: 2, step: 4 },
+    ])).toEqual({ text: "1 macro, 1 key override and 1 alt-repeat key", total: 3 });
+    expect(usesCounted([])).toEqual({ text: "", total: 0 });
+  });
+});
+
+describe("macroRemoveNote", () => {
+  it("says what uses the macro, which sends nothing once it is empty", () => {
+    expect(macroRemoveNote(1, [{ type: "key", layer: 0, ref: { kind: "key", index: 38 } }])).toBe(
+      "1 key uses M1. Once the macro is removed, M1 sends nothing there until the macro has steps again.",
+    );
+    expect(macroRemoveNote(0, [
+      { type: "key", layer: 0, ref: { kind: "key", index: 38 } },
+      { type: "key", layer: 2, ref: { kind: "key", index: 38 } },
+      { type: "combo", combo: 4, part: "output" },
+    ])).toBe("2 keys and 1 combo use M0. Once the macro is removed, M0 sends nothing there until the macro has steps again.");
+  });
+
+  it("is null when nothing uses it: it is removed at once", () => {
+    expect(macroRemoveNote(3, [])).toBeNull();
   });
 });

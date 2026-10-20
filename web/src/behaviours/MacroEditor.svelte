@@ -31,12 +31,17 @@
     /** a change is being saved: the controls keep the focus, but the steps take no change until it is done (a change
      * made meanwhile would be lost when the save closes the editor) */
     busy: boolean;
+    /** the macro has steps on the keyboard: it can be removed */
+    removable: boolean;
     onsave: () => void;
     oncancel: () => void;
+    /** remove the macro: write it empty, as the firmware keeps no macro */
+    onremove: () => void;
   }
 
   let {
-    index, steps = $bindable(), vialProtocol, onpickkey, describe, parseText, blocked, canSave, busy, onsave, oncancel,
+    index, steps = $bindable(), vialProtocol, onpickkey, describe, parseText, blocked, canSave, busy, removable, onsave,
+    oncancel, onremove,
   }: Props = $props();
 
   let list = $state<HTMLOListElement>();
@@ -418,6 +423,11 @@
     </span>
     {#if blocked}<span class="blocked">{blocked}</span>{/if}
     <span class="spacer"></span>
+    {#if removable}
+      <!-- not while recording: what is being recorded would go with it -->
+      <Button id="macro-{index}-remove" variant="danger" disabled={!canSave || recordingNow}
+        aria-disabled={busy || undefined} onclick={() => !locked && onremove()}>Remove</Button>
+    {/if}
     <Button disabled={recordingNow} aria-disabled={busy || undefined} onclick={oncancel}>Cancel</Button>
     <Button variant="primary" disabled={!ready} aria-disabled={busy || undefined} onclick={() => ready && onsave()}>
       Save

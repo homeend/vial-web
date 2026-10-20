@@ -240,3 +240,54 @@ export function useLabel(use: Use, names: Names, positions: Map<string, string>)
       return `alt-repeat key ${use.altRepeat}'s ${use.part}`;
   }
 }
+
+/** Each kind of use, as counted: its singular and plural */
+const USE_KINDS: [Use["type"], string, string][] = [
+  ["key", "key", "keys"],
+  ["combo", "combo", "combos"],
+  ["tap-dance", "tap dance", "tap dances"],
+  ["macro", "macro", "macros"],
+  ["key-override", "key override", "key overrides"],
+  ["alt-repeat", "alt-repeat key", "alt-repeat keys"],
+];
+
+/** What a use belongs to: a key on a layer, or the combo, tap dance, macro, key override or alt-repeat key */
+function useOwner(use: Use): string {
+  switch (use.type) {
+    case "key":
+      return `${use.layer}:${refId(use.ref)}`;
+    case "combo":
+      return String(use.combo);
+    case "tap-dance":
+      return String(use.tapDance);
+    case "macro":
+      return String(use.macro);
+    case "key-override":
+      return String(use.keyOverride);
+    case "alt-repeat":
+      return String(use.altRepeat);
+  }
+}
+
+/** What uses a tap dance or macro, counted: "3 keys", "1 key, 2 combos and 1 tap dance". A key counts once on each
+ * layer it is on; a combo (or tap dance, …) once, however many of its parts use it. `total`: how many there are. */
+export function usesCounted(uses: Use[]): { text: string; total: number } {
+  const parts: string[] = [];
+  let total = 0;
+  for (const [type, one, many] of USE_KINDS) {
+    const count = new Set(uses.filter((u) => u.type === type).map(useOwner)).size;
+    if (count === 0) continue;
+    total += count;
+    parts.push(`${count} ${count === 1 ? one : many}`);
+  }
+  return { text: andList(parts), total };
+}
+
+/** Why removing macro `index` asks first: what uses it, which runs nothing once the macro is empty (vial-qmk sends
+ * nothing for an empty macro); null when nothing uses it */
+export function macroRemoveNote(index: number, uses: Use[]): string | null {
+  const { text, total } = usesCounted(uses);
+  if (total === 0) return null;
+  return `${text} ${total === 1 ? "uses" : "use"} M${index}. Once the macro is removed, M${index} sends ` +
+    "nothing there until the macro has steps again.";
+}

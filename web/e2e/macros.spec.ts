@@ -372,3 +372,92 @@ test("recording can replace the steps: they go only once it stops, and Cancel pu
     await setMacros(app, before);
   }
 });
+
+test.describe("removing a macro", () => {
+  test("nothing uses it: it goes at once, with its card, and the focus goes to New macro", async ({ app }) => {
+    const before = await macrosOf(app);
+    expect(before[1].length).toBeGreaterThan(0);
+    try {
+      await openMacros(app);
+      // a new macro isn't on the keyboard yet: Cancel is what drops it
+      await app.getByRole("button", { name: "New macro" }).click();
+      await expect(macroCard(app, 2).getByRole("button", { name: "Cancel" })).toBeVisible();
+      await expect(macroCard(app, 2).getByRole("button", { name: "Remove", exact: true })).toHaveCount(0);
+      await macroCard(app, 2).getByRole("button", { name: "Cancel" }).click();
+
+      const count = app.locator(".memory .count");
+      const usedNow = async () => Number((await count.textContent())!.match(/Uses (\d+) of 900 bytes/)![1]);
+      const start = await usedNow();
+      const card = macroCard(app, 1);
+      await card.getByRole("button", { name: "Edit" }).click();
+      const remove = card.getByRole("button", { name: "Remove", exact: true });
+      // not while recording
+      await card.getByRole("button", { name: "Record, adding to the end" }).click();
+      await expect(remove).toBeDisabled();
+      await card.getByRole("button", { name: "Stop recording" }).click();
+      await expect(remove).toBeEnabled();
+
+      // the steps being edited go too: not asked, as nothing uses it
+      await card.getByLabel("Step 1: what it does").selectOption("text");
+      await remove.click();
+      await expect(app.getByRole("dialog")).toBeHidden();
+      await expect(card).toHaveCount(0);
+      await expect(app.locator("#new-macro")).toBeFocused();
+      expect(await macrosOf(app)).toEqual([before[0], [], ...before.slice(2)]);
+      // the memory it took is free: the page counts what the keyboard does
+      const model = await (await api(app).get("/api/keyboard")).json();
+      expect(model.macros.used).toBeLessThan(start);
+      await expect.poll(usedNow).toBe(model.macros.used);
+    } finally {
+      await setMacros(app, before);
+    }
+  });
+
+  test("the address names it: its card stays, empty, with the focus on its heading", async ({ app }) => {
+    const before = await macrosOf(app);
+    try {
+      await openMacros(app);
+      await app.evaluate(() => (location.hash = "#macros/1"));
+      const card = macroCard(app, 1);
+      await card.getByRole("button", { name: "Edit" }).click();
+      await card.getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(card.getByRole("button", { name: "Edit" })).toBeVisible();
+      await expect(app.locator("#macro-1-title")).toBeFocused();
+      expect((await macrosOf(app))[1]).toEqual([]);
+    } finally {
+      await setMacros(app, before);
+    }
+  });
+
+  test("a key uses it: asked first, Cancel keeps it, and Remove empties it, its card staying", async ({ app }) => {
+    const before = await macrosOf(app);
+    try {
+      await openMacros(app);
+      const card = macroCard(app, 0);
+      await card.getByRole("button", { name: "Edit" }).click();
+      const remove = card.getByRole("button", { name: "Remove", exact: true });
+      await remove.click();
+      const dialog = app.getByRole("dialog", { name: "Remove macro 0?" });
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText(
+        "1 key uses M0. Once the macro is removed, M0 sends nothing there until the macro has steps again.");
+      await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toBeHidden();
+      await expect(remove).toBeFocused();
+      expect(await macrosOf(app)).toEqual(before);
+
+      await remove.click();
+      await dialog.getByRole("button", { name: "Remove" }).click();
+      await expect(dialog).toBeHidden();
+      // the key still has M0: its card stays, saying where, with nothing in it
+      await expect(card.getByRole("button", { name: "Edit" })).toBeVisible();
+      await expect(card.locator(".used")).toBeVisible();
+      await expect(app.locator("#macro-0-title")).toBeFocused();
+      expect(await macrosOf(app)).toEqual([[], ...before.slice(1)]);
+    } finally {
+      await setMacros(app, before);
+    }
+  });
+});
