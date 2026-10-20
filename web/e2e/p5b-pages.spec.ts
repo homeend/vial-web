@@ -57,7 +57,7 @@ test("1920 x 950: the matrix tester while testing, and the reboot confirmation, 
 
     await openSection(app, "Keyboard");
     await app.getByRole("button", { name: "Reboot to bootloader…" }).click();
-    const dialog = app.getByRole("dialog", { name: "Restart the keyboard into its bootloader?" });
+    const dialog = app.getByRole("dialog", { name: "Reboot the keyboard into its bootloader?" });
     await expect(dialog).toBeVisible();
     const box = (await dialog.boundingBox())!;
     expect(box.y).toBeGreaterThanOrEqual(0);

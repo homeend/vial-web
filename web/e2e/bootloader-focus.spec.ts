@@ -9,7 +9,7 @@ test("the focus goes to the page heading when the bootloader banner goes", async
     await unlockAgain(app);
     await openSection(app, "Keyboard");
     await app.getByRole("button", { name: "Reboot to bootloader…" }).click();
-    await app.getByRole("dialog", { name: "Restart the keyboard into its bootloader?" })
+    await app.getByRole("dialog", { name: "Reboot the keyboard into its bootloader?" })
       .getByRole("button", { name: "Reboot" }).click();
     const banner = app.locator("#bootloader-banner");
     await expect(banner).toBeFocused({ timeout: 20_000 });

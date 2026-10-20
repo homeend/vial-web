@@ -103,9 +103,11 @@
 
   // the banner that says why the keyboard can't be edited, if any. The bootloader's takes the focus (BootloaderCard);
   // when it goes (the keyboard is back), the focus, which would fall to the page's body, goes to the page's heading.
-  // This runs before the banner leaves the page, while it still has the focus.
+  // This runs before the banner leaves the page, while it still has the focus. A keyboard that goes while a reboot
+  // into the bootloader is on its way most likely went for it: the server says so before it answers.
+  const inBootloader = $derived(keyboard.inBootloader || keyboard.rebooting);
   const why = $derived(
-    status === "offline" ? "offline" : blocked && keyboard.inBootloader ? "bootloader" : blocked ? "unplugged" : null,
+    status === "offline" ? "offline" : blocked && inBootloader ? "bootloader" : blocked ? "unplugged" : null,
   );
   $effect.pre(() => {
     void why;
@@ -205,12 +207,14 @@
     {/if}
     {#if status === "offline"}
       <Banner tone="warning" title="Lost contact with Vial" message="Reconnecting… If this lasts, check that Vial is still running." />
-    {:else if blocked && keyboard.inBootloader}
+    {:else if blocked && inBootloader}
       <Banner
         id="bootloader-banner"
         tone="warning"
-        title="The keyboard is in its bootloader"
-        message="It doesn't work as a keyboard until it is flashed, or unplugged and plugged back in. It shows up here again then."
+        title={keyboard.bootloaderUnanswered
+          ? "The keyboard has most likely rebooted into its bootloader"
+          : "The keyboard is in its bootloader"}
+        message="{keyboard.bootloaderUnanswered ? "It went without answering the reboot. " : ""}It usually doesn't work as a keyboard until it is flashed, or unplugged and plugged back in. It shows up here again then."
       />
     {:else if blocked && error && blockedBy === "list"}
       <Banner tone="danger" title="Vial couldn't look for keyboards" message="{error} Vial tries again by itself, about once a second." />

@@ -81,8 +81,13 @@ export class KeyboardStore {
   /** the keys held, as the server last read them, while the matrix tester watches (watchMatrix); null before the
    * first reading */
   matrix = $state.raw<MatrixState | null>(null);
-  /** this page restarted the keyboard into its bootloader, and it hasn't come back since */
+  /** this page rebooted the keyboard into its bootloader, and it hasn't come back since */
   inBootloader = $state(false);
+  /** ... but the keyboard didn't answer the reboot: it most likely went into its bootloader (the server closed it) */
+  bootloaderUnanswered = $state(false);
+  /** a reboot into the bootloader is on its way to the keyboard: a "disconnected" meanwhile is most likely the reboot
+   * (the server says so before it answers), not an unplug */
+  rebooting = $state(false);
   /** the Vial keyboards plugged in, and the chosen one while it is unplugged, as the server last said; null before */
   keyboards = $state.raw<KeyboardList | null>(null);
   /** the keyboard being opened (selectKeyboard), until the server has answered */
@@ -108,6 +113,8 @@ export class KeyboardStore {
   /** keyboards plugged in or unplugged so far ("connected" and "disconnected" events, and loads that found another
    * keyboard): once it changes, the keyboard may not be the one it was */
   #plugs = 0;
+  /** "connected" events so far: a reply that comes after one is older than what it says */
+  #connects = 0;
   /** the events link (re)opened, and its first event hasn't come yet */
   #opening = false;
   /** the language list, or null when it couldn't be read */
@@ -149,8 +156,9 @@ export class KeyboardStore {
     });
   }
 
-  /** Get the keys held, about 20 times a second while the keyboard is unlocked (in `matrix`), until the function it
-   * returns is called. The server reads them while any page of any tab watches. */
+  /** Get the keys held (in `matrix`) while the keyboard is unlocked, until the function it returns is called. The
+   * server reads them about 20 times a second while any page of any tab watches, and sends a reading only when it
+   * differs from the one before. */
   watchMatrix(): () => void {
     this.#matrixWatchers++;
     if (this.#matrixWatchers === 1) this.#link?.send({ type: "matrix", watch: true });
@@ -198,7 +206,10 @@ export class KeyboardStore {
     const unchanged = event.type === "reloaded" || (opening && event.type === "connected" && this.connected);
     if (!unchanged) this.#plugs++;
     this.connected = event.type !== "disconnected";
-    if (event.type === "connected") this.inBootloader = false;
+    if (event.type === "connected") {
+      this.#connects++;
+      this.#leftBootloader();
+    }
     this.stale = true;
     if (this.connected) {
       void this.load();
@@ -282,8 +293,13 @@ export class KeyboardStore {
     this.#showKeyboard(null);
     this.matrix = null;
     this.loadError = null;
-    this.inBootloader = false;
+    this.#leftBootloader();
     this.stale = true;
+  }
+
+  #leftBootloader(): void {
+    this.inBootloader = false;
+    this.bootloaderUnanswered = false;
   }
 
   /** The model shown is of this keyboard (KeyboardEntry.id), or of none: the changes sent are meant for it, so that
@@ -496,21 +512,36 @@ export class KeyboardStore {
     });
   }
 
-  /** Restart the keyboard into its bootloader, to flash it: it leaves Vial. A locked keyboard is unlocked first (the
-   * firmware takes it only then). */
+  /** Reboot the keyboard into its bootloader, to flash it: it leaves Vial. A locked keyboard is unlocked first (the
+   * firmware takes it only then). A reboot the keyboard got and didn't answer (504) most likely went through: it is
+   * shown so (bootloaderUnanswered), not as a failure. A reply that comes after the keyboard was plugged in again is
+   * older than that, and changes nothing. */
   rebootToBootloader(): Promise<boolean> {
     const model = this.model;
     if (!model) return Promise.resolve(false);
     if (!this.canEdit) {
-      toasts.error("Restarting the keyboard into its bootloader failed: the keyboard can't be changed just now.");
+      toasts.error("Rebooting the keyboard into its bootloader failed: the keyboard can't be changed just now.");
       return Promise.resolve(false);
     }
-    return this.#edit("Restarting the keyboard into its bootloader", model, async () => {
-      const session = await api.rebootToBootloader();
-      this.inBootloader = true;
-      // it is gone: the "disconnected" event says so too, maybe after this reply
-      this.connected = session.status === "connected";
-      this.#useSession(session);
+    return this.#edit("Rebooting the keyboard into its bootloader", model, async () => {
+      const connects = this.#connects;
+      this.rebooting = true;
+      try {
+        let session: Session | null = null;
+        try {
+          session = await api.rebootToBootloader();
+        } catch (error) {
+          if (!(error instanceof ApiError && error.status === 504)) throw error;
+        }
+        if (this.#connects !== connects) return;
+        this.inBootloader = true;
+        this.bootloaderUnanswered = session === null;
+        // it is gone: the "disconnected" event says so too, maybe after this reply. Not answered, the server closed it.
+        this.connected = session !== null && session.status === "connected";
+        if (session) this.#useSession(session);
+      } finally {
+        this.rebooting = false;
+      }
     });
   }
 

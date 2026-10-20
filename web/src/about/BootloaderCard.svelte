@@ -6,36 +6,52 @@
 
   let confirming = $state(false);
   const busy = $derived(keyboard.pending > 0);
+  // it looks disabled, but keeps the focus (given back to it when the confirmation closes)
+  const unusable = $derived(!keyboard.canEdit || busy);
+
+  /** The confirmation closed: rebooted, the page can't be used, and the banner that says so takes the focus; else the
+   * focus goes back to the button, unless the keyboard went meanwhile (the page greyed out can't take it): then to the
+   * page's entry in the sections, rather than to nowhere */
+  function giveFocusBack() {
+    const target = document.getElementById(keyboard.inBootloader ? "bootloader-banner" : "reboot-bootloader");
+    target?.focus();
+    if (!target || document.activeElement !== target) {
+      document.querySelector<HTMLElement>('nav [aria-current="page"]')?.focus();
+    }
+  }
 </script>
 
 <!-- the Keyboard page's danger zone: what can't be undone from Vial -->
 <section class="card" aria-labelledby="bootloader-title">
   <h2 id="bootloader-title">Reboot to bootloader</h2>
   <p>
-    Restarts the keyboard into its bootloader, to flash new firmware with a flashing tool. Until it is flashed, or
-    unplugged and plugged back in, it doesn't work as a keyboard and Vial can't see it. Vial firmware does this only
-    for an unlocked keyboard: a locked one is unlocked first.
+    Reboots the keyboard into its bootloader, to flash new firmware with a flashing tool. Until it is flashed, or
+    unplugged and plugged back in, it usually doesn't work as a keyboard and Vial can't see it (some bootloaders, as
+    on a Pro Micro, start the firmware again by themselves after a few seconds). Vial firmware does this only for an
+    unlocked keyboard: a locked one is unlocked first.
   </p>
   <div>
-    <Button id="reboot-bootloader" variant="danger" disabled={!keyboard.canEdit} aria-disabled={busy || undefined}
+    <Button id="reboot-bootloader" variant="danger" aria-disabled={unusable || undefined}
       onclick={() => {
-        if (!busy) confirming = true;
+        if (!unusable) confirming = true;
       }}>Reboot to bootloader…</Button>
   </div>
 </section>
 
 <ConfirmDialog
   open={confirming}
-  title="Restart the keyboard into its bootloader?"
-  message="It stops working as a keyboard and disappears from Vial until it is flashed, or unplugged and plugged back in. If it is locked, you hold its unlock keys first."
+  title="Reboot the keyboard into its bootloader?"
+  message="It stops working as a keyboard and disappears from Vial, usually until it is flashed, or unplugged and plugged back in. If it is locked, you hold its unlock keys first."
   confirmLabel="Reboot"
   danger
-  onconfirm={() => keyboard.rebootToBootloader()}
+  onconfirm={async () => {
+    // closed whether it worked or not: a failure's toast says why, and Reboot to bootloader… is there to try again
+    await keyboard.rebootToBootloader();
+    return true;
+  }}
   onclose={() => {
     confirming = false;
-    // gone: the page can't be used, and the banner that says so takes the focus
-    void tick().then(() => document.getElementById(keyboard.inBootloader ? "bootloader-banner" : "reboot-bootloader")
-      ?.focus());
+    void tick().then(giveFocusBack);
   }}
 />
 

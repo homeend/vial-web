@@ -13,8 +13,8 @@ from protocol.constants import CMD_VIA_BOOTLOADER_JUMP, CMD_VIA_GET_KEYBOARD_VAL
     VIA_SWITCH_MATRIX_STATE
 from protocol.unlock_hook import set_unlock_handler
 from server.app import MATRIX_FAILURE_PAUSE, MatrixWatcher, create_app
-from server.device import MATRIX_STRAYS_MAX, DeviceManager, FakeBackend, KeyboardLocked, KeyboardRefused, \
-    MatrixReading, NotConnected, has_matrix_tester, matrix_pressed, require_unlocked
+from server.device import MATRIX_STRAYS_MAX, DeviceManager, FakeBackend, JumpUnanswered, KeyboardLocked, \
+    KeyboardRefused, MatrixReading, NotConnected, has_matrix_tester, matrix_pressed, require_unlocked
 from server.names import NamesStore
 from simulator.corne import UNLOCK_KEYS, make_corne
 from simulator.virtual_keyboard import VirtualKeyboard
@@ -527,7 +527,7 @@ def test_rebooting_drops_the_keyboard():
 
 def test_firmware_without_the_jump_says_so_and_stays():
     manager = connected(lambda: VirtualKeyboard(make_corne().definition, bootloader_jump=False))
-    with pytest.raises(KeyboardRefused, match="can't restart into its bootloader"):
+    with pytest.raises(KeyboardRefused, match="can't reboot into its bootloader"):
         manager.reboot_to_bootloader()
     assert manager.connected
     assert manager.run(lambda kb: kb.get_unlock_status()) == 1
@@ -590,9 +590,10 @@ def test_waiting_reboot_requests_wait_for_the_device_lock():
     assert manager.backend.virtual.bootloader_requested
 
 
-def jump_requests(vk, lose_reply=False):
+def jump_requests(manager, lose_reply=False):
     """ How many bootloader jumps the simulated keyboard is sent from now on (a list that counts them); with
-    lose_reply the answer never arrives, as when the keyboard drops off the bus first """
+    lose_reply the jump is taken but its answer never arrives, as when the keyboard drops off the bus first """
+    vk = manager.backend.virtual
     sent = []
     process = vk.process
 
@@ -600,28 +601,83 @@ def jump_requests(vk, lose_reply=False):
         reply = process(msg)
         if msg[0] == CMD_VIA_BOOTLOADER_JUMP:
             sent.append(msg)
-            if lose_reply:
-                raise OSError("the reply is lost")
         return reply
     vk.process = counting
+    if lose_reply:
+        dev = manager.handle.dev
+        read = dev.read
+
+        def losing(length, timeout_ms=0):
+            data = read(length, timeout_ms)
+            return [] if data and data[0] == CMD_VIA_BOOTLOADER_JUMP else data
+        dev.read = losing
     return sent
 
 
 def test_the_jump_is_sent_once():
     manager = connected()
-    sent = jump_requests(manager.backend.virtual)
+    sent = jump_requests(manager)
     manager.reboot_to_bootloader()
     assert len(sent) == 1
 
 
 def test_the_jump_is_sent_once_when_the_reply_is_lost():
+    """ Sent, and not answered: the keyboard most likely jumped, which the error says, and it is closed """
     manager = connected()
     vk = manager.backend.virtual
-    sent = jump_requests(vk, lose_reply=True)
-    with pytest.raises(NotConnected):
+    sent = jump_requests(manager, lose_reply=True)
+    with pytest.raises(JumpUnanswered):
         manager.reboot_to_bootloader()
     assert len(sent) == 1 and vk.bootloader_requested
     assert not manager.connected
+    assert manager.take_events() == ["disconnected"]
+
+
+def test_a_lost_reply_from_a_keyboard_still_plugged_in_closes_it_until_it_is_found_again():
+    """ The reply lost, but the keyboard still there (it didn't jump after all): it is closed all the same, as most
+    likely gone, and the hot-plug poll opens it again """
+    manager = connected()
+    vk = manager.backend.virtual
+    jump_requests(manager, lose_reply=True)
+    # it answers, and stays
+    vk._bootloader = lambda msg: msg
+    with pytest.raises(JumpUnanswered):
+        manager.reboot_to_bootloader()
+    assert not manager.connected
+    assert manager.take_events() == ["disconnected"]
+    assert manager.check() == ["connected"]
+
+
+def test_a_jump_that_could_not_be_sent_is_no_lost_reply():
+    """ The keyboard went before the jump was written: nothing was sent, which isn't a jump that went unanswered """
+    manager = connected()
+    vk = manager.backend.virtual
+    sent = jump_requests(manager)
+    dev = manager.handle.dev
+
+    def unplugged(data):
+        vk.connected = False
+        raise OSError("the keyboard is gone")
+    dev.write = unplugged
+    with pytest.raises(NotConnected) as raised:
+        manager.reboot_to_bootloader()
+    assert not isinstance(raised.value, JumpUnanswered)
+    assert sent == [] and not vk.bootloader_requested
+
+
+def test_the_bootloader_route_says_when_the_reply_was_lost(served):
+    """ 504, unlike a jump not sent (503): the keyboard most likely restarted into its bootloader; the "disconnected"
+    event comes first """
+    client, manager = served
+    jump_requests(manager, lose_reply=True)
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        assert ws.receive_json() == {"type": "connected"}
+        response = client.post("/api/bootloader")
+        assert response.status_code == 504
+        assert "most likely rebooted into its bootloader" in response.json()["detail"]
+        assert ws.receive_json() == {"type": "disconnected"}
+    assert manager.backend.virtual.bootloader_requested
+    assert client.get("/api/session").json()["status"] == "disconnected"
 
 
 def test_the_bootloader_route_is_guarded(served):

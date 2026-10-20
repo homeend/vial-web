@@ -9,7 +9,8 @@
     onaction?: () => void;
     /** an id for the banner, so that it can take the focus from script (when what had it went away): only a banner
      * with one can (tabindex -1), so a click on another's text leaves the focus where it was (e.g. on the page, where
-     * the Keymap's arrow keys start) */
+     * the Keymap's arrow keys start). Such a banner is read as it takes the focus: it has no live role, which would
+     * have it read twice (and the top bar's status says what changed) */
     id?: string;
   }
 
@@ -18,7 +19,8 @@
 
 <!-- danger interrupts (the keyboard is unplugged, or couldn't be read); warning waits its turn -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex (the check can't tell: it is -1 or none, never in the Tab order) -->
-<div class="banner {tone}" role={tone === "danger" ? "alert" : "status"} {id} tabindex={id ? -1 : undefined}>
+<div class="banner {tone}" role={id ? undefined : tone === "danger" ? "alert" : "status"} {id}
+  tabindex={id ? -1 : undefined}>
   <svg viewBox="0 0 20 20" aria-hidden="true">
     <path d="M10 3l8 14H2z" />
     <path d="M10 8.5v3.5M10 14.5v.01" />

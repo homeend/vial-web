@@ -52,6 +52,10 @@ class DeviceIOError(RuntimeError):
     """ The HID handle itself failed (it is closed or no longer valid), as opposed to a request that was refused """
 
 
+class JumpUnanswered(RuntimeError):
+    """ The bootloader jump was sent, and no answer came: the keyboard most likely jumped before its answer got out """
+
+
 class UnknownKeyboard(LookupError):
     """ No keyboard of that id is plugged in (DeviceManager.select) """
 
@@ -244,6 +248,24 @@ class CheckedDevice:
     def stray(self):
         """ The report just read wasn't the reply to the request: that may still come """
         self.unanswered += 1
+
+    def __getattr__(self, name):
+        return getattr(self.dev, name)
+
+
+class _WriteWatch:
+    """ The device a request is sent through, telling whether the request was written (`sent`): a reply that doesn't
+    come then is no request that didn't go out """
+
+    def __init__(self):
+        self.dev = None
+        self.sent = False
+
+    def write(self, data):
+        written = self.dev.write(data)
+        if written == len(data):
+            self.sent = True
+        return written
 
     def __getattr__(self, name):
         return getattr(self.dev, name)
@@ -911,18 +933,32 @@ class DeviceManager:
     def reboot_to_bootloader(self):
         """ Restart the keyboard into its bootloader, as Qt's Security > Reboot to bootloader does: the keyboard must
         be unlocked (KeyboardLocked otherwise), and then jumps (via.c id_bootloader_jump), leaving Vial: it is closed,
-        with a "disconnected" event. A firmware that doesn't take the jump (vial-qmk leaves it out of VIAL_INSECURE
-        builds) answers id_unhandled: KeyboardRefused, and the keyboard stays. """
+        with a "disconnected" event. Firmware built without the bootloader jump answers id_unhandled: KeyboardRefused,
+        and the keyboard stays. A jump sent whose answer doesn't come (the keyboard dropped off the bus first) is most
+        likely taken: the keyboard is closed all the same (the hot-plug poll opens it again if it is still there), and
+        JumpUnanswered says so; a jump that couldn't be sent fails as any request does. """
         with self.lock:
+            written = _WriteWatch()
+
             def jump(kb):
                 require_unlocked(kb)
+                written.dev = kb.dev
                 # one try: the firmware answers, waits 100 ms and jumps; sent again, it would reach the bootloader
-                return kb.usb_send(kb.dev, struct.pack("B", CMD_VIA_BOOTLOADER_JUMP))
-            reply = self.run(jump)
+                return kb.usb_send(written, struct.pack("B", CMD_VIA_BOOTLOADER_JUMP))
+            try:
+                reply = self.run(jump)
+            except (OSError, RuntimeError) as e:
+                if not written.sent:
+                    raise
+                log.warning("%s didn't answer the jump to its bootloader (%s): most likely it jumped", self.title, e)
+                if self.keyboard is not None:
+                    self._close_reporting()
+                raise JumpUnanswered("the keyboard didn't answer: it has most likely rebooted into its bootloader "
+                                     "(it shows up again once it is flashed, or unplugged and plugged back in)") from e
             # an echoed command is ambiguous (a locked keyboard's `goto skip` echoes it in via.c too); accepted, as the
             # unlock status was read just before, under the same lock
             if reply[0] == VIA_ID_UNHANDLED:
-                raise KeyboardRefused("this keyboard's firmware can't restart into its bootloader from Vial (it is "
+                raise KeyboardRefused("this keyboard's firmware can't reboot into its bootloader from Vial (it is "
                                       "built without that)")
             log.info("%s restarted into its bootloader", self.title)
             self._close_reporting()

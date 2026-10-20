@@ -49,6 +49,7 @@ export const api = {
   unlockStart: () => request("post", "/api/unlock/start"),
   unlockCancel: () => request("post", "/api/unlock/cancel"),
   lock: () => request("post", "/api/lock"),
-  /** the keyboard restarts into its bootloader and leaves; answers the session without it */
+  /** the keyboard reboots into its bootloader and leaves; answers the session without it. 504: it got the reboot and
+   * didn't answer, so it most likely went (the server closed it) */
   rebootToBootloader: () => request("post", "/api/bootloader"),
 };

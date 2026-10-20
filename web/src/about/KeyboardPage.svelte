@@ -21,7 +21,7 @@
   <PageHeader
     id="keyboard-title"
     title="Keyboard"
-    description="What the keyboard is and what its firmware can do, its layout saved to a file or loaded from one, and a restart into its bootloader to flash it."
+    description="What the keyboard is and what its firmware can do, its layout saved to a file or loaded from one, and a reboot into its bootloader to flash it."
   />
   <LayoutFileCard {model} {analysis} />
   <AboutCard {model} {usb} />

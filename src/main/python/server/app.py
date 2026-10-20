@@ -19,7 +19,8 @@ from starlette.requests import HTTPConnection
 from protocol.qmk_settings_codec import QmkSettingsCodec
 from server import device, edits, languages, model, schemas
 from server.describe import keyboard_language, parse
-from server.device import KeyboardChanged, NotConnected, KeyboardLocked, KeyboardRefused, UnknownKeyboard
+from server.device import JumpUnanswered, KeyboardChanged, NotConnected, KeyboardLocked, KeyboardRefused, \
+    UnknownKeyboard
 
 log = logging.getLogger(__name__)
 
@@ -482,6 +483,12 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         log.warning("%s", exc)
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
+    @app.exception_handler(JumpUnanswered)
+    async def jump_unanswered(request, exc):
+        # sent, and not answered (logged where it happened): not "didn't respond" (502), nor "not connected" (503),
+        # which say the keyboard wasn't sent the jump
+        return JSONResponse({"detail": str(exc)}, status_code=504)
+
     @app.exception_handler(RuntimeError)
     async def device_error(request, exc):
         log.exception("keyboard error")
@@ -759,8 +766,10 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.post("/api/bootloader", response_model=schemas.Session)
     async def reboot_to_bootloader():
-        """ Restart the keyboard into its bootloader (to flash it): it stops working as a keyboard and leaves Vial until
-        it is flashed or plugged in again. Refused (423) while it is locked. Returns the session, without it. """
+        """ Restart the keyboard into its bootloader (to flash it): it stops working as a keyboard and leaves Vial,
+        usually until it is flashed or plugged in again. Refused (423) while it is locked. Returns the session, without
+        it. 504: the jump was sent and not answered, so the keyboard most likely jumped (it was closed all the same);
+        503 or 502: it wasn't sent. """
         try:
             await asyncio.to_thread(manager.reboot_to_bootloader)
         finally:

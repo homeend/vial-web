@@ -918,7 +918,7 @@ describe("the phase 5b changes", () => {
     expect(toasts.items.map((t) => t.message)).toEqual(["Choosing the effect failed: The keyboard didn't respond."]);
   });
 
-  it("restarts the keyboard into its bootloader after unlocking it, and shows it gone", async () => {
+  it("reboots the keyboard into its bootloader after unlocking it, and shows it gone", async () => {
     const { store, send, emit } = await loaded();
     mocked.rebootToBootloader.mockRejectedValueOnce(new ApiError(423, "the keyboard is locked"))
       .mockResolvedValueOnce({ status: "disconnected", fake: true, unlock: LOCKED } as never);
@@ -939,13 +939,75 @@ describe("the phase 5b changes", () => {
     expect(store.inBootloader).toBe(false);
   });
 
-  it("says why a keyboard that can't be changed isn't restarted", async () => {
+  it("says why a keyboard that can't be changed isn't rebooted", async () => {
     const { store, emit } = await loaded();
     emit("disconnected");
     expect(await store.rebootToBootloader()).toBe(false);
     expect(mocked.rebootToBootloader).not.toHaveBeenCalled();
     expect(toasts.items.map((t) => t.message))
-      .toEqual(["Restarting the keyboard into its bootloader failed: the keyboard can't be changed just now."]);
+      .toEqual(["Rebooting the keyboard into its bootloader failed: the keyboard can't be changed just now."]);
+  });
+
+  it("takes a keyboard that goes while the reboot is on its way for the reboot: the event comes before the reply",
+    async () => {
+      const { store, emit } = await loaded();
+      const reply = deferred<Session>();
+      mocked.rebootToBootloader.mockReturnValueOnce(reply.promise as never);
+      const rebooting = store.rebootToBootloader();
+      await settle();
+      expect(store.rebooting).toBe(true);
+      emit("disconnected");
+      // what the page shows meanwhile is the bootloader's, not an unplug
+      expect(store.connected).toBe(false);
+      expect(store.rebooting || store.inBootloader).toBe(true);
+      reply.resolve({ status: "disconnected", fake: true, unlock: LOCKED } as Session);
+      expect(await rebooting).toBe(true);
+      expect(store.rebooting).toBe(false);
+      expect(store.inBootloader).toBe(true);
+      expect(store.bootloaderUnanswered).toBe(false);
+      expect(toasts.items).toEqual([]);
+    });
+
+  it("shows a reboot the keyboard got and didn't answer (504) as most likely done, not as a failure", async () => {
+    const { store, emit } = await loaded();
+    mocked.rebootToBootloader.mockRejectedValueOnce(new ApiError(504, "the keyboard didn't answer"));
+    const rebooting = store.rebootToBootloader();
+    emit("disconnected");
+    expect(await rebooting).toBe(true);
+    expect(store.inBootloader).toBe(true);
+    expect(store.bootloaderUnanswered).toBe(true);
+    expect(store.connected).toBe(false);
+    expect(toasts.items).toEqual([]);
+    // it was there after all, or is back: the hedge goes with the rest
+    emit("connected");
+    expect(store.inBootloader).toBe(false);
+    expect(store.bootloaderUnanswered).toBe(false);
+  });
+
+  it("fails a reboot that wasn't sent (503), and doesn't show the bootloader's", async () => {
+    const { store, emit } = await loaded();
+    mocked.rebootToBootloader.mockRejectedValueOnce(new ApiError(503, "keyboard disconnected"));
+    const rebooting = store.rebootToBootloader();
+    emit("disconnected");
+    expect(await rebooting).toBe(false);
+    expect(store.inBootloader).toBe(false);
+    expect(store.rebooting).toBe(false);
+    expect(toasts.items.map((t) => t.message))
+      .toEqual(["Rebooting the keyboard into its bootloader failed: The keyboard isn't connected."]);
+  });
+
+  it("ignores a reboot reply that comes after the keyboard was plugged in again", async () => {
+    const { store, emit } = await loaded();
+    const reply = deferred<Session>();
+    mocked.rebootToBootloader.mockReturnValueOnce(reply.promise as never);
+    const rebooting = store.rebootToBootloader();
+    await settle();
+    emit("disconnected");
+    emit("connected");
+    reply.resolve({ status: "disconnected", fake: true, unlock: LOCKED } as Session);
+    expect(await rebooting).toBe(true);
+    expect(store.inBootloader).toBe(false);
+    expect(store.connected).toBe(true);
   });
 
   it("asks for the keys held while a page watches, and again on a new link", async () => {

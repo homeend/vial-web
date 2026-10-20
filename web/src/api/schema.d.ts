@@ -561,8 +561,10 @@ export interface paths {
         put?: never;
         /**
          * Reboot To Bootloader
-         * @description Restart the keyboard into its bootloader (to flash it): it stops working as a keyboard and leaves Vial until
-         *     it is flashed or plugged in again. Refused (423) while it is locked. Returns the session, without it.
+         * @description Restart the keyboard into its bootloader (to flash it): it stops working as a keyboard and leaves Vial,
+         *     usually until it is flashed or plugged in again. Refused (423) while it is locked. Returns the session, without
+         *     it. 504: the jump was sent and not answered, so the keyboard most likely jumped (it was closed all the same);
+         *     503 or 502: it wasn't sent.
          */
         post: operations["reboot_to_bootloader_api_bootloader_post"];
         delete?: never;
