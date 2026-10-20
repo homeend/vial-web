@@ -359,7 +359,9 @@ def parse_args(argv):
     parser.add_argument("--layout", help="with --fake: .vil layout file to load into the simulated keyboard")
     parser.add_argument("--second-definition",
                         help="with --fake: vial.json of the second simulated keyboard, which the test hook "
-                             "PUT /api/simulator/second-keyboard plugs in (default: one like the first)")
+                             "PUT /api/simulator/second-keyboard plugs in (default: one like the first). It has the "
+                             "simulator's own layer count and the lighting its file says: --layers and --lighting "
+                             "change only the first")
     parser.add_argument("--layers", type=layer_count,
                         help="with --fake: how many layers the simulated keyboard has (1 to {}; default: the "
                              "simulator's own, 4 for the sample Corne)".format(MAX_FAKE_LAYERS))

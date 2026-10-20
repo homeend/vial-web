@@ -370,8 +370,11 @@ class HidBackend:
         return dev, title or "Vial keyboard"
 
     def present(self, desc):
+        """ Asked only when the hot-plug poll's own listing missed the keyboard open or failed, and after a request to
+        it failed (DeviceManager._present). That listing (find) enumerates every HID device, once a poll, as Qt's
+        autorefresh does on Linux and macOS (on Linux, is_raw_hid even opens each Vial keyboard found); this asks for
+        this keyboard's vendor and product IDs only, and opens nothing. """
         from hidproxy import hid
-        # only this keyboard's interfaces: enumerating everything is slow on some systems
         listed = hid.enumerate(desc.get("vendor_id", 0), desc.get("product_id", 0))
         return any(d["path"] == desc["path"] for d in listed)
 
@@ -602,12 +605,13 @@ class DeviceManager:
 
     def _list(self, candidates):
         """ Keep the keyboards found: a change when they aren't those listed before (in whatever order hidapi gives
-        them: it promises none). The keyboard open keeps its id (open_id), even after a listing that missed it """
+        them: it promises none), or one is at another path (the Keyboard page shows it). The keyboard open keeps its id
+        (open_id), even after a listing that missed it """
         previous = self.listed if self.open_info is None else self.listed + [self.open_info]
         listed = keyboard_infos(candidates, previous)
 
         def shown(infos):
-            return sorted((id_order(i.id), i.name, i.serial) for i in infos)
+            return sorted((id_order(i.id), i.name, i.serial, i.path) for i in infos)
         if shown(listed) != shown(self.listed):
             self.changes += 1
         self.listed = listed

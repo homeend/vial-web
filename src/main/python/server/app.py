@@ -116,7 +116,8 @@ class EventHub:
         if not self.clients:
             self.on_all_clients_gone()
 
-    async def _send(self, ws, event):
+    async def send(self, ws, event):
+        """ Send one tab an event; a tab that doesn't take it in time is dropped (and closed) """
         try:
             await asyncio.wait_for(ws.send_json(event), self.send_timeout)
         except Exception as e:
@@ -137,7 +138,7 @@ class EventHub:
             log.info("closing a dropped UI tab failed: %s", e.__class__.__name__)
 
     async def broadcast(self, event):
-        await asyncio.gather(*(self._send(ws, event) for ws in list(self.clients)))
+        await asyncio.gather(*(self.send(ws, event) for ws in list(self.clients)))
 
     async def shutdown(self):
         """ Server stopping: cancel the "all tabs closed" timer and any socket closes still running """
@@ -172,6 +173,8 @@ class MatrixWatcher:
         self.stopping = False
         self.failing = False
         """ the last reading failed: the next failure isn't logged again """
+        self.generation = 0
+        """ grows each time the keyboard read is closed (drop()): a reading begun before is of that keyboard """
 
     async def watch(self, ws):
         """ The tab starts watching (again: nothing changes); nothing once the server is stopping """
@@ -189,9 +192,11 @@ class MatrixWatcher:
 
     def drop(self):
         """ The keyboard read was closed (another one was chosen): no tab watches it any more, and a reading on its way
-        reaches none. A tab watches the keyboard open now once it asks again. """
+        reaches none, even a tab that watches the keyboard open now by then. A tab watches that one once it asks
+        again. """
         self.watchers.clear()
         self.last = None
+        self.generation += 1
 
     async def shutdown(self):
         """ The server is stopping: cancel the task, and start none from now on """
@@ -230,13 +235,16 @@ class MatrixWatcher:
                 await self.on_start()
             while self.watchers and self.task is me and not self.stopping:
                 started = loop.time()
+                generation = self.generation
                 state = await asyncio.to_thread(self._reading)
-                if state is not None and state != self.last and self.task is me:
+                # of the keyboard closed meanwhile (drop()): not sent; the next reading is of the one open now
+                stale = generation != self.generation
+                if not stale and state is not None and state != self.last and self.task is me:
                     self.last = state
                     await self._send_to(list(self.watchers), state)
                 # a failure may come at once, again and again (a handle that stopped working), each checking whether
                 # the keyboard is still plugged in (an HID enumeration): not 20 times a second
-                await self.sleep(self.failure_pause if state is None
+                await self.sleep(self.failure_pause if state is None and not stale
                                  else max(self.interval - (loop.time() - started), self.gap))
         finally:
             if self.task is me:
@@ -355,7 +363,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     follower = UnlockFollower(manager, broadcast_events, unlock_interval)
 
     async def send_to_watcher(ws, event):
-        await hub._send(ws, event)
+        await hub.send(ws, event)
         if ws not in hub.clients:  # dropped: it no longer watches either
             matrix.unwatch(ws)
 
@@ -788,7 +796,12 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         try:
             await ws.send_json({"type": "connected" if manager.connected else "disconnected"})
             while True:
-                await on_message(ws, await ws.receive_text())
+                message = await ws.receive()
+                if message["type"] == "websocket.disconnect":
+                    break
+                if message.get("text") is not None:
+                    await on_message(ws, message["text"])
+                # a binary message: ignored, as anything else a tab sends that isn't asked for
         except WebSocketDisconnect:
             pass
         finally:
@@ -823,26 +836,32 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
                 manager.backend.set_second_connected(body.connected, unreadable=body.unreadable)
             return {"connected": body.connected}
 
-        # for UI tests: a key of the simulated keyboard's matrix is pressed or let go (the matrix tester shows it). Never
-        # exists for real keyboards.
+        def open_virtual():
+            """ The simulated keyboard open (loaded, or waiting for its unlock), the device lock held; NotConnected (503,
+            as for any request) while none is """
+            if manager.candidate is None:
+                raise NotConnected("no simulated keyboard is open")
+            return manager.backend.virtual_of(manager.candidate)
+
+        # for UI tests: a key of the matrix of the simulated keyboard open is pressed or let go (the matrix tester shows
+        # it). Never exists for real keyboards.
         @app.put("/api/simulator/matrix", include_in_schema=False)
         def set_simulator_press(body: schemas.SimulatorPress):
             with manager.lock:
-                virtual = manager.backend.virtual
-                if virtual is None:  # nothing has looked for the keyboard yet
-                    raise NotConnected("no simulated keyboard yet")
+                virtual = open_virtual()
+                if body.row >= virtual.rows or body.col >= virtual.cols:
+                    raise HTTPException(422, "the simulated keyboard's matrix is {} x {}: it has no key at row {}, "
+                                             "column {}".format(virtual.rows, virtual.cols, body.row, body.col))
                 (virtual.press if body.pressed else virtual.release)(body.row, body.col)
                 return {"pressed": sorted(virtual.pressed)}
 
-        # for UI tests: the user holds the simulated keyboard's unlock keys, or lets go of them; or it is locked, as
-        # plugging it in again would. Never exists for real keyboards.
+        # for UI tests: the user holds the unlock keys of the simulated keyboard open, or lets go of them; or it is
+        # locked, as plugging it in again would. Never exists for real keyboards.
         @app.put("/api/simulator/unlock", include_in_schema=False)
         async def set_simulator_unlock(body: schemas.SimulatorUnlock):
             def change():
                 with manager.lock:
-                    virtual = manager.backend.virtual
-                    if virtual is None:  # nothing has looked for the keyboard yet
-                        raise NotConnected("no simulated keyboard yet")
+                    virtual = open_virtual()
                     if body.keysHeld is not None:
                         virtual.hold_unlock_keys(body.keysHeld)
                     if body.locked:

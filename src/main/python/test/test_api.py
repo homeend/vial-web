@@ -515,7 +515,7 @@ def test_the_simulator_unlock_hook_before_the_simulated_keyboard_is_made(tmp_pat
         c.get("/?token=" + TOKEN, follow_redirects=False)
         response = c.put("/api/simulator/unlock", json={"keysHeld": True})
         assert response.status_code == 503
-        assert response.json() == {"detail": "no simulated keyboard yet"}
+        assert response.json() == {"detail": "no simulated keyboard is open"}
 
 
 # ---------- keyboard languages ----------

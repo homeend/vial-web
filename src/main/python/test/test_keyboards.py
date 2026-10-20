@@ -463,6 +463,20 @@ def test_the_list_is_the_same_whatever_order_the_keyboards_are_found_in():
     assert ids(manager) == before
 
 
+def test_a_keyboard_found_at_a_new_path_is_a_change():
+    """ The same keyboard (its id unchanged) found again at another path: the Keyboard page's USB device says so """
+    manager = two_keyboards()
+    changes = manager.changes
+    find = manager.backend.find
+    manager.backend.find = lambda: [dict(c, path="simulated:2-reset") if c["path"] == "simulated:2" else c
+                                    for c in find()]
+    pad = second_id(manager)
+    assert manager.check() == []
+    assert manager.changes > changes
+    assert second_id(manager) == pad
+    assert manager.keyboard_list().entries[1].info.path == "simulated:2-reset"
+
+
 # ---------- the error, and changes the UI is told about ----------
 
 def test_an_error_appearing_or_clearing_while_nothing_is_loaded_is_a_change():
@@ -648,6 +662,31 @@ def test_the_second_keyboard_hook_is_fake_only_and_not_in_the_schema(setup, tmp_
         other.get("/?token=" + TOKEN)
         assert other.put("/api/simulator/second-keyboard", json={"connected": True}).status_code in (404, 405)
         assert other.get("/api/keyboards").json() == {"keyboards": [], "chosen": None}
+
+
+def test_the_simulator_hooks_act_on_the_keyboard_open(setup):
+    """ The matrix and unlock hooks act on the simulated keyboard open, whichever it is: refused while none is (503, as
+    any request), and for a key outside its matrix (422) """
+    client, manager, app = setup
+    corne = manager.backend.virtual
+    client.post("/api/keyboards/select", json={"id": second_id(manager)})
+    pad = manager.backend.second
+    press = {"row": 0, "col": 1, "pressed": True}
+    assert client.put("/api/simulator/matrix", json=press).json() == {"pressed": [[0, 1]]}
+    assert pad.pressed == {(0, 1)} and corne.pressed == set()
+    # the pad's matrix is 1 x 2
+    assert client.put("/api/simulator/matrix", json=dict(press, row=1, col=0)).status_code == 422
+    assert client.put("/api/simulator/matrix", json=dict(press, col=2)).status_code == 422
+    pad.unlock_keys = [(0, 0)]
+    assert client.put("/api/simulator/unlock", json={"keysHeld": True}).status_code == 200
+    assert pad.pressed == {(0, 0), (0, 1)} and corne.pressed == set()
+    # the pad chosen and unplugged: none is open
+    manager.backend.set_second_connected(False)
+    manager.check()
+    assert not manager.connected
+    assert client.put("/api/simulator/matrix", json=press).status_code == 503
+    assert client.put("/api/simulator/unlock", json={"keysHeld": False}).status_code == 503
+    assert pad.pressed == {(0, 0), (0, 1)}
 
 
 # ---------- a change meant for the keyboard closed ----------

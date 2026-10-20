@@ -312,6 +312,16 @@ def test_messages_that_arent_asking_to_watch_are_ignored(served):
         assert client.get("/api/session").status_code == 200
 
 
+def test_a_binary_message_is_ignored_and_the_tab_stays_connected(served):
+    client, manager = served
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
+        assert ws.receive_json() == {"type": "connected"}
+        ws.send_bytes(b'{"type": "matrix", "watch": true}')
+        ws.send_json({"type": "matrix", "watch": True})
+        assert ws.receive_json() == {"type": "matrix", "matrix": {"state": "testing", "pressed": []}}
+        assert len(client.app.state.hub.clients) == 1
+
+
 def test_readings_are_paced(served):
     client, manager = served
     times = matrix_requests(manager.backend.virtual)
@@ -474,6 +484,45 @@ def test_a_keyboard_locked_behind_the_servers_back_says_locked(served):
         assert [e["unlock"]["state"] for e in events if e["type"] == "unlock"] == ["locked"]
         assert events[-1]["matrix"] == {"state": "locked", "pressed": []}
     assert not manager.unlocked
+
+
+def test_a_reading_of_the_keyboard_closed_on_its_way_reaches_no_tab():
+    """ Another keyboard opened while a reading of the one before is on its way (drop()): that reading isn't sent,
+    not even to a tab that watches the keyboard open now, and isn't kept as the last reading """
+    manager = connected()
+    reading = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def poll():
+        calls.append(True)
+        if len(calls) == 1:
+            reading.set()
+            release.wait(5)
+            return MatrixReading("testing", ((0, 0),))  # the keyboard closed meanwhile
+        return MatrixReading("testing", ())
+    manager.poll_matrix = poll
+    sent = []
+
+    async def send(ws, event):
+        sent.append((ws, event))
+
+    async def switch_while_reading():
+        watcher = MatrixWatcher(manager, send, INTERVAL, GAP)
+        await watcher.watch("tab")
+        while not reading.is_set():
+            await asyncio.sleep(0.005)
+        watcher.drop()
+        await watcher.watch("tab")  # watching the keyboard open now
+        release.set()
+        for _ in range(400):
+            if sent:
+                break
+            await asyncio.sleep(0.005)
+        await watcher.shutdown()
+    asyncio.run(switch_while_reading())
+    assert sent[0] == ("tab", {"type": "matrix", "matrix": {"state": "testing", "pressed": []}})
+    assert all(event["matrix"]["pressed"] == [] for _, event in sent)
 
 
 def test_stopping_the_server_while_watched_leaves_no_task():
