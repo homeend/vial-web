@@ -352,8 +352,8 @@ class KeyboardInfo:
     """ A Vial keyboard found (schemas.KeyboardEntry) """
     id: str
     """ what tells it apart from the others, the same after a replug (its HID path is not): its USB serial number when
-    it has one of its own, else its vendor and product IDs and product name; and, among keyboards alike, which one it
-    is in the order of their paths (1, 2...) """
+    it has one of its own, else its vendor and product IDs and product name; and, among keyboards alike, a number (1,
+    2...) that it keeps while it stays plugged in (see keyboard_infos) """
     name: str
     vendor_id: int
     product_id: int
@@ -371,8 +371,13 @@ def own_serial(serial):
     return rest or None
 
 
-def keyboard_infos(candidates):
-    """ KeyboardInfo of each candidate of a backend's find(), in the same order """
+def keyboard_infos(candidates, previous=()):
+    """ KeyboardInfo of each candidate of a backend's find(), in the same order.
+
+    Keyboards alike (no serial number of their own, the same IDs and name) are numbered. previous: the KeyboardInfo of
+    the listing before: a keyboard still at a path listed then keeps its number, so that unplugging one of them never
+    gives its id to another (which would then be opened as the one chosen). A keyboard at a new path (plugged in, or in
+    again) takes the lowest number free among those alike, in the order of their paths. """
     def field(candidate, name, default):
         value = candidate.get(name) if isinstance(candidate, dict) else None
         return default if value is None else value
@@ -385,15 +390,37 @@ def keyboard_infos(candidates):
         name = field(candidate, "product_string", "").strip() or title or "Vial keyboard"
         base = "{:04x}:{:04x}:{}".format(vid, pid, "serial:" + serial if serial else "name:" + name)
         described.append((base, name, vid, pid, serial, candidate))
-    # keyboards alike, numbered in the order of their paths: as stable as it gets without a serial number
+    kept = {info.key: info.id for info in previous}
     order = sorted(range(len(described)), key=lambda i: (described[i][0], str(candidate_key(described[i][5]))))
-    number, seen = {}, {}
+    number, taken = {}, {}
+    # first those listed before at the same path, with the number they had
     for i in order:
+        base, key = described[i][0], candidate_key(described[i][5])
+        had = kept.get(key, "")
+        if had.startswith(base + "#") and had[len(base) + 1:].isdigit():
+            n = int(had[len(base) + 1:])
+            if n not in taken.setdefault(base, set()):
+                number[i] = n
+                taken[base].add(n)
+    # then the others, the lowest number free
+    for i in order:
+        if i in number:
+            continue
         base = described[i][0]
-        seen[base] = seen.get(base, 0) + 1
-        number[i] = seen[base]
+        used = taken.setdefault(base, set())
+        n = 1
+        while n in used:
+            n += 1
+        number[i] = n
+        used.add(n)
     return [KeyboardInfo("{}#{}".format(base, number[i]), name, vid, pid, serial, candidate_key(candidate), candidate)
             for i, (base, name, vid, pid, serial, candidate) in enumerate(described)]
+
+
+def id_order(keyboard_id):
+    """ Sort key of a KeyboardInfo.id: by what it is, then by its number among keyboards alike (2 before 10) """
+    base, _, number = keyboard_id.rpartition("#")
+    return (base, int(number)) if number.isdigit() else (keyboard_id, 0)
 
 
 ListedKeyboard = namedtuple("ListedKeyboard", "info plugged")
@@ -510,9 +537,13 @@ class DeviceManager:
             return None, e
 
     def _list(self, candidates):
-        """ Keep the keyboards found: a change when they aren't those listed before """
-        listed = keyboard_infos(candidates)
-        if [(i.id, i.name, i.serial) for i in listed] != [(i.id, i.name, i.serial) for i in self.listed]:
+        """ Keep the keyboards found: a change when they aren't those listed before (in whatever order hidapi gives
+        them: it promises none) """
+        listed = keyboard_infos(candidates, self.listed)
+
+        def shown(infos):
+            return sorted((id_order(i.id), i.name, i.serial) for i in infos)
+        if shown(listed) != shown(self.listed):
             self.changes += 1
         self.listed = listed
         for info in listed:
@@ -520,12 +551,13 @@ class DeviceManager:
                 self.chosen_info = info
 
     def keyboard_list(self):
-        """ KeyboardList: the keyboards plugged in, and the chosen one unplugged """
+        """ KeyboardList: the keyboards plugged in, by id (not in the order they were found, which may change from one
+        listing to the next), and the chosen one unplugged """
         with self.lock:
             entries = [ListedKeyboard(info, True) for info in self.listed]
             if self.chosen_info is not None and all(info.id != self.chosen for info in self.listed):
                 entries.append(ListedKeyboard(self.chosen_info, False))
-            return KeyboardList(entries, self.chosen, self.open_id)
+            return KeyboardList(sorted(entries, key=lambda e: id_order(e.info.id)), self.chosen, self.open_id)
 
     def select(self, keyboard_id):
         """ Choose the keyboard to use (see the class). One unplugged can be chosen only if it was chosen already
@@ -538,9 +570,10 @@ class DeviceManager:
             if keyboard_id != self.chosen:
                 self.chosen = keyboard_id
                 self.changes += 1
+            if info is not None:
+                self.chosen_info = info  # listed while it is unplugged, from now on
             if info is None or self.open_id == keyboard_id:
                 return False  # opened once it is plugged in again, or open already
-            self.chosen_info = info
             was_loaded, was_waiting = self.keyboard is not None, self.waiting is not None
             at = len(self.pending_events)
             if self._connect(wait_after_failures=False):
@@ -859,7 +892,10 @@ class DeviceManager:
                     self.list_error_logged = now
                     log.error("could not list keyboards; the list is kept as it was", exc_info=failure)
             if self.device is not None:
-                if self._present() is False:
+                # listed just now, it is plugged in: the backend isn't asked again (another HID enumeration). Not
+                # listed, or not listed at all (that failed): it is asked, as it would be anyway
+                listed = failure is None and any(info.key == candidate_key(self.candidate) for info in self.listed)
+                if not listed and self._present() is False:
                     self._close_reporting()
                 elif not self.handle.healthy:
                     log.warning("%s stopped answering; reopening it", self.title)

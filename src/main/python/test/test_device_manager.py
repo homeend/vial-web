@@ -272,10 +272,12 @@ def broken_present(candidate):
 
 
 def test_check_keeps_the_keyboard_when_present_fails(manager, caplog, monkeypatch):
-    """ Unknown is not unplugged: closing and reloading the keyboard on every poll would be worse """
+    """ Unknown is not unplugged: closing and reloading the keyboard on every poll would be worse. (The backend is
+    asked only when the listing doesn't say: here, listing fails.) """
     clock = Clock()
     manager.clock = clock
     monkeypatch.setattr(manager.backend, "present", broken_present)
+    monkeypatch.setattr(manager.backend, "find", lambda: broken_present(None))
     device = manager.device
     with caplog.at_level(logging.ERROR, logger="server.device"):
         for _ in range(60):
@@ -288,6 +290,46 @@ def test_check_keeps_the_keyboard_when_present_fails(manager, caplog, monkeypatc
     assert manager.device is device
     manager.run(lambda kb: kb.set_key(0, 0, 0, "KC_B"))
     assert manager.backend.virtual.keymap[0][0][0] == encode("KC_B")
+
+
+def counting_present(manager, monkeypatch):
+    """ The candidates backend.present() is asked about, from now on """
+    asked = []
+    present = manager.backend.present
+
+    def counting(candidate):
+        asked.append(candidate["path"])
+        return present(candidate)
+    monkeypatch.setattr(manager.backend, "present", counting)
+    return asked
+
+
+def test_check_takes_the_listing_for_presence(manager, monkeypatch):
+    """ One HID enumeration a poll: the keyboard listed just now is plugged in; the backend isn't asked again """
+    asked = counting_present(manager, monkeypatch)
+    device = manager.device
+    for _ in range(3):
+        assert manager.check() == []
+    assert asked == []
+    assert manager.device is device
+
+
+def test_check_asks_the_backend_when_the_listing_misses_the_keyboard_or_fails(manager, monkeypatch):
+    asked = counting_present(manager, monkeypatch)
+    find = manager.backend.find
+    # missing from the listing, but there when asked: kept, as before
+    monkeypatch.setattr(manager.backend, "find", lambda: [])
+    assert manager.check() == []
+    assert asked == ["simulated:1"] and manager.connected
+    # the listing failed: asked too
+    monkeypatch.setattr(manager.backend, "find", lambda: broken_present(None))
+    assert manager.check() == []
+    assert asked == ["simulated:1"] * 2 and manager.connected
+    # unplugged: not listed, and the backend says so
+    monkeypatch.setattr(manager.backend, "find", find)
+    manager.backend.virtual.connected = False
+    assert manager.check() == ["disconnected"]
+    assert asked == ["simulated:1"] * 3
 
 
 def test_run_reraises_the_original_error_when_present_fails(manager, monkeypatch):

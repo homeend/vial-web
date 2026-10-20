@@ -82,11 +82,35 @@ def test_the_vial_magic_alone_is_no_serial_number():
     assert info.id != keyboard_infos([hid_desc(b"usb-1", pid=0x0462)])[0].id
 
 
-def test_identical_keyboards_are_told_apart_by_where_they_come_in_order_of_path():
+def test_identical_keyboards_found_together_are_numbered_in_the_order_of_their_paths():
     a, b = keyboard_infos([hid_desc(b"usb-2"), hid_desc(b"usb-1")])
     assert a.id != b.id
-    # the same keyboard keeps its id while the other is unplugged, if it comes first
+    assert (a.id[-2:], b.id[-2:]) == ("#2", "#1")
     assert keyboard_infos([hid_desc(b"usb-1")])[0].id == b.id
+
+
+def test_an_identical_keyboard_keeps_its_number_while_it_stays_plugged_in():
+    """ Its path is listed again: whatever comes and goes beside it, and however the paths sort ("hidraw10" before
+    "hidraw3") """
+    first, second = keyboard_infos([hid_desc("/dev/hidraw3"), hid_desc("/dev/hidraw10")])
+    assert (first.id[-2:], second.id[-2:]) == ("#2", "#1")  # as strings, hidraw10 comes first
+    # the first one unplugged: the other keeps its number, it doesn't take the one that went
+    (left,) = keyboard_infos([hid_desc("/dev/hidraw10")], [first, second])
+    assert left.id == second.id
+    # one plugged in at a new path takes the lowest number free, wherever its path sorts
+    back, kept = keyboard_infos([hid_desc("/dev/hidraw2"), hid_desc("/dev/hidraw10")], [left])
+    assert (back.id, kept.id) == (first.id, second.id)
+    # the other way round: the one numbered 2 stays 2, and the one coming back takes 1 again
+    (stays,) = keyboard_infos([hid_desc("/dev/hidraw3")], [first, second])
+    assert stays.id == first.id
+    stays, again = keyboard_infos([hid_desc("/dev/hidraw3"), hid_desc("/dev/hidraw1")], [stays])
+    assert (stays.id, again.id) == (first.id, second.id)
+
+
+def test_a_path_that_now_has_another_keyboard_is_numbered_afresh():
+    (before,) = keyboard_infos([hid_desc(b"usb-1", product="Lily58")])
+    (after,) = keyboard_infos([hid_desc(b"usb-1")], [before])
+    assert after.id == keyboard_infos([hid_desc(b"usb-1")])[0].id
 
 
 def test_a_keyboard_without_a_product_name_is_named_by_its_title():
@@ -304,6 +328,71 @@ def test_a_chosen_keyboard_that_cant_be_read_says_why_and_the_other_is_closed():
     assert not manager.connected
     assert manager.error.startswith("its firmware speaks a protocol this Vial doesn't know")
     assert manager.error_kind == "read"
+
+
+# ---------- identical keyboards (no serial number of their own) ----------
+
+class Identical(FakeBackend):
+    """ Two simulated Cornes with the Vial magic alone for a serial number, as most Vial firmware has """
+    @staticmethod
+    def describe(number, virtual):
+        return dict(FakeBackend.describe(number, virtual), serial_number=device.VIAL_SERIAL_MAGIC)
+
+
+def two_identical():
+    manager = DeviceManager(Identical(make_corne, make_corne))
+    assert manager.connect()
+    manager.backend.set_second_connected(True)
+    assert manager.check() == []
+    first, second = ids(manager)
+    assert first != second
+    assert [e.info.key for e in manager.keyboard_list().entries] == ["simulated:1", "simulated:2"]
+    return manager, first, second
+
+
+def test_the_chosen_one_of_identical_keyboards_unplugged_is_waited_for_not_replaced_by_the_other():
+    """ The other one must not take the id of the one that went, and be opened as the one chosen """
+    manager, first, second = two_identical()
+    manager.select(first)
+    manager.take_events()
+    manager.backend.set_connected(False)
+    assert manager.check() == ["disconnected"]
+    assert not manager.connected
+    keyboards = manager.keyboard_list()
+    assert [(e.info.id, e.plugged) for e in keyboards.entries] == [(first, False), (second, True)]
+    assert keyboards.chosen == first and keyboards.open is None
+    manager.backend.set_connected(True)
+    assert manager.check() == ["connected"]
+    assert manager.candidate["path"] == "simulated:1"
+    assert manager.keyboard_list().open == first
+
+
+def test_the_chosen_one_of_identical_keyboards_stays_open_and_listed_once_when_the_other_is_unplugged():
+    manager, first, second = two_identical()
+    assert manager.select(second) is True
+    manager.take_events()
+    manager.backend.set_connected(False)
+    assert manager.check() == []
+    keyboards = manager.keyboard_list()
+    assert [(e.info.id, e.plugged) for e in keyboards.entries] == [(second, True)]
+    assert keyboards.open == second and manager.candidate["path"] == "simulated:2"
+    # the other one back takes its number again; the one open is the same
+    manager.backend.set_connected(True)
+    assert manager.check() == []
+    keyboards = manager.keyboard_list()
+    assert [(e.info.id, e.plugged) for e in keyboards.entries] == [(first, True), (second, True)]
+    assert keyboards.open == second and manager.candidate["path"] == "simulated:2"
+
+
+def test_the_list_is_the_same_whatever_order_the_keyboards_are_found_in():
+    """ hidapi promises no order: a listing in another order is no change, and the list shows them by id """
+    manager = two_keyboards()
+    before, changes = ids(manager), manager.changes
+    find = manager.backend.find
+    manager.backend.find = lambda: list(reversed(find()))
+    assert manager.check() == []
+    assert manager.changes == changes
+    assert ids(manager) == before
 
 
 # ---------- the error, and changes the UI is told about ----------
