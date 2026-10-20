@@ -398,9 +398,14 @@ def keyboard_infos(candidates, previous=()):
     """ KeyboardInfo of each candidate of a backend's find(), in the same order.
 
     Keyboards alike (no serial number of their own, the same IDs and name) are numbered. previous: the KeyboardInfo of
-    the listing before: a keyboard still at a path listed then keeps its number, so that unplugging one of them never
-    gives its id to another (which would then be opened as the one chosen). A keyboard at a new path (plugged in, or in
-    again) takes the lowest number free among those alike, in the order of their paths. """
+    the listing before (and of the keyboard open): a keyboard still at a path listed then keeps its number, so that
+    unplugging one of them doesn't give its id to another (which would then be opened as the one chosen). A keyboard at
+    a new path takes the number of one alike whose path went in the same listing (a USB reset, a port move), the lowest
+    first; else (plugged in, or in again) the lowest number free among those alike, in the order of their paths.
+
+    The keyboards can't be told apart, only their paths: one alike that turns up at a new path a listing after the one
+    whose number is free went (the chosen one unplugged, then the other one reset) takes that number, and is opened as
+    the one chosen. """
     def field(candidate, name, default):
         value = candidate.get(name) if isinstance(candidate, dict) else None
         return default if value is None else value
@@ -416,22 +421,29 @@ def keyboard_infos(candidates, previous=()):
     kept = {info.key: info.id for info in previous}
     order = sorted(range(len(described)), key=lambda i: (described[i][0], str(candidate_key(described[i][5]))))
     number, taken = {}, {}
+
+    def numbered(keyboard_id, base):
+        """ the number of keyboard_id among those alike of base, or None """
+        n = keyboard_id[len(base) + 1:]
+        return int(n) if keyboard_id.startswith(base + "#") and n.isdigit() else None
+    # the numbers of the paths gone since the listing before
+    found = {candidate_key(d[5]) for d in described}
+    gone = [key_id for key, key_id in kept.items() if key not in found]
     # first those listed before at the same path, with the number they had
     for i in order:
         base, key = described[i][0], candidate_key(described[i][5])
-        had = kept.get(key, "")
-        if had.startswith(base + "#") and had[len(base) + 1:].isdigit():
-            n = int(had[len(base) + 1:])
-            if n not in taken.setdefault(base, set()):
-                number[i] = n
-                taken[base].add(n)
-    # then the others, the lowest number free
+        n = numbered(kept.get(key, ""), base)
+        if n is not None and n not in taken.setdefault(base, set()):
+            number[i] = n
+            taken[base].add(n)
+    # then the others: the number of a path gone, else the lowest number free
     for i in order:
         if i in number:
             continue
         base = described[i][0]
         used = taken.setdefault(base, set())
-        n = 1
+        left = sorted(n for n in (numbered(g, base) for g in gone) if n is not None and n not in used)
+        n = left[0] if left else 1
         while n in used:
             n += 1
         number[i] = n
@@ -479,7 +491,7 @@ class DeviceManager:
     same across a replug). Choosing another one closes the one open (whatever waited on it ends: an unlock followed,
     requests refused until then) and opens the chosen one: "connected" when it is loaded; else "disconnected" for the
     one closed, if it was loaded. The chosen keyboard unplugged stays listed, as unplugged, and is waited for: another
-    one is never opened instead.
+    one is not opened instead (but for one alike that can't be told from it: see keyboard_infos).
 
     Unlocking works as Qt's unlocker does: start_unlock() sends unlock_start, then poll_unlock() (called about every
     200 ms while the state is "unlocking") reads the keyboard's countdown, which runs while the user holds the unlock
@@ -520,6 +532,9 @@ class DeviceManager:
         """ the chosen keyboard's KeyboardInfo, as last found: it is listed while it is unplugged too """
         self.open_id = None
         """ id of the keyboard open (loaded, or waiting to be read until it is unlocked) """
+        self.open_info = None
+        """ the open keyboard's KeyboardInfo: it keeps its number among keyboards alike even after a listing that missed
+        it (see check()), as it is still open """
         self.list_error_logged = None
         """ clock time a failing listing was last logged while a keyboard was open """
         self.unlocked = False
@@ -562,8 +577,9 @@ class DeviceManager:
 
     def _list(self, candidates):
         """ Keep the keyboards found: a change when they aren't those listed before (in whatever order hidapi gives
-        them: it promises none) """
-        listed = keyboard_infos(candidates, self.listed)
+        them: it promises none). The keyboard open keeps its id (open_id), even after a listing that missed it """
+        previous = self.listed if self.open_info is None else self.listed + [self.open_info]
+        listed = keyboard_infos(candidates, previous)
 
         def shown(infos):
             return sorted((id_order(i.id), i.name, i.serial) for i in infos)
@@ -666,7 +682,7 @@ class DeviceManager:
                     continue
                 self.failures.pop(key, None)
                 self.device, self.handle, self.candidate, self.title, self.error = dev, handle, candidate, title, None
-                self.open_id = info.id
+                self.open_id, self.open_info = info.id, info
                 self.changes += 1
                 if unlock_keys is not None:
                     log.info("%s is waiting to be unlocked: %s", title,
@@ -982,7 +998,7 @@ class DeviceManager:
         if self.device is not None:
             self._close_device(self.device)
         if self.open_id is not None:
-            self.open_id = None
+            self.open_id = self.open_info = None
             self.changes += 1
         self.keyboard = self.device = self.handle = self.candidate = self.title = self.waiting = None
         self.unlocking = self.unlock_sent = None

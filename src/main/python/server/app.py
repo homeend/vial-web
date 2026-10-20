@@ -742,6 +742,8 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     async def cancel_unlock():
         """ Stop following an unlock. The keyboard keeps waiting for its unlock keys (it can't be called off) and takes
         no changes until it is unlocked or plugged in again. """
+        # deliberately not refused when meant for another keyboard (X-Vial-Keyboard): it sends the keyboard nothing,
+        # only stops following its unlock, which starting the unlock again takes up
         state = await asyncio.to_thread(manager.cancel_unlock)
         # what is being read still reaches the tabs: the follower stops by itself
         follower.release()

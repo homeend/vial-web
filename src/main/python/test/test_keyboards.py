@@ -395,6 +395,60 @@ def test_the_chosen_one_of_identical_keyboards_stays_open_and_listed_once_when_t
     assert keyboards.open == second and manager.candidate["path"] == "simulated:2"
 
 
+def test_the_open_one_of_identical_keyboards_keeps_its_number_after_a_listing_that_missed_it():
+    """ One listing can miss a keyboard still plugged in (present() says it is): the open one must not come back with
+    another number, nor the other one take its number and be opened as the one chosen """
+    manager, first, second = two_identical()
+    manager.select(second)
+    manager.take_events()
+    manager.backend.set_connected(False)
+    assert manager.check() == []
+    find = manager.backend.find
+    manager.backend.find = lambda: []
+    assert manager.check() == []  # still plugged in: kept open
+    manager.backend.find = find
+    assert manager.check() == []
+    keyboards = manager.keyboard_list()
+    assert [(e.info.id, e.plugged) for e in keyboards.entries] == [(second, True)]
+    assert keyboards.open == second and manager.candidate["path"] == "simulated:2"
+    # the other one back takes the number left free; the one open is the same
+    manager.backend.set_connected(True)
+    assert manager.check() == []
+    keyboards = manager.keyboard_list()
+    assert [(e.info.id, e.plugged) for e in keyboards.entries] == [(first, True), (second, True)]
+    assert keyboards.open == second and manager.candidate["path"] == "simulated:2"
+
+
+def test_an_identical_keyboard_at_a_new_path_in_the_listing_its_old_one_went_keeps_its_number():
+    """ A USB reset or a port move: the path changes between two listings. The other one doesn't take the number of the
+    chosen one unplugged, and isn't opened as it """
+    a, b = keyboard_infos([hid_desc(b"usb-1"), hid_desc(b"usb-2")])
+    (moved,) = keyboard_infos([hid_desc(b"usb-9")], [b])
+    assert moved.id == b.id
+    # two gone and one new: the lowest of their numbers
+    (moved,) = keyboard_infos([hid_desc(b"usb-9")], [a, b])
+    assert moved.id == a.id
+    # beside one that stays, the new one takes the number of the one gone
+    kept, moved = keyboard_infos([hid_desc(b"usb-1"), hid_desc(b"usb-9")], [a, b])
+    assert (kept.id, moved.id) == (a.id, b.id)
+    # of another keyboard, a path gone leaves its number to none
+    (lily,) = keyboard_infos([hid_desc(b"usb-9", product="Lily58")], [b])
+    assert lily.id.endswith("#1")
+
+    manager, first, second = two_identical()
+    manager.select(first)
+    manager.take_events()
+    manager.backend.set_connected(False)
+    assert manager.check() == ["disconnected"]
+    find = manager.backend.find
+    manager.backend.find = lambda: [dict(c, path="simulated:2-reset") for c in find()]
+    assert manager.check() == []
+    assert not manager.connected
+    keyboards = manager.keyboard_list()
+    assert [(e.info.id, e.plugged) for e in keyboards.entries] == [(first, False), (second, True)]
+    assert keyboards.open is None
+
+
 def test_the_list_is_the_same_whatever_order_the_keyboards_are_found_in():
     """ hidapi promises no order: a listing in another order is no change, and the list shows them by id """
     manager = two_keyboards()
