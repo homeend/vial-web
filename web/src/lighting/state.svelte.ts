@@ -23,6 +23,15 @@ export class LightingBaseline {
     this.keptBacklight = null;
   }
 
+  /** Start over with whichever keyboard is shown next, even the same one: another keyboard was opened, maybe one alike
+   * (the same uid), whose lighting this isn't */
+  forget(): void {
+    this.#uid = null;
+    this.lighting = null;
+    this.saved = false;
+    this.keptBacklight = null;
+  }
+
   /** The keyboard keeps `now` from here on */
   save(now: Lighting): void {
     this.lighting = now;
@@ -41,6 +50,11 @@ export class LightingBaseline {
   /** The keyboard shows something else than the baseline: Undo has something to put back */
   changed(now: Lighting): boolean {
     return this.lighting !== null && !sameLighting(now, this.lighting);
+  }
+
+  /** unsaved(now), for the keyboard of that uid: false when the baseline is another keyboard's */
+  unsavedFor(uid: string, now: Lighting): boolean {
+    return this.#uid === uid && this.unsaved(now);
   }
 
   /** The keyboard shows something else than the baseline, besides the backlight it has kept since: Save has

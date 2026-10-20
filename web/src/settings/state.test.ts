@@ -95,4 +95,17 @@ describe("SettingsEdits", () => {
     edits.clear();
     expect(edits.keptFor("A")).toBe(false);
   });
+
+  it("starts over once forgotten, for the same keyboard too (another one alike was opened)", () => {
+    const edits = new SettingsEdits();
+    edits.follow("A");
+    edits.toggle(swap, true, 0);
+    edits.forget();
+    expect(edits.keptFor("A")).toBe(false);
+    edits.toggle(swap, true, 0);
+    // changes made before the page follows a keyboard again are no keyboard's
+    expect(edits.keptFor("A")).toBe(false);
+    edits.follow("A");
+    expect(edits.form(held({ 7: 200, 21: 0 }))).toEqual(held({ 7: 200, 21: 0 }));
+  });
 });

@@ -5,6 +5,7 @@
   import type { KeyboardModel } from "../api/types";
   import { namesOf } from "../keyboard/labels";
   import { keyboard } from "../lib/keyboard.svelte";
+  import { trackDraft } from "../lib/unsaved";
   import { router } from "../lib/router.svelte";
   import { toasts } from "../lib/toasts.svelte";
   import Picker from "../picker/Picker.svelte";
@@ -46,6 +47,8 @@
 
   /** the macro being edited: one at a time */
   let draft = $state<{ index: number; steps: Step[] } | null>(null);
+  // opening another keyboard (the keyboard selector) asks first while it is open
+  $effect(() => trackDraft(() => (draft ? "the macro being edited" : null)));
 
   /** every macro's steps, the one being edited as it is now */
   const items = $derived(model.macros.items.map((m) => (draft?.index === m.index ? draft.steps : m.actions)));

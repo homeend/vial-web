@@ -4,6 +4,10 @@ import type { AltRepeatKeyIn, ComboIn, KeyOverrideIn, LightingIn, MacroActionIn,
 
 export const api = {
   session: () => request("get", "/api/session"),
+  /** the Vial keyboards plugged in, and the chosen one while it is unplugged */
+  keyboards: () => request("get", "/api/keyboards"),
+  /** closes the keyboard open and opens this one, kept as the choice while the server runs */
+  selectKeyboard: (id: string) => request("post", "/api/keyboards/select", { body: { id } }),
   keyboard: () => request("get", "/api/keyboard"),
   keycodes: () => request("get", "/api/keycodes"),
   languages: () => request("get", "/api/keyboard-languages"),

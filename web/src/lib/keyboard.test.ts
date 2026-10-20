@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
-import type { Described, KeyboardLanguage, KeyboardModel, ServerEvent, UnlockState } from "../api/types";
+import type {
+  Described, KeyboardEntry, KeyboardLanguage, KeyboardList, KeyboardModel, ServerEvent, Session, UnlockState,
+} from "../api/types";
 
 vi.mock("../api/api", () => ({
   api: {
     session: vi.fn(),
+    keyboards: vi.fn(),
+    selectKeyboard: vi.fn(),
     keyboard: vi.fn(),
     keycodes: vi.fn(),
     languages: vi.fn(),
@@ -97,6 +101,7 @@ beforeEach(() => {
   mocked.keycodes.mockResolvedValue([]);
   mocked.languages.mockResolvedValue(LANGUAGES);
   mocked.keyboard.mockResolvedValue(model("KC_A"));
+  mocked.keyboards.mockResolvedValue({ keyboards: [], chosen: null });
 });
 
 afterEach(() => {
@@ -938,5 +943,167 @@ describe("the phase 5b changes", () => {
     // a late reading after the page stopped watching is dropped
     send({ type: "matrix", matrix });
     expect(store.matrix).toBeNull();
+  });
+});
+
+describe("the keyboard selector", () => {
+  function entry(id: string, more: Partial<KeyboardEntry> = {}): KeyboardEntry {
+    return { id, name: id.toUpperCase(), vendorId: 1, productId: 2, serial: null, open: false, plugged: true, ...more };
+  }
+  const TWO: KeyboardList = { keyboards: [entry("a", { open: true }), entry("b")], chosen: null };
+  const session = (more: Partial<Session> = {}) =>
+    ({ status: "connected", fake: true, unlock: LOCKED, keyboard: "a", platform: "win32", ...more }) as Session;
+  /** model(code), as another keyboard */
+  const other = (code: string) => ({ ...model(code), uid: "other", name: "Other" }) as KeyboardModel;
+
+  it("reads the list when the events link opens", async () => {
+    mocked.keyboards.mockResolvedValue(TWO);
+    const { store } = started();
+    await settle();
+    expect(store.keyboards).toEqual(TWO);
+  });
+
+  it("reads the list and the session again on a keyboards event, which is no plug", async () => {
+    const { store, send } = await loaded();
+    const loads = mocked.keyboard.mock.calls.length;
+    mocked.keyboards.mockResolvedValue(TWO);
+    mocked.session.mockResolvedValue(session({ error: "bad" }));
+    send({ type: "keyboards" });
+    await settle();
+    expect(store.keyboards).toEqual(TWO);
+    expect(store.session?.error).toBe("bad");
+    expect(mocked.keyboard.mock.calls.length).toBe(loads);
+    expect(store.canEdit).toBe(true);
+  });
+
+  it("shows an error that appears or clears while no keyboard is loaded", async () => {
+    const { store, emit, send } = started();
+    mocked.session.mockResolvedValue(session({ status: "disconnected", keyboard: null }));
+    emit("disconnected");
+    await settle();
+    expect(store.session?.error ?? null).toBeNull();
+    mocked.session.mockResolvedValue(session({ status: "disconnected", keyboard: null, error: "unsupported" }));
+    send({ type: "keyboards" });
+    await settle();
+    expect(store.session?.error).toBe("unsupported");
+    mocked.session.mockResolvedValue(session({ status: "disconnected", keyboard: null }));
+    send({ type: "keyboards" });
+    await settle();
+    expect(store.session?.error ?? null).toBeNull();
+  });
+
+  it("opens another keyboard once the edits on their way are done, refusing new ones meanwhile", async () => {
+    mocked.session.mockResolvedValue(session());
+    const { store } = await loaded();
+    const write = deferred<Described>();
+    mocked.setKey.mockReturnValueOnce(write.promise);
+    const editing = store.setCode(0, { kind: "key", index: 0 }, "KC_B");
+    mocked.selectKeyboard.mockResolvedValue({ keyboards: [entry("a"), entry("b", { open: true })], chosen: "b" });
+    mocked.session.mockResolvedValue(session({ keyboard: "b" }));
+    mocked.keyboard.mockResolvedValue(other("KC_Z"));
+    const switching = store.selectKeyboard("b");
+    expect(store.switching).toBe("b");
+    expect(store.canEdit).toBe(false);
+    expect(await store.setCode(0, { kind: "key", index: 0 }, "KC_C")).toBe(false);
+    await settle();
+    expect(mocked.selectKeyboard).not.toHaveBeenCalled();
+    write.resolve(described("KC_B"));
+    expect(await editing).toBe(true);
+    expect(await switching).toBe(true);
+    expect(mocked.selectKeyboard).toHaveBeenCalledWith("b");
+    expect(mocked.setKey).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(store.model?.name).toBe("Other");
+    expect(store.switching).toBeNull();
+    expect(store.keyboards?.chosen).toBe("b");
+    expect(store.canEdit).toBe(true);
+  });
+
+  it("drops the keyboard closed at once: a load still on its way for it is not kept", async () => {
+    mocked.session.mockResolvedValue(session());
+    const { store, emit } = await loaded();
+    const late = deferred<KeyboardModel>();
+    mocked.keyboard.mockReturnValueOnce(late.promise);
+    emit("reloaded");
+    const reply = deferred<KeyboardList>();
+    mocked.selectKeyboard.mockReturnValueOnce(reply.promise);
+    const switching = store.selectKeyboard("b");
+    await settle();
+    expect(store.model).toBeNull();
+    late.resolve(model("KC_OLD"));
+    await settle();
+    expect(store.model).toBeNull();
+    mocked.keyboard.mockResolvedValue(other("KC_Z"));
+    mocked.session.mockResolvedValue(session({ keyboard: "b" }));
+    reply.resolve({ keyboards: [entry("a"), entry("b", { open: true })], chosen: "b" });
+    await switching;
+    await settle();
+    expect(store.model?.name).toBe("Other");
+  });
+
+  it("ends an unlock that edits wait for when another keyboard is opened: it was the one closed", async () => {
+    mocked.session.mockResolvedValue(session());
+    const { store, send } = await loaded();
+    mocked.setMacros.mockRejectedValueOnce(new ApiError(423, "locked"));
+    mocked.unlockStart.mockResolvedValue(UNLOCKING);
+    const saving = store.setMacros([[]]);
+    await settle();
+    send({ type: "unlock", unlock: UNLOCKING });
+    expect(store.unlock.open).toBe(true);
+    mocked.session.mockResolvedValue(session({ keyboard: "b", unlock: UNLOCKED }));
+    mocked.keyboard.mockResolvedValue(other("KC_Z"));
+    // the selector can't be reached while the unlock dialog shows; another tab may switch meanwhile
+    send({ type: "connected" });
+    expect(await saving).toBe(false);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(store.unlock.open).toBe(false);
+  });
+
+  it("puts the keyboard open back when the switch fails", async () => {
+    mocked.session.mockResolvedValue(session());
+    mocked.keyboards.mockResolvedValue(TWO);
+    const { store } = await loaded();
+    mocked.selectKeyboard.mockRejectedValueOnce(new ApiError(404, "no keyboard b is plugged in"));
+    expect(await store.selectKeyboard("b")).toBe(false);
+    await settle();
+    expect(store.model?.name).toBe("Test");
+    expect(store.canEdit).toBe(true);
+    expect(store.switching).toBeNull();
+    expect(toasts.items.map((t) => t.message)).toEqual(["Opening B failed: no keyboard b is plugged in"]);
+  });
+
+  it("does nothing when the keyboard is the one open, or a switch is on its way", async () => {
+    mocked.keyboards.mockResolvedValue(TWO);
+    mocked.session.mockResolvedValue(session());
+    const { store } = await loaded();
+    expect(await store.selectKeyboard("a")).toBe(true);
+    expect(mocked.selectKeyboard).not.toHaveBeenCalled();
+    const reply = deferred<KeyboardList>();
+    mocked.selectKeyboard.mockReturnValueOnce(reply.promise);
+    const first = store.selectKeyboard("b");
+    expect(await store.selectKeyboard("b")).toBe(false);
+    reply.resolve({ keyboards: [entry("a"), entry("b", { open: true })], chosen: "b" });
+    expect(await first).toBe(true);
+    expect(mocked.selectKeyboard).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a keyboard no longer chosen once none is open, and keeps the chosen one unplugged", async () => {
+    mocked.session.mockResolvedValue(session());
+    const { store, emit, send } = await loaded();
+    // the chosen keyboard unplugged: shown greyed out until it comes back
+    mocked.session.mockResolvedValue(session({ status: "disconnected", keyboard: null }));
+    mocked.keyboards.mockResolvedValue({ keyboards: [entry("a", { plugged: false }), entry("b")], chosen: "a" });
+    emit("disconnected");
+    send({ type: "keyboards" });
+    await settle();
+    expect(store.model?.name).toBe("Test");
+    // another tab chose another keyboard, which couldn't be read: this one isn't coming back
+    mocked.session.mockResolvedValue(session({ status: "disconnected", keyboard: null, error: "unsupported" }));
+    mocked.keyboards.mockResolvedValue({ keyboards: [entry("a"), entry("b")], chosen: "b" });
+    send({ type: "keyboards" });
+    await settle();
+    expect(store.model).toBeNull();
+    expect(store.session?.error).toBe("unsupported");
   });
 });

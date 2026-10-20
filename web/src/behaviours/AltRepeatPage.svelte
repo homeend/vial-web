@@ -3,6 +3,7 @@
   import type { KeyboardModel } from "../api/types";
   import { namesOf } from "../keyboard/labels";
   import { keyboard } from "../lib/keyboard.svelte";
+  import { trackDraft } from "../lib/unsaved";
   import { router } from "../lib/router.svelte";
   import Picker from "../picker/Picker.svelte";
   import Button from "../ui/Button.svelte";
@@ -40,6 +41,8 @@
   useTarget(() => (item === null ? null : `alt-repeat-${item}-title`));
 
   let draft = $state<{ index: number; value: AltRepeatDraft } | null>(null);
+  // opening another keyboard (the keyboard selector) asks first while it is open
+  $effect(() => trackDraft(() => (draft ? "the alt-repeat key being edited" : null)));
 
   // another keyboard (or none of the entry being edited): what was being edited or opened was the one before's
   let shownUid = untrack(() => model.uid);

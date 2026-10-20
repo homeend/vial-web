@@ -75,4 +75,22 @@ describe("LightingBaseline", () => {
     baseline.follow("two", lit(85, 1));
     expect(baseline.unsaved(lit(85, 0))).toBe(true);
   });
+
+  it("tells lighting not saved only for the keyboard it follows", () => {
+    const baseline = new LightingBaseline();
+    expect(baseline.unsavedFor("one", lit(85, 0))).toBe(false);
+    baseline.follow("one", lit(85, 0));
+    expect(baseline.unsavedFor("one", lit(170, 0))).toBe(true);
+    expect(baseline.unsavedFor("two", lit(170, 0))).toBe(false);
+  });
+
+  it("starts over once forgotten, for the same keyboard too (another one alike was opened)", () => {
+    const baseline = new LightingBaseline();
+    baseline.follow("one", lit(85, 0));
+    baseline.save(lit(170, 0));
+    baseline.forget();
+    expect([baseline.lighting, baseline.saved, baseline.unsavedFor("one", lit(85, 0))]).toEqual([null, false, false]);
+    baseline.follow("one", lit(85, 0));
+    expect(baseline.lighting).toEqual(lit(85, 0));
+  });
 });

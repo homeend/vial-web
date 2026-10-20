@@ -6,6 +6,7 @@
   import type { Placement } from "../keyboard/geometry";
   import { namesOf } from "../keyboard/labels";
   import { keyboard } from "../lib/keyboard.svelte";
+  import { trackDraft } from "../lib/unsaved";
   import { router } from "../lib/router.svelte";
   import Picker from "../picker/Picker.svelte";
   import Button from "../ui/Button.svelte";
@@ -42,6 +43,8 @@
 
   /** the combo being edited: one at a time */
   let draft = $state<{ index: number; members: Described[]; output: Described } | null>(null);
+  // opening another keyboard (the keyboard selector) asks first while it is open
+  $effect(() => trackDraft(() => (draft ? "the combo being edited" : null)));
   let problem = $state<string | null>(null);
 
   // another keyboard (or none of the combo being edited): what was being edited or opened was for the one before

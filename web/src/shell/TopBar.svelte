@@ -1,11 +1,20 @@
 <script lang="ts">
   import { tick } from "svelte";
   import type { KeyboardLanguage } from "../api/types";
+  import type { KeyboardOption } from "../lib/keyboards";
   import ThemeSwitch from "./ThemeSwitch.svelte";
 
   interface Props {
     /** the keyboard's name, once loaded */
     name: string | null;
+    /** the keyboards to choose from: the selector takes the name's place when there is more than one */
+    keyboards: KeyboardOption[];
+    /** the keyboard the selector shows (KeyboardOption.id), "" for none */
+    keyboardId: string;
+    /** a keyboard is being opened: the selector takes no other choice meanwhile */
+    switching: boolean;
+    /** another keyboard was chosen (the selector keeps showing keyboardId: whoever opens it changes that) */
+    onkeyboard: (id: string) => void;
     status: "connected" | "disconnected" | "connecting" | "offline";
     fake: boolean;
     languages: KeyboardLanguage[];
@@ -22,8 +31,18 @@
   }
 
   let {
-    name, status, fake, languages, language, onlanguage, lock, lockBusy, unlockOpen, onunlock, onlock,
+    name, keyboards, keyboardId, switching, onkeyboard, status, fake, languages, language, onlanguage, lock, lockBusy,
+    unlockOpen, onunlock, onlock,
   }: Props = $props();
+
+  const shownKeyboard = $derived(keyboards.find((k) => k.id === keyboardId));
+
+  function chooseKeyboard(select: HTMLSelectElement) {
+    const id = select.value;
+    // it shows keyboardId until that changes: a choice may be asked about first, or refused while switching
+    select.value = keyboardId;
+    if (!switching && id !== keyboardId) onkeyboard(id);
+  }
 
   let lockButton = $state<HTMLButtonElement>();
   /** the lock button was pressed: it is disabled while its request is sent, and the unlock dialog may show, so the
@@ -61,7 +80,21 @@
         <path d="M6 10h1M9 10h1M12 10h1M15 10h1M18 10h0.01M7 14h10" />
       </svg>
       <span class="app">Vial</span>
-      {#if name}
+      {#if keyboards.length > 1}
+        <span class="sep" aria-hidden="true">/</span>
+        <label class="keyboard">
+          <span class="visually-hidden">Keyboard</span>
+          <select id="keyboard-select" value={keyboardId} title={shownKeyboard?.full} aria-busy={switching || undefined}
+            onchange={(e) => chooseKeyboard(e.currentTarget)}>
+            {#if !shownKeyboard}
+              <option value="" disabled>Choose a keyboard</option>
+            {/if}
+            {#each keyboards as k (k.id)}
+              <option value={k.id} title={k.full}>{k.label}</option>
+            {/each}
+          </select>
+        </label>
+      {:else if name}
         <span class="sep" aria-hidden="true">/</span>
         <span class="name">{name}</span>
       {/if}
@@ -159,6 +192,29 @@
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .keyboard {
+    display: flex;
+    min-width: 0;
+  }
+
+  .keyboard select {
+    min-width: 0;
+    max-width: min(320px, calc(100vw - 150px));
+    padding: 4px 6px;
+    overflow: hidden;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--surface);
+    font-size: 14px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .keyboard select[aria-busy="true"] {
+    cursor: progress;
   }
 
   .right {

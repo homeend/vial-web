@@ -16,15 +16,18 @@
   import LightingPage from "./lighting/LightingPage.svelte";
   import MatrixPage from "./matrix/MatrixPage.svelte";
   import { keyboard } from "./lib/keyboard.svelte";
+  import { asSentence, chosenAway, keyboardOptions, shownKeyboard } from "./lib/keyboards";
   import type { SectionId } from "./lib/route";
   import { router } from "./lib/router.svelte";
   import { isWaiting } from "./lib/unlock.svelte";
+  import { dropUnsavedWork, unsavedWork } from "./lib/unsaved";
   import Banner from "./shell/Banner.svelte";
   import Nav, { type Section } from "./shell/Nav.svelte";
   import Toasts from "./shell/Toasts.svelte";
   import TopBar from "./shell/TopBar.svelte";
   import UnlockDialog from "./shell/UnlockDialog.svelte";
   import SettingsPage from "./settings/SettingsPage.svelte";
+  import ConfirmDialog from "./ui/ConfirmDialog.svelte";
 
   $effect(() => keyboard.start());
   $effect(() => router.start());
@@ -113,10 +116,55 @@
       if (!focused || focused === document.body) document.getElementById(`${section}-title`)?.focus();
     });
   });
+
+  // the keyboard selector, in the top bar when there are keyboards to choose from
+  const keyboardChoices = $derived(keyboardOptions(keyboard.keyboards));
+  const keyboardShown = $derived(keyboard.switching ?? shownKeyboard(keyboard.keyboards));
+  /** the chosen keyboard while it is unplugged: waited for, as no other is opened instead */
+  const away = $derived(chosenAway(keyboard.keyboards));
+  const awayName = $derived(keyboardChoices.find((k) => k.id === away?.id)?.name ?? away?.name);
+  const error = $derived(keyboard.session?.error ? asSentence(keyboard.session.error) : null);
+
+  /** another keyboard chosen while there is work not saved: the confirmation asks first */
+  let asking = $state<{ id: string; title: string; message: string } | null>(null);
+
+  function listed(items: string[]): string {
+    return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+  }
+
+  function chooseKeyboard(id: string) {
+    const work = unsavedWork(keyboard.model);
+    if (work.length === 0) {
+      openKeyboard(id);
+      return;
+    }
+    const name = keyboardChoices.find((k) => k.id === id)?.name ?? "that keyboard";
+    const current = keyboard.keyboards?.keyboards.find((k) => k.id === keyboardShown);
+    const currentName = keyboardChoices.find((k) => k.id === current?.id)?.name ?? "the keyboard shown";
+    const what = current?.open
+      ? `Vial closes ${currentName} and opens ${name}.`
+      : current && !current.plugged
+        ? `Vial opens ${name} instead of waiting for ${currentName} to be plugged back in.`
+        : `Vial opens ${name}.`;
+    asking = {
+      id,
+      title: `Switch to ${name}?`,
+      message: `${what} Not saved yet, and dropped if you switch: ${listed(work)}.`,
+    };
+  }
+
+  function openKeyboard(id: string) {
+    dropUnsavedWork();
+    void keyboard.selectKeyboard(id);
+  }
 </script>
 
 <TopBar
   name={keyboard.model?.name ?? null}
+  keyboards={keyboardChoices}
+  keyboardId={keyboardShown}
+  switching={keyboard.switching !== null}
+  onkeyboard={chooseKeyboard}
   {status}
   fake={keyboard.session?.fake ?? false}
   languages={keyboard.languages}
@@ -142,6 +190,8 @@
         title="The keyboard is in its bootloader"
         message="It doesn't work as a keyboard until it is flashed, or unplugged and plugged back in. It shows up here again then."
       />
+    {:else if blocked && error}
+      <Banner tone="danger" title="A keyboard was found, but couldn't be read" message="{error} Vial tries again by itself." />
     {:else if blocked}
       <Banner
         tone="danger"
@@ -199,20 +249,36 @@
         <h1>The keyboard waits to be unlocked</h1>
         <p>An unlock started earlier wasn't finished. It is read once its unlock keys have been held.</p>
       </div>
-    {:else if status === "disconnected" && keyboard.session?.error}
+    {:else if status === "disconnected" && away}
       <div class="empty">
-        <h1>A keyboard was found, but couldn't be read</h1>
-        <p>{keyboard.session.error}</p>
-        <p>Vial tries again by itself, and when it is plugged in again.</p>
+        <h1>{awayName} is unplugged</h1>
+        <p>Vial opens it again as soon as it is plugged back in.</p>
+        {#if keyboardChoices.length > 1}
+          <p>To use another keyboard, choose it at the top of the page.</p>
+        {/if}
+      </div>
+    {:else if status === "disconnected" && error}
+      <div class="empty">
+        {#if keyboard.session?.errorKind === "list"}
+          <h1>Vial couldn't look for keyboards</h1>
+          <p>{error}</p>
+          <p>Vial tries again by itself, about once a second.</p>
+        {:else}
+          <h1>A keyboard was found, but couldn't be read</h1>
+          <p>{error}</p>
+          <p>Vial tries again by itself, and when it is plugged in again.</p>
+        {/if}
       </div>
     {:else if status === "disconnected"}
       <div class="empty">
         <h1>No keyboard found</h1>
         <p>Plug in a Vial keyboard. It shows up here as soon as it is found.</p>
-        <p class="hint">
-          On Linux, Vial needs a udev rule to see keyboards:
-          <a href="https://get.vial.today/manual/linux-udev.html" target="_blank" rel="noreferrer">how to add it</a>.
-        </p>
+        {#if keyboard.session?.platform.startsWith("linux")}
+          <p class="hint">
+            Vial needs a udev rule to see keyboards:
+            <a href="https://get.vial.today/manual/linux-udev.html" target="_blank" rel="noreferrer">how to add it</a>.
+          </p>
+        {/if}
       </div>
     {:else if !keyboard.loadError}
       <div class="empty" aria-busy="true">
@@ -223,6 +289,20 @@
 </div>
 
 <UnlockDialog unlocker={keyboard.unlock} model={keyboard.model} {placement} {names} />
+<ConfirmDialog
+  open={asking !== null}
+  title={asking?.title ?? ""}
+  message={asking?.message ?? ""}
+  confirmLabel="Switch keyboard"
+  onconfirm={async () => {
+    if (asking) openKeyboard(asking.id);
+    return true;
+  }}
+  onclose={() => {
+    asking = null;
+    void tick().then(() => document.getElementById("keyboard-select")?.focus());
+  }}
+/>
 <Toasts />
 
 <style>

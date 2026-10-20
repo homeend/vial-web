@@ -3,6 +3,7 @@
   import type { KeyboardModel } from "../api/types";
   import { namesOf } from "../keyboard/labels";
   import { keyboard } from "../lib/keyboard.svelte";
+  import { trackDraft } from "../lib/unsaved";
   import { router } from "../lib/router.svelte";
   import Picker from "../picker/Picker.svelte";
   import Button from "../ui/Button.svelte";
@@ -40,6 +41,8 @@
 
   /** the key override being edited: one at a time */
   let draft = $state<{ index: number; value: KeyOverrideDraft } | null>(null);
+  // opening another keyboard (the keyboard selector) asks first while it is open
+  $effect(() => trackDraft(() => (draft ? "the key override being edited" : null)));
 
   // another keyboard (or none of the key override being edited): what was being edited or opened was the one before's
   let shownUid = untrack(() => model.uid);

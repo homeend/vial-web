@@ -6,8 +6,8 @@ import { DEFAULT_LANGUAGE, setRequestLanguage } from "../api/client";
 import { ApiError, causeMessage, failureMessage } from "../api/errors";
 import { connectEvents, type EventsLink, type LinkState, type ServerEvent } from "../api/events";
 import type {
-  AltRepeatKeyIn, KeyboardLanguage, KeyboardModel, KeycodeCategory, KeyOverrideIn, LightingIn, MacroActionIn,
-  MatrixState, Named, QmkSetting, Session, TapDanceIn,
+  AltRepeatKeyIn, KeyboardLanguage, KeyboardList, KeyboardModel, KeycodeCategory, KeyOverrideIn, LightingIn,
+  MacroActionIn, MatrixState, Named, QmkSetting, Session, TapDanceIn,
 } from "../api/types";
 import { keyTitle, namesOf } from "../keyboard/labels";
 import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
@@ -76,6 +76,10 @@ export class KeyboardStore {
   matrix = $state.raw<MatrixState | null>(null);
   /** this page restarted the keyboard into its bootloader, and it hasn't come back since */
   inBootloader = $state(false);
+  /** the Vial keyboards plugged in, and the chosen one while it is unplugged, as the server last said; null before */
+  keyboards = $state.raw<KeyboardList | null>(null);
+  /** the keyboard being opened (selectKeyboard), until the server has answered */
+  switching = $state<string | null>(null);
 
   canEdit = $derived(this.model !== null && !this.stale && this.connected && this.link === "open");
 
@@ -90,6 +94,12 @@ export class KeyboardStore {
   #link: EventsLink | null = null;
   /** pages watching the keys held */
   #matrixWatchers = 0;
+  /** the keyboard (KeyboardEntry.id) the model was read from, as the session said */
+  #modelKeyboard: string | null = null;
+  /** readings of the keyboard list so far: only the latest is kept */
+  #listReads = 0;
+  /** told once no edit is on its way */
+  #editsDone: (() => void)[] = [];
 
   /** Load the language list, then follow the server's events (which start with the keyboard's state) */
   start(): () => void {
@@ -136,6 +146,8 @@ export class KeyboardStore {
       this.#opening = true;
       // a link opened again starts with nothing asked for
       if (this.#matrixWatchers > 0) this.#link?.send({ type: "matrix", watch: true });
+      // the keyboards may have changed while it was down
+      void this.#readKeyboards();
     }
   }
 
@@ -148,8 +160,11 @@ export class KeyboardStore {
       if (event.matrix && this.#matrixWatchers > 0) this.matrix = event.matrix;
       return;
     }
-    // the list of keyboards changed: no plug of the keyboard loaded
-    if (event.type === "keyboards") return;
+    // the list of keyboards, the one chosen or open, or why none could be read changed: no plug of the keyboard loaded
+    if (event.type === "keyboards") {
+      void this.#readKeyboards();
+      return;
+    }
     // the server's first event on a link (re)opened says how the keyboard is: a "connected" there, when it was
     // connected already, is no plug, unless the load it brings finds another keyboard (see load)
     const opening = this.#opening;
@@ -182,6 +197,7 @@ export class KeyboardStore {
       if (this.model !== null && model.uid !== this.model.uid) this.#plugs++;
       this.#useSession(session);
       this.model = model;
+      this.#modelKeyboard = session.keyboard ?? null;
       this.catalogue = catalogue;
       this.loadError = null;
       this.stale = false;
@@ -204,6 +220,76 @@ export class KeyboardStore {
   #useSession(session: Session): void {
     this.session = session;
     this.unlock.update(session.unlock);
+  }
+
+  /** Read the list of keyboards, and the session (why none could be read): only the latest reading is kept. A model
+   * of a keyboard no longer chosen, with none open, goes: that keyboard isn't coming back (another one was chosen, in
+   * another tab maybe, and couldn't be opened: the page says why). */
+  async #readKeyboards(): Promise<void> {
+    const read = ++this.#listReads;
+    try {
+      const [list, session] = await Promise.all([api.keyboards(), api.session()]);
+      if (read !== this.#listReads) return;
+      this.keyboards = list;
+      // the unlock state comes with its own events
+      this.session = session;
+      const chosen = list.chosen ?? null;
+      if (this.model !== null && !this.connected && chosen !== null && chosen !== this.#modelKeyboard) {
+        this.#forgetKeyboard();
+      }
+    } catch {
+      // read again on the next change, or once the events link is open again
+    }
+  }
+
+  /** The keyboard loaded is gone for good (another one is opened): its model and what waited on it go, and a load on
+   * its way is dropped */
+  #forgetKeyboard(): void {
+    this.#plugs++;
+    this.#loads++;
+    this.model = null;
+    this.#modelKeyboard = null;
+    this.matrix = null;
+    this.loadError = null;
+    this.inBootloader = false;
+    this.stale = true;
+  }
+
+  /** Use another keyboard: the one open is closed and the chosen one opened, as if it had just been plugged in. The
+   * edits on their way are waited for first, and no other is taken meanwhile; whatever waited on the keyboard closed
+   * (an unlock) ends. The caller asks about work not saved (lib/unsaved) first. Returns whether it was done. */
+  async selectKeyboard(id: string): Promise<boolean> {
+    if (this.switching !== null) return false;
+    const list = this.keyboards;
+    if (list?.keyboards.some((k) => k.id === id && k.open)) return true;
+    const name = list?.keyboards.find((k) => k.id === id)?.name ?? "the keyboard";
+    this.switching = id;
+    this.stale = true;
+    try {
+      if (this.pending > 0) await new Promise<void>((done) => this.#editsDone.push(done));
+      this.#forgetKeyboard();
+      try {
+        const reply = await api.selectKeyboard(id);
+        this.#listReads++; // a reading on its way is older
+        this.keyboards = reply;
+      } catch (error) {
+        toasts.error(failureMessage(`Opening ${name}`, error));
+        // the keyboard open is still the one it was, or none: read again what there is
+        void this.#readKeyboards();
+        if (this.connected) void this.load();
+        return false;
+      }
+      const session = await api.session().catch(() => null);
+      if (session) {
+        this.#useSession(session);
+        this.connected = session.status === "connected";
+      }
+      // the "connected" event loads it too: the latest load is kept
+      if (this.connected) void this.load();
+      return true;
+    } finally {
+      this.switching = null;
+    }
   }
 
   async setLanguage(lang: string): Promise<void> {
@@ -517,6 +603,7 @@ export class KeyboardStore {
       return await fail(failureMessage(action, error));
     } finally {
       this.pending--;
+      if (this.pending === 0) for (const done of this.#editsDone.splice(0)) done();
     }
   }
 

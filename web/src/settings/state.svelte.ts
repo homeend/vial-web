@@ -88,6 +88,13 @@ export class SettingsEdits {
       Object.keys(this.texts).length > 0;
   }
 
+  /** Start over with whichever keyboard is shown next, even the same one: another keyboard was opened, maybe one alike
+   * (the same uid), which the changes weren't made for */
+  forget(): void {
+    this.#uid = null;
+    this.clear();
+  }
+
   clear(): void {
     this.switches = {};
     this.numbers = {};
