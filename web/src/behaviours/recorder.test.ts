@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Recording, type KeyPress } from "./recorder";
+import { recordedNote, Recording, stepsRecorded, type KeyPress } from "./recorder";
 
 const press = (code: string, key: string, more: Partial<KeyPress> = {}): KeyPress =>
   ({ code, key, repeat: false, altGraph: false, ...more });
@@ -253,5 +253,43 @@ describe("Recording", () => {
     r.keydown(press("", "Unidentified"));
     expect(r.steps).toEqual([{ type: "text", text: "a" }]);
     expect(r.skipped).toBe(2);
+  });
+});
+
+describe("a recording's steps put into the macro", () => {
+  it("are added after the steps there, or take their place", () => {
+    expect(stepsRecorded(["a", "b"], ["c"], "append")).toEqual(["a", "b", "c"]);
+    expect(stepsRecorded(["a", "b"], ["c"], "replace")).toEqual(["c"]);
+  });
+
+  it("leave the steps there when nothing was recorded, even to replace them", () => {
+    expect(stepsRecorded(["a", "b"], [], "replace")).toEqual(["a", "b"]);
+    expect(stepsRecorded(["a", "b"], [], "append")).toEqual(["a", "b"]);
+  });
+
+  it("are new arrays: the steps there are left as they were", () => {
+    const before = ["a"];
+    expect(stepsRecorded(before, ["b"], "append")).not.toBe(before);
+    expect(before).toEqual(["a"]);
+  });
+});
+
+describe("recordedNote", () => {
+  it("says how many steps were recorded, and the keys that have no keycode", () => {
+    expect(recordedNote(1, 0, "append", 3)).toBe("1 step recorded.");
+    expect(recordedNote(2, 1, "append", 0)).toBe("2 steps recorded; 1 key has no keycode here.");
+  });
+
+  it("says which steps went when they were replaced, and that Cancel puts them back", () => {
+    expect(recordedNote(2, 0, "replace", 3)).toBe(
+      "2 steps recorded, in place of the 3 steps there before. Cancel puts back the macro as the keyboard has it.");
+    expect(recordedNote(1, 2, "replace", 1)).toBe("1 step recorded, in place of the step there before; 2 keys have " +
+      "no keycode here. Cancel puts back the macro as the keyboard has it.");
+  });
+
+  it("says the steps are kept when nothing was recorded to replace them", () => {
+    expect(recordedNote(0, 0, "replace", 3)).toBe("Nothing was recorded, so the 3 steps there are kept.");
+    expect(recordedNote(0, 1, "replace", 1)).toBe("Nothing was recorded, so the step there is kept; 1 key has no " +
+      "keycode here.");
   });
 });

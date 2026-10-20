@@ -53,6 +53,30 @@ const FLAG: Record<Modifier, "ctrlKey" | "shiftKey" | "altKey" | "metaKey"> = {
 
 export type Recorded = { type: "text"; text: string } | { type: "tap"; code: string };
 
+/** Where a recording's steps go once it stops: after the macro's steps ("append"), or in their place ("replace", as
+ * Qt's "Replace everything") */
+export type RecordMode = "append" | "replace";
+
+/** The macro's steps once a recording stopped. Nothing recorded replaces nothing: the steps there are kept. */
+export function stepsRecorded<T>(steps: T[], made: T[], mode: RecordMode): T[] {
+  return mode === "replace" && made.length > 0 ? [...made] : [...steps, ...made];
+}
+
+const counted = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** What the macro editor says once a recording stopped: `made` steps recorded, `skipped` keys with no keycode, and
+ * `before` steps there when it started */
+export function recordedNote(made: number, skipped: number, mode: RecordMode, before: number): string {
+  const unread = skipped > 0 ? `; ${counted(skipped, "key has", "keys have")} no keycode here` : "";
+  if (mode === "replace" && made === 0) {
+    return `Nothing was recorded, so ${before === 1 ? "the step there is" : `the ${before} steps there are`} kept${unread}.`;
+  }
+  const recorded = `${counted(made, "step", "steps")} recorded`;
+  if (mode === "append") return `${recorded}${unread}.`;
+  return `${recorded}, in place of ${before === 1 ? "the step" : `the ${before} steps`} there before${unread}. ` +
+    "Cancel puts back the macro as the keyboard has it.";
+}
+
 /** What a recording reads of a key event. The optional flags are the event's ctrlKey, shiftKey, altKey, metaKey and
  * getModifierState("CapsLock"): given, they let the recording forget modifiers released while the window couldn't see
  * it (Alt+Tab away), and read letters typed with Caps Lock on. */

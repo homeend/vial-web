@@ -250,7 +250,7 @@ test("recording forgets modifiers let go out of the window's sight, and reads Ca
     await openMacros(app);
     const card = macroCard(app, 0);
     await card.getByRole("button", { name: "Edit" }).click();
-    await card.getByRole("button", { name: "Record from keyboard" }).click();
+    await card.getByRole("button", { name: "Record, adding to the end" }).click();
     const stop = card.getByRole("button", { name: "Stop recording" });
     await expect(stop).toBeFocused();
     const status = card.getByRole("status");
@@ -277,7 +277,7 @@ test("recording forgets modifiers let go out of the window's sight, and reads Ca
     await app.keyboard.press("Escape");
 
     await expect(card).toContainText("1 step recorded.");
-    await expect(card.getByRole("button", { name: "Record from keyboard" })).toBeFocused();
+    await expect(card.getByRole("button", { name: "Record, adding to the end" })).toBeFocused();
     await expect(card.getByLabel("Step 3: the text to type")).toHaveValue("abch");
     await expect(card.locator(".steps > li")).toHaveCount(3);
     await card.getByRole("button", { name: "Cancel" }).click();
@@ -296,7 +296,7 @@ test("recording stops when the unlock dialog opens: the unlock keys typed meanwh
     await openMacros(app);
     const card = macroCard(app, 0);
     await card.getByRole("button", { name: "Edit" }).click();
-    await card.getByRole("button", { name: "Record from keyboard" }).click();
+    await card.getByRole("button", { name: "Record, adding to the end" }).click();
     await app.keyboard.type("a");
     await expect(card.locator(".so-far")).toHaveText("“a”");
 
@@ -311,7 +311,7 @@ test("recording stops when the unlock dialog opens: the unlock keys typed meanwh
     await app.keyboard.up("Tab");
 
     await expect(card).toContainText("Recording stopped for the unlock, whose keys type into this page. 1 step recorded.");
-    await expect(card.getByRole("button", { name: "Record from keyboard" })).toBeVisible();
+    await expect(card.getByRole("button", { name: "Record, adding to the end" })).toBeVisible();
     await expect(card.locator(".steps > li")).toHaveCount(before[0].length + 1);
     await expect(card.getByLabel(`Step ${before[0].length + 1}: the text to type`)).toHaveValue("a");
     await card.getByRole("button", { name: "Cancel" }).click();
@@ -320,6 +320,55 @@ test("recording stops when the unlock dialog opens: the unlock keys typed meanwh
     await app.keyboard.up("Backspace");
     await app.keyboard.up("Tab");
     await unlockAgain(app);
+    await setMacros(app, before);
+  }
+});
+
+test("recording can replace the steps: they go only once it stops, and Cancel puts them back", async ({ app }) => {
+  const before = await macrosOf(app);
+  const count = before[0].length;
+  expect(count).toBeGreaterThan(1);
+  try {
+    await openMacros(app);
+    const card = macroCard(app, 0);
+    await card.getByRole("button", { name: "Edit" }).click();
+    const replace = card.getByRole("button", { name: "Record, replacing the steps" });
+    await replace.click();
+    const stop = card.getByRole("button", { name: "Stop recording" });
+    await expect(stop).toBeFocused();
+    await expect(card.getByRole("button", { name: "Record, adding to the end" })).toBeDisabled();
+    await expect(card.getByRole("status")).toContainText(
+      `When it stops, what is recorded takes the place of the ${count} steps there; until Save, Cancel puts back the ` +
+      "macro as the keyboard has it.");
+    // the steps are still there while recording
+    await expect(card.locator(".steps > li")).toHaveCount(count);
+    await app.keyboard.type("xy");
+    await app.keyboard.press("Escape");
+    await expect(card).toContainText(`1 step recorded, in place of the ${count} steps there before. Cancel puts back ` +
+      "the macro as the keyboard has it.");
+    await expect(replace).toBeFocused();
+    await expect(card.locator(".steps > li")).toHaveCount(1);
+    await expect(card.getByLabel("Step 1: the text to type")).toHaveValue("xy");
+    // not saved: Cancel puts the macro back as it was
+    await card.getByRole("button", { name: "Cancel" }).click();
+    expect(await macrosOf(app)).toEqual(before);
+
+    // nothing recorded: nothing is replaced
+    await card.getByRole("button", { name: "Edit" }).click();
+    await replace.click();
+    await app.keyboard.press("Escape");
+    await expect(card).toContainText(`Nothing was recorded, so the ${count} steps there are kept.`);
+    await expect(card.locator(".steps > li")).toHaveCount(count);
+
+    // replaced and saved: the keyboard has only what was recorded
+    await replace.click();
+    await app.keyboard.type("ok");
+    await card.getByRole("button", { name: "Stop recording" }).click();
+    await expect(card.locator(".steps > li")).toHaveCount(1);
+    await card.getByRole("button", { name: "Save" }).click();
+    await expect(card.getByRole("button", { name: "Edit" })).toBeVisible();
+    expect((await macrosOf(app))[0]).toEqual([text("ok")]);
+  } finally {
     await setMacros(app, before);
   }
 });

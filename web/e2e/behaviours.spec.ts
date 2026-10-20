@@ -250,7 +250,7 @@ test.describe("macros", () => {
       // moved: release before the wait
       await card.getByRole("button", { name: "Move step 5 up" }).click();
 
-      await add.getByRole("button", { name: "Record from keyboard" }).click();
+      await card.getByRole("button", { name: "Record, adding to the end" }).click();
       await expect(card.getByRole("status")).toContainText("Recording");
       await app.keyboard.type("cd");
       await app.keyboard.press("Control+L");

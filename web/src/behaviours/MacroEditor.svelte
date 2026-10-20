@@ -7,7 +7,7 @@
     changeKind, macroBytes, moveStep, newStep, parseDelay, STEP_KINDS, stepBytes, stepProblem, STEPS_MAX, type Step,
     type StepKind,
   } from "./macro";
-  import { Recording, type Recorded } from "./recorder";
+  import { recordedNote, Recording, stepsRecorded, type RecordMode, type Recorded } from "./recorder";
 
   interface Props {
     /** the macro's number, for the labels */
@@ -42,6 +42,9 @@
 
   // recording keys typed into the browser window
   let recording = $state<Recording | null>(null);
+  /** where the recording's steps go once it stops, and how many steps there were when it started */
+  let recordMode = $state<RecordMode>("append");
+  let stepsBefore = $state(0);
   /** the recording ended, and its keys are being described: the steps come once they are */
   let finishing = $state(false);
   /** keys are being recorded (or the recorded ones described): the other controls take nothing meanwhile */
@@ -135,13 +138,15 @@
   let recordedSkipped = $state(0);
   let recordNote = $state<string | null>(null);
 
-  /** Record from keyboard and Stop recording: one button, which keeps the focus */
-  function toggleRecording() {
+  /** Record (adding to the end, or replacing the steps) and Stop recording: one button, which keeps the focus */
+  function toggleRecording(mode: RecordMode) {
     if (busy || finishing || keyboard.unlock.open) return;
     if (recording) {
-      void stopRecording();
+      if (mode === recordMode) void stopRecording();
       return;
     }
+    recordMode = mode;
+    stepsBefore = steps.length;
     recording = new Recording();
     recorded = [];
     recordedSkipped = 0;
@@ -158,9 +163,9 @@
       const made = await Promise.all(done.steps.map(async (r): Promise<Step> => r.type === "text"
         ? { type: "text", text: r.text, keys: [], delay: null }
         : { type: "tap", text: null, keys: [await describe(r.code)], delay: null }));
-      steps.push(...made);
-      recordNote = `${why}${made.length} ${made.length === 1 ? "step" : "steps"} recorded` +
-        (done.skipped > 0 ? `; ${done.skipped} ${done.skipped === 1 ? "key has" : "keys have"} no keycode here` : "") + ".";
+      // the steps there go only now, once the recording is read: until Save, Cancel still puts them back
+      steps = stepsRecorded(steps, made, recordMode);
+      recordNote = why + recordedNote(made.length, done.skipped, recordMode, stepsBefore);
     } catch {
       recordNote = `${why}The keys recorded couldn't all be read: nothing was added.`;
     } finally {
@@ -314,15 +319,34 @@
         {k.label}
       </Button>
     {/each}
-    <Button size="sm" variant={recording ? "primary" : "secondary"} aria-disabled={busy || finishing || undefined}
-      onclick={toggleRecording}>
-      {#if recording}Stop recording{:else}<span class="dot" aria-hidden="true"></span>Record from keyboard{/if}
+  </div>
+
+  <!-- Qt's Record macro menu, as two buttons: with no step yet, both would do the same -->
+  <div class="add" role="group" aria-label="Record from keyboard">
+    <Button size="sm" variant={recording && recordMode === "append" ? "primary" : "secondary"}
+      disabled={recording !== null && recordMode !== "append"} aria-disabled={busy || finishing || undefined}
+      onclick={() => toggleRecording("append")}>
+      {#if recording && recordMode === "append"}Stop recording{:else}<span class="dot" aria-hidden="true"></span>{steps.length > 0
+          ? "Record, adding to the end" : "Record from keyboard"}{/if}
     </Button>
+    {#if steps.length > 0}
+      <Button size="sm" variant={recording && recordMode === "replace" ? "primary" : "secondary"}
+        disabled={recording !== null && recordMode !== "replace"} aria-disabled={busy || finishing || undefined}
+        onclick={() => toggleRecording("replace")}>
+        {#if recording && recordMode === "replace"}Stop recording{:else}<span class="dot" aria-hidden="true"></span>Record, replacing the steps{/if}
+      </Button>
+    {/if}
   </div>
 
   {#if recording}
     <div class="recording" role="status">
       <strong>Recording: type the keys of the macro.</strong>
+      {#if recordMode === "replace"}
+        <span>
+          When it stops, what is recorded takes the place of {stepsBefore === 1 ? "the step" : `the ${stepsBefore} steps`}
+          there; until Save, Cancel puts back the macro as the keyboard has it.
+        </span>
+      {/if}
       <span>
         Esc or Stop recording ends it, so Esc itself can't be recorded. Only this browser window hears the keys, never
         the keyboard itself, and the browser keeps some shortcuts for itself (Ctrl+W, Ctrl+T, Ctrl+N and Ctrl+Tab among
