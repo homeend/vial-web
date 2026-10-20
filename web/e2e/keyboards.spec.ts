@@ -272,25 +272,22 @@ test("the chosen keyboard unplugged is waited for, and opened again once it is b
   }
 });
 
-test("another keyboard plugged in without the page shown: the Keymap shows, its heading with the focus", async ({
+test("another keyboard opened without the page shown: the Keymap shows, its heading with the focus", async ({
   twoKeyboards: page,
 }) => {
   try {
     await plugSecond(page);
     await openSection(page, "Lighting");
     await page.getByLabel("Effect").focus();
-    // the Corne goes: none was chosen, so the macropad (no lighting) is opened in its place
-    await plugIn(page, false);
-    await expect(page.locator(".topbar .name, #keyboard-select option:checked").first())
-      .toContainText("Simulated Macropad", { timeout: 10_000 });
+    // another tab opens the macropad (no lighting). (Unplugging the Corne would open it only if no keyboard had been
+    // chosen yet on this worker's server, which the tests before choose.)
+    await select(page, "Simulated Macropad");
+    await expect(shown(page)).toHaveText("Simulated Macropad", { timeout: 10_000 });
     await expect(page.getByRole("heading", { level: 1, name: "Keymap" })).toBeFocused({ timeout: 10_000 });
     expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
     await expect(page).toHaveURL(/#keymap$/);
   } finally {
-    await restoreAll(() => plugIn(page, true), async () => {
-      await expect.poll(async () => (await listed(page)).keyboards.some((k) => k.name === "Simulated Corne"),
-        { timeout: 10_000 }).toBe(true);
-    }, () => putBack(page));
+    await putBack(page);
   }
 });
 
