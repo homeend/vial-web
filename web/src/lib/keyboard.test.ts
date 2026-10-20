@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
 import type {
-  Described, KeyboardEntry, KeyboardLanguage, KeyboardList, KeyboardModel, ServerEvent, Session, UnlockState,
+  Described, KeyboardEntry, KeyboardLanguage, KeyboardList, KeyboardModel, ServerEvent, Session, SettingField,
+  UnlockState,
 } from "../api/types";
 
 vi.mock("../api/api", () => ({
@@ -40,6 +41,9 @@ const { connectEvents } = await import("../api/events");
 const { setRequestLanguage } = await import("../api/client");
 const { KeyboardStore } = await import("./keyboard.svelte");
 const { toasts } = await import("./toasts.svelte");
+const { settingsEdits } = await import("../settings/state.svelte");
+
+const SWAP = { type: "boolean", title: "Swap", qsid: 21, bit: 0 } as SettingField;
 
 const mocked = vi.mocked(api);
 
@@ -1019,26 +1023,108 @@ describe("the keyboard selector", () => {
     expect(store.canEdit).toBe(true);
   });
 
-  it("drops the keyboard closed at once: a load still on its way for it is not kept", async () => {
+  it("keeps the keyboard shown, not editable, until the server has switched; a load on its way for it is not kept",
+    async () => {
+      mocked.session.mockResolvedValue(session());
+      const { store, emit } = await loaded();
+      const opened = store.opened;
+      const late = deferred<KeyboardModel>();
+      mocked.keyboard.mockReturnValueOnce(late.promise);
+      emit("reloaded");
+      const reply = deferred<KeyboardList>();
+      mocked.selectKeyboard.mockReturnValueOnce(reply.promise);
+      const switching = store.selectKeyboard("b");
+      await settle();
+      expect(store.model?.name).toBe("Test");
+      expect(store.canEdit).toBe(false);
+      expect(store.opened).toBe(opened);
+      late.resolve(model("KC_OLD"));
+      await settle();
+      expect(store.model?.layers[0].keys[0].code).toBe("KC_A");
+      expect(store.canEdit).toBe(false);
+      mocked.keyboard.mockResolvedValue(other("KC_Z"));
+      mocked.session.mockResolvedValue(session({ keyboard: "b" }));
+      reply.resolve({ keyboards: [entry("a"), entry("b", { open: true })], chosen: "b" });
+      await switching;
+      expect(store.opened).toBeGreaterThan(opened);
+      await settle();
+      expect(store.model?.name).toBe("Other");
+      expect(store.canEdit).toBe(true);
+    });
+
+  it("drops the work not saved once the server has switched, not before, and keeps it when the switch fails",
+    async () => {
+      mocked.session.mockResolvedValue(session());
+      mocked.keyboards.mockResolvedValue(TWO);
+      const { store } = await loaded();
+      settingsEdits.follow("same");
+      settingsEdits.toggle(SWAP, true, 0);
+      const opened = store.opened;
+      const refused = deferred<KeyboardList>();
+      mocked.selectKeyboard.mockReturnValueOnce(refused.promise);
+      const failing = store.selectKeyboard("b");
+      await settle();
+      expect(settingsEdits.keptFor("same")).toBe(true);
+      refused.reject(new ApiError(404, "no keyboard b is plugged in"));
+      expect(await failing).toBe(false);
+      await settle();
+      expect(settingsEdits.keptFor("same")).toBe(true);
+      expect(store.opened).toBe(opened);
+
+      const reply = deferred<KeyboardList>();
+      mocked.selectKeyboard.mockReturnValueOnce(reply.promise);
+      const switching = store.selectKeyboard("b");
+      await settle();
+      expect(settingsEdits.keptFor("same")).toBe(true);
+      mocked.session.mockResolvedValue(session({ keyboard: "b" }));
+      reply.resolve({ keyboards: [entry("a"), entry("b", { open: true })], chosen: "b" });
+      expect(await switching).toBe(true);
+      expect(settingsEdits.keptFor("same")).toBe(false);
+      expect(store.opened).toBeGreaterThan(opened);
+    });
+
+  it("takes a keyboard alike (the same uid) opened from another tab for another keyboard", async () => {
+    const alike = { ...model("KC_A"), uid: "same" } as KeyboardModel;
+    mocked.keyboard.mockResolvedValue(alike);
     mocked.session.mockResolvedValue(session());
     const { store, emit } = await loaded();
-    const late = deferred<KeyboardModel>();
-    mocked.keyboard.mockReturnValueOnce(late.promise);
+    expect(store.modelKeyboard).toBe("a");
+    settingsEdits.follow("same");
+    settingsEdits.toggle(SWAP, true, 0);
+    const opened = store.opened;
+    // read again, the same keyboard: nothing changes
     emit("reloaded");
-    const reply = deferred<KeyboardList>();
-    mocked.selectKeyboard.mockReturnValueOnce(reply.promise);
-    const switching = store.selectKeyboard("b");
     await settle();
-    expect(store.model).toBeNull();
-    late.resolve(model("KC_OLD"));
-    await settle();
-    expect(store.model).toBeNull();
-    mocked.keyboard.mockResolvedValue(other("KC_Z"));
+    expect(store.opened).toBe(opened);
+    expect(settingsEdits.keptFor("same")).toBe(true);
+    // another tab opened the other one, just like it: its "connected" comes, and the session names it
     mocked.session.mockResolvedValue(session({ keyboard: "b" }));
-    reply.resolve({ keyboards: [entry("a"), entry("b", { open: true })], chosen: "b" });
-    await switching;
+    mocked.keyboard.mockResolvedValue({ ...alike });
+    emit("connected");
     await settle();
-    expect(store.model?.name).toBe("Other");
+    expect(store.modelKeyboard).toBe("b");
+    expect(store.opened).toBeGreaterThan(opened);
+    expect(settingsEdits.keptFor("same")).toBe(false);
+  });
+
+  it("doesn't send an edit that waited for an unlock again once a keyboard alike took the place", async () => {
+    const alike = { ...model("KC_A"), uid: "same" } as KeyboardModel;
+    mocked.keyboard.mockResolvedValue(alike);
+    mocked.session.mockResolvedValue(session());
+    const { store, send } = await loaded();
+    mocked.setMacros.mockRejectedValueOnce(new ApiError(423, "locked"));
+    mocked.unlockStart.mockResolvedValue(UNLOCKING);
+    const saving = store.setMacros([[]]);
+    await settle();
+    send({ type: "unlock", unlock: UNLOCKING });
+    mocked.session.mockResolvedValue(session({ keyboard: "b", unlock: UNLOCKED }));
+    mocked.keyboard.mockResolvedValue({ ...alike });
+    // a "keyboards" event, then the alike one's load (a reload brings no plug of its own)
+    send({ type: "reloaded" });
+    await settle();
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await saving).toBe(false);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(1);
   });
 
   it("ends an unlock that edits wait for when another keyboard is opened: it was the one closed", async () => {

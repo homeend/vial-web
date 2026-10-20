@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { KeyboardModel, Lighting, SettingField } from "../api/types";
 import { lightingBaseline } from "../lighting/state.svelte";
+import { matrixTest } from "../matrix/state.svelte";
 import { settingsEdits } from "../settings/state.svelte";
 import { dropUnsavedWork, trackDraft, unsavedWork } from "./unsaved";
 
@@ -65,5 +66,15 @@ describe("dropUnsavedWork", () => {
     // the same keyboard (or one just like it) starts over too
     lightingBaseline.follow("A", BRIGHTER);
     expect(lightingBaseline.lighting).toBe(BRIGHTER);
+  });
+
+  it("forgets the keys the matrix tester saw pressed, even for a keyboard alike", () => {
+    matrixTest.follow("A");
+    matrixTest.tested = new Set(["0,1"]);
+    matrixTest.follow("A");
+    expect(matrixTest.tested.size).toBe(1);
+    dropUnsavedWork();
+    matrixTest.follow("A");
+    expect(matrixTest.tested.size).toBe(0);
   });
 });

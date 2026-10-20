@@ -355,17 +355,18 @@ export class KeyMover {
     const said = moveDone(kind, words(from, source), words(to, target));
     const placeOf = (ref: KeyRef) => this.#placeOf(ref);
     if (!(await keyboard.setCodes(layer, changes, WHAT[kind], placeOf))) return false;
-    const uid = model.uid;
-    toasts.info(said, { label: "Undo", run: () => this.#undo(uid, layer, changes, kind, placeOf) });
+    const opened = keyboard.opened;
+    toasts.info(said, { label: "Undo", run: () => this.#undo(opened, layer, changes, kind, placeOf) });
     return true;
   }
 
-  /** Puts a move back, unless the keys were changed since (or it is another keyboard): that would undo something
-   * else. Resolves to whether the toast offering it can go. */
-  async #undo(uid: string, layer: number, changes: Change[], kind: MoveKind, placeOf: (ref: KeyRef) => string) {
+  /** Puts a move back, unless the keys were changed since (or it is another keyboard, even one alike: `opened` is
+   * KeyboardStore.opened when the move was made): that would undo something else. Resolves to whether the toast
+   * offering it can go. */
+  async #undo(opened: number, layer: number, changes: Change[], kind: MoveKind, placeOf: (ref: KeyRef) => string) {
     const action = UNDO[kind];
     const now = keyboard.model;
-    if (!now || now.uid !== uid || !stillApplies(now, layer, changes)) {
+    if (!now || keyboard.opened !== opened || !stillApplies(now, layer, changes)) {
       toasts.error(`${action} failed: the keys were changed since.`);
       return true;
     }

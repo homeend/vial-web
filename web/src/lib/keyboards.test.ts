@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { KeyboardEntry, KeyboardList } from "../api/types";
-import { asSentence, chosenAway, keyboardOptions, shownKeyboard } from "./keyboards";
+import { asSentence, blockedWhy, chosenAway, keyboardOptions, shownKeyboard } from "./keyboards";
 
 function entry(id: string, name: string, more: Partial<KeyboardEntry> = {}): KeyboardEntry {
   return { id, name, vendorId: 1, productId: 2, serial: null, open: false, plugged: true, ...more };
@@ -25,6 +25,17 @@ describe("keyboardOptions", () => {
     expect(keyboardOptions(none).map((o) => o.label)).toEqual(["Corne (1)", "Corne (2)"]);
     const same = list([entry("a", "Corne", { serial: "X" }), entry("b", "Corne", { serial: "X" })]);
     expect(keyboardOptions(same).map((o) => o.label)).toEqual(["Corne (1)", "Corne (2)"]);
+  });
+
+  it("numbers keyboards alike as the server does, which keeps each one's number while it stays plugged in", () => {
+    const both = list([entry("k#2", "Corne", { open: true }), entry("k#1", "Corne")]);
+    expect(keyboardOptions(both).map((o) => o.label)).toEqual(["Corne (2)", "Corne (1)"]);
+    // the first unplugged and chosen: each keeps its label
+    const away = list([entry("k#1", "Corne", { plugged: false }), entry("k#2", "Corne")], "k#1");
+    expect(keyboardOptions(away).map((o) => o.label)).toEqual(["Corne (1) (unplugged)", "Corne (2)"]);
+    // the same name, but not alike for the server (other IDs): both are its 1st, so their order tells
+    const kinds = list([entry("a#1", "Corne"), entry("b#1", "Corne")]);
+    expect(keyboardOptions(kinds).map((o) => o.label)).toEqual(["Corne (1)", "Corne (2)"]);
   });
 
   it("says which one is unplugged", () => {
@@ -57,6 +68,31 @@ describe("chosenAway", () => {
     expect(chosenAway(list([entry("a", "A"), entry("b", "B")], "b"))).toBeNull();
     expect(chosenAway(list([entry("a", "A")]))).toBeNull();
     expect(chosenAway(null)).toBeNull();
+  });
+});
+
+describe("blockedWhy", () => {
+  const plugged = list([entry("a", "A"), entry("b", "B")]);
+  const away = list([entry("a", "A", { plugged: false }), entry("b", "B")], "a");
+
+  it("is unplugged when there is no error", () => {
+    expect(blockedWhy({ error: null, errorKind: null }, plugged, "a")).toBe("unplugged");
+    expect(blockedWhy(null, plugged, "a")).toBe("unplugged");
+  });
+
+  it("is the listing when looking for keyboards failed", () => {
+    expect(blockedWhy({ error: "could not list keyboards: boom", errorKind: "list" }, plugged, "a")).toBe("list");
+    expect(blockedWhy({ error: "could not list keyboards: boom", errorKind: "list" }, away, "a")).toBe("list");
+  });
+
+  it("is unreadable only when the keyboard shown is plugged in", () => {
+    const error = { error: "unsupported", errorKind: "read" as const };
+    expect(blockedWhy(error, plugged, "a")).toBe("unread");
+    // unplugged, with another keyboard beside it that couldn't be read: it is unplugged
+    expect(blockedWhy(error, list([entry("b", "B")]), "a")).toBe("unplugged");
+    expect(blockedWhy(error, away, "a")).toBe("unplugged");
+    expect(blockedWhy(error, plugged, null)).toBe("unplugged");
+    expect(blockedWhy(error, null, "a")).toBe("unplugged");
   });
 });
 

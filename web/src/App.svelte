@@ -16,11 +16,11 @@
   import LightingPage from "./lighting/LightingPage.svelte";
   import MatrixPage from "./matrix/MatrixPage.svelte";
   import { keyboard } from "./lib/keyboard.svelte";
-  import { asSentence, chosenAway, keyboardOptions, shownKeyboard } from "./lib/keyboards";
+  import { asSentence, blockedWhy, chosenAway, keyboardOptions, shownKeyboard } from "./lib/keyboards";
   import type { SectionId } from "./lib/route";
   import { router } from "./lib/router.svelte";
   import { isWaiting } from "./lib/unlock.svelte";
-  import { dropUnsavedWork, unsavedWork } from "./lib/unsaved";
+  import { unsavedWork } from "./lib/unsaved";
   import Banner from "./shell/Banner.svelte";
   import Nav, { type Section } from "./shell/Nav.svelte";
   import Toasts from "./shell/Toasts.svelte";
@@ -124,6 +124,8 @@
   const away = $derived(chosenAway(keyboard.keyboards));
   const awayName = $derived(keyboardChoices.find((k) => k.id === away?.id)?.name ?? away?.name);
   const error = $derived(keyboard.session?.error ? asSentence(keyboard.session.error) : null);
+  /** why the keyboard shown, greyed out, can't be changed: an error about another keyboard isn't about it */
+  const blockedBy = $derived(blockedWhy(keyboard.session, keyboard.keyboards, keyboard.modelKeyboard));
 
   /** another keyboard chosen while there is work not saved: the confirmation asks first */
   let asking = $state<{ id: string; title: string; message: string } | null>(null);
@@ -132,9 +134,11 @@
     return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
   }
 
-  function chooseKeyboard(id: string) {
+  /** fromKeys: chosen with the keyboard on the closed select, where each arrow key chooses the next keyboard at once:
+   * asked about first, as a pointer choice isn't */
+  function chooseKeyboard(id: string, fromKeys: boolean) {
     const work = unsavedWork(keyboard.model);
-    if (work.length === 0) {
+    if (work.length === 0 && !fromKeys) {
       openKeyboard(id);
       return;
     }
@@ -149,12 +153,12 @@
     asking = {
       id,
       title: `Switch to ${name}?`,
-      message: `${what} Not saved yet, and dropped if you switch: ${listed(work)}.`,
+      message: work.length === 0 ? what : `${what} Not saved yet, and dropped if you switch: ${listed(work)}.`,
     };
   }
 
+  // the work not saved is dropped by the store, once the server has switched (if it doesn't, nothing is lost)
   function openKeyboard(id: string) {
-    dropUnsavedWork();
     void keyboard.selectKeyboard(id);
   }
 </script>
@@ -190,7 +194,9 @@
         title="The keyboard is in its bootloader"
         message="It doesn't work as a keyboard until it is flashed, or unplugged and plugged back in. It shows up here again then."
       />
-    {:else if blocked && error}
+    {:else if blocked && error && blockedBy === "list"}
+      <Banner tone="danger" title="Vial couldn't look for keyboards" message="{error} Vial tries again by itself, about once a second." />
+    {:else if blocked && error && blockedBy === "unread"}
       <Banner tone="danger" title="A keyboard was found, but couldn't be read" message="{error} Vial tries again by itself." />
     {:else if blocked}
       <Banner
@@ -219,31 +225,34 @@
     {/if}
 
     {#if keyboard.model && placement && analysis}
-      <div class="page" class:list={section !== "keymap"} class:blocked inert={blocked}>
-        {#if section === "tap-dance"}
-          <TapDancePage model={keyboard.model} {analysis} item={router.route.item} />
-        {:else if section === "combos"}
-          <CombosPage model={keyboard.model} {placement} {analysis} item={router.route.item} />
-        {:else if section === "macros"}
-          <MacrosPage model={keyboard.model} {analysis} item={router.route.item} />
-        {:else if section === "key-overrides"}
-          <KeyOverridesPage model={keyboard.model} item={router.route.item} />
-        {:else if section === "alt-repeat"}
-          <AltRepeatPage model={keyboard.model} item={router.route.item} />
-        {:else if section === "settings"}
-          <SettingsPage model={keyboard.model} />
-        {:else if section === "layout"}
-          <LayoutPage model={keyboard.model} {placement} />
-        {:else if section === "lighting"}
-          <LightingPage model={keyboard.model} />
-        {:else if section === "matrix"}
-          <MatrixPage model={keyboard.model} {placement} />
-        {:else if section === "keyboard"}
-          <KeyboardPage model={keyboard.model} {analysis} />
-        {:else}
-          <KeymapPage model={keyboard.model} {placement} {analysis} />
-        {/if}
-      </div>
+      <!-- made anew for another keyboard, even one alike (the same uid): an editor open was for the one before -->
+      {#key keyboard.opened}
+        <div class="page" class:list={section !== "keymap"} class:blocked inert={blocked}>
+          {#if section === "tap-dance"}
+            <TapDancePage model={keyboard.model} {analysis} item={router.route.item} />
+          {:else if section === "combos"}
+            <CombosPage model={keyboard.model} {placement} {analysis} item={router.route.item} />
+          {:else if section === "macros"}
+            <MacrosPage model={keyboard.model} {analysis} item={router.route.item} />
+          {:else if section === "key-overrides"}
+            <KeyOverridesPage model={keyboard.model} item={router.route.item} />
+          {:else if section === "alt-repeat"}
+            <AltRepeatPage model={keyboard.model} item={router.route.item} />
+          {:else if section === "settings"}
+            <SettingsPage model={keyboard.model} />
+          {:else if section === "layout"}
+            <LayoutPage model={keyboard.model} {placement} />
+          {:else if section === "lighting"}
+            <LightingPage model={keyboard.model} />
+          {:else if section === "matrix"}
+            <MatrixPage model={keyboard.model} {placement} />
+          {:else if section === "keyboard"}
+            <KeyboardPage model={keyboard.model} {analysis} />
+          {:else}
+            <KeymapPage model={keyboard.model} {placement} {analysis} />
+          {/if}
+        </div>
+      {/key}
     {:else if status === "disconnected" && isWaiting(unlock)}
       <div class="empty">
         <h1>The keyboard waits to be unlocked</h1>

@@ -13,8 +13,9 @@
     keyboardId: string;
     /** a keyboard is being opened: the selector takes no other choice meanwhile */
     switching: boolean;
-    /** another keyboard was chosen (the selector keeps showing keyboardId: whoever opens it changes that) */
-    onkeyboard: (id: string) => void;
+    /** another keyboard was chosen (the selector keeps showing keyboardId: whoever opens it changes that). fromKeys:
+     * with a key on the select (an arrow key, a letter...), which chooses at once when it is closed */
+    onkeyboard: (id: string, fromKeys: boolean) => void;
     status: "connected" | "disconnected" | "connecting" | "offline";
     fake: boolean;
     languages: KeyboardLanguage[];
@@ -37,11 +38,26 @@
 
   const shownKeyboard = $derived(keyboards.find((k) => k.id === keyboardId));
 
-  function chooseKeyboard(select: HTMLSelectElement) {
+  /** when a key that moves the choice was last pressed on the selector (event time stamp), or null */
+  let keyedAt: number | null = null;
+  /** a change this soon after such a key comes from it */
+  const KEYED_WITHIN = 500;
+
+  function keyOnSelector(event: KeyboardEvent) {
+    // Alt+arrow opens the list instead: a choice made in it is made on purpose
+    const moves = !event.altKey && !event.ctrlKey && !event.metaKey && (event.key.length === 1 && event.key !== " "
+      || ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key));
+    keyedAt = moves ? event.timeStamp : null;
+  }
+
+  function chooseKeyboard(event: Event & { currentTarget: HTMLSelectElement }) {
+    const select = event.currentTarget;
     const id = select.value;
+    const fromKeys = keyedAt !== null && event.timeStamp - keyedAt < KEYED_WITHIN;
+    keyedAt = null;
     // it shows keyboardId until that changes: a choice may be asked about first, or refused while switching
     select.value = keyboardId;
-    if (!switching && id !== keyboardId) onkeyboard(id);
+    if (!switching && id !== keyboardId) onkeyboard(id, fromKeys);
   }
 
   let lockButton = $state<HTMLButtonElement>();
@@ -85,7 +101,7 @@
         <label class="keyboard">
           <span class="visually-hidden">Keyboard</span>
           <select id="keyboard-select" value={keyboardId} title={shownKeyboard?.full} aria-busy={switching || undefined}
-            onchange={(e) => chooseKeyboard(e.currentTarget)}>
+            onkeydown={keyOnSelector} onpointerdown={() => (keyedAt = null)} onchange={chooseKeyboard}>
             {#if !shownKeyboard}
               <option value="" disabled>Choose a keyboard</option>
             {/if}

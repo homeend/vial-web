@@ -125,6 +125,37 @@ test("work not saved is asked about first: Cancel keeps the keyboard, Switch key
   }
 });
 
+test("a keyboard chosen with an arrow key on the closed selector is asked about first; a pointer choice isn't", async ({
+  twoKeyboards: page,
+}) => {
+  try {
+    await plugSecond(page);
+    await selector(page).focus();
+    await page.keyboard.press("ArrowDown");
+    const dialog = page.getByRole("dialog", { name: "Switch to Simulated Macropad?" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("Vial closes Simulated Corne and opens Simulated Macropad.");
+    await expect(dialog).not.toContainText("Not saved yet");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(shown(page)).toHaveText("Simulated Corne");
+    await expect(selector(page)).toBeFocused();
+    expect((await listed(page)).keyboards.find((k) => k.open)?.name).toBe("Simulated Corne");
+
+    await page.keyboard.press("ArrowDown");
+    await dialog.getByRole("button", { name: "Switch keyboard" }).click();
+    await expect(section(page, "Layout")).toBeVisible();
+    await expect(shown(page)).toHaveText("Simulated Macropad");
+
+    // chosen with the pointer (selectOption): at once
+    await selector(page).selectOption({ label: "Simulated Corne" });
+    await expect(section(page, "Lighting")).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  } finally {
+    await putBack(page);
+  }
+});
+
 test("the chosen keyboard unplugged is waited for, and opened again once it is back", async ({
   twoKeyboards: page,
 }) => {

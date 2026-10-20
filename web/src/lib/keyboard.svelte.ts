@@ -15,6 +15,7 @@ import { unlockFirst, type Change } from "../keymap/move";
 import { freeTapDance } from "../keymap/tapdance";
 import { toasts } from "./toasts.svelte";
 import { LOCKED, Unlocker, type UnlockOutcome } from "./unlock.svelte";
+import { dropUnsavedWork } from "./unsaved";
 
 const LANGUAGE_KEY = "vial.keyboardLanguage";
 
@@ -81,7 +82,14 @@ export class KeyboardStore {
   /** the keyboard being opened (selectKeyboard), until the server has answered */
   switching = $state<string | null>(null);
 
-  canEdit = $derived(this.model !== null && !this.stale && this.connected && this.link === "open");
+  /** grows each time the keyboard shown is another one (or none): a keyboard of another uid, or another keyboard of
+   * the same uid (one alike, KeyboardEntry.id), took its place. What was opened or offered for the one before (pages,
+   * an Undo) must not be used for it. */
+  opened = $state(0);
+
+  canEdit = $derived(
+    this.model !== null && !this.stale && this.connected && this.link === "open" && this.switching === null,
+  );
 
   #loads = 0;
   /** keyboards plugged in or unplugged so far ("connected" and "disconnected" events, and loads that found another
@@ -95,11 +103,16 @@ export class KeyboardStore {
   /** pages watching the keys held */
   #matrixWatchers = 0;
   /** the keyboard (KeyboardEntry.id) the model was read from, as the session said */
-  #modelKeyboard: string | null = null;
+  #modelKeyboard = $state<string | null>(null);
   /** readings of the keyboard list so far: only the latest is kept */
   #listReads = 0;
   /** told once no edit is on its way */
   #editsDone: (() => void)[] = [];
+
+  /** the keyboard (KeyboardEntry.id) the model shown was read from; null while none is */
+  get modelKeyboard(): string | null {
+    return this.#modelKeyboard;
+  }
 
   /** Load the language list, then follow the server's events (which start with the keyboard's state) */
   start(): () => void {
@@ -192,12 +205,16 @@ export class KeyboardStore {
     try {
       const [session, model, catalogue] = await Promise.all([api.session(), api.keyboard(), api.keycodes()]);
       if (load !== this.#loads) return;
-      // another keyboard (plugged in while the events link was down, say): before the session is used, as an unlock
-      // it ends tells those waiting for it
-      if (this.model !== null && model.uid !== this.model.uid) this.#plugs++;
+      // another keyboard (plugged in while the events link was down, or opened from another tab: maybe one alike,
+      // with the same uid): before the session is used, as an unlock it ends tells those waiting for it
+      const opened = session.keyboard ?? null;
+      if (this.model !== null && (model.uid !== this.model.uid || opened !== this.#modelKeyboard)) {
+        this.#plugs++;
+        this.#anotherKeyboard();
+      }
       this.#useSession(session);
       this.model = model;
-      this.#modelKeyboard = session.keyboard ?? null;
+      this.#modelKeyboard = opened;
       this.catalogue = catalogue;
       this.loadError = null;
       this.stale = false;
@@ -247,6 +264,7 @@ export class KeyboardStore {
   #forgetKeyboard(): void {
     this.#plugs++;
     this.#loads++;
+    this.#anotherKeyboard();
     this.model = null;
     this.#modelKeyboard = null;
     this.matrix = null;
@@ -255,9 +273,18 @@ export class KeyboardStore {
     this.stale = true;
   }
 
+  /** The keyboard shown is another one now (or none): what was kept for the one before goes, the work not saved on it
+   * included (the caller asked about it, if it was this tab's choice) */
+  #anotherKeyboard(): void {
+    this.opened++;
+    dropUnsavedWork();
+  }
+
   /** Use another keyboard: the one open is closed and the chosen one opened, as if it had just been plugged in. The
    * edits on their way are waited for first, and no other is taken meanwhile; whatever waited on the keyboard closed
-   * (an unlock) ends. The caller asks about work not saved (lib/unsaved) first. Returns whether it was done. */
+   * (an unlock) ends. The keyboard shown stays (it can't be changed meanwhile), with the work not saved on it, until the
+   * server has switched: if it doesn't, nothing is lost. The caller asks about work not saved (lib/unsaved) first.
+   * Returns whether it was done. */
   async selectKeyboard(id: string): Promise<boolean> {
     if (this.switching !== null) return false;
     const list = this.keyboards;
@@ -267,11 +294,16 @@ export class KeyboardStore {
     this.stale = true;
     try {
       if (this.pending > 0) await new Promise<void>((done) => this.#editsDone.push(done));
-      this.#forgetKeyboard();
+      // a load on its way read the keyboard before the switch: it isn't kept (one the switch brings is newer)
+      this.#loads++;
       try {
         const reply = await api.selectKeyboard(id);
         this.#listReads++; // a reading on its way is older
         this.keyboards = reply;
+        // the keyboard shown was closed: it goes, with the work not saved on it. (The "connected" event the switch
+        // brings may have loaded the chosen one already: that one stays.)
+        const open = reply.keyboards.find((k) => k.open)?.id ?? null;
+        if (this.model !== null && open !== this.#modelKeyboard) this.#forgetKeyboard();
       } catch (error) {
         toasts.error(failureMessage(`Opening ${name}`, error));
         // the keyboard open is still the one it was, or none: read again what there is

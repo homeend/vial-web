@@ -4,6 +4,7 @@
 // not saved are kept while another page shows, so they are asked about wherever they were made.
 import type { KeyboardModel } from "../api/types";
 import { lightingBaseline } from "../lighting/state.svelte";
+import { matrixTest } from "../matrix/state.svelte";
 import { settingsEdits } from "../settings/state.svelte";
 
 /** What a page has open and not saved, as the confirmation names it ("the combo being edited"); null for nothing */
@@ -35,9 +36,11 @@ export function unsavedWork(model: KeyboardModel | null): string[] {
   return work;
 }
 
-/** Another keyboard is opened: the Settings page's changes and the lighting followed are forgotten, so that they
- * aren't taken for the next keyboard's, even one alike (with the same uid). The pages' editors go with the pages. */
+/** Another keyboard is shown (KeyboardStore calls it): the Settings page's changes, the lighting followed and the keys
+ * the matrix tester saw pressed are forgotten, so that they aren't taken for the next keyboard's, even one alike (with
+ * the same uid). The pages' editors go with the pages (App.svelte makes them anew). */
 export function dropUnsavedWork(): void {
   settingsEdits.forget();
   lightingBaseline.forget();
+  matrixTest.forget();
 }

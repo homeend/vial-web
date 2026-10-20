@@ -12,6 +12,12 @@ export class MatrixTest {
     this.reset();
   }
 
+  /** Start over with whichever keyboard is shown next, even one alike (the same uid): another keyboard was opened */
+  forget(): void {
+    this.#uid = null;
+    this.reset();
+  }
+
   reset(): void {
     this.tested = new Set();
   }
