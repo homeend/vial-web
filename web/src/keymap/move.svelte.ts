@@ -180,9 +180,14 @@ export class KeyMover {
       this.cancelPress();
       return;
     }
+    // by the moves' own times, not by when the page got to them: a busy page may run the long press's timer before
+    // the moves of a quick swipe, and the swipe still scrolls the page (the drag it started goes)
+    const state = pressState(press.start, event.clientX, event.clientY, event.timeStamp);
+    if (state === "scroll") {
+      this.cancelPress();
+      return;
+    }
     if (!this.drag) {
-      const state = pressState(press.start, event.clientX, event.clientY, event.timeStamp);
-      if (state === "scroll") this.cancelPress();
       if (state !== "drag") return;
       this.#startDrag(event.clientX, event.clientY);
     }

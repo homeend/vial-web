@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Browser, Page } from "@playwright/test";
 import {
   codeAt, expect, keyIndex, open, restoreAll, screenshots, setCodeAt, simulatorUnlock, test, unlockAgain,
 } from "./fixtures";
@@ -236,36 +236,72 @@ test("1920 x 950, eight layers: the Inspector with its Copy and Swap fits the wi
   await screenshots(eightLayers, "keymap-inspector-eight-layers-1920x950");
 });
 
-test("a finger drags a key once it has held it still, and a swipe across the keys still scrolls", async ({ browser, corneUrl }) => {
-  // a touch screen, small enough for the page to scroll
+type Point = { x: number; y: number };
+
+/** A touch screen, small enough for the page to scroll, with the page open: touches sent through the DevTools
+ * protocol. A touch says when it happens (`at`, ms since the epoch) when that matters: by default, when the browser
+ * gets it, which on a busy machine can be long after the touch before it. */
+async function touchScreen(browser: Browser, url: string) {
   const context = await browser.newContext({ hasTouch: true, viewport: { width: 1280, height: 500 } });
-  const page = await open(await context.newPage(), corneUrl);
-  const { a, b, codeA, codeB, restore } = await twoKeys(page, 2, 3);
+  const page = await open(await context.newPage(), url);
+  // the keyboard can be changed (read again after the server's first event): a key pressed before then isn't picked up
+  await expect(page.getByRole("button", { name: "Swap with another key…" })).toBeEnabled();
   const cdp = await context.newCDPSession(page);
-  const touch = (type: "touchStart" | "touchMove" | "touchEnd", x = 0, y = 0) =>
-    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
-  /** Moves the finger to a point in steps */
-  const slide = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    for (let step = 1; step <= 8; step++) {
-      await touch("touchMove", from.x + ((to.x - from.x) * step) / 8, from.y + ((to.y - from.y) * step) / 8);
-    }
+  const touch = (type: "touchStart" | "touchMove" | "touchEnd", at?: number, x = 0, y = 0) =>
+    cdp.send("Input.dispatchTouchEvent", {
+      type, touchPoints: type === "touchEnd" ? [] : [{ x, y }], ...(at === undefined ? {} : { timestamp: at / 1000 }),
+    });
+  return {
+    context,
+    page,
+    touch,
+    /** Moves the finger to a point in 8 steps; at: when the first step is made, the others 16 ms apart */
+    slide: async (from: Point, to: Point, at?: number) => {
+      for (let step = 1; step <= 8; step++) {
+        await touch("touchMove", at === undefined ? undefined : at + (step - 1) * 16,
+          from.x + ((to.x - from.x) * step) / 8, from.y + ((to.y - from.y) * step) / 8);
+      }
+    },
+    /** The page's scroll position once it has stopped moving: the same for 5 frames running. Until then the keys
+     * aren't where they will be. */
+    scrollAtRest: () => page.evaluate(() => new Promise<number>((resolve) => {
+      let last = -1;
+      let same = 0;
+      const frame = () => {
+        same = window.scrollY === last ? same + 1 : 0;
+        last = window.scrollY;
+        if (same === 5) resolve(last);
+        else requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    })),
   };
+}
+
+test("a finger drags a key once it has held it still, and a swipe across the keys still scrolls", async ({ browser, corneUrl }) => {
+  const { context, page, touch, slide, scrollAtRest } = await touchScreen(browser, corneUrl);
+  const { a, b, codeA, codeB, restore } = await twoKeys(page, 2, 3);
+  const ghost = page.locator(".drag-ghost");
   try {
-    // a quick swipe up from a key: no drag, the page scrolls
+    // a quick swipe up from a key: no drag, the page scrolls. The touches say when they happen, so that a busy
+    // machine sending them late doesn't make it a finger holding the key; it stops before it lifts (no fling).
     const start = await centreOf(page, a);
-    await touch("touchStart", start.x, start.y);
-    await slide(start, { x: start.x, y: start.y - 150 });
-    await touch("touchEnd");
-    await expect(page.locator(".drag-ghost")).toHaveCount(0);
+    const now = Date.now();
+    await touch("touchStart", now, start.x, start.y);
+    await slide(start, { x: start.x, y: start.y - 150 }, now + 16);
+    await touch("touchEnd", now + 8 * 16 + 100);
+    await expect(ghost).toHaveCount(0);
     await expect(page.getByRole("menu")).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 
-    // held still, then moved onto the other key: the drop menu, and the page doesn't scroll meanwhile
+    // held still, then moved onto the other key: the drop menu, and the page doesn't scroll meanwhile. Where the
+    // keys are is read once the page has stopped scrolling.
+    const scrolled = await scrollAtRest();
     const from = await centreOf(page, a);
     const to = await centreOf(page, b);
-    const scrolled = await page.evaluate(() => window.scrollY);
-    await touch("touchStart", from.x, from.y);
-    await expect(page.locator(".drag-ghost")).toBeVisible(); // picked up after the long press
+    await touch("touchStart", undefined, from.x, from.y);
+    await expect(ghost).toBeVisible(); // picked up after the long press
+    await expect(keyOf(page, a)).toHaveClass(/faded/);
     await slide(from, to);
     await expect(keyOf(page, b)).toHaveClass(/ringed/);
     await touch("touchEnd");
@@ -276,6 +312,26 @@ test("a finger drags a key once it has held it still, and a swipe across the key
     await expect.poll(() => codesOf(page, a, b)).toEqual([codeB, codeA]);
   } finally {
     await restore();
+    await context.close();
+  }
+});
+
+test("a quick swipe that a busy page gets only after the long press's time is still no drag", async ({ browser, corneUrl }) => {
+  const { context, page, touch, slide } = await touchScreen(browser, corneUrl);
+  const { a, b, codeA, codeB } = await twoKeys(page, 2, 3);
+  const ghost = page.locator(".drag-ghost");
+  try {
+    // the page's timer picks the key up before it gets the moves; by their own times the finger moved at once
+    const start = await centreOf(page, a);
+    const now = Date.now();
+    await touch("touchStart", now, start.x, start.y);
+    await expect(ghost).toBeVisible();
+    await slide(start, { x: start.x, y: start.y - 150 }, now + 16);
+    await expect(ghost).toHaveCount(0);
+    await touch("touchEnd", now + 8 * 16 + 100);
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    expect(await codesOf(page, a, b)).toEqual([codeA, codeB]);
+  } finally {
     await context.close();
   }
 });
