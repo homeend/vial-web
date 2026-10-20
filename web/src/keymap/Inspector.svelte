@@ -30,9 +30,9 @@
     onsetcode: (code: string, action: string) => Promise<boolean>;
     ontapdance: () => void;
     onjump: (layer: number) => void;
-    /** the other key of a copy or swap is being chosen */
+    /** the other key of a swap or copy is being chosen */
     moving: MoveKind | null;
-    /** copy the key to another one, or swap the two: the next key chosen is the other one */
+    /** swap the key with another one, or copy it to the other: the next key chosen is the other one */
     onmove: (kind: MoveKind) => void;
   }
 
@@ -169,13 +169,13 @@
       </Button>
     {/if}
     {#if selection.kind === "key"}
-      <Button disabled={!canEdit} aria-disabled={busy || undefined} aria-pressed={moving === "replace"}
-        onclick={unlessBusy(() => onmove("replace"))}>
-        Copy to another key…
-      </Button>
       <Button disabled={!canEdit} aria-disabled={busy || undefined} aria-pressed={moving === "swap"}
         onclick={unlessBusy(() => onmove("swap"))}>
         Swap with another key…
+      </Button>
+      <Button disabled={!canEdit} aria-disabled={busy || undefined} aria-pressed={moving === "replace"}
+        onclick={unlessBusy(() => onmove("replace"))}>
+        Copy to another key…
       </Button>
     {/if}
   </div>

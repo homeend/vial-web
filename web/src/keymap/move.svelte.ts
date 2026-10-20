@@ -1,5 +1,5 @@
 // Moving a key onto another of the layer shown, for the Keymap page: a press on a key that becomes a drag, the menu
-// of its drop, and the other key chosen with the keyboard after the Inspector's Copy or Swap. The page hands over the
+// of its drop, and the other key chosen with the keyboard after the Inspector's Swap or Copy. The page hands over the
 // keys area's events and its key presses; the rules themselves (when a press drags, where it drops, what is written)
 // are in move.ts.
 import { tick, untrack } from "svelte";
@@ -57,7 +57,7 @@ interface Drop {
   targetTitle: string;
 }
 
-/** The Inspector's Copy or Swap: the next key chosen is the other one (cursor: the key the arrows reached) */
+/** The Inspector's Swap or Copy: the next key chosen is the other one (cursor: the key the arrows reached) */
 interface Picking {
   kind: MoveKind;
   source: number;
@@ -300,7 +300,7 @@ export class KeyMover {
     if (refocus) void this.#host.focusSelected();
   }
 
-  /** The Inspector's Copy or Swap for the selected key: the next key chosen is the other one. Pressed again, it gives
+  /** The Inspector's Swap or Copy for the selected key: the next key chosen is the other one. Pressed again, it gives
    * up. */
   togglePicking(kind: MoveKind, selected: number): void {
     if (this.picking?.kind === kind) {

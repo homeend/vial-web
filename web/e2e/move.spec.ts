@@ -49,15 +49,17 @@ async function codesOf(page: Page, ...keys: number[]) {
 
 const toasts = (page: Page) => page.getByRole("region", { name: "Notifications" });
 
-test("dragging a key onto another and choosing Swap both swaps them", async ({ app }) => {
+test("dragging a key onto another and pressing Enter in the drop menu swaps them: Swap both is the first item and has the focus", async ({ app }) => {
   const { a, b, codeA, codeB, restore } = await twoKeys(app);
   try {
     const menu = await dragOnto(app, a, b);
     // the menu has the focus, the key dragged is faint, the one dropped on ringed
     await expect(menu.getByRole("menuitem").first()).toBeFocused();
+    await expect(menu.getByRole("menuitem", { name: "Swap both" })).toBeFocused();
+    await expect(menu.getByRole("menuitem")).toHaveText([/^Swap both/, /^Replace with /, /^Cancel/]);
     await expect(keyOf(app, a)).toHaveClass(/faded/);
     await expect(keyOf(app, b)).toHaveClass(/ringed/);
-    await menu.getByRole("menuitem", { name: "Swap both" }).click();
+    await app.keyboard.press("Enter");
     await expect(menu).toBeHidden();
     // both keys: the second is written after the first
     await expect.poll(() => codesOf(app, a, b)).toEqual([codeB, codeA]);
@@ -66,6 +68,23 @@ test("dragging a key onto another and choosing Swap both swaps them", async ({ a
     await expect(keyOf(app, b)).toBeFocused();
     await expect(toasts(app)).toContainText("Swapped");
     await expect(keyOf(app, a)).not.toHaveClass(/faded/);
+  } finally {
+    await restore();
+  }
+});
+
+test("in the drop menu the arrows go Swap both, Replace with, Cancel, and Enter on the second replaces", async ({ app }) => {
+  const { a, b, codeA, restore } = await twoKeys(app);
+  try {
+    const menu = await dragOnto(app, a, b);
+    await app.keyboard.press("ArrowDown");
+    await expect(menu.getByRole("menuitem", { name: /^Replace with / })).toBeFocused();
+    await app.keyboard.press("ArrowDown");
+    await expect(menu.getByRole("menuitem", { name: "Cancel" })).toBeFocused();
+    await app.keyboard.press("ArrowUp");
+    await app.keyboard.press("Enter");
+    await expect(menu).toBeHidden();
+    await expect.poll(() => codeAt(app, 0, b)).toBe(codeA);
   } finally {
     await restore();
   }

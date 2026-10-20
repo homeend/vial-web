@@ -128,7 +128,7 @@
     if (kept.selection) document.querySelector<HTMLElement>(`[data-ref="${refId(kept.selection)}"]`)?.focus();
   }
 
-  // a key dragged onto another, or chosen after the Inspector's Copy or Swap (move.svelte.ts)
+  // a key dragged onto another, or chosen after the Inspector's Swap or Copy (move.svelte.ts)
   const mover = new KeyMover({
     placement: () => placement,
     model: () => model,
@@ -228,7 +228,7 @@
       <h1 id="keymap-title" tabindex="-1">Keymap</h1>
       {#if kept.view === "edit"}
         <p>
-          Click a key to see what it does, or drag it onto another to copy or swap it. Arrow keys move, Enter changes
+          Click a key to see what it does, or drag it onto another to swap or copy it. Arrow keys move, Enter changes
           it, Delete or Backspace clears it.
         </p>
       {:else}

@@ -80,7 +80,7 @@ export function stillApplies(model: Pick<KeyboardModel, "layers">, layer: number
   return changes.every((c) => actionAt(model, layer, c.ref)?.code === c.code);
 }
 
-/** How to choose the other key, once the Inspector's Copy or Swap was chosen */
+/** How to choose the other key, once the Inspector's Swap or Copy was chosen */
 export function pickHint(kind: MoveKind, source: string): string {
   const what = kind === "replace" ? `copy ${source} to` : `swap ${source} with`;
   return `Choose the key to ${what}: click it, or move to it with the arrow keys and press Enter. Esc cancels.`;

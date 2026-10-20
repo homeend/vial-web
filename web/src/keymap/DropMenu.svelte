@@ -89,16 +89,16 @@
   <div class="items" role="menu" tabindex="-1" aria-labelledby="{uid}-title" aria-busy={working !== null || undefined}
     {onkeydown}>
     <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
+      onclick={() => choose("swap")}>
+      <span class="label">{working === "swap" ? "Swapping…" : "Swap both"}</span>
+      <span class="detail">the two keys trade keycodes</span>
+    </button>
+    <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
       onclick={() => choose("replace")}>
       <span class="label" title="Replace {target} with {source}">
         {working === "replace" ? "Replacing…" : `Replace with ${source}`}
       </span>
       <span class="detail">the key dragged stays as it is</span>
-    </button>
-    <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
-      onclick={() => choose("swap")}>
-      <span class="label">{working === "swap" ? "Swapping…" : "Swap both"}</span>
-      <span class="detail">the two keys trade keycodes</span>
     </button>
     <button type="button" role="menuitem" tabindex="-1" aria-disabled={working !== null || undefined}
       onclick={() => {
@@ -159,7 +159,7 @@
     cursor: pointer;
   }
 
-  /* the item with the focus shows, however it got it (the first one has it when the menu opens after a drag) */
+  /* the item with the focus shows, however it got it (Swap both, the first, has it when the menu opens after a drag) */
   button:hover,
   button:focus {
     background: var(--surface-2);
