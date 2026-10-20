@@ -374,6 +374,17 @@ class KeyboardInfo:
     key: object
     """ candidate_key() of the candidate """
     candidate: object = None
+    manufacturer: str = ""
+    """ its USB manufacturer name ("" if it gives none) """
+    path: str = ""
+    """ its HID device path, as text (hidapi gives bytes): what Qt's About keyboard calls the Device """
+
+
+def path_text(path):
+    """ A HID device path as text: hidapi gives bytes (UTF-8 on every system it runs on) """
+    if isinstance(path, bytes):
+        return path.decode("utf-8", "replace")
+    return "" if path is None else str(path)
 
 
 def own_serial(serial):
@@ -425,7 +436,8 @@ def keyboard_infos(candidates, previous=()):
             n += 1
         number[i] = n
         used.add(n)
-    return [KeyboardInfo("{}#{}".format(base, number[i]), name, vid, pid, serial, candidate_key(candidate), candidate)
+    return [KeyboardInfo("{}#{}".format(base, number[i]), name, vid, pid, serial, candidate_key(candidate), candidate,
+                         field(candidate, "manufacturer_string", "").strip(), path_text(candidate_key(candidate)))
             for i, (base, name, vid, pid, serial, candidate) in enumerate(described)]
 
 

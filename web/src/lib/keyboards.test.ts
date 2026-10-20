@@ -3,7 +3,10 @@ import type { KeyboardEntry, KeyboardList } from "../api/types";
 import { asSentence, blockedWhy, chosenAway, keyboardOptions, shownKeyboard } from "./keyboards";
 
 function entry(id: string, name: string, more: Partial<KeyboardEntry> = {}): KeyboardEntry {
-  return { id, name, vendorId: 1, productId: 2, serial: null, open: false, plugged: true, ...more };
+  return {
+    id, name, manufacturer: "", vendorId: 1, productId: 2, serial: null, path: `usb-${id}`, open: false, plugged: true,
+    ...more,
+  };
 }
 
 function list(keyboards: KeyboardEntry[], chosen: string | null = null): KeyboardList {

@@ -1,5 +1,5 @@
 // What the Keyboard page says about the keyboard: what Qt's "About keyboard" dialog says, from the loaded model.
-import type { KeyboardModel, KeyGeometry } from "../api/types";
+import type { KeyboardEntry, KeyboardModel, KeyGeometry } from "../api/types";
 import { layoutChoices } from "../keyboard/geometry";
 
 /** Vial protocol versions that brought each feature (protocol/constants.py), for why a keyboard lacks one */
@@ -16,6 +16,8 @@ export interface Fact {
   copy?: boolean;
   /** monospaced: an ID */
   code?: boolean;
+  /** may be very long (a device path): cut short on a wide screen, over a few lines on a phone */
+  long?: boolean;
 }
 
 export interface FactGroup {
@@ -37,6 +39,28 @@ type Model = Pick<KeyboardModel, "name" | "uid" | "viaProtocol" | "vialProtocol"
   "encoders" | "layoutOptions" | "layers" | "macros" | "tapDance" | "combos" | "keyOverrides" | "altRepeatKeys" |
   "settings" | "features">;
 
+/** The USB device's facts the card shows: those of the keyboard list (KeyboardEntry), as hidapi gave them */
+export type UsbDevice = Pick<KeyboardEntry, "manufacturer" | "name" | "vendorId" | "productId" | "path">;
+
+/** A USB vendor or product ID as Qt writes it: four hex digits, upper case ("55D4") */
+export function usbId(id: number): string {
+  return id.toString(16).toUpperCase().padStart(4, "0");
+}
+
+/** What Qt's About keyboard says of the USB device first: Manufacturer, Product, VID, PID and Device (its path) */
+function usbFacts(usb: UsbDevice): FactGroup {
+  return {
+    title: "USB device",
+    facts: [
+      { label: "Manufacturer", value: usb.manufacturer || "none given" },
+      { label: "Product", value: usb.name },
+      { label: "VID", value: usbId(usb.vendorId), code: true },
+      { label: "PID", value: usbId(usb.productId), code: true },
+      { label: "Device", value: usb.path, copy: true, code: true, long: true },
+    ],
+  };
+}
+
 /** Why a keyboard has none of something, as Qt says it: its firmware is too old, or it was left out of it */
 function missing(model: Model, since: number): string {
   return model.vialProtocol < since ? "no (the Vial firmware is too old)" : "no (turned off in the firmware)";
@@ -50,7 +74,9 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-export function aboutFacts(model: Model): FactGroup[] {
+/** The facts the card shows; `usb`: the keyboard's USB device, when the keyboard list has it (not when the keyboard
+ * is unplugged and isn't the one chosen) */
+export function aboutFacts(model: Model, usb: UsbDevice | null = null): FactGroup[] {
   // the keys drawn: no decals, and of a layout option only the choice made (keyboard/geometry.ts placeKeyboard)
   const choices = layoutChoices(model.layoutOptions);
   const drawn = (g: KeyGeometry) => !g.decal && (g.layoutIndex === -1 || g.layoutOption === (choices[g.layoutIndex] ?? 0));
@@ -70,6 +96,7 @@ export function aboutFacts(model: Model): FactGroup[] {
         { label: "Layers", value: String(model.layers.length) },
       ],
     },
+    ...(usb ? [usbFacts(usb)] : []),
     {
       title: "Memory and entries",
       facts: [

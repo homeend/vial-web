@@ -234,3 +234,63 @@ for (const [width, height] of [[1920, 950], [375, 812]] as const) {
     }
   });
 }
+
+test("the Keyboard page's About card shows the USB device of the keyboard shown, as Qt's About keyboard does", async ({
+  twoKeyboards: page,
+}) => {
+  const fact = (label: string) =>
+    page.locator("section.card .fact").filter({ has: page.locator("dt", { hasText: new RegExp(`^${label}$`) }) })
+      .locator(".value");
+  try {
+    await openSection(page, "Keyboard");
+    const usb = page.locator("section.card .group").filter({ has: page.getByRole("heading", { name: "USB device" }) });
+    await expect(usb.locator("dt")).toHaveText(["Manufacturer", "Product", "VID", "PID", "Device"]);
+    await expect(fact("Manufacturer")).toHaveText("Simulated");
+    await expect(fact("Product")).toHaveText("Simulated Corne");
+    // the simulator's USB IDs (0xF00D, 0xCAFE), written as Qt writes them
+    await expect(fact("VID")).toHaveText("F00D");
+    await expect(fact("PID")).toHaveText("CAFE");
+    await expect(fact("Device")).toHaveText("simulated:1");
+    await expect(fact("Device")).toHaveAttribute("title", "simulated:1");
+    await expect(usb.getByRole("button", { name: "Copy the device" })).toBeVisible();
+
+    // another keyboard shown: its own
+    await plugSecond(page);
+    await selector(page).selectOption({ label: "Simulated Macropad" });
+    await expect(section(page, "Layout")).toBeVisible();
+    await openSection(page, "Keyboard");
+    await expect(fact("Product")).toHaveText("Simulated Macropad");
+    await expect(fact("Device")).toHaveText("simulated:2");
+  } finally {
+    await putBack(page);
+  }
+});
+
+test("a long device path on the About card is cut short with a tooltip, and goes over lines on a phone", async ({
+  app: page,
+}) => {
+  // a Windows device path, as hidapi gives it there: the list the page reads has it in place of the simulator's
+  const path = "\\?\HID#VID_55D4&PID_0461&MI_01#8&1f2a3b4c&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}";
+  await page.route("**/api/keyboards", async (route) => {
+    const listed = await (await route.fetch()).json();
+    for (const k of listed.keyboards) k.path = path;
+    await route.fulfill({ json: listed });
+  });
+  await page.reload();
+  await openSection(page, "Keyboard");
+  const device = page.locator("section.card .fact").filter({ has: page.locator("dt", { hasText: /^Device$/ }) })
+    .locator(".value");
+  await expect(device).toHaveText(path);
+  await expect(device).toHaveAttribute("title", path);
+  const cut = () => device.evaluate((e) => ({ cut: e.scrollWidth > e.clientWidth, height: e.clientHeight }));
+  for (const [width, height] of [[1920, 950], [375, 812]] as const) {
+    await page.setViewportSize({ width, height });
+    const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(sideways).toBeLessThanOrEqual(0);
+    const shown = await cut();
+    if (width > 800) expect(shown.cut).toBe(true); // one line, cut short
+    else expect(shown.height).toBeGreaterThan(30); // over lines
+    await device.scrollIntoViewIfNeeded();
+    await screenshots(page, `about-usb-${width}x${height}`);
+  }
+});

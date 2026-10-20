@@ -2,15 +2,17 @@
   import type { KeyboardModel } from "../api/types";
   import { toasts } from "../lib/toasts.svelte";
   import Button from "../ui/Button.svelte";
-  import { aboutFacts, aboutText } from "./about";
+  import { aboutFacts, aboutText, type UsbDevice } from "./about";
 
   interface Props {
     model: KeyboardModel;
+    /** the keyboard's USB device, from the keyboard list; null when the list hasn't it */
+    usb: UsbDevice | null;
   }
 
-  let { model }: Props = $props();
+  let { model, usb }: Props = $props();
 
-  const groups = $derived(aboutFacts(model));
+  const groups = $derived(aboutFacts(model, usb));
   /** what was copied last, said for a moment */
   let copied = $state("");
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -50,7 +52,7 @@
             <div class="fact">
               <dt>{fact.label}</dt>
               <dd>
-                <span class="value" class:code={fact.code} title={fact.value}>{fact.value}</span>
+                <span class="value" class:code={fact.code} class:long={fact.long} title={fact.value}>{fact.value}</span>
                 {#if fact.copy}
                   <button type="button" class="copy" aria-label="Copy {what}" title="Copy"
                     onclick={() => void copy(fact.value, what)}>
@@ -158,6 +160,19 @@
   .value.code {
     font-family: var(--mono);
     font-size: 12.5px;
+  }
+
+  /* a phone: a long value (the device path) goes over up to three lines, broken anywhere, then is cut short */
+  @media (max-width: 479px) {
+    .value.long {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      white-space: normal;
+      /* a path has few places to break: lines are filled, broken anywhere */
+      word-break: break-all;
+    }
   }
 
   .copy {

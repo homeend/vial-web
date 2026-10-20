@@ -831,12 +831,16 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Manufacturer */
+            manufacturer: string;
             /** Vendorid */
             vendorId: number;
             /** Productid */
             productId: number;
             /** Serial */
             serial?: string | null;
+            /** Path */
+            path: string;
             /** Open */
             open: boolean;
             /** Plugged */

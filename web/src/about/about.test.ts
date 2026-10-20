@@ -78,3 +78,38 @@ describe("aboutFacts", () => {
     expect(text.split("\n").slice(0, 3)).toEqual(["Keyboard", "  Name: Test Corne", "  Keyboard ID: 5EEDC0DE00420042"]);
   });
 });
+
+describe("aboutFacts of the USB device", () => {
+  const usb = {
+    manufacturer: "Wcorne", name: "W-CORNE", vendorId: 0x55d4, productId: 0x461,
+    path: "\\\\?\\HID#VID_55D4&PID_0461&MI_01#8&1f2&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}",
+  };
+  const usbFacts = (entry: typeof usb | null) => aboutFacts(corne(), entry).find((g) => g.title === "USB device");
+
+  it("says what Qt's About keyboard says of it: the IDs as four hex digits, upper case", () => {
+    const group = usbFacts(usb);
+    expect(group?.facts.map((f) => [f.label, f.value])).toEqual([
+      ["Manufacturer", "Wcorne"], ["Product", "W-CORNE"], ["VID", "55D4"], ["PID", "0461"], ["Device", usb.path],
+    ]);
+    expect(group?.facts.find((f) => f.label === "Device")).toMatchObject({ code: true, copy: true, long: true });
+    expect(usbFacts({ ...usb, vendorId: 1, productId: 0xcafe })?.facts.slice(2, 4).map((f) => f.value))
+      .toEqual(["0001", "CAFE"]);
+  });
+
+  it("comes after the keyboard's own facts, and says when the keyboard gives no manufacturer", () => {
+    expect(aboutFacts(corne(), usb).map((g) => g.title))
+      .toEqual(["Keyboard", "USB device", "Memory and entries", "Features"]);
+    expect(usbFacts({ ...usb, manufacturer: "" })?.facts[0].value).toBe("none given");
+  });
+
+  it("isn't there when the keyboard isn't listed (unplugged, and not the one chosen)", () => {
+    expect(usbFacts(null)).toBeUndefined();
+    expect(aboutFacts(corne()).map((g) => g.title)).not.toContain("USB device");
+  });
+
+  it("is in the text to paste", () => {
+    const text = aboutText(aboutFacts(corne(), usb));
+    expect(text).toContain("USB device\n  Manufacturer: Wcorne\n  Product: W-CORNE\n  VID: 55D4\n  PID: 0461\n");
+    expect(text).toContain(`  Device: ${usb.path}`);
+  });
+});

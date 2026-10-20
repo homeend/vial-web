@@ -121,6 +121,16 @@ def test_a_keyboard_without_a_product_name_is_named_by_its_title():
         "Vial keyboard"
 
 
+def test_a_keyboard_keeps_its_usb_manufacturer_and_device_path():
+    """ As Qt's About keyboard shows them: hidapi's path is bytes (text on Linux and macOS, a Windows device path) """
+    info = keyboard_infos([hid_desc(b"\\\\?\\HID#VID_55D4&PID_0461&MI_01#8&1f2&0&0000#{4d1e55b2}")])[0]
+    assert (info.manufacturer, info.path) == ("Wcorne", "\\\\?\\HID#VID_55D4&PID_0461&MI_01#8&1f2&0&0000#{4d1e55b2}")
+    assert keyboard_infos([hid_desc("/dev/hidraw3")])[0].path == "/dev/hidraw3"
+    assert keyboard_infos([hid_desc(b"usb-\xff")])[0].path == "usb-�"  # not text: shown as best it can be
+    bare = keyboard_infos([{"path": b"x", "vendor_id": 1, "product_id": 2, "serial_number": None}])[0]
+    assert (bare.manufacturer, bare.path) == ("", "x")
+
+
 def test_simulated_keyboards_have_serial_numbers_of_their_own():
     manager = two_keyboards()
     first, second = manager.keyboard_list().entries
@@ -458,8 +468,11 @@ def test_the_list_route(setup):
     assert [(k["id"], k["name"], k["open"], k["plugged"]) for k in listed["keyboards"]] == [
         (corne, "Simulated Corne", True, True), (pad, "Simulated Pad", False, True)]
     first = listed["keyboards"][0]
-    assert set(first) == {"id", "name", "vendorId", "productId", "serial", "open", "plugged"}
+    assert set(first) == {"id", "name", "manufacturer", "vendorId", "productId", "serial", "path", "open", "plugged"}
     assert first["serial"] == manager.keyboard_list().entries[0].info.serial
+    # the USB facts the Keyboard page's About card shows, as the simulator gives them
+    assert (first["manufacturer"], first["vendorId"], first["productId"], first["path"]) == (
+        "Simulated", FakeBackend.VENDOR_ID, FakeBackend.PRODUCT_ID, "simulated:1")
 
 
 def test_choosing_through_the_api_tells_every_tab(setup):

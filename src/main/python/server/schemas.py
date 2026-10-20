@@ -375,10 +375,15 @@ class KeyboardEntry(BaseModel):
     its own, else its USB IDs and name, and which of the keyboards alike it is) """
     name: str
     """ its USB product name """
+    manufacturer: str
+    """ its USB manufacturer name ("" if it gives none) """
     vendorId: int
     productId: int
     serial: Optional[str] = None
     """ its USB serial number, without the part every Vial keyboard has; None when that is all it has """
+    path: str
+    """ its HID device path (as Qt's About keyboard shows it): what the system calls the interface it was opened
+    through """
     open: bool
     """ it is the keyboard open (the one the other routes use) """
     plugged: bool

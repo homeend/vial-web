@@ -125,6 +125,8 @@
   const awayName = $derived(keyboardChoices.find((k) => k.id === away?.id)?.name ?? away?.name);
   const error = $derived(keyboard.session?.error ? asSentence(keyboard.session.error) : null);
   /** why the keyboard shown, greyed out, can't be changed: an error about another keyboard isn't about it */
+  /** the USB device of the keyboard shown, as the keyboard list has it (for the Keyboard page's About card) */
+  const shownUsb = $derived(keyboard.keyboards?.keyboards.find((k) => k.id === keyboard.modelKeyboard) ?? null);
   const blockedBy = $derived(blockedWhy(keyboard.session, keyboard.keyboards, keyboard.modelKeyboard));
 
   /** another keyboard chosen while there is work not saved: the confirmation asks first */
@@ -247,7 +249,7 @@
           {:else if section === "matrix"}
             <MatrixPage model={keyboard.model} {placement} />
           {:else if section === "keyboard"}
-            <KeyboardPage model={keyboard.model} {analysis} />
+            <KeyboardPage model={keyboard.model} {analysis} usb={shownUsb} />
           {:else}
             <KeymapPage model={keyboard.model} {placement} {analysis} />
           {/if}
