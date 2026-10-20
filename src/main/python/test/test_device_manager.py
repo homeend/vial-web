@@ -386,5 +386,6 @@ def test_a_keyboard_of_an_unknown_protocol_is_reported_with_why():
         return vk
     manager = DeviceManager(FakeBackend(newer))
     assert not manager.connect()
-    assert manager.status().error == ("its firmware speaks a protocol this Vial doesn't know (VIA 9, Vial 99): a newer "
-                                      "Vial may read it")
+    # where to get a newer one, as Qt's message says
+    assert manager.status().error == ("its firmware speaks a protocol this Vial doesn't know (VIA 9, Vial 99): the "
+                                      "latest Vial, from https://get.vial.today, may read it")

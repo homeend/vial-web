@@ -234,11 +234,18 @@ test("a keyboard that can't be read says why, and the reason goes once it is unp
     await selector(page).selectOption({ label: "Simulated Macropad" });
     await expect(emptyHeading(page)).toHaveText("A keyboard was found, but couldn't be read");
     await expect(page.locator(".empty")).toContainText("Its firmware speaks a protocol this Vial doesn't know");
+    // where to get one that may read it, as Qt says
+    await expect(page.locator(".empty")).toContainText("the latest Vial, from https://get.vial.today, may read it");
+    // what the empty page says is read as it changes: one live region, kept while its text changes
+    const live = page.locator(".content [aria-live=polite]");
+    await expect(live).toContainText("A keyboard was found, but couldn't be read");
+    await live.evaluate((element) => element.setAttribute("data-kept", ""));
 
     // unplugged: no "disconnected" comes (nothing was loaded), and the error still goes
     await secondKeyboard(page, false);
     await expect(emptyHeading(page)).toHaveText("Simulated Macropad is unplugged", { timeout: 10_000 });
     await expect(page.getByText("Its firmware speaks a protocol")).toHaveCount(0);
+    await expect(page.locator(".content [aria-live=polite][data-kept]")).toContainText("Simulated Macropad is unplugged");
 
     // plugged in again, the poll finds it can't be read: the error comes back
     await secondKeyboard(page, true, true);

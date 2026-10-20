@@ -110,8 +110,9 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
 
     def check_protocol_version(self):
         if self.via_protocol not in SUPPORTED_VIA_PROTOCOL or self.vial_protocol not in SUPPORTED_VIAL_PROTOCOL:
-            raise ProtocolError("its firmware speaks a protocol this Vial doesn't know (VIA {}, Vial {}): a newer "
-                                "Vial may read it".format(self.via_protocol, self.vial_protocol))
+            raise ProtocolError("its firmware speaks a protocol this Vial doesn't know (VIA {}, Vial {}): the latest "
+                                "Vial, from https://get.vial.today, may read it".format(self.via_protocol,
+                                                                                       self.vial_protocol))
 
     def reload_layout(self, sideload_json=None):
         """ Requests layout data from the current device """

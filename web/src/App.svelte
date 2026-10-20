@@ -275,45 +275,51 @@
           {/if}
         </div>
       {/key}
-    {:else if status === "disconnected" && isWaiting(unlock)}
-      <div class="empty">
-        <h1>The keyboard waits to be unlocked</h1>
-        <p>An unlock started earlier wasn't finished. It is read once its unlock keys have been held.</p>
-      </div>
-    {:else if status === "disconnected" && away}
-      <div class="empty">
-        <h1>{awayName} is unplugged</h1>
-        <p>Vial opens it again as soon as it is plugged back in.</p>
-        {#if keyboardChoices.length > 1}
-          <p>To use another keyboard, choose it at the top of the page.</p>
+    {:else}
+      <!-- the empty page: what it says is read when it changes (a keyboard found and being read, an error that comes or
+           goes), as a screen reader would hear nothing else -->
+      <div class="empty-page" aria-live="polite">
+        {#if status === "disconnected" && isWaiting(unlock)}
+          <div class="empty">
+            <h1>The keyboard waits to be unlocked</h1>
+            <p>An unlock started earlier wasn't finished. It is read once its unlock keys have been held.</p>
+          </div>
+        {:else if status === "disconnected" && away}
+          <div class="empty">
+            <h1>{awayName} is unplugged</h1>
+            <p>Vial opens it again as soon as it is plugged back in.</p>
+            {#if keyboardChoices.length > 1}
+              <p>To use another keyboard, choose it at the top of the page.</p>
+            {/if}
+          </div>
+        {:else if status === "disconnected" && error}
+          <div class="empty">
+            {#if keyboard.session?.errorKind === "list"}
+              <h1>Vial couldn't look for keyboards</h1>
+              <p>{error}</p>
+              <p>Vial tries again by itself, about once a second.</p>
+            {:else}
+              <h1>A keyboard was found, but couldn't be read</h1>
+              <p>{error}</p>
+              <p>Vial tries again by itself, and when it is plugged in again.</p>
+            {/if}
+          </div>
+        {:else if status === "disconnected"}
+          <div class="empty">
+            <h1>No keyboard found</h1>
+            <p>Plug in a Vial keyboard. It shows up here as soon as it is found.</p>
+            {#if keyboard.session?.platform.startsWith("linux")}
+              <p class="hint">
+                Vial needs a udev rule to see keyboards:
+                <a href="https://get.vial.today/manual/linux-udev.html" target="_blank" rel="noreferrer">how to add it</a>.
+              </p>
+            {/if}
+          </div>
+        {:else if !keyboard.loadError}
+          <div class="empty">
+            <h1>Reading the keyboard…</h1>
+          </div>
         {/if}
-      </div>
-    {:else if status === "disconnected" && error}
-      <div class="empty">
-        {#if keyboard.session?.errorKind === "list"}
-          <h1>Vial couldn't look for keyboards</h1>
-          <p>{error}</p>
-          <p>Vial tries again by itself, about once a second.</p>
-        {:else}
-          <h1>A keyboard was found, but couldn't be read</h1>
-          <p>{error}</p>
-          <p>Vial tries again by itself, and when it is plugged in again.</p>
-        {/if}
-      </div>
-    {:else if status === "disconnected"}
-      <div class="empty">
-        <h1>No keyboard found</h1>
-        <p>Plug in a Vial keyboard. It shows up here as soon as it is found.</p>
-        {#if keyboard.session?.platform.startsWith("linux")}
-          <p class="hint">
-            Vial needs a udev rule to see keyboards:
-            <a href="https://get.vial.today/manual/linux-udev.html" target="_blank" rel="noreferrer">how to add it</a>.
-          </p>
-        {/if}
-      </div>
-    {:else if !keyboard.loadError}
-      <div class="empty" aria-busy="true">
-        <h1>Reading the keyboard…</h1>
       </div>
     {/if}
   </main>
