@@ -126,7 +126,7 @@ def test_a_keyboard_keeps_its_usb_manufacturer_and_device_path():
     info = keyboard_infos([hid_desc(b"\\\\?\\HID#VID_55D4&PID_0461&MI_01#8&1f2&0&0000#{4d1e55b2}")])[0]
     assert (info.manufacturer, info.path) == ("Wcorne", "\\\\?\\HID#VID_55D4&PID_0461&MI_01#8&1f2&0&0000#{4d1e55b2}")
     assert keyboard_infos([hid_desc("/dev/hidraw3")])[0].path == "/dev/hidraw3"
-    assert keyboard_infos([hid_desc(b"usb-\xff")])[0].path == "usb-�"  # not text: shown as best it can be
+    assert keyboard_infos([hid_desc(b"usb-\xff")])[0].path == "usb-\ufffd"  # not text: shown as best it can be
     bare = keyboard_infos([{"path": b"x", "vendor_id": 1, "product_id": 2, "serial_number": None}])[0]
     assert (bare.manufacturer, bare.path) == ("", "x")
 

@@ -270,7 +270,7 @@ test("a long device path on the About card is cut short with a tooltip, and goes
   app: page,
 }) => {
   // a Windows device path, as hidapi gives it there: the list the page reads has it in place of the simulator's
-  const path = "\\?\HID#VID_55D4&PID_0461&MI_01#8&1f2a3b4c&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}";
+  const path = "\\\\?\\HID#VID_55D4&PID_0461&MI_01#8&1f2a3b4c&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}";
   await page.route("**/api/keyboards", async (route) => {
     const listed = await (await route.fetch()).json();
     for (const k of listed.keyboards) k.path = path;
