@@ -2,9 +2,8 @@
 
 Every tab, menu and dialog of the Qt app (`src/main/python/main_window.py`, `editor/`, `unlocker.py`,
 `about_keyboard.py`) and where it lives in the web UI (`web/src/`), or why it is left out. Phase 5's contract: once
-phase 5b is done, the web UI does all of this except what is marked **dropped** or **later**, and what is marked **not
-built yet — owner to decide**: Qt features not in the web UI, for the owner to put later or drop. Checked against the
-code on 2026-10-20.
+phase 5b is done, the web UI does all of this except what is marked **dropped** or **later**. Checked against the code
+on 2026-10-20.
 
 Addresses are the web UI's (`#lighting`); a section the keyboard's firmware doesn't have is left out of the
 navigation, as Qt hides the tabs whose `valid()` is false.
@@ -13,11 +12,11 @@ navigation, as Qt hides the tabs whose `valid()` is false.
 
 | Qt tab | Web UI | Notes |
 |---|---|---|
-| Keymap (`keymap_editor.py`, keycode tray `tabbed_keycodes.py`) | Keymap, `#keymap` (`keymap/KeymapPage.svelte`, `picker/Picker.svelte`) | Layer tabs, the Inspector, the keycode picker with search and "any keycode". Qt's +/- size buttons: the drawing scales to the window instead. The Overview view is new. |
+| Keymap (`keymap_editor.py`, keycode tray `tabbed_keycodes.py`) | Keymap, `#keymap` (`keymap/KeymapPage.svelte`, `picker/Picker.svelte`) | Layer tabs, the Inspector, the keycode picker with search and "any keycode". Qt's +/- size buttons: the drawing scales to the window instead. The Overview view is new. A keyboard without lighting isn't offered the picker's Lighting category, nor lighting keys in its search (`picker/offered.ts`, on every page's picker); Qt always offers them. A key that has one still shows it, and "any keycode" still takes one. |
 | Layout (`layout_editor.py`) | Layout, `#layout` (`layout/LayoutPage.svelte`) | On/off options as switches, lists of choices as lists; saved at once (`PUT /api/layout-options`; via.c keeps them in its EEPROM). Every drawing of the keyboard follows. |
 | Macros (`macro_recorder.py`) | Macros, `#macros` (`behaviours/MacrosPage.svelte`, `MacroEditor.svelte`) | Steps as a chain, recording keys typed in the page (Qt's recorder on Windows and Linux records system-wide; the page records what the browser lets it see, and says so). Memory bar. |
-| Macros: Record macro > Append to current, Replace everything | Macros, Record from keyboard: the keys recorded are added after the steps there, as Append to current does | **Not built yet — owner to decide**: Replace everything. Removing the steps one by one first does the same. |
-| Macros: Open Text Editor… (`macro_tab.py`, `textbox_window.py`) | **Not built yet — owner to decide** | Qt shows a macro's steps as JSON text to edit, with Copy, Paste, Apply and Cancel; Ctrl+S and Ctrl+O in it save and load that one macro as a `.vim` file. |
+| Macros: Record macro > Append to current, Replace everything | Macros, in the macro editor: "Record, adding to the end" and "Record, replacing the steps" (`behaviours/MacroEditor.svelte`, `recorder.ts`); with no step yet, one button, "Record from keyboard" | Two buttons instead of Qt's menu. Replacing takes the steps away when the recording stops, as Qt does; but nothing recorded replaces nothing (Qt leaves the macro empty then). Until the page's Save, Cancel puts the macro back, as the editor says. |
+| Macros: Open Text Editor… (`macro_tab.py`, `textbox_window.py`) | Macros, "Edit as text…" in the macro editor (`behaviours/MacroTextDialog.svelte`, `macroText.ts`; `POST /api/macros/parse`) | The same JSON as Qt's, character for character, so text copies between the two. Apply reads it as a `.vil` file's macro is read (as in Qt, a text under 6 characters is no step) and puts the steps in the macro being edited; the page's Save writes them. Where Qt skips a step it can't read or ignores the whole text, the dialog says what is wrong and applies nothing. Copy and Select all (no Paste button: the browser pastes); Save as file… (Ctrl+S) and Load file… (Ctrl+O) save and load a `.vim` file, which Apply then takes. Esc is Cancel. |
 | Lighting (`rgb_configurator.py`) | Lighting, `#lighting` (`lighting/LightingPage.svelte`) | VialRGB, QMK RGB light and backlight, only what the keyboard has, as the cards RGB matrix, RGB light and Backlight (Qt's labels: RGB Effect…, Underglow Effect…, Backlight Brightness…); effects by Qt's names. Changes show at once and are kept once saved, as with Qt's Save (`POST /api/lighting/save`). Backlight breathing is the exception, in Qt too: the firmware keeps a change of it at once, with the brightness it runs at, and the page says so. Undo (Qt has none) puts back the lighting saved here last, or what the page showed when it first opened. QMK RGB light's speed isn't shown, as in Qt: no RGB light effect of vial-qmk uses it. |
 | Tap Dance (`tap_dance.py`) | Tap dance, `#tap-dance` | |
 | Combos (`combos.py`) | Combos, `#combos` | |
@@ -49,7 +48,7 @@ navigation, as Qt hides the tabs whose `valid()` is false.
 | Security > Lock (Ctrl+L) | Top bar, the Locked/Unlocked control | |
 | Security > Reboot to bootloader (Ctrl+B) | Keyboard page, Reboot to bootloader… (`about/BootloaderCard.svelte`) | With a confirmation; unlocks first, as Qt does; then a banner, in the tab that rebooted it, says the keyboard is in its bootloader (other tabs say Keyboard unplugged). A firmware built without the jump says so instead. |
 | Theme (System, Light, Dark, Arc, Nord, …) | Top bar, System / Light / Dark | **Dropped**: Qt's other colour themes. |
-| About > About *keyboard*… (`about_keyboard.py`) | Keyboard page, About this keyboard (`about/AboutCard.svelte`) | The name, Keyboard ID, protocols, matrix, keys, layers, macro memory, entries and features, with Copy. **Not built yet — owner to decide**: Qt's Manufacturer, Product, VID, PID and device path (the USB device). |
+| About > About *keyboard*… (`about_keyboard.py`) | Keyboard page, About this keyboard (`about/AboutCard.svelte`) | The name, Keyboard ID, protocols, matrix, keys, layers, macro memory, entries and features, with Copy. The USB device as Qt shows it: Manufacturer, Product, VID and PID (four hex digits) and Device (the HID path, cut short with its tooltip), from the keyboard list (`GET /api/keyboards`: what hidapi said when the keyboard was found). |
 | About > About Vial… | **Later** (phase 6) | Vial's version comes with the packaging. |
 
 The menus' keyboard shortcuts aren't kept: in a browser, Ctrl+O, Ctrl+S and Ctrl+Q are the browser's.

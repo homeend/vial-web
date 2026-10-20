@@ -103,20 +103,21 @@ page.
 | `move` | Dragging a key onto another with the mouse (Replace, Swap both, Undo, Esc), the Inspector's Copy and Swap without a mouse, the drop menu in a 1080p window |
 | `macropad` | Another keyboard: encoders, rotated keys, an ISO Enter, a decal, a layout option |
 | `behaviours` | The Tap dance, Combos and Macros pages end to end, the top bar's Lock/Unlock, the pages at four window sizes and at 375 px |
-| `tapdance`, `combos`, `macros` | Editing on those pages: where the focus goes, saves that are slow or fail, recording keys |
+| `tapdance`, `combos`, `macros` | Editing on those pages: where the focus goes, saves that are slow or fail, recording keys (adding to the end, or replacing the steps: undone by Cancel) |
+| `macro-text` | The macro text editor: Qt's JSON shown, Esc and Cancel changing nothing, what can't be read said and not applied, Apply then the page's Save, a `.vim` file saved and loaded; the dialog and the record buttons at 1920 and 375 px |
 | `unlock` | The unlock dialog |
 | `overrides` | The Key overrides and Alt-repeat pages: a new key override built and saved, switched off, removed; an alt-repeat key edited |
 | `settings` | The QMK settings form: a change undone, a number out of range, Save, Reset to defaults with its confirmation |
 | `layoutfile` | Saving the layout, loading it back with its preview; another keyboard's file and a broken one; a file with macros on a locked keyboard |
 | `feature-pages` | The Key overrides, Alt-repeat, Settings and Keyboard pages at four window sizes and at 375 px, their editors and dialogs in a 1080p window |
 | `navigation` | The address and the back button, page titles, the focus, what the Keymap keeps while another page shows |
-| `lighting` | The Lighting page: VialRGB, QMK RGB light and backlight changed, undone and saved (a replug tells what was kept), backlight breathing kept at once without a Save, a slider dragged, a keyboard without lighting having no Lighting page |
+| `lighting` | The Lighting page: VialRGB, QMK RGB light and backlight changed, undone and saved (a replug tells what was kept), backlight breathing kept at once without a Save, a slider dragged, a keyboard without lighting having no Lighting page, and no Lighting category or lighting keys in its keycode picker (Any keycode still taking one) |
 | `layout` | The Layout page on the macropad: an option changed, every drawing following; a change the keyboard didn't take putting the switch back, keeping the focus; a keyboard without layout options having no Layout page |
 | `matrix` | The matrix tester: unlocking first, keys pressed through the test hook, keys typed doing nothing meanwhile; the test stopping when the page is left, the keyboard is unplugged, the window loses the focus or the tab is hidden |
 | `bootloader` | Reboot to bootloader: the confirmation (Cancel and Esc send nothing), the unlock, the jump sent to the keyboard once, the keyboard shown gone and back; a cancelled unlock sending nothing more; a firmware without the bootloader jump |
 | `bootloader-focus` | The focus going to the page heading when the bootloader banner goes |
 | `p5b-pages` | The Lighting, Layout, Matrix tester and Keyboard pages at five window sizes, in both themes |
-| `keyboards` | The keyboard selector (`PUT /api/simulator/second-keyboard`): none with one keyboard; switching to the second and back, the selector going when it is unplugged; work not saved asked about first (Cancel keeps the keyboard); the chosen keyboard unplugged, unreadable and back; the empty page's error appearing and clearing; the top bar at 1920 and 375 px |
+| `keyboards` | The keyboard selector (`PUT /api/simulator/second-keyboard`): none with one keyboard; switching to the second and back, the selector going when it is unplugged; work not saved asked about first (Cancel keeps the keyboard); the chosen keyboard unplugged, unreadable and back; the empty page's error appearing and clearing; the top bar at 1920 and 375 px; the About card's USB device (Qt's About keyboard), following the keyboard shown, and a long device path cut short, over lines at 375 px |
 
 The tests run in parallel: half the cores by default, or `E2E_WORKERS=<n> npx playwright test`
 (`E2E_WORKERS=1` runs them one after another). A worker runs its tests one at a time on its own servers,
@@ -140,9 +141,9 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | `src/matrix/` | The Matrix tester page: the keys held and pressed, the switch matrix |
 | `src/analysis/` | Pure functions over the loaded model: how each layer is reached, combo marks and colours (`comboMarksOn`, `comboColours`), tap dance and macro usage, finding a character or key, and the phrases for them |
 | `src/keymap/` | Keymap Edit and Overview views: layer tabs, Inspector, hold editor, keyboard navigation, moving a key onto another (a drag and its drop menu, or Copy and Swap in the Inspector), layer cards, find box; what the page keeps while another one shows (`state.svelte.ts`) |
-| `src/behaviours/` | The Tap dance, Combos, Macros, Key overrides and Alt-repeat pages: their cards and editors, the combo key chooser, the macro step editor and recorder, the modifier, layer and option controls, and the plain-language sentences |
+| `src/behaviours/` | The Tap dance, Combos, Macros, Key overrides and Alt-repeat pages: their cards and editors, the combo key chooser, the macro step editor, recorder and text editor (Qt's JSON), the modifier, layer and option controls, and the plain-language sentences |
 | `src/settings/` | The QMK settings form (Settings): the groups `qmk_settings.json` defines, what changed, Save, Undo and Reset; what the page keeps while another one shows (`state.svelte.ts`) |
 | `src/about/` | The Keyboard page: what the keyboard is (Qt's About keyboard), saving and loading `.vil` layout files with a preview of what changes, and reboot to bootloader |
-| `src/picker/` | Keycode picker: search, categories, any-keycode entry |
+| `src/picker/` | Keycode picker: search, categories (no Lighting category on a keyboard without lighting, `offered.ts`), any-keycode entry |
 | `src/shell/` | Top bar (with the Lock/Unlock control), navigation, banners, toasts, the unlock dialog |
 | `src/ui/` | Small shared controls (a switch, a list, a slider, the Save bar), the name dialog (layers, tap dances, macros) and a confirmation dialog |
