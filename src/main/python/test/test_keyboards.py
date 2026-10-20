@@ -2,6 +2,7 @@
 import json
 import sys
 import time
+import urllib.parse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -575,6 +576,80 @@ def test_the_second_keyboard_hook_is_fake_only_and_not_in_the_schema(setup, tmp_
         other.get("/?token=" + TOKEN)
         assert other.put("/api/simulator/second-keyboard", json={"connected": True}).status_code in (404, 405)
         assert other.get("/api/keyboards").json() == {"keyboards": [], "chosen": None}
+
+
+# ---------- a change meant for the keyboard closed ----------
+
+def meant(keyboard_id):
+    """ The header a page sends with each change: the keyboard it shows (percent-encoded, as encodeURIComponent) """
+    return {"x-vial-keyboard": urllib.parse.quote(keyboard_id, safe="")}
+
+
+def test_a_change_meant_for_another_keyboard_is_refused_and_not_sent(setup):
+    client, manager, app = setup
+    corne, pad = ids(manager)
+    virtual = manager.backend.virtual
+    writes = len(virtual.writes)
+    reply = client.put("/api/keymap/0/0/0", json={"code": "KC_B"}, headers=meant(pad))
+    assert reply.status_code == 409
+    assert reply.json()["detail"] == "The keyboard changed (another one was opened): this change was not sent."
+    assert len(virtual.writes) == writes
+    assert manager.connected and manager.title == "Simulated: Simulated Corne"
+
+
+def test_a_change_meant_for_the_keyboard_open_or_for_none_goes_through(setup):
+    client, manager, app = setup
+    corne = ids(manager)[0]
+    assert "%23" in meant(corne)["x-vial-keyboard"]  # its "#" is percent-encoded, and decoded by the server
+    assert client.put("/api/keymap/0/0/0", json={"code": "KC_B"}, headers=meant(corne)).status_code == 200
+    # without the header (curl, older pages): as before
+    assert client.put("/api/keymap/0/0/0", json={"code": "KC_C"}).status_code == 200
+    assert manager.run(lambda kb: kb.layout[(0, 0, 0)]) == "KC_C"
+    # reads are never refused
+    assert client.get("/api/keyboard", headers=meant("nope")).status_code == 200
+
+
+def test_a_change_sent_from_a_tab_that_still_shows_the_keyboard_closed_never_reaches_the_one_opened(setup):
+    """ Another tab switched keyboards: what this tab sends next is for the keyboard it shows, which was closed """
+    client, manager, app = setup
+    corne, pad = ids(manager)
+    assert client.post("/api/keyboards/select", json={"id": pad}).status_code == 200
+    second = manager.backend.second
+    writes = len(second.writes)
+    for request in (lambda: client.put("/api/keymap/0/0/0", json={"code": "KC_B"}, headers=meant(corne)),
+                    lambda: client.put("/api/macros", json={"items": []}, headers=meant(corne)),
+                    lambda: client.post("/api/reload", headers=meant(corne)),
+                    lambda: client.post("/api/unlock/start", headers=meant(corne)),
+                    lambda: client.put("/api/names/layers/0", json={"name": "X"}, headers=meant(corne))):
+        assert request().status_code == 409
+    assert len(second.writes) == writes
+    assert manager.connected and manager.keyboard_list().open == pad  # refused, the keyboard stays open
+    assert "X" not in json.dumps(client.get("/api/names").json())
+
+
+def test_the_keyboard_meant_is_checked_under_the_device_lock():
+    """ A switch can't come between the check and the change: both are made holding the lock """
+    manager = two_keyboards()
+    corne, pad = ids(manager)
+    held = []
+    check = manager._check_meant_for
+
+    def watching():
+        held.append(manager.lock._is_owned())
+        check()
+    manager._check_meant_for = watching
+    token = device.meant_for.set(corne)
+    try:
+        manager.run(lambda kb: kb.set_key(0, 0, 0, "KC_B"))
+        manager.select(pad)
+        with pytest.raises(device.KeyboardChanged):
+            manager.run(lambda kb: kb.set_key(0, 0, 0, "KC_C"))
+        with pytest.raises(device.KeyboardChanged):
+            manager.read(lambda kb: kb.rows)
+    finally:
+        device.meant_for.reset(token)
+    assert held == [True, True, True]
+    assert manager.run(lambda kb: kb.layout[(0, 0, 0)]) != "KC_C"
 
 
 def test_the_event_type_is_in_the_schema(setup):

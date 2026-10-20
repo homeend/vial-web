@@ -2,7 +2,7 @@
 // keyboard confirmed (the server's reply), never a guess.
 import { untrack } from "svelte";
 import { api } from "../api/api";
-import { DEFAULT_LANGUAGE, setRequestLanguage } from "../api/client";
+import { DEFAULT_LANGUAGE, setRequestKeyboard, setRequestLanguage } from "../api/client";
 import { ApiError, causeMessage, failureMessage } from "../api/errors";
 import { connectEvents, type EventsLink, type LinkState, type ServerEvent } from "../api/events";
 import type {
@@ -214,7 +214,7 @@ export class KeyboardStore {
       }
       this.#useSession(session);
       this.model = model;
-      this.#modelKeyboard = opened;
+      this.#showKeyboard(opened);
       this.catalogue = catalogue;
       this.loadError = null;
       this.stale = false;
@@ -266,11 +266,18 @@ export class KeyboardStore {
     this.#loads++;
     this.#anotherKeyboard();
     this.model = null;
-    this.#modelKeyboard = null;
+    this.#showKeyboard(null);
     this.matrix = null;
     this.loadError = null;
     this.inBootloader = false;
     this.stale = true;
+  }
+
+  /** The model shown is of this keyboard (KeyboardEntry.id), or of none: the changes sent are meant for it, so that
+   * the server refuses them (409) if another tab opened another keyboard meanwhile */
+  #showKeyboard(id: string | null): void {
+    this.#modelKeyboard = id;
+    setRequestKeyboard(id);
   }
 
   /** The keyboard shown is another one now (or none): what was kept for the one before goes, the work not saved on it
@@ -612,8 +619,10 @@ export class KeyboardStore {
     this.pending++;
     const loads = this.#loads;
     const plugs = this.#plugs;
+    /** the server said another keyboard is open than the one the change was for */
+    let changed = false;
     const fail = async (message: string) => {
-      const note = putBack ? await putBack(this.#plugs === plugs) : "";
+      const note = putBack ? await putBack(this.#plugs === plugs && !changed) : "";
       toasts.error(note ? `${message} ${note}` : message);
       return false;
     };
@@ -632,6 +641,13 @@ export class KeyboardStore {
       return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 503) this.connected = false;
+      if (error instanceof ApiError && error.status === 409) {
+        // another keyboard was opened (from another tab), and the change refused: nothing more is sent to it (no
+        // putting back either), and what there is now is read
+        changed = true;
+        void this.#readKeyboards();
+        if (this.connected) void this.load();
+      }
       return await fail(failureMessage(action, error));
     } finally {
       this.pending--;

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { attachmentName, DEFAULT_LANGUAGE, download, request, setRequestLanguage } from "./client";
+import { attachmentName, DEFAULT_LANGUAGE, download, request, setRequestKeyboard, setRequestLanguage } from "./client";
 import { ApiError } from "./errors";
 
 function reply(status: number, body: unknown): Response {
@@ -15,6 +15,7 @@ beforeEach(() => {
 
 afterEach(() => {
   setRequestLanguage(DEFAULT_LANGUAGE);
+  setRequestKeyboard(null);
   vi.unstubAllGlobals();
 });
 
@@ -53,6 +54,27 @@ describe("request", () => {
     expect(init.method).toBe("GET");
     expect(init.headers).toEqual({});
     expect(init.body).toBeUndefined();
+  });
+
+  it("says which keyboard a change is for, once one is known, percent-encoded; never for a read", async () => {
+    fetchMock.mockResolvedValue(reply(200, {}));
+    setRequestKeyboard("55d4:0461:name:W-CORNE ñ#2");
+    const meant = { "X-Vial-Keyboard": "55d4%3A0461%3Aname%3AW-CORNE%20%C3%B1%232" };
+    await request("put", "/api/keymap/{layer}/{row}/{col}", {
+      params: { layer: 0, row: 0, col: 0 },
+      body: { code: "KC_A" },
+    });
+    expect(sent().init.headers).toEqual({ "Content-Type": "application/json", ...meant });
+    fetchMock.mockClear();
+    await request("post", "/api/unlock/start");
+    expect(sent().init.headers).toEqual(meant);
+    fetchMock.mockClear();
+    await request("get", "/api/keyboard");
+    expect(sent().init.headers).toEqual({});
+    fetchMock.mockClear();
+    setRequestKeyboard(null);
+    await request("post", "/api/unlock/start");
+    expect(sent().init.headers).toEqual({});
   });
 
   it("asks for the keyboard language when it isn't the default", async () => {

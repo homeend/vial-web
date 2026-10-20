@@ -34,11 +34,11 @@ vi.mock("../api/api", () => ({
   },
 }));
 vi.mock("../api/events", () => ({ connectEvents: vi.fn(() => ({ close: vi.fn(), send: vi.fn() })) }));
-vi.mock("../api/client", () => ({ DEFAULT_LANGUAGE: "en-us", setRequestLanguage: vi.fn() }));
+vi.mock("../api/client", () => ({ DEFAULT_LANGUAGE: "en-us", setRequestLanguage: vi.fn(), setRequestKeyboard: vi.fn() }));
 
 const { api } = await import("../api/api");
 const { connectEvents } = await import("../api/events");
-const { setRequestLanguage } = await import("../api/client");
+const { setRequestKeyboard, setRequestLanguage } = await import("../api/client");
 const { KeyboardStore } = await import("./keyboard.svelte");
 const { toasts } = await import("./toasts.svelte");
 const { settingsEdits } = await import("../settings/state.svelte");
@@ -759,6 +759,23 @@ describe("moving keycodes between keys", () => {
     expect(store.pending).toBe(0);
   });
 
+  it("puts nothing back when the server says another keyboard is open now: nothing more is sent to it", async () => {
+    const { store } = await twoKeys();
+    const loads = mocked.keyboard.mock.calls.length;
+    mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => described(code))
+      .mockRejectedValueOnce(new ApiError(409, "The keyboard changed (another one was opened): this change was not sent."));
+    expect(await store.setCodes(0, swap, ACTION)).toBe(false);
+    expect(sent()).toEqual(["0:0,1=KC_A", "0:0,0=KC_B"]);
+    expect(messages()).toEqual([
+      "Swapping the keys failed: The keyboard changed (another one was opened): this change was not sent. The key at " +
+        "row 0, column 1 was already changed to KC_A: it wasn't put back, as the keyboard was unplugged or replaced.",
+    ]);
+    await settle();
+    // what there is now is read
+    expect(mocked.keyboard.mock.calls.length).toBeGreaterThan(loads);
+    expect(mocked.keyboards).toHaveBeenCalled();
+  });
+
   it("says which key kept its change, by what it does now, when putting it back fails too", async () => {
     const { store, codes } = await twoKeys();
     mocked.setKey.mockImplementationOnce(async (_l, _r, _c, code) => ({ ...described(code), tap: "A" }))
@@ -1172,6 +1189,45 @@ describe("the keyboard selector", () => {
     reply.resolve({ keyboards: [entry("a"), entry("b", { open: true })], chosen: "b" });
     expect(await first).toBe(true);
     expect(mocked.selectKeyboard).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends each change for the keyboard shown, and for none once it is dropped", async () => {
+    mocked.session.mockResolvedValue(session());
+    const { store } = await loaded();
+    expect(vi.mocked(setRequestKeyboard)).toHaveBeenLastCalledWith("a");
+    const reply = deferred<KeyboardList>();
+    mocked.selectKeyboard.mockReturnValueOnce(reply.promise);
+    const switching = store.selectKeyboard("b");
+    await settle();
+    // until the server has switched, still the one shown
+    expect(vi.mocked(setRequestKeyboard)).toHaveBeenLastCalledWith("a");
+    const loading = deferred<KeyboardModel>();
+    mocked.keyboard.mockReturnValueOnce(loading.promise);
+    mocked.session.mockResolvedValue(session({ keyboard: "b" }));
+    reply.resolve({ keyboards: [entry("a"), entry("b", { open: true })], chosen: "b" });
+    await switching;
+    expect(store.model).toBeNull();
+    expect(vi.mocked(setRequestKeyboard)).toHaveBeenLastCalledWith(null);
+    loading.resolve(other("KC_Z"));
+    await settle();
+    expect(vi.mocked(setRequestKeyboard)).toHaveBeenLastCalledWith("b");
+  });
+
+  it("takes a change refused as another keyboard is open for a failure, and reads what there is", async () => {
+    mocked.session.mockResolvedValue(session());
+    const { store } = await loaded();
+    const loads = mocked.keyboard.mock.calls.length;
+    mocked.setKey.mockRejectedValueOnce(
+      new ApiError(409, "The keyboard changed (another one was opened): this change was not sent."));
+    mocked.session.mockResolvedValue(session({ keyboard: "b" }));
+    mocked.keyboard.mockResolvedValue(other("KC_Z"));
+    expect(await store.setCode(0, { kind: "key", index: 0 }, "KC_B")).toBe(false);
+    expect(toasts.items.map((t) => t.message)).toEqual([
+      "Changing the key failed: The keyboard changed (another one was opened): this change was not sent."]);
+    await settle();
+    expect(mocked.keyboard.mock.calls.length).toBeGreaterThan(loads);
+    expect(store.model?.name).toBe("Other");
+    expect(store.model?.layers[0].keys[0].code).toBe("KC_Z");
   });
 
   it("drops a keyboard no longer chosen once none is open, and keeps the chosen one unplugged", async () => {

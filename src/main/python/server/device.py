@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ Finds and opens the keyboard, keeps it loaded, and serializes all access to it. """
+import contextvars
 import logging
 import struct
 import threading
@@ -53,6 +54,17 @@ class DeviceIOError(RuntimeError):
 
 class UnknownKeyboard(LookupError):
     """ No keyboard of that id is plugged in (DeviceManager.select) """
+
+
+class KeyboardChanged(Exception):
+    """ A request meant for one keyboard (meant_for) while another one is open: it was not sent """
+
+
+meant_for = contextvars.ContextVar("meant_for", default=None)
+""" The keyboard (KeyboardInfo.id) the request being served is meant for, or None: any. A page sends the id of the
+keyboard it shows with each change (the server app puts it here), so that a change sent while another tab switched
+keyboards never reaches the keyboard opened instead: DeviceManager refuses it, under the device lock (KeyboardChanged).
+"""
 
 
 def require_unlocked(keyboard):
@@ -670,7 +682,7 @@ class DeviceManager:
         with self.lock:
             try:
                 self.run(do_reload)
-            except (NotConnected, KeyboardLocked):
+            except (NotConnected, KeyboardLocked, KeyboardChanged):
                 raise
             except Exception as e:
                 log.warning("could not reload the keyboard: %s", e)
@@ -680,10 +692,12 @@ class DeviceManager:
                 raise
 
     def run(self, fn):
-        """ Call fn(keyboard) while holding the device lock. Refused while the keyboard waits for its unlock keys. """
+        """ Call fn(keyboard) while holding the device lock. Refused while the keyboard waits for its unlock keys, and
+        when the request is meant for another keyboard (meant_for). """
         with self.lock:
             if self.keyboard is None:
                 raise NotConnected("no keyboard connected")
+            self._check_meant_for()
             if self.unlocking is not None:
                 raise KeyboardLocked("the keyboard is waiting for its unlock keys: it takes no changes until it is "
                                      "unlocked")
@@ -702,7 +716,15 @@ class DeviceManager:
         with self.lock:
             if self.keyboard is None:
                 raise NotConnected("no keyboard connected")
+            self._check_meant_for()
             return fn(self.keyboard)
+
+    def _check_meant_for(self):
+        """ KeyboardChanged when the request is meant for another keyboard than the one open (meant_for); the lock
+        held. With none open, the request fails as it would anyway. """
+        wanted = meant_for.get()
+        if wanted is not None and self.open_id is not None and wanted != self.open_id:
+            raise KeyboardChanged("The keyboard changed (another one was opened): this change was not sent.")
 
     def _io(self, keyboard, fn):
         """ fn(keyboard), the lock held; a failure that means the keyboard is gone closes it (NotConnected) """
@@ -740,8 +762,10 @@ class DeviceManager:
         """ Start unlocking as Qt's unlocker does: unlock_start, after which poll_unlock() follows the countdown. An
         unlock being followed already (started from another tab) is left to run: starting it again would start its
         countdown over. A cancelled unlock is followed again (the keyboard starts its countdown over). An unlocked
-        keyboard is left alone. Returns unlock_state(). """
+        keyboard is left alone. Refused when the request is meant for another keyboard (meant_for). Returns
+        unlock_state(). """
         with self.lock:
+            self._check_meant_for()
             if self.unlocking is not None and self.unlocking.following:
                 return self.unlock_state()
             keyboard = self._unlock_target()

@@ -17,6 +17,14 @@ export function setRequestLanguage(lang: string): void {
   language = lang;
 }
 
+let keyboardMeant: string | null = null;
+
+/** The keyboard (KeyboardEntry.id) the page shows: every change is sent for it (the X-Vial-Keyboard header), and the
+ * server refuses one (409) while another keyboard is open, opened from another tab meanwhile. null: any keyboard. */
+export function setRequestKeyboard(id: string | null): void {
+  keyboardMeant = id;
+}
+
 function url(path: string, params: Record<string, string | number> | undefined): string {
   const filled = path.replace(/\{(\w+)\}/g, (_, name: string) => encodeURIComponent(String(params?.[name])));
   return language === DEFAULT_LANGUAGE ? filled : `${filled}?lang=${encodeURIComponent(language)}`;
@@ -43,9 +51,12 @@ export async function request<P extends keyof paths, M extends Method>(
   } = {},
 ): Promise<Reply<Operation<P, M>>> {
   const body = options.raw ?? (options.body === undefined ? undefined : JSON.stringify(options.body));
+  const headers: Record<string, string> = body === undefined ? {} : { "Content-Type": "application/json" };
+  // a header value can't hold every character a keyboard's name can: percent-encoded
+  if (method !== "get" && keyboardMeant !== null) headers["X-Vial-Keyboard"] = encodeURIComponent(keyboardMeant);
   const response = await send(url(path, options.params as Record<string, string | number> | undefined), {
     method: method.toUpperCase(),
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    headers,
     body,
   });
   const reply: unknown = await response.json().catch(() => null);

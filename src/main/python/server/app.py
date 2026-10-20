@@ -10,15 +10,16 @@ import sys
 import urllib.parse
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import HTTPConnection
 
 from protocol.qmk_settings_codec import QmkSettingsCodec
-from server import edits, languages, model, schemas
+from server import device, edits, languages, model, schemas
 from server.describe import keyboard_language, parse
-from server.device import NotConnected, KeyboardLocked, KeyboardRefused, UnknownKeyboard
+from server.device import KeyboardChanged, NotConnected, KeyboardLocked, KeyboardRefused, UnknownKeyboard
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,8 @@ MATRIX_POLL_GAP = 0.02
 requests (edits, the unlock countdown) take the device lock in between """
 MATRIX_FAILURE_PAUSE = 0.5
 """ seconds the keyboard is left alone after a reading of the matrix that failed, before the next one """
+KEYBOARD_HEADER = "x-vial-keyboard"
+""" the keyboard a change is meant for (see create_app's keyboard_meant) """
 SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": "frame-ancestors 'none'",
@@ -218,6 +221,7 @@ class MatrixWatcher:
                                    pressed=[schemas.MatrixPosition(row=r, col=c) for r, c in reading.pressed])
 
     async def _read(self):
+        device.meant_for.set(None)  # started by a request maybe: the readings are meant for whichever keyboard is open
         me = asyncio.current_task()
         loop = asyncio.get_running_loop()
         try:
@@ -285,6 +289,7 @@ class UnlockFollower:
                 await task
 
     async def _follow(self):
+        device.meant_for.set(None)  # started by a request: what it reads is for whichever keyboard is open
         me = asyncio.current_task()
         try:
             while True:
@@ -392,7 +397,16 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             await matrix.shutdown()
             await hub.shutdown()
 
-    app = FastAPI(title="Vial", lifespan=lifespan)
+    async def keyboard_meant(connection: HTTPConnection):
+        """ The keyboard a page means its request for: the X-Vial-Keyboard header (KeyboardEntry.id, percent-encoded),
+        which a page sends with each change. DeviceManager refuses a change meant for another keyboard than the one
+        open (409): another tab switched keyboards meanwhile. Without the header, any keyboard; a read (GET) is never
+        refused. """
+        wanted = connection.headers.get(KEYBOARD_HEADER)
+        change = connection.scope.get("method") not in (None, "GET", "HEAD")
+        device.meant_for.set(urllib.parse.unquote(wanted) if wanted and change else None)
+
+    app = FastAPI(title="Vial", lifespan=lifespan, dependencies=[Depends(keyboard_meant)])
     app.state.hub = hub
     app.state.manager = manager
     app.state.unlock_follower = follower
@@ -445,6 +459,10 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     @app.exception_handler(NotConnected)
     async def not_connected(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=503)
+
+    @app.exception_handler(KeyboardChanged)
+    async def changed(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
 
     @app.exception_handler(KeyboardLocked)
     async def locked(request, exc):
