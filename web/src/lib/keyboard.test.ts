@@ -642,6 +642,24 @@ describe("a locked keyboard", () => {
     expect(toasts.items.map((t) => t.message)).toEqual([NOT_UNLOCKED]);
   });
 
+  it("takes the keys held, sent while a change waits for its unlock, for no plug, also first on a new link", async () => {
+    const { store, send, emit, link, saving } = await waitingForUnlock();
+    store.watchMatrix();
+    const matrix = { state: "locked" as const, pressed: [] };
+    send({ type: "matrix", matrix });
+    mocked.session.mockResolvedValue({ fake: true, unlock: UNLOCKING } as never);
+    link("closed");
+    link("open");
+    // a reading before the server's first event: that one ("connected") still says the keyboard stayed
+    send({ type: "matrix", matrix });
+    emit("connected");
+    await settle();
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await saving).toBe(true);
+    expect(mocked.setMacros).toHaveBeenCalledTimes(2);
+    expect(toasts.items).toEqual([]);
+  });
+
   it("sends the change again when the events link comes back to the same keyboard", async () => {
     // the server's first event on the new link says "connected": the keyboard is still there, not plugged in again
     const { store, send, emit, link, saving } = await waitingForUnlock();
@@ -911,11 +929,50 @@ describe("the phase 5b changes", () => {
     mocked.setLighting.mockResolvedValueOnce(shown as never);
     expect(await store.setLighting({ vialrgb: { mode: 3 } })).toBe(true);
     expect(store.model!.lighting).toEqual(shown);
-    mocked.saveLighting.mockResolvedValueOnce(shown as never);
+    // the save's reply, what the keyboard kept, is shown (a key on the keyboard may have changed it meanwhile)
+    const kept = { vialrgb: { ...shown.vialrgb, mode: 5 } };
+    mocked.saveLighting.mockResolvedValueOnce(kept as never);
     expect(await store.saveLighting()).toBe(true);
+    expect(store.model!.lighting).toEqual(kept);
     mocked.setLighting.mockRejectedValueOnce(new ApiError(502));
     expect(await store.setLighting({ vialrgb: { mode: 4 } }, "Choosing the effect")).toBe(false);
     expect(toasts.items.map((t) => t.message)).toEqual(["Choosing the effect failed: The keyboard didn't respond."]);
+    expect(store.model!.lighting).toEqual(kept);
+  });
+
+  it("says so when saving the lighting fails, and keeps what the keyboard showed", async () => {
+    const { store } = await loaded();
+    const shown = { backlight: { brightness: 170, effect: 0 } };
+    store.model!.lighting = shown as never;
+    mocked.saveLighting.mockRejectedValueOnce(new ApiError(502));
+    expect(await store.saveLighting()).toBe(false);
+    expect(store.model!.lighting).toEqual(shown);
+    expect(toasts.items.map((t) => t.message)).toEqual(["Saving the lighting failed: The keyboard didn't respond."]);
+  });
+
+  it.each([502, 503])("sends a reboot that failed (%i) once: it isn't sent again", async (status) => {
+    const { store } = await loaded();
+    mocked.rebootToBootloader.mockRejectedValueOnce(new ApiError(status));
+    expect(await store.rebootToBootloader()).toBe(false);
+    expect(mocked.rebootToBootloader).toHaveBeenCalledTimes(1);
+    expect(store.inBootloader).toBe(false);
+    expect(toasts.items).toHaveLength(1);
+  });
+
+  it("forgets the keys held when the events link goes, and when the keyboard is plugged in or unplugged", async () => {
+    const { store, send, emit, link } = await loaded();
+    store.watchMatrix();
+    const matrix = { state: "testing" as const, pressed: [{ row: 0, col: 1 }] };
+    send({ type: "matrix", matrix });
+    link("closed");
+    expect(store.matrix).toBeNull();
+    link("open");
+    for (const type of ["disconnected", "connected"] as const) {
+      send({ type: "matrix", matrix });
+      expect(store.matrix).toEqual(matrix);
+      emit(type);
+      expect(store.matrix).toBeNull();
+    }
   });
 
   it("reboots the keyboard into its bootloader after unlocking it, and shows it gone", async () => {

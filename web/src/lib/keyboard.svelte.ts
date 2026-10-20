@@ -176,6 +176,8 @@ export class KeyboardStore {
 
   #onLink(state: LinkState): void {
     this.link = state;
+    // the keys held are no longer followed: the reading shown would stay as it was
+    if (state !== "open") this.matrix = null;
     if (state === "open") {
       this.#opening = true;
       // a link opened again starts with nothing asked for
@@ -206,6 +208,8 @@ export class KeyboardStore {
     const unchanged = event.type === "reloaded" || (opening && event.type === "connected" && this.connected);
     if (!unchanged) this.#plugs++;
     this.connected = event.type !== "disconnected";
+    // the keys held were another keyboard's, or of none: the next reading says what is held now
+    if (event.type !== "reloaded") this.matrix = null;
     if (event.type === "connected") {
       this.#connects++;
       this.#leftBootloader();
