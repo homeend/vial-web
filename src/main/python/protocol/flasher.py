@@ -11,8 +11,11 @@ since 1970, UTC), 8 bytes unused, the SHA-256 of the payload (32 bytes), then th
 
 The bootloader takes 64-byte messages: "VC" and a command byte (CMD_*), padded with zeros; then, for CMD_FLASH, the
 payload in 64-byte chunks. After CMD_FLASH with a count of N, the bootloader takes the next N messages as the payload,
-whatever they hold: until it has them all, a command is written into the flash and never answered. Only unplugging the
-keyboard and starting it in its bootloader again ends that.
+whatever they hold: until it has them all, a command is written into the flash and never answered. That ends when it
+has all N (nothing here sends the missing ones), or when the keyboard is unplugged and started in its bootloader again.
+
+CMD_REBOOT resets the bootloader as soon as the message's last USB packet arrives, so its write may fail or come back
+short although the keyboard rebooted: that write isn't checked.
 """
 import datetime
 import hashlib
@@ -54,6 +57,8 @@ CMD_INSECURE = b"VC\x04"
 COMMAND_NAMES = {CMD_VERSION: "version", CMD_UID: "UID", CMD_FLASH: "flash", CMD_REBOOT: "reboot",
                  CMD_INSECURE: "insecure"}
 RESTART_BOOTLOADER = "unplug the keyboard, start it in its bootloader again, then flash it again"
+REBOOT_UNCONFIRMED = ("The keyboard went away as it rebooted (if it is still in its bootloader, unplug it and plug it "
+                      "back in)")
 
 
 class FirmwareError(ValueError):
@@ -145,23 +150,37 @@ class Bootloader:
         self.sleep = sleep
 
     def send(self, message, retries=SEND_RETRIES):
-        """ Send one 64-byte message, tried again while the bootloader isn't ready (a write fails); whether it was
-        written whole """
+        """ Send one 64-byte message, tried up to `retries` times while the bootloader isn't ready (a write fails);
+        whether it was written whole.
+
+        For phase 7: vibl builds each message from 8-byte USB packets and keeps its place across messages. If a failed
+        write had delivered some of those packets, sending the message again shifts it and every later message by
+        what was delivered: a command is misread, and every later chunk of the firmware is flashed shifted. """
         if len(message) != MESSAGE_LEN:
             raise ValueError("a bootloader message is {} bytes, not {}".format(MESSAGE_LEN, len(message)))
-        for _ in range(retries):
+        for attempt in range(retries):
             written = self.dev.write(b"\x00" + message)  # report ID 0 first
             if written == len(message) + 1:
                 return True
             if written >= 0:
                 return False
-            self.sleep(RETRY_PAUSE)
+            if attempt + 1 < retries:
+                self.sleep(RETRY_PAUSE)
         return False
 
     def command(self, command, argument=b""):
         """ Send a command; FlashError when the bootloader doesn't take it """
         if not self.send(pad(command + argument)):
             raise FlashError("the bootloader didn't take the command {}".format(command_name(command)))
+
+    def reboot(self):
+        """ Send CMD_REBOOT once; whether its write came back whole. vibl resets before the write completes, so a write
+        that fails, comes back short or raises OSError (the device gone) most likely means it rebooted: never an
+        error, and never sent again (a second one would go to a device that is gone, or to the new firmware). """
+        try:
+            return self.send(pad(CMD_REBOOT), retries=1)
+        except OSError:
+            return False
 
     def recv(self, length, timeout_ms=ANSWER_TIMEOUT_MS):
         """ The bootloader's answer, b"" when it doesn't come within timeout_ms (hidapi waits forever for 0) """
@@ -216,13 +235,19 @@ def flash(bootloader, firmware, restore_layout=False, log=lambda line: None, pro
     restore_layout: the keyboard starts unlocked once (CMD_INSECURE), so that a layout saved before flashing can be
     written back. log(line) tells what is done, progress(fraction) how much of the payload is sent.
 
-    Raises, and nothing is written into the flash before every check has passed:
+    The firmware and the bootloader are checked before CMD_FLASH, so a firmware refused is never flashed. But a
+    bootloader still waiting for the rest of an earlier, failed flash takes CMD_VERSION itself as firmware (see the
+    module docstring), then doesn't answer it.
+
+    Raises:
     - FirmwareError when the payload is empty or has more than MAX_CHUNKS chunks (before the bootloader is asked
       anything), or the firmware is for another keyboard;
     - FlashError when the bootloader doesn't take a command, doesn't answer one within ANSWER_TIMEOUT_MS, or has a
       version this flasher doesn't speak; and when it stops taking the payload, which leaves the keyboard's firmware
       incomplete;
     - OSError when the device fails (as hidapi raises it).
+    Once the payload and CMD_INSECURE are taken, the flash is complete: CMD_REBOOT is sent once, and its write failing
+    is only logged (the bootloader resets before that write completes, see Bootloader.reboot()).
     """
     check_payload(firmware.payload)
     log("Firmware built on {} (UTC)".format(firmware.built.strftime("%Y-%m-%d %H:%M:%S")))
@@ -251,5 +276,6 @@ def flash(bootloader, firmware, restore_layout=False, log=lambda line: None, pro
     log("Rebooting...")
     if restore_layout:
         bootloader.command(CMD_INSECURE)
-    bootloader.command(CMD_REBOOT)
+    if not bootloader.reboot():
+        log(REBOOT_UNCONFIRMED)
     log("Done!")

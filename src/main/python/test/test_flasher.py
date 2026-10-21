@@ -29,7 +29,7 @@ class FakeBootloader:
     the next N messages are the firmware's chunks, whatever they hold, and only then are commands read again. A message
     that is neither is ignored. """
 
-    def __init__(self, uid=UID, version=1, busy_writes=0, refuse_after=None, mute=()):
+    def __init__(self, uid=UID, version=1, busy_writes=0, refuse_after=None, mute=(), reboot_write=None):
         self.uid = uid
         self.version = version
         self.busy_writes = busy_writes
@@ -38,6 +38,10 @@ class FakeBootloader:
         """ messages taken before it writes nothing (0) """
         self.mute = mute
         """ commands it takes but never answers """
+        self.reboot_write = reboot_write
+        """ None: the reboot's write is whole. Otherwise, like vibl resetting itself before the write completes: what
+        the write answers (-1, 0) or raises (an OSError), and every later write answers -1 """
+        self.writes_after_reboot = 0
         self.messages = []
         """ every message taken """
         self.commands = []
@@ -53,7 +57,10 @@ class FakeBootloader:
 
     def write(self, data):
         assert data[0] == 0 and len(data) == 65  # report ID, then a whole message
-        assert not self.rebooted, "written to after it rebooted"
+        if self.rebooted:
+            assert self.reboot_write is not None, "written to after it rebooted"
+            self.writes_after_reboot += 1
+            return -1  # gone
         if self.busy_writes:
             self.busy_writes -= 1
             return -1
@@ -66,6 +73,10 @@ class FakeBootloader:
             self.chunks_due -= 1
         elif message[:2] == b"VC":
             self.take(message)
+        if self.rebooted and self.reboot_write is not None:
+            if isinstance(self.reboot_write, Exception):
+                raise self.reboot_write
+            return self.reboot_write
         return len(data)
 
     def take(self, message):
@@ -78,6 +89,9 @@ class FakeBootloader:
         elif command == flasher.CMD_UID:
             self.answer = self.uid
         elif command == flasher.CMD_FLASH:
+            # A count of 0 is unreachable (an empty payload is refused). vibl would take the next message's first 8-byte
+            # USB packet in its flash state, flash nothing and go back to commands with that packet kept in place: it
+            # reads that message as a command, as this fake does.
             self.chunks_due = struct.unpack("<H", message[3:5])[0]
         elif command == flasher.CMD_INSECURE:
             self.insecure = True
@@ -224,6 +238,26 @@ def test_restoring_the_layout_starts_the_keyboard_unlocked_once():
     assert device.insecure and device.rebooted
 
 
+@pytest.mark.parametrize("restore_layout", [False, True])
+@pytest.mark.parametrize("reboot_write", [-1, 0, OSError("the device is gone")], ids=["failed", "short", "raised"])
+def test_a_reboot_that_cuts_its_own_write_short_still_ends_a_good_flash(reboot_write, restore_layout):
+    # vibl resets itself in the handler of the reboot message's last USB packet: the write may never complete
+    pauses, lines = [], []
+    device = FakeBootloader(reboot_write=reboot_write)
+    flasher.flash(Bootloader(device, sleep=pauses.append), flasher.read_firmware(vfw()), restore_layout=restore_layout,
+                  log=lines.append)
+    assert device.rebooted and device.insecure == restore_layout and device.data == b"\x11" * 100 + b"\x00" * 28
+    assert device.writes_after_reboot == 0 and pauses == []  # the reboot is sent once, never again
+    assert lines[-3:] == ["Rebooting...", flasher.REBOOT_UNCONFIRMED, "Done!"]
+
+
+def test_an_insecure_command_not_taken_fails_the_flash_and_doesnt_reboot():
+    device = FakeBootloader(refuse_after=5)  # version, UID, flash, two chunks
+    with pytest.raises(FlashError, match=r"didn't take the command insecure \(VC 04\)"):
+        flasher.flash(Bootloader(device), flasher.read_firmware(vfw()), restore_layout=True)
+    assert len(device.data) == 128 and not device.insecure and not device.rebooted
+
+
 @pytest.mark.parametrize("version", [0, 1])
 def test_both_bootloader_versions_are_flashed(version):
     device = FakeBootloader(version=version)
@@ -295,9 +329,11 @@ def test_a_busy_bootloader_is_sent_the_message_again():
 
 
 def test_a_bootloader_never_ready_fails_the_command():
+    pauses = []
     device = FakeBootloader(busy_writes=flasher.SEND_RETRIES)
     with pytest.raises(FlashError, match=r"didn't take the command version \(VC 00\)"):
-        Bootloader(device, sleep=lambda s: None).version()
+        Bootloader(device, sleep=pauses.append).version()
+    assert pauses == [flasher.RETRY_PAUSE] * (flasher.SEND_RETRIES - 1)  # no pause after the last try
 
 
 def test_a_flash_command_not_taken_is_named_and_nothing_is_sent_after_it():
