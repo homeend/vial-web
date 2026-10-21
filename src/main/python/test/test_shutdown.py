@@ -7,10 +7,11 @@ import time
 import httpx2 as httpx
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import transport
 from protocol.unlock_hook import set_unlock_handler
-from server.app import create_app
+from server.app import STOPPED_CLOSE_CODE, create_app
 from server.device import DeviceManager, FakeBackend, require_unlocked
 from server.names import NamesStore
 from simulator.corne import make_corne
@@ -61,6 +62,22 @@ def test_quit_tells_every_tab_that_vial_stopped(quitting):
         assert client.post("/api/shutdown", headers=ORIGIN).status_code == 204
         assert first.receive_json() == {"type": "stopped"}
         assert second.receive_json() == {"type": "stopped"}
+
+
+def test_quit_closes_every_tabs_link_once_it_is_told(quitting):
+    """ The server closes them before it stops: uvicorn 0.54, stopping, fails on a link a tab is still closing (see
+    test_vial_web's test_a_tab_closing_its_link_as_vial_stops_doesnt_make_vial_fail) """
+    client, manager, stops = quitting
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as first, \
+            client.websocket_connect(EVENTS, headers=ORIGIN) as second:
+        assert first.receive_json() == {"type": "connected"}
+        assert second.receive_json() == {"type": "connected"}
+        assert client.post("/api/shutdown", headers=ORIGIN).status_code == 204
+        for tab in (first, second):
+            assert tab.receive_json() == {"type": "stopped"}
+            with pytest.raises(WebSocketDisconnect) as closed:
+                tab.receive_json()
+            assert closed.value.code == STOPPED_CLOSE_CODE == 1001  # going away
 
 
 def test_after_quit_no_keyboard_is_opened_again(quitting):
@@ -164,6 +181,9 @@ def test_a_tab_that_connects_after_quit_is_told_vial_stopped_first(quitting):
     assert client.post("/api/shutdown", headers=ORIGIN).status_code == 204
     with client.websocket_connect(EVENTS, headers=ORIGIN) as late:
         assert late.receive_json() == {"type": "stopped"}
+        with pytest.raises(WebSocketDisconnect) as closed:  # and closed, as the others were
+            late.receive_json()
+        assert closed.value.code == STOPPED_CLOSE_CODE
 
 
 def test_tabs_closing_after_quit_dont_say_vial_is_still_running(tmp_path, monkeypatch):

@@ -36,6 +36,8 @@ MATRIX_POLL_GAP = 0.02
 requests (edits, the unlock countdown) take the device lock in between """
 MATRIX_FAILURE_PAUSE = 0.5
 """ seconds the keyboard is left alone after a reading of the matrix that failed, before the next one """
+STOPPED_CLOSE_CODE = 1001
+""" the close code of a tab's events link once Vial has stopped (WebSocket "going away") """
 KEYBOARD_HEADER = "x-vial-keyboard"
 """ the keyboard a change is meant for (see create_app's keyboard_meant) """
 SECURITY_HEADERS = {
@@ -132,11 +134,15 @@ class EventHub:
                 self._closing[ws] = task
                 task.add_done_callback(lambda done: self._closing.pop(ws, None))
 
-    async def _close(self, ws):
+    async def _close(self, ws, code=1011):
         try:
-            await asyncio.wait_for(ws.close(code=1011), self.send_timeout)
+            await asyncio.wait_for(ws.close(code=code), self.send_timeout)
         except Exception as e:
             log.info("closing a dropped UI tab failed: %s", e.__class__.__name__)
+
+    async def close_all(self, code):
+        """ Close every tab's link (the server is stopping) """
+        await asyncio.gather(*(self._close(ws, code) for ws in list(self.clients)))
 
     async def broadcast(self, event):
         await asyncio.gather(*(self.send(ws, event) for ws in list(self.clients)))
@@ -817,6 +823,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             told_stopped.append(True)
             try:
                 await hub.broadcast({"type": "stopped"})
+                # closed by the server before it stops, not by the tabs as they are told: uvicorn 0.54, stopping,
+                # sends its own close to each link still open, and fails on one a tab has started to close meanwhile
+                await hub.close_all(STOPPED_CLOSE_CODE)
             except Exception:
                 log.exception("quit: telling the tabs that Vial stopped failed")
 
@@ -852,11 +861,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         await ws.accept()
         await hub.add(ws)
         try:
-            if told_stopped:  # Quit was used: Vial is gone for good, whatever the keyboard
-                first = {"type": "stopped"}
-            else:
-                first = {"type": "connected" if manager.connected else "disconnected"}
-            await ws.send_json(first)
+            if told_stopped:  # Quit was used: Vial is gone for good, whatever the keyboard (see let_go)
+                await ws.send_json({"type": "stopped"})
+                await ws.close(code=STOPPED_CLOSE_CODE)
+                return
+            await ws.send_json({"type": "connected" if manager.connected else "disconnected"})
             while True:
                 message = await ws.receive()
                 if message["type"] == "websocket.disconnect":

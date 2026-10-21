@@ -1,3 +1,6 @@
+import asyncio
+import base64
+import http.client
 import http.server
 import json
 import logging
@@ -7,6 +10,7 @@ import struct
 import subprocess
 import sys
 import threading
+import time
 
 import pytest
 import uvicorn
@@ -474,6 +478,7 @@ class FakeServer:
     while_serving = None
 
     def __init__(self, config):
+        self.should_exit = False  # as uvicorn.Server's
         FakeServer.seen["app"] = config.app
         FakeServer.seen["config"] = config
         FakeServer.seen["server"] = self
@@ -582,6 +587,168 @@ def test_uvicorn_running_out_of_grace_is_no_error(home, fake_server, caplog):
     levels = {r.getMessage(): r.levelname for r in caplog.records if r.name == "uvicorn.error"}
     assert levels == {"Cancel 2 running task(s), timeout graceful shutdown exceeded": "INFO",
                       "Exception in ASGI application": "ERROR"}
+
+
+def test_a_server_failing_as_it_stops_still_ends_vial_cleanly(home, fake_server, monkeypatch, caplog):
+    """ uvicorn failing on its way out, once asked to stop (Quit Vial, Ctrl+C, the console closed), is logged; the
+    keyboard is let go of and Vial exits with 0 """
+    opened = []
+
+    class Device(SimulatedHidDevice):
+        def __init__(self, keyboard):
+            super().__init__(keyboard)
+            opened.append(self)
+
+    def failing_as_it_stops():
+        fake_server.seen["server"].should_exit = True
+        raise RuntimeError("connection is closing")
+    monkeypatch.setattr(device_module, "SimulatedHidDevice", Device)
+    fake_server.while_serving = failing_as_it_stops
+    with caplog.at_level(logging.WARNING):
+        assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert "the server failed as it stopped" in caplog.text and "connection is closing" in caplog.text
+    assert len(opened) == 1 and opened[0].closed
+    assert not os.path.exists(vial_web.session_file(True))
+
+
+def test_a_server_failing_while_serving_is_still_an_error(home, fake_server, monkeypatch):
+    opened = []
+
+    class Device(SimulatedHidDevice):
+        def __init__(self, keyboard):
+            super().__init__(keyboard)
+            opened.append(self)
+
+    def failing():
+        raise RuntimeError("broken")
+    monkeypatch.setattr(device_module, "SimulatedHidDevice", Device)
+    fake_server.while_serving = failing
+    with pytest.raises(RuntimeError, match="broken"):
+        vial_web.main(["--fake", "--no-browser"])
+    assert len(opened) == 1 and opened[0].closed  # let go of all the same
+
+
+def masked_close_frame(code=1000):
+    """ A tab's close frame (a client's frames are masked) """
+    mask = os.urandom(4)
+    payload = struct.pack("!H", code)
+    return bytes([0x88, 0x80 | len(payload)]) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+
+
+def read_frame(link):
+    """ (opcode, payload) of the next frame the server sends (unmasked, short) """
+    def exactly(count):
+        data = b""
+        while len(data) < count:
+            chunk = link.recv(count - len(data))
+            if not chunk:
+                raise ConnectionError("the server closed the connection")
+            data += chunk
+        return data
+    first, size = exactly(2)
+    size &= 0x7F
+    if size == 126:
+        size = struct.unpack("!H", exactly(2))[0]
+    return first & 0x0F, exactly(size)
+
+
+@pytest.mark.parametrize("closes", ["before Quit", "when told Vial stopped"])
+def test_a_tab_closing_its_link_as_vial_stops_doesnt_make_vial_fail(home, monkeypatch, capsys, caplog, closes):
+    """ uvicorn 0.54, stopping, sends a close of its own to each link still open, and fails ("connection is closing")
+    on one whose tab has sent its close, taken by the server, while the connection isn't gone yet. Seen about once in
+    25 runs of the e2e Quit tests; made certain here by letting each connection go a second late. Real uvicorn, fake
+    keyboard.
+    - "when told Vial stopped": what every tab does. The server closes the links itself before it stops, so uvicorn
+      finds none to close.
+    - "before Quit": a tab closed just before; uvicorn fails, and Vial still ends cleanly. """
+    from uvicorn.protocols.websockets import websockets_sansio_impl as sansio
+    lost = sansio.WebSocketsSansIOProtocol.connection_lost
+
+    def late(protocol, exc):
+        asyncio.get_running_loop().call_later(1.0, lost, protocol, exc)
+    monkeypatch.setattr(sansio.WebSocketsSansIOProtocol, "connection_lost", late)
+    opened = []
+
+    class Device(SimulatedHidDevice):
+        def __init__(self, keyboard):
+            super().__init__(keyboard)
+            opened.append(self)
+    monkeypatch.setattr(device_module, "SimulatedHidDevice", Device)
+    seen, errors = {"frames": []}, []
+
+    def tab_link(link):
+        """ the tab's side of its events link, after "connected", once it is told Vial stopped """
+        try:
+            while True:
+                opcode, payload = read_frame(link)
+                seen["frames"].append(json.loads(payload)["type"] if opcode == 1 else "close {}".format(
+                    struct.unpack("!H", payload[:2])[0]))
+                if opcode == 1 and json.loads(payload)["type"] == "stopped":
+                    link.sendall(masked_close_frame())  # as the page does
+                if opcode == 8:
+                    break
+        except BaseException as e:
+            errors.append(e)
+
+    def tab():
+        try:
+            deadline = time.monotonic() + 30
+            while not os.path.exists(vial_web.session_file(True)):
+                assert time.monotonic() < deadline, "Vial didn't start"
+                threading.Event().wait(0.02)
+            with open(vial_web.session_file(True), encoding="utf-8") as inf:
+                info = json.load(inf)
+            port, base = info["port"], "http://127.0.0.1:{}".format(info["port"])
+            page = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            page.request("GET", "/?" + info["url"].split("?", 1)[1])
+            response = page.getresponse()
+            response.read()
+            cookie = response.getheader("set-cookie").split(";")[0]
+            with socket.create_connection(("127.0.0.1", port), timeout=10) as link:
+                key = base64.b64encode(os.urandom(16)).decode()
+                link.sendall("GET /api/events HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nUpgrade: websocket\r\n"
+                             "Connection: Upgrade\r\nSec-WebSocket-Key: {}\r\nSec-WebSocket-Version: 13\r\n"
+                             "Origin: {}\r\nCookie: {}\r\n\r\n".format(port, key, base, cookie).encode())
+                received = b""
+                while b"\r\n\r\n" not in received:
+                    received += link.recv(1)
+                seen["upgrade"] = received.split(b"\r\n")[0]
+                seen["frames"].append(json.loads(read_frame(link)[1])["type"])
+                reader = None
+                if closes == "before Quit":
+                    link.sendall(masked_close_frame())
+                    while link.recv(4096):  # the server answers it and lets go of the socket
+                        pass
+                else:
+                    reader = threading.Thread(target=tab_link, args=[link], daemon=True)
+                    reader.start()
+                page.request("POST", "/api/shutdown", headers={"origin": base, "cookie": cookie})
+                response = page.getresponse()
+                response.read()
+                seen["quit"] = response.status
+                if reader is not None:
+                    reader.join(10)
+        except BaseException as e:
+            errors.append(e)
+    thread = threading.Thread(target=tab, daemon=True)
+    thread.start()
+    try:
+        with caplog.at_level(logging.WARNING):
+            code = vial_web.main(["--fake", "--no-browser"])
+    finally:
+        thread.join(30)
+    assert errors == []
+    assert seen["upgrade"] == b"HTTP/1.1 101 Switching Protocols" and seen["quit"] == 204
+    assert code == 0
+    assert len(opened) == 1 and opened[0].closed
+    assert vial_web.QUIT_MESSAGE in capsys.readouterr().out
+    failed = "the server failed as it stopped" in caplog.text
+    if closes == "before Quit":
+        assert seen["frames"] == ["connected"]
+        assert failed and "connection is closing" in caplog.text  # uvicorn's failure, all the same
+    else:
+        assert seen["frames"] == ["connected", "stopped", "close 1001"]  # told, then closed by the server
+        assert not failed, caplog.text
 
 
 def test_stopping_waits_for_the_tabs_only_so_long(home, fake_server):

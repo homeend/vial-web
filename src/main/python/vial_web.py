@@ -594,6 +594,13 @@ def serve(args, manager, sock):
             server.run(sockets=[sock])
         except KeyboardInterrupt:
             pass  # uvicorn shuts down cleanly on Ctrl+C, then raises it again
+        except Exception:
+            if not server.should_exit:
+                raise
+            # asked to stop already (Quit Vial, Ctrl+C, the console closed): uvicorn failing on its way out is no
+            # failure of Vial's. uvicorn 0.54 does when a tab's link is still closing as it stops ("connection is
+            # closing"), though the server closes them first (server.app's let_go).
+            log.warning("the server failed as it stopped", exc_info=True)
         finally:
             remove_session(instance, bool(args.fake))
             # here, not only when run() returns: a console window closed ends the process once this block is left
