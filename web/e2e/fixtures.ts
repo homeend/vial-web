@@ -33,18 +33,26 @@ function serverOf(
 }
 
 /** The page, opened from a server's link, with the keyboard drawn: `app` shows the simulated Corne, `macropad` the
- * simulated macropad with encoders, `eightLayers` the simulated Corne with 8 layers (4-7 empty), `qmkLighting` the
+ * simulated macropad with encoders, `eightLayers` the simulated Corne with 8 layers (4-7 empty), `twentyLayers` with 20
+ * layers (4-19 empty), `qmkLighting` the
  * simulated Corne with QMK's RGB light and backlight, `twoKeyboards` the simulated Corne of a server whose second
  * keyboard (the macropad) is plugged in by secondKeyboard(). `corneUrl` is the simulated Corne's link, for a test that
  * opens it itself. `ownServer` is a simulated Corne's server of the test's own, started for it and stopped after it,
  * for a test that ends it (Quit Vial). */
 export const test = base.extend<
-  { app: Page; macropad: Page; eightLayers: Page; qmkLighting: Page; twoKeyboards: Page; ownServer: TestServer },
-  { corneUrl: string; macropadUrl: string; eightLayersUrl: string; qmkLightingUrl: string; twoKeyboardsUrl: string }
+  {
+    app: Page; macropad: Page; eightLayers: Page; twentyLayers: Page; qmkLighting: Page; twoKeyboards: Page;
+    ownServer: TestServer;
+  },
+  {
+    corneUrl: string; macropadUrl: string; eightLayersUrl: string; twentyLayersUrl: string; qmkLightingUrl: string;
+    twoKeyboardsUrl: string;
+  }
 >({
   corneUrl: serverOf(SERVERS.corne),
   macropadUrl: serverOf(SERVERS.macropad),
   eightLayersUrl: serverOf(SERVERS.eightLayers),
+  twentyLayersUrl: serverOf(SERVERS.twentyLayers),
   qmkLightingUrl: serverOf(SERVERS.qmkLighting),
   twoKeyboardsUrl: serverOf(SERVERS.twoKeyboards),
   app: async ({ page, corneUrl }, use) => {
@@ -55,6 +63,9 @@ export const test = base.extend<
   },
   eightLayers: async ({ page, eightLayersUrl }, use) => {
     await use(await open(page, eightLayersUrl));
+  },
+  twentyLayers: async ({ page, twentyLayersUrl }, use) => {
+    await use(await open(page, twentyLayersUrl));
   },
   qmkLighting: async ({ page, qmkLightingUrl }, use) => {
     await use(await open(page, qmkLightingUrl));

@@ -36,13 +36,14 @@ const UNLOCK_COUNTER = ["--unlock-counter", "10"];
 
 /** Vial's arguments (vial_web.py's, or the executable's) for each simulated keyboard: the default simulated Corne
  * (VialRGB lighting), a macropad with encoders, rotated keys, an ISO Enter, a decal, a layout option and no lighting,
- * the Corne with 8 layers, as the owner's W-CORNE has, the Corne with QMK's RGB light and backlight instead of VialRGB,
- * and the Corne with the macropad as the second keyboard, which the test hook PUT /api/simulator/second-keyboard plugs
- * in */
+ * the Corne with 8 layers, as the owner's W-CORNE has, the Corne with 20 layers (more than LT and LM can reach), the
+ * Corne with QMK's RGB light and backlight instead of VialRGB, and the Corne with the macropad as the second keyboard,
+ * which the test hook PUT /api/simulator/second-keyboard plugs in */
 export const SERVERS = {
   corne: [...UNLOCK_COUNTER],
   macropad: ["--definition", MACROPAD_DEFINITION, ...UNLOCK_COUNTER],
   eightLayers: ["--layers", "8", ...UNLOCK_COUNTER],
+  twentyLayers: ["--layers", "20", ...UNLOCK_COUNTER],
   qmkLighting: ["--lighting", "qmk_backlight_rgblight", ...UNLOCK_COUNTER],
   twoKeyboards: ["--second-definition", MACROPAD_DEFINITION, ...UNLOCK_COUNTER],
 } satisfies Record<string, string[]>;

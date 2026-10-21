@@ -61,7 +61,13 @@ exist for no real keyboard and are left out of the OpenAPI schema (so of `schema
   `{"connected": true, "unreadable": true}` plugs it in with firmware this Vial can't read (a newer
   Vial protocol): it is listed, and fails to load until it is plugged in again without that.
 
-The unlock, connection and matrix hooks act on the first simulated keyboard.
+- `PUT /api/simulator/fail-write` with `{"after": 10}` makes the 10th write from now to the keyboard fail (a write
+  is a request that changes it; a macro buffer takes several), without changing anything; `{"after": null}` makes none
+  fail. With `"unplug": true` the keyboard drops off the bus at that write (plug it back in with the connection hook);
+  without, it stays plugged in and its connection stops working, which the server opens again on its next look for
+  keyboards, as after a USB reset. It is how the tests stop an arrange of the layers partway.
+
+The unlock, connection, matrix and fail-write hooks act on the first simulated keyboard.
 
 `--fake` keeps the firmware's unlock timing: the countdown (50 steps) only goes down on a poll that
 comes more than 100 ms after the start or the last step (a sooner one starts it over), and the
@@ -91,7 +97,8 @@ CI runs `npm run check:api`.
 
 `e2e/servers.ts` starts `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
 default Corne, with VialRGB; `e2e/fixtures/macropad.vial.json` with encoders, a layout option and no
-lighting; the Corne with `--layers 8`, as the owner's keyboard has; the Corne with
+lighting; the Corne with `--layers 8`, as the owner's keyboard has; the Corne with `--layers 20`, more layers than
+LT and LM can reach; the Corne with
 `--lighting qmk_backlight_rgblight`; and the Corne with the macropad as its second keyboard,
 `--second-definition`), reads the links with the session token from their output, and at the end asks each to quit
 (`POST /api/shutdown`, as Quit Vial does), ending it if it is still running afterwards. One that refuses it, doesn't
@@ -111,6 +118,7 @@ in the page.
 | Spec | What it tests |
 |---|---|
 | `keymap`, `find`, `overview`, `display`, `theme` | The Keymap's Edit and Overview views, the find box, sizes and fonts, the theme |
+| `arrange` | Arrange layers: layers reordered with the keyboard and by drag, applied (tabs, names and keys following, the Edit view staying on its layer) and undone; Esc, Cancel and Reset writing nothing; an arrange stopped partway (the fail-write hook) finished from the dialog, and one cut short by an unplug put back from the bar after a replug and a reload; work not saved asked about first; the Overview's button; the dialog with the tri-layer warning (8 layers, long names), with a problem (20 layers) and stopped, and the bar, at five window sizes |
 | `move` | Dragging a key onto another with the mouse (Replace, Swap both, Undo, Esc), the Inspector's Copy and Swap without a mouse, the drop menu in a 1080p window |
 | `macropad` | Another keyboard: encoders, rotated keys, an ISO Enter, a decal, a layout option |
 | `behaviours` | The Tap dance, Combos and Macros pages end to end, the top bar's Lock/Unlock, the pages at four window sizes and at 375 px |
