@@ -390,18 +390,19 @@ def _vil_macro_action(kb, act):
 
 
 QT_MACRO_TEXT_SHORT = 6
-""" Qt's text editor reads a text shorter than this as no step at all (macro_tab.py on_dlg_finished) """
+""" Qt's text editor read a text shorter than this as no step at all (upstream vial-gui's macro_tab.py
+on_dlg_finished) """
 
 
 KEY_STEPS = ("tap", "down", "up")
 
 
 def _qt_text_step(kb, act):
-    """ One step of Qt's text editor, read as Qt's loader reads it (macro_tab.py on_dlg_finished, then the action's
-    restore()): what follows the text of a text step or the delay of a delay step is ignored. A step not finished (a
-    text step without text, as Qt's "Add action" starts one; a key step without keys; a delay step without a delay)
-    comes back unfinished, for the page to flag as its editor does. The rest is checked as a .vil file's macro step is.
-    Returns a schemas.MacroAction. """
+    """ One step of Qt's text editor, read as Qt's loader read it (upstream vial-gui's macro_tab.py on_dlg_finished,
+    then the action's restore()): what follows the text of a text step or the delay of a delay step is ignored. A step
+    not finished (a text step without text, as Qt's "Add action" started one; a key step without keys; a delay step
+    without a delay) comes back unfinished, for the page to flag as its editor does. The rest is checked as a .vil
+    file's macro step is. Returns a schemas.MacroAction. """
     act = _list(act, "a macro step")
     if not act:
         raise _Invalid("empty macro step")
@@ -422,7 +423,8 @@ def _qt_text_step(kb, act):
 
 
 def parse_macro_text(kb, text):
-    """ A macro as Qt's text editor has it: the JSON of each step's save() (macro_tab.py on_text_window), e.g.
+    """ A macro as Qt's text editor has it: the JSON of each step's save() (upstream vial-gui's macro_tab.py
+    on_text_window), e.g.
     [["text", "hi"], ["tap", "KC_ENTER", "KC_A"], ["down", "KC_LSHIFT"], ["delay", 50]] -> its steps
     (schemas.MacroAction), read as Qt reads them (_qt_text_step), checked as a .vil file's macro is (and as a save
     checks them). Nothing is written. Where Qt skips what it can't read (another kind of step) or ignores the whole
@@ -452,7 +454,7 @@ def parse_macro_text(kb, text):
 
 
 def _vil_settings(kb, settings, ignored):
-    """ {qsid: value} to write; settings this keyboard doesn't have are skipped, as the Qt app does, and listed in
+    """ {qsid: value} to write; settings this keyboard doesn't have are skipped, as the Qt app did, and listed in
     ignored """
     if not isinstance(settings, dict):
         raise _Invalid("settings must be an object")
@@ -493,7 +495,7 @@ class OtherKeyboard(ValueError):
 
 def _check_uid(kb, doc):
     """ A file that says which keyboard it was saved from must be this one's: another keyboard's keycodes would land
-    on the wrong keys. (The Qt app asks first; here it is refused.) Returns the file's UID, or None. """
+    on the wrong keys. (The Qt app asked first; here it is refused.) Returns the file's UID, or None. """
     uid = doc.get("uid")
     if uid is None:
         return None
@@ -552,7 +554,7 @@ def _parse_layout_file(kb, data, any_keyboard=False):
     if doc.get("macro") is not None:
         held = kb.save_macro()
         macros = []
-        # macros beyond what the keyboard has are skipped, as the Qt app does
+        # macros beyond what the keyboard has are skipped, as the Qt app did
         macro_beyond = _beyond("macro", kb.macro_count, len(_list(doc["macro"], "macro")))
         if macro_beyond:
             ignored.append(macro_beyond)
@@ -567,7 +569,7 @@ def _parse_layout_file(kb, data, any_keyboard=False):
         macro_data = _at("macros", _macros_data, kb, macros)
 
     def entries(section, what, count, convert):
-        """ (index, entry) of a section; entries beyond what the keyboard has are skipped, as the Qt app does, and
+        """ (index, entry) of a section; entries beyond what the keyboard has are skipped, as the Qt app did, and
         listed in ignored """
         items = _list(doc.get(section, []), section)
         beyond = _beyond(what, count, len(items))

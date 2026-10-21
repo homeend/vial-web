@@ -44,10 +44,13 @@ def imported_packages(path):
 
 def test_no_source_imports_qt():
     users = {}
+    scanned = set()
     for path in sorted(pathlib.Path(PYTHON_ROOT).rglob("*.py")):
+        scanned.add(path.relative_to(PYTHON_ROOT).as_posix())
         qt = imported_packages(path) & set(QT_PACKAGES)
         if qt:
             users[str(path.relative_to(PYTHON_ROOT))] = sorted(qt)
+    assert {"vial_web.py", "server/app.py", "protocol/keyboard_comm.py"} <= scanned  # it looked at the sources
     assert users == {}
 
 

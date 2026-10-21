@@ -466,3 +466,21 @@ def test_the_fake_keyboard_of_vial_web_counts_down_as_the_firmware_does(tmp_path
     assert backend.keyboard_factory().unlock_poll_gap == FIRMWARE_UNLOCK_POLL_GAP
     # the tests' own simulated keyboards count down on every poll
     assert make_corne().unlock_poll_gap == 0
+
+
+# ---------- the hook ----------
+
+def test_a_write_that_needs_the_unlock_is_refused_when_no_handler_is_installed(corne_keyboard):
+    """ protocol.unlock_hook: without a handler nothing could check that the keyboard is unlocked, so the write is
+    refused before anything is sent """
+    from keycodes.keycodes import RESET_KEYCODE
+    virtual, kb = corne_keyboard
+    set_unlock_handler(None)
+    written = []
+    write = kb.dev.write
+    kb.dev.write = lambda data: written.append(bytes(data)) or write(data)
+    before = kb.layout[(0, 0, 0)]
+    with pytest.raises(RuntimeError, match="no unlock handler"):
+        kb.set_key(0, 0, 0, RESET_KEYCODE)
+    assert written == []
+    assert kb.layout[(0, 0, 0)] == before

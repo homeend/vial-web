@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
 """ A Keyboard that reads nothing from a device: 4 empty layers and 16 macros, for the macro tests """
 from protocol.keyboard_comm import Keyboard
 

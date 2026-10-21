@@ -347,7 +347,7 @@ class LayoutFilePreview(BaseModel):
     macros: list[MacroChange]
     settings: list[SettingChange]
     ignored: list[str]
-    """ what the file has that this keyboard doesn't, and is left out (as the Qt app does): "layers 4 to 7" """
+    """ what the file has that this keyboard doesn't, and is left out (as the Qt app did): "layers 4 to 7" """
     needsUnlock: bool
     """ writing it needs an unlocked keyboard (it changes the macros, or puts QK_BOOT somewhere) """
 

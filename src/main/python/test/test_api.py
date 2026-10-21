@@ -283,7 +283,8 @@ def test_a_macro_as_qt_writes_it_is_read_as_steps(client, virtual):
 
 
 def test_every_macro_qt_would_write_reads_back_as_the_same_steps(client, setup):
-    """ Qt's text editor: json.dumps([act.save() for act in actions]) (macro_tab.py on_text_window) """
+    """ Qt's text editor: json.dumps([act.save() for act in actions]) (upstream vial-gui's macro_tab.py
+    on_text_window) """
     manager = setup[2].state.manager
     kb = manager.keyboard
     held = client.get("/api/keyboard").json()["macros"]["items"]

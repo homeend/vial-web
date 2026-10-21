@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ Flashing Vial firmware (.vfw files) through the Vial bootloader ("vibl"): finding the bootloader, checking a firmware
-file, and the bootloader's protocol. The logic of the Qt app's firmware updater, without its window, for the web UI of
-phase 7; nothing calls it yet.
+file, and the bootloader's protocol. The logic of upstream vial-gui's firmware updater (in its Qt app), without its
+window, for the web UI of phase 7; nothing calls it yet.
 
 Must not import Qt or hidapi: the caller lists the HID devices and opens them (a raw HID device, as hidapi's
 hid.device() opened on a path, or a stand-in in tests).

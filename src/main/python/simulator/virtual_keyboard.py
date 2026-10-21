@@ -49,8 +49,8 @@ FEATURE_CAPS_WORD = 1 << 0
 FEATURE_LAYER_LOCK = 1 << 1
 NO_MORE = 0xFFFF
 # QMK RGB light (quantum/rgblight): the effects as numbered with every one of them built in (rgblight_modes.h): Vial's
-# list (Qt's rgb_configurator.py) ends at 36, then Twinkle takes 37 to 42. Breathing (2-5) keeps its own brightness and
-# the rainbow effects (6-14) their own hue: the firmware ignores those when it is sent a colour.
+# list (upstream vial-gui's rgb_configurator.py) ends at 36, then Twinkle takes 37 to 42. Breathing (2-5) keeps its own
+# brightness and the rainbow effects (6-14) their own hue: the firmware ignores those when it is sent a colour.
 RGBLIGHT_MODES = 42
 RGBLIGHT_BREATHING = range(2, 6)
 RGBLIGHT_RAINBOW = range(6, 15)
