@@ -26,5 +26,5 @@ def run_isolated(code):
 
 
 def test_protocol_core_imports_without_qt_or_hid():
-    result = run_isolated("import protocol.keyboard_comm, protocol.qmk_settings_codec, transport")
+    result = run_isolated("import protocol.keyboard_comm, protocol.qmk_settings_codec, protocol.flasher, transport")
     assert result.returncode == 0, result.stderr
