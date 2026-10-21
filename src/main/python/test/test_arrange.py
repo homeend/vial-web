@@ -376,6 +376,70 @@ def test_another_keyboard_with_the_same_uid_never_gets_the_stopped_arrange(tmp_p
         assert snapshot(virtual) == start
 
 
+LONG = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ"
+
+
+def macros_across_chunks(client):
+    """ Macro 0 refers to layers 2 and 1 in different 28-byte chunks of the macro buffer, macro 1 to layer 2 after
+    them: a stop between two chunks leaves macro 0 part renumbered """
+    items = [[{"type": "tap", "keys": ["MO(2)"]}, {"type": "text", "text": LONG}, {"type": "tap", "keys": ["MO(1)"]}],
+             [{"type": "tap", "keys": ["MO(2)"]}]] + [[]] * 14
+    assert client.put("/api/macros", json={"items": items}).status_code == 200
+
+
+def edit_macro_2(client):
+    """ Macro 2 written anew, as the page saves the macros: the others as it shows them """
+    items = client.get("/api/keyboard").json()["macros"]["items"]
+    actions = [[{key: ([k["code"] for k in value] if key == "keys" else value) for key, value in action.items()
+                 if value is not None} for action in item["actions"]] for item in items]
+    actions[2] = [{"type": "tap", "keys": ["KC_X"]}]
+    assert client.put("/api/macros", json={"items": actions}).status_code == 200
+
+
+def stop_in_the_macros(client, manager):
+    """ An arrange stopped at the macro buffer's second chunk: its first chunk holds the target's bytes, the rest the
+    start's. Returns the macro buffer before. """
+    start = manager.run(lambda kb: kb.macro)
+    manager.backend.virtual.fail_writes(preview(client)["writes"] + 1)
+    assert arrange(client).status_code == 502
+    manager.check()
+    assert client.get("/api/session").json()["arrange"] is not None
+    return start
+
+
+@pytest.mark.parametrize("finish", [True, False])
+def test_a_macro_buffer_stopped_between_chunks_is_written_whole(setup, tmp_path, monkeypatch, finish):
+    client, manager, _ = setup
+    macros_across_chunks(client)
+    target = arranged_elsewhere(tmp_path, monkeypatch, macros_across_chunks, ORDER)
+    virtual = manager.backend.virtual
+    start = snapshot(virtual)
+    held = stop_in_the_macros(client, manager)
+    mixed = manager.run(lambda kb: kb.macro)
+    assert mixed != held and len(mixed) == len(held)
+    response = client.post("/api/layers/arrange/" + ("finish" if finish else "put-back"))
+    assert response.status_code == 200, response.text
+    assert snapshot(virtual) == (target if finish else start)
+
+
+@pytest.mark.parametrize("finish", [True, False])
+def test_a_macro_edited_after_a_stop_in_the_macros_is_kept_and_the_others_written(setup, tmp_path, monkeypatch,
+                                                                                    caplog, finish):
+    client, manager, _ = setup
+    macros_across_chunks(client)
+    if finish:
+        expected = arranged_elsewhere(tmp_path, monkeypatch, macros_across_chunks, ORDER, then=edit_macro_2)
+    else:
+        expected = held_elsewhere(tmp_path, monkeypatch, lambda c: (macros_across_chunks(c), edit_macro_2(c)))
+    stop_in_the_macros(client, manager)
+    edit_macro_2(client)
+    with caplog.at_level("INFO", logger="server.arranger"):
+        response = client.post("/api/layers/arrange/" + ("finish" if finish else "put-back"))
+    assert response.status_code == 200, response.text
+    assert snapshot(manager.backend.virtual) == expected
+    assert "1 changed since the stop were kept as they are" in caplog.text
+
+
 def names_held_by_another_program(monkeypatch, names):
     """ names.move_layers fails, as when another program holds names.json; returns the real one """
     move_layers = names.move_layers

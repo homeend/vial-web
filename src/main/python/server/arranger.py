@@ -14,6 +14,7 @@ from typing import Optional
 from keycodes.keycodes import Keycode, RESET_KEYCODE
 from macro.macro_action import ActionDelay, ActionSequence, ActionText, tag_to_action
 from protocol.alt_repeat_key import AltRepeatKeyEntry
+from protocol.constants import BUFFER_FETCH_CHUNK
 from protocol.key_override import KeyOverrideEntry
 from protocol.unlock_hook import request_unlock
 from server import layers, model, schemas
@@ -101,8 +102,8 @@ class Plan:
     macro: Optional[bytes] = None
     """ the macro buffer, when it changes """
     kept: int = 0
-    """ keys, encoder directions and entries (the macros as one) left as they are: changed since an arrange stopped
-    (plan's known) """
+    """ keys, encoder directions, entries and macros left as they are: changed since an arrange stopped (plan's
+    known) """
 
     @property
     def writes(self):
@@ -130,13 +131,45 @@ def _nth(entries, index):
     return entries[index] if index < len(entries) else None
 
 
-def plan(kb, target, known=()):
+def _chunks_of(held, buffers, start=0, end=None, past_end=True):
+    """ Whether each piece of held[start:end] (a macro buffer the keyboard holds) between the protocol's write chunks
+    (BUFFER_FETCH_CHUNK bytes, from offset 0) holds the bytes one of `buffers` has there: a buffer written partway over
+    another holds the new one's first chunks, then the old one's. past_end: bytes past the end of a buffer match it (the
+    keyboard's memory there is unknown) """
+    end = len(held) if end is None else end
+    at = start
+    while at < end:
+        stop = min(end, (at // BUFFER_FETCH_CHUNK + 1) * BUFFER_FETCH_CHUNK)
+        piece = held[at:stop]
+        if not any((piece[:max(0, len(b) - at)] if past_end else piece) == b[at:stop] for b in buffers):
+            return False
+        at = stop
+    return True
+
+
+def _macros_of(kb, held, known, buffers):
+    """ For each macro the keyboard holds (held: their steps), whether it is a known state's: its steps are one of
+    theirs, or its bytes, terminator included, are theirs in each piece between write chunks (_chunks_of: a macro the
+    stop cut through) """
+    pieces = (kb.macro.split(b"\x00") + [b""] * kb.macro_count)[:kb.macro_count]
+    out, at = [], 0
+    for index, piece in enumerate(pieces):
+        end = at + len(piece) + 1
+        out.append(_nth(held, index) in [_nth(k.macros, index) for k in known]
+                   or _chunks_of(kb.macro, buffers, at, end, past_end=False))
+        at = end
+    return out
+
+
+def plan(kb, target, known=(), buffers=(), buffer=None):
     """ The writes that make the keyboard hold `target` (a KeyboardState of its layers): only what differs. ValueError
     when the target's macros don't fit.
 
     known: KeyboardStates the keyboard is known to hold part of (an arrange's start and target). A key, an encoder
-    direction or an entry (the macros as a whole) that holds the value of none of them was changed since (an edit, a
-    layout file loaded): it is left as it is, and counted in Plan.kept. None known: everything that differs is written.
+    direction, an entry or a macro that holds the value of none of them was changed since (an edit, a layout file
+    loaded): it is left as it is, and counted in Plan.kept. None known: everything that differs is written.
+    buffers: the macro buffers of the known states; buffer: the target's, written whole when the macro buffer holds
+    theirs in each chunk (a macro write that stopped between chunks leaves a mix of both).
     """
     state = read_state(kb)
     kept = []
@@ -172,8 +205,18 @@ def plan(kb, target, known=()):
     alt_repeat_keys = differing("alt_repeat_keys", kb.alt_repeat_key_entries,
                                 lambda e: AltRepeatKeyEntry((_code(e[0]), _code(e[1])) + tuple(e[2:])))
     macro = None
-    if tuple(target.macros) != state.macros and ours(state.macros, [tuple(k.macros) for k in known]):
-        data = _macro_data(kb, target.macros)
+    if tuple(target.macros) != state.macros:
+        if not known:
+            data = _macro_data(kb, target.macros)
+        elif buffer is not None and _chunks_of(kb.macro, buffers):
+            # all of it is theirs (a buffer written partway over another, say): written whole
+            data = buffer
+        else:
+            # macro by macro: one that is none of theirs is left as it is
+            mine = _macros_of(kb, state.macros, known, buffers)
+            kept.extend(index for index, theirs in enumerate(mine) if not theirs)
+            data = _macro_data(kb, [steps if theirs else held
+                                    for steps, held, theirs in zip(target.macros, state.macros, mine)])
         macro = data if data != kb.macro else None
     return Plan(keys, encoders, tap_dance, combos, key_overrides, alt_repeat_keys, macro, len(kept))
 
@@ -255,6 +298,10 @@ class Unfinished:
     """ writes done by the last attempt before it stopped """
     total: int
     """ writes the last attempt had to do """
+    start_macro: bytes
+    """ the macro buffer of start, as the keyboard held it """
+    target_macro: bytes
+    """ the macro buffer of target, as it is written """
 
 
 class Arrangements:
@@ -293,13 +340,15 @@ class Job:
     Only what holds the value of start or target is written: anything else was changed since an arrange stopped (an
     edit, a layout file loaded) and is left as it is (plan's known), and logged. """
 
-    def __init__(self, kb, key, writing, start, target, order, arrangements, done):
+    def __init__(self, kb, key, start, target, order, arrangements, done, macros, finish=True):
+        """ macros: the macro buffers of start and target; finish: write target (else start) """
         self.kb = kb
         self.key = key
         self.start, self.target, self.order = start, target, list(order)
         self.arrangements = arrangements
         self.done = done
-        self.todo = plan(kb, writing, (start, target))
+        self.macros = tuple(macros)
+        self.todo = plan(kb, target if finish else start, (start, target), self.macros, self.macros[1 if finish else 0])
         self.written = []
         if self.todo.needs_unlock():
             request_unlock(kb)
@@ -316,11 +365,11 @@ class Job:
             # even the first write may have reached the keyboard, its answer lost: it may hold part of either state.
             # After every write, it holds `writing` (done == total): Finish then only saves the names.
             self.arrangements.keep(self.key, Unfinished(self.start, self.target, self.order, len(self.written),
-                                                        self.todo.writes))
+                                                        self.todo.writes, *self.macros))
             raise
         if self.todo.kept:
             log.warning("arranging the layers: %d changed since the stop were kept as they are (keys, encoder "
-                        "directions and entries; the macros count as one)", self.todo.kept)
+                        "directions, entries and macros)", self.todo.kept)
 
 
 def begin(kb, keyboard_id, order, arrangements, names):
@@ -335,8 +384,8 @@ def begin(kb, keyboard_id, order, arrangements, names):
     if result.problems:
         raise ArrangeRefused("the layers can't be arranged so: " + "; ".join(_problem_text(p) for p in result.problems))
     uid = model.uid_of(kb)
-    return Job(kb, key, result.target, start, result.target, order, arrangements,
-               lambda: names.move_layers(uid, order))
+    return Job(kb, key, start, result.target, order, arrangements, lambda: names.move_layers(uid, order),
+               (kb.macro, _macro_data(kb, result.target.macros)))
 
 
 def resume(kb, keyboard_id, arrangements, names, finish):
@@ -353,5 +402,5 @@ def resume(kb, keyboard_id, arrangements, names, finish):
         if finish:
             names.move_layers(uid, unfinished.order)
         arrangements.drop(key)
-    writing = unfinished.target if finish else unfinished.start
-    return Job(kb, key, writing, unfinished.start, unfinished.target, unfinished.order, arrangements, done)
+    return Job(kb, key, unfinished.start, unfinished.target, unfinished.order, arrangements, done,
+               (unfinished.start_macro, unfinished.target_macro), finish)
