@@ -287,8 +287,9 @@ def random_state(rng, protocol):
 @pytest.mark.parametrize("protocol", [5, 6])
 def test_arranging_then_the_reverse_order_gives_the_start_back(protocol, tmp_path):
     rng = random.Random(8)
-    names = NamesStore(str(tmp_path / "names.json"))
     for attempt in range(150):
+        # a store of its own each time: one file growing to 150 keyboards made each save slower
+        names = NamesStore(str(tmp_path / "names{}.json".format(attempt)))
         s = random_state(rng, protocol)
         # layers 0 to 15 stay among themselves when there are more: the 4-bit fields and the 16-bit mask can't go further
         low = min(s.layers, 16)

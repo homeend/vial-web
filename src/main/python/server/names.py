@@ -66,11 +66,14 @@ class NamesStore:
     def move_layers(self, uid, order):
         """ The layer names follow their layers to new positions, in one write: order[new position] = old layer (see
         server.layers). A layer that had no name has none at its new position either; names of layers past the order
-        stay where they are. """
+        stay where they are, and so do keys that aren't a layer number as set() writes it ("01" in a hand-edited file:
+        no layer's name, as names are looked up by str(layer)). Nothing is written when no name moves. """
+        def moves(key):
+            return key.isdecimal() and str(int(key)) == key and int(key) < len(order)
         with self.lock:
             data = self._load(for_write=True)
             old = data.get(uid, {}).get("layers", {})
-            moved = {k: v for k, v in old.items() if not (k.isdigit() and int(k) < len(order))}
+            moved = {k: v for k, v in old.items() if not moves(k)}
             for new, layer in enumerate(order):
                 name = old.get(str(layer))
                 if name:

@@ -147,6 +147,29 @@ def test_move_layers_writes_nothing_when_no_name_moves(tmp_path):
     assert not path.exists()
 
 
+def test_move_layers_writes_nothing_when_the_names_stay(tmp_path, monkeypatch):
+    store = NamesStore(str(tmp_path / "names.json"))
+    store.set("K", "layers", 0, "Base")
+    store.set("K", "layers", 3, "Num")
+    store.set("K", "macros", 1, "Mail")
+
+    def no_write(data):
+        raise AssertionError("written")
+    monkeypatch.setattr(store, "_save", no_write)
+    # layers 1 and 2 change places, neither has a name
+    assert store.move_layers("K", [0, 2, 1, 3])["layers"] == {"0": "Base", "3": "Num"}
+
+
+def test_move_layers_keeps_keys_that_are_not_a_layer_number_as_the_store_writes_it(tmp_path):
+    # a hand-edited file: "01" and "²" (a digit int() refuses) are no layer's name (the UI looks up "1"), and stay as
+    # they are, never lost
+    path = tmp_path / "names.json"
+    path.write_text(json.dumps({"K": {"layers": {"01": "Odd", "²": "Sup", "1": "Sym", " 2": "Spaced"}}}),
+                    encoding="utf-8")
+    store = NamesStore(str(path))
+    assert store.move_layers("K", [0, 2, 1])["layers"] == {"01": "Odd", "²": "Sup", "2": "Sym", " 2": "Spaced"}
+
+
 def test_move_layers_is_one_write_that_keeps_the_old_file_on_failure(tmp_path, monkeypatch):
     path = tmp_path / "names.json"
     store = NamesStore(str(path))
