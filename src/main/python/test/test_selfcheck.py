@@ -63,3 +63,11 @@ def test_vial_self_check_says_what_is_missing_and_never_looks_for_a_keyboard(mon
         assert "this build is incomplete" in out and "  - hidapi can't be loaded: no" in out
     else:
         assert "this build has everything it needs" in out and "No keyboard was looked for." in out
+
+
+def test_the_self_check_imports_what_uvicorn_imports_by_name():
+    # uvicorn's "auto" choices, and the implementations they pick here (vial.spec's hidden imports)
+    for name in ("uvicorn.loops.auto", "uvicorn.loops.asyncio", "uvicorn.protocols.http.auto",
+                 "uvicorn.protocols.http.h11_impl", "uvicorn.protocols.websockets.auto",
+                 "uvicorn.protocols.websockets.websockets_sansio_impl", "uvicorn.lifespan.on"):
+        assert name in selfcheck.SERVER_MODULES

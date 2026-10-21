@@ -6,13 +6,14 @@
 Vial runs with --fake (the simulated keyboard: no keyboard is looked for or opened), --no-browser and a temporary
 --data-dir. It checks `--self-check`, then waits for the link Vial prints, reads GET /api/session (a connected
 simulated keyboard), quits with POST /api/shutdown, and checks that Vial exits with 0 by itself. Prints how long it
-took to start. Python's standard library only. Exits 1 on any failure.
+took to start. Python's standard library only. Exits 1 on any failure, and stops whatever it started first.
 """
 import http.cookiejar
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -22,7 +23,10 @@ import urllib.request
 
 START_TIMEOUT = 60
 EXIT_TIMEOUT = 20
+STOP_WAIT = 5
+""" seconds stop() gives Vial at each step before it takes the next, harder one """
 LINK = re.compile(r"Open it at:\r?\n\s*(http://127\.0\.0\.1:(\d+)/\?token=[\w-]+)\r?\n")
+WINDOWS = sys.platform == "win32"
 
 
 def fail(message, output=""):
@@ -32,20 +36,92 @@ def fail(message, output=""):
     sys.exit(1)
 
 
-def self_check(command):
-    result = subprocess.run(command + ["--self-check"], capture_output=True, text=True, timeout=START_TIMEOUT)
-    if result.returncode != 0:
-        fail("--self-check exited with {}".format(result.returncode), result.stdout + result.stderr)
-    print(result.stdout.strip())
+def start(args, **kwargs):
+    """ subprocess.Popen(args) in a new process group of its own. A one-file build runs as two processes, the
+    bootloader and its Python child: stop() reaches both through the group, and nothing outside it. """
+    if WINDOWS:
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+    return subprocess.Popen(args, **kwargs)
+
+
+def _ended(process, wait):
+    try:
+        process.wait(wait)
+        return True
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def stop(process, shutdown=None, wait=STOP_WAIT):
+    """ Stops a process started by start(), with its whole group, if it still runs. First shutdown() (POST
+    /api/shutdown, once Vial's link is known); then Ctrl+Break (Windows) or SIGTERM to its group only, which Vial takes
+    as a clean stop; each is given `wait` seconds. Then the group is killed. """
+    if process.poll() is not None:
+        return
+    if shutdown is not None:
+        try:
+            shutdown()
+        except OSError:
+            pass  # no answer: on to the next step at once
+        else:
+            if _ended(process, wait):
+                return
+    try:
+        if WINDOWS:
+            process.send_signal(signal.CTRL_BREAK_EVENT)  # to its group: it leads one of its own
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+    except OSError:
+        pass  # no console to send Ctrl+Break through, or the group has just ended
+    else:
+        if _ended(process, wait):
+            return
+    if WINDOWS:
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            pass
+    process.wait()
+
+
+def fetch(opener, request, output):
+    """ opener.open(request): (its status, its body). Fails with Vial's output (a list of lines) on an HTTP error or no
+    answer. """
+    try:
+        with opener.open(request, timeout=10) as response:
+            return response.status, response.read()
+    except OSError as e:  # urllib.error.HTTPError and URLError, and a timeout, are all OSErrors
+        url = request if isinstance(request, str) else request.full_url
+        fail("{} failed: {}".format(url, e), "".join(output))
+
+
+def self_check(command, timeout=START_TIMEOUT, wait=STOP_WAIT):
+    check = start(command + ["--self-check"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                  encoding="utf-8", errors="replace")
+    try:
+        out, err = check.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        stop(check, wait=wait)
+        out, err = check.communicate()
+        fail("--self-check did not finish within {} s; it was stopped".format(timeout), out + err)
+    if check.returncode != 0:
+        fail("--self-check exited with {}".format(check.returncode), out + err)
+    print(out.strip())
 
 
 def main(command):
     self_check(command)
     data_dir = tempfile.mkdtemp(prefix="vial-smoke-")
     started = time.monotonic()
-    vial = subprocess.Popen(command + ["--fake", "--no-browser", "--data-dir", data_dir],
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    vial = start(command + ["--fake", "--no-browser", "--data-dir", data_dir],
+                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
     output = []
+    shutdown = None
 
     def read():
         for line in vial.stdout:
@@ -68,12 +144,15 @@ def main(command):
         # the link sets the session cookie; straight to this computer, never through a proxy
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
                                              urllib.request.ProxyHandler({}))
-        opener.open(link, timeout=10).read()
-        session = json.loads(opener.open(base + "/api/session", timeout=10).read())
+        quit_request = urllib.request.Request(base + "/api/shutdown", method="POST", headers={"Origin": base})
+
+        def shutdown():
+            opener.open(quit_request, timeout=10).close()
+        fetch(opener, link, output)
+        session = json.loads(fetch(opener, base + "/api/session", output)[1])
         if session.get("fake") is not True or session.get("status") != "connected":
             fail("unexpected session: {}".format(session), "".join(output))
-        quit_request = urllib.request.Request(base + "/api/shutdown", method="POST", headers={"Origin": base})
-        status = opener.open(quit_request, timeout=10).status
+        status = fetch(opener, quit_request, output)[0]
         if status != 204:
             fail("POST /api/shutdown answered {}".format(status), "".join(output))
         try:
@@ -86,9 +165,7 @@ def main(command):
         print("smoke test passed: started in {:.2f} s, served {} ({}), quit with POST /api/shutdown, exit code 0"
               .format(startup, session.get("device"), session.get("platform")))
     finally:
-        if vial.poll() is None:
-            vial.kill()
-            vial.wait()
+        stop(vial, shutdown)  # only if it still runs: after a failure, or when stopped from outside (Ctrl+C)
         shutil.rmtree(data_dir, ignore_errors=True)
 
 

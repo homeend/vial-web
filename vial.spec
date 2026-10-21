@@ -55,7 +55,7 @@ def windows_version_info():
         StringStruct("FileDescription", version.PRODUCT),
         StringStruct("FileVersion", version.VERSION),
         StringStruct("InternalName", "Vial"),
-        StringStruct("LegalCopyright", "GPL-2.0-or-later"),
+        StringStruct("LegalCopyright", "Copyright (C) the Vial contributors. GPL-2.0-or-later."),
         StringStruct("OriginalFilename", "Vial.exe"),
         StringStruct("ProductName", version.PRODUCT),
         StringStruct("ProductVersion", version.VERSION),

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-""" `vial --self-check`: whether this build of Vial has everything it needs. hidapi is loaded, but never asked for any
-device: no keyboard is looked for or opened. The CI's smoke test runs it on every built executable. """
+""" `vial --self-check`: whether this build of Vial has everything it needs. hidapi is loaded, but no device is listed
+or opened: no keyboard is looked for. The CI's smoke test runs it on every built executable. """
 import importlib
 import json
 
@@ -10,9 +10,13 @@ import version
 SERVER_MODULES = (
     "server.app",
     "simulator.corne",
-    # what uvicorn picks by name when it runs (vial.spec's hidden imports)
+    # what uvicorn imports by name when it runs: its "auto" choices, and the implementations they pick here
+    # (vial.spec's hidden imports)
+    "uvicorn.loops.auto",
     "uvicorn.loops.asyncio",
+    "uvicorn.protocols.http.auto",
     "uvicorn.protocols.http.h11_impl",
+    "uvicorn.protocols.websockets.auto",
     "uvicorn.protocols.websockets.websockets_sansio_impl",
     "uvicorn.lifespan.on",
 )
