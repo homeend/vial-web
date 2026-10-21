@@ -14,6 +14,11 @@
   import { router } from "../lib/router.svelte";
   import { browserStorage } from "../lib/theme";
   import Picker from "../picker/Picker.svelte";
+  import Button from "../ui/Button.svelte";
+  import ConfirmDialog from "../ui/ConfirmDialog.svelte";
+  import ArrangeBar from "./ArrangeBar.svelte";
+  import ArrangeDialog from "./ArrangeDialog.svelte";
+  import { layerArranger } from "./arranging.svelte";
   import DropMenu from "./DropMenu.svelte";
   import Inspector from "./Inspector.svelte";
   import FindBox from "./FindBox.svelte";
@@ -128,6 +133,9 @@
     if (kept.selection) document.querySelector<HTMLElement>(`[data-ref="${refId(kept.selection)}"]`)?.focus();
   }
 
+  // Arrange layers is for the keyboard this page shows: another one makes the page anew, without it
+  $effect(() => () => layerArranger.dropped());
+
   // a key dragged onto another, or chosen after the Inspector's Swap or Copy (move.svelte.ts)
   const mover = new KeyMover({
     placement: () => placement,
@@ -207,6 +215,15 @@
       ? combosUsing(analysis.combos, model, analysis.codes[kept.layer] ?? new Map(), kept.layer, kept.selection)
       : [],
   );
+  /** Finish or Put back from the bar: the bar goes once it is done, and the focus, if it was on it, to the heading */
+  async function fromBar(run: () => Promise<boolean>): Promise<boolean> {
+    const done = await run();
+    await tick();
+    const focused = document.activeElement;
+    if (done && (!focused || focused === document.body)) document.getElementById("keymap-title")?.focus();
+    return done;
+  }
+
   const subject = $derived.by(() => {
     if (!kept.selection) return "";
     const { what, where } = whereIs(model, kept.selection);
@@ -242,8 +259,24 @@
     <FindBox bind:text={kept.findText} results={foundResults} onopen={(place) => void openKey(place)} />
   {/snippet}
 
+  {#if keyboard.unfinishedArrange}
+    <ArrangeBar
+      unfinished={keyboard.unfinishedArrange}
+      canEdit={keyboard.canEdit}
+      onfinish={() => fromBar(() => layerArranger.finish())}
+      onputback={() => fromBar(() => layerArranger.putBack())}
+    />
+  {/if}
+
   {#if kept.view === "overview"}
     {@render find()}
+    <!-- above the layer cards; aria-disabled rather than disabled, so that its tooltip says why it does nothing -->
+    <div class="arrange-tools">
+      <Button id="arrange-layers-overview" size="sm" class={layerArranger.blocked !== null ? "off" : undefined}
+        aria-disabled={layerArranger.blocked !== null || undefined}
+        title={layerArranger.blocked ?? "Move layers to other positions; keys that reach them follow"}
+        onclick={() => layerArranger.start("arrange-layers-overview")}>Arrange layers…</Button>
+    </div>
     <Overview
       {model} {phrases} {placement} {analysis} {highlighted} current={kept.layer} onopen={(i) => void openLayer(i)}
     />
@@ -258,6 +291,8 @@
           canRename={keyboard.canEdit}
           onselect={(i) => (kept.layer = i)}
           onrename={(i, name) => keyboard.rename("layers", i, name)}
+          arrangeBlocked={layerArranger.blocked}
+          onarrange={() => layerArranger.start("arrange-layers")}
         />
         <div class="layer" role="tabpanel" id="layer-panel" aria-labelledby="layer-tab-{kept.layer}">
           {#if analysis.reach[kept.layer]}
@@ -346,6 +381,28 @@
   </div>
 {/if}
 
+<ArrangeDialog
+  open={layerArranger.open}
+  {model}
+  {analysis}
+  {phrases}
+  onapply={(order, report) => layerArranger.apply(order, report)}
+  onfinish={(report) => layerArranger.finish(report)}
+  onputback={(report) => layerArranger.putBack(report)}
+  onclose={() => layerArranger.closed()}
+/>
+<ConfirmDialog
+  open={layerArranger.asking !== null}
+  title="Arrange the layers?"
+  message={layerArranger.asking ?? ""}
+  confirmLabel="Arrange layers"
+  onconfirm={async () => {
+    layerArranger.confirm();
+    return true;
+  }}
+  onclose={() => layerArranger.questionClosed()}
+/>
+
 {#if kept.view === "edit" && kept.selection && current}
   <Picker
     bind:open={pickerOpen}
@@ -388,6 +445,17 @@
   .head p {
     margin: 4px 0 0;
     color: var(--text-2);
+  }
+
+  .arrange-tools {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: -6px;
+  }
+
+  .arrange-tools :global(.off) {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .workspace {

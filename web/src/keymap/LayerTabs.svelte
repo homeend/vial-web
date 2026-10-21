@@ -9,9 +9,13 @@
     onselect: (index: number) => void;
     /** an empty name gives the layer its default name back; resolves to whether it worked */
     onrename: (index: number, name: string) => Promise<boolean>;
+    /** why Arrange layers does nothing just now, or null */
+    arrangeBlocked: string | null;
+    /** opens Arrange layers */
+    onarrange: () => void;
   }
 
-  let { layers, active, canRename, onselect, onrename }: Props = $props();
+  let { layers, active, canRename, onselect, onrename, arrangeBlocked, onarrange }: Props = $props();
 
   /** the layer being renamed, in the dialog */
   let renaming = $state<number | null>(null);
@@ -104,6 +108,23 @@
       </svg>
     </button>
   {/if}
+  <!-- after every tab; aria-disabled rather than disabled, so that its tooltip says why it does nothing -->
+  <button
+    id="arrange-layers"
+    type="button"
+    class="arrange"
+    style="order: {layers.length * 2 + 1}"
+    aria-disabled={arrangeBlocked !== null || undefined}
+    title={arrangeBlocked ?? "Move layers to other positions; keys that reach them follow"}
+    onclick={() => {
+      if (arrangeBlocked === null) onarrange();
+    }}
+  >
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M4.5 2.5v10M2.5 10.5l2 2 2-2M11.5 13.5v-10M9.5 5.5l2-2 2 2" />
+      </svg>
+    Arrange layers…
+  </button>
 </div>
 
 <NameDialog {subject} onsave={(name) => (renaming === null ? Promise.resolve(true) : save(renaming, name))} onclose={closed} />
@@ -189,6 +210,34 @@
     color: var(--text);
   }
 
+  .arrange {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    margin-left: auto;
+    padding: 4px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 13px;
+    font-weight: 550;
+    cursor: pointer;
+  }
+
+  .arrange:hover:not([aria-disabled="true"]) {
+    border-color: var(--border);
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .arrange[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .arrange svg,
   .rename svg {
     width: 15px;
     height: 15px;
