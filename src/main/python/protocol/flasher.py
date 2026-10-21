@@ -15,7 +15,7 @@ whatever they hold: until it has them all, a command is written into the flash a
 has all N (nothing here sends the missing ones), or when the keyboard is unplugged and started in its bootloader again.
 
 CMD_REBOOT resets the bootloader as soon as the message's last USB packet arrives, so its write may fail or come back
-short although the keyboard rebooted: that write isn't checked.
+short although the keyboard rebooted: its write failing isn't an error.
 """
 import datetime
 import hashlib
@@ -176,7 +176,7 @@ class Bootloader:
     def reboot(self):
         """ Send CMD_REBOOT once; whether its write came back whole. vibl resets before the write completes, so a write
         that fails, comes back short or raises OSError (the device gone) most likely means it rebooted: never an
-        error, and never sent again (a second one would go to a device that is gone, or to the new firmware). """
+        error, and never sent again (a second one would go to a device that is gone). """
         try:
             return self.send(pad(CMD_REBOOT), retries=1)
         except OSError:
