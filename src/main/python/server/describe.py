@@ -6,7 +6,9 @@ All keycode knowledge comes from keycodes/ (and the keyboard languages of keymap
 """
 import contextlib
 import contextvars
+import dataclasses
 import re
+from typing import Optional
 
 from keycodes.keycodes import Keycode, RAWCODES_MAP, KEYCODES_MEDIA, KEYCODES_BACKLIGHT
 
@@ -38,14 +40,94 @@ QK_MOD_TAP = {6: (0x2000, 0x3FFF), 5: (0x6000, 0x7FFF)}
 """ mod-tap: modifiers on hold in bits 8-12, the tapped key in bits 0-7 """
 QK_ONE_SHOT_MOD = {6: (0x52A0, 0x52BF), 5: (0x5500, 0x55FF)}
 """ one-shot modifiers: modifiers in bits 0-4 """
-QK_LAYER_MOD = {6: (0x5000, 0x51FF), 5: (0x5900, 0x59FF)}
-""" LM(layer, mods): protocol 6 has the layer in bits 5-8 and the modifiers in bits 0-4; protocol 5 the layer in bits
-4-7 and the left-hand modifiers in bits 0-3 """
-TRI_LAYER_KEYS = {6: {0x7C77: 1, 0x7C78: 2}, 5: {0x5F10: 1, 0x5F11: 2}}
-""" FN_MO13 and FN_MO23: layer 1 or 2 while held, and layer 3 while both are held (Vial's tri-layer keys) """
 TRI_LAYER = 3
 BASIC = (0x00, 0xFF)
 """ basic keycodes, the ones a layer-tap or mod-tap can tap (both protocols) """
+
+
+@dataclasses.dataclass(frozen=True)
+class Reference:
+    """ Keycodes first to last point at a layer, tap dance or macro (`what`): its number is the `width` bits from bit
+    `shift` of the keycode less `base`. `fixed`: they always point at this layer instead (FN_MO13, FN_MO23). `names`:
+    the keycodes, as messages call them. """
+    first: int
+    last: int
+    what: str
+    names: str
+    shift: int = 0
+    width: int = 8
+    base: int = 0
+    fixed: Optional[int] = None
+
+    def number(self, value):
+        """ The number a keycode of this range holds """
+        if self.fixed is not None:
+            return self.fixed
+        return ((value - self.base) >> self.shift) & ((1 << self.width) - 1)
+
+    @property
+    def largest(self):
+        """ The largest number the keycode's field holds """
+        return (1 << self.width) - 1
+
+    def with_number(self, value, number):
+        """ The keycode with another number in its field, every other bit kept; ValueError when it doesn't fit """
+        if self.fixed is not None or self.base:
+            raise ValueError("{} hold no number of their own".format(self.names))
+        if not 0 <= number <= self.largest:
+            raise ValueError("{} hold numbers 0 to {}, not {}".format(self.names, self.largest, number))
+        mask = self.largest << self.shift
+        return (value & ~mask) | (number << self.shift)
+
+
+# Keycodes that point at a layer, tap dance or macro, as the firmware lays them out: vial-qmk's quantum/keycodes.h and
+# quantum_keycodes.h on protocol 6; on protocol 5 (before QMK's keycode change) quantum_keycodes.h, keymap_common.c's
+# action_for_keycode (which reads only bits 0-3 of TO: bits 4-5 say when it acts) and via.h. FN_MO13 and FN_MO23 point
+# at layer 3, not at 1 or 2 as describe() reports: this table says which layers a key needs the keyboard to have, and
+# they turn on layer 3 when both are held (describe() gives their own layer, triLayer 3). Their layers are numbers the
+# firmware fixes (protocol 5: via.c's layer_on(1), update_tri_layer(1, 2, 3); protocol 6: tri_layer.c's
+# TRI_LAYER_LOWER_LAYER 1, UPPER 2, ADJUST 3 by default), not a field of the keycode.
+REFERENCES = {
+    6: (
+        Reference(0x4000, 0x4FFF, "layer", "LT", shift=8, width=4),
+        Reference(0x5000, 0x51FF, "layer", "LM", shift=5, width=4),
+        Reference(0x5200, 0x529F, "layer", "TO, MO, DF, TG and OSL", width=5),
+        Reference(0x52C0, 0x52FF, "layer", "TT and PDF", width=5),
+        Reference(0x5700, 0x57FF, "tap dance", "TD"),
+        Reference(0x7700, 0x77FF, "macro", "M"),
+        Reference(0x7C77, 0x7C78, "layer", "FN_MO13 and FN_MO23", fixed=TRI_LAYER),
+    ),
+    5: (
+        Reference(0x4000, 0x4FFF, "layer", "LT", shift=8, width=4),
+        Reference(0x5000, 0x50FF, "layer", "TO", width=4),
+        Reference(0x5100, 0x54FF, "layer", "MO, DF, TG and OSL"),
+        Reference(0x5700, 0x57FF, "tap dance", "TD"),
+        Reference(0x5800, 0x58FF, "layer", "TT"),
+        Reference(0x5900, 0x59FF, "layer", "LM", shift=4, width=4),
+        Reference(0x5F10, 0x5F11, "layer", "FN_MO13 and FN_MO23", fixed=TRI_LAYER),
+        Reference(0x5F12, 0x5F7F, "macro", "M", base=0x5F12),
+    ),
+}
+
+
+def reference_range(value, protocol):
+    """ The Reference a firmware keycode of this protocol (5 or 6) is in, or None """
+    for ref in REFERENCES[protocol]:
+        if ref.first <= value <= ref.last:
+            return ref
+    return None
+
+
+def _reference_named(protocol, names):
+    return next(ref for ref in REFERENCES[protocol] if ref.names == names)
+
+
+QK_LAYER_MOD = {p: (r.first, r.last) for p, r in ((p, _reference_named(p, "LM")) for p in REFERENCES)}
+""" LM(layer, mods): protocol 6 has the layer in bits 5-8 and the modifiers in bits 0-4; protocol 5 the layer in bits
+4-7 and the left-hand modifiers in bits 0-3 (the layer's field: REFERENCES) """
+TRI_LAYER_KEYS = {p: {r.first + i: i + 1 for i in range(r.last - r.first + 1)}
+                  for p, r in ((p, _reference_named(p, "FN_MO13 and FN_MO23")) for p in REFERENCES)}
+""" FN_MO13 and FN_MO23: layer 1 or 2 while held, and layer 3 while both are held (Vial's tri-layer keys) """
 TAPPABLE_KINDS = {"basic", "modifier", "media", "mouse"}
 """ kinds of the named keycodes in the basic range; the others there are unnamed codes, KC_NO and KC_TRNS """
 
@@ -136,14 +218,14 @@ def mods_name(bits):
     return "+".join(names)
 
 
-def _protocol():
+def keycode_protocol():
     """ The keycode protocol in use: 6, or 5 for anything else. Keycode.protocol is 0 until a keyboard was read, and
     keycodes.py then uses its protocol 5 tables, so the integers are protocol 5 ones """
     return 6 if Keycode.protocol == 6 else 5
 
 
 def _in(value, ranges):
-    first, last = ranges[_protocol()] if isinstance(ranges, dict) else ranges
+    first, last = ranges[keycode_protocol()] if isinstance(ranges, dict) else ranges
     return first <= value <= last
 
 
@@ -161,10 +243,8 @@ def _result(code, kind, legend, tap=None, hold=None, layer=None, layer_action=No
 
 def _layer_mod(code, value):
     """ LM(layer, mods), e.g. 0x5022 (protocol 6): layer 1 with Shift, while held """
-    if _protocol() == 6:
-        layer, bits = (value >> 5) & 0xF, value & 0x1F
-    else:
-        layer, bits = (value >> 4) & 0xF, value & 0xF
+    layer = reference_range(value, keycode_protocol()).number(value)
+    bits = value & (0x1F if keycode_protocol() == 6 else 0xF)
     mods = mods_name(bits) or None
     description = "Turns on layer {} while held{}".format(layer, ", with {} held too".format(mods) if mods else "")
     return _result(code, "layer", _legend("LM {}".format(layer)), hold=mods, layer=layer,
@@ -244,7 +324,7 @@ def _describe(code, value):
         layer = int(m.group(1))
         return _result(code, "layer-tap", _keycode_legend(m.group(2)), hold="layer {}".format(layer), layer=layer,
                        layer_action=LAYER_ACTIONS["MO"])
-    tri = TRI_LAYER_KEYS[_protocol()].get(value)
+    tri = TRI_LAYER_KEYS[keycode_protocol()].get(value)
     if tri is not None:
         description = "Turns on layer {} while held, and layer {} while Fn{} is held too".format(
             tri, TRI_LAYER, 3 - tri)
@@ -309,33 +389,7 @@ def parse(expression):
     return describe(Keycode.serialize(parse_value(expression)))
 
 
-# (first, last, what, number) for keycodes that point at a layer, tap dance or macro; number(value) -> its number
-# FN_MO13 and FN_MO23 point at layer 3, not at 1 or 2 as describe() reports: this table says which layers a key needs
-# the keyboard to have, and they turn on layer 3 when both are held (describe() gives their own layer, triLayer 3)
-_REFERENCES_V6 = [
-    (0x4000, 0x4FFF, "layer", lambda v: (v >> 8) & 0xF),  # LT
-    (0x5000, 0x51FF, "layer", lambda v: (v >> 5) & 0xF),  # LM
-    (0x5200, 0x529F, "layer", lambda v: v & 0x1F),  # TO, MO, DF, TG, OSL
-    (0x52C0, 0x52FF, "layer", lambda v: v & 0x1F),  # TT, PDF
-    (0x5700, 0x57FF, "tap dance", lambda v: v & 0xFF),
-    (0x7700, 0x77FF, "macro", lambda v: v & 0xFF),
-    (0x7C77, 0x7C78, "layer", lambda v: 3),  # FN_MO13, FN_MO23
-]
-_REFERENCES_V5 = [
-    (0x4000, 0x4FFF, "layer", lambda v: (v >> 8) & 0xF),  # LT
-    (0x5000, 0x50FF, "layer", lambda v: v & 0xF),  # TO
-    (0x5100, 0x54FF, "layer", lambda v: v & 0xFF),  # MO, DF, TG, OSL
-    (0x5700, 0x57FF, "tap dance", lambda v: v & 0xFF),
-    (0x5800, 0x58FF, "layer", lambda v: v & 0xFF),  # TT
-    (0x5900, 0x59FF, "layer", lambda v: (v >> 4) & 0xF),  # LM
-    (0x5F10, 0x5F11, "layer", lambda v: 3),  # FN_MO13, FN_MO23
-    (0x5F12, 0x5F7F, "macro", lambda v: v - 0x5F12),
-]
-
-
 def reference(value):
     """ Firmware keycode -> ("layer" | "tap dance" | "macro", number) it points at, or None """
-    for first, last, what, number in (_REFERENCES_V5 if _protocol() == 5 else _REFERENCES_V6):
-        if first <= value <= last:
-            return what, number(value)
-    return None
+    ref = reference_range(value, keycode_protocol())
+    return None if ref is None else (ref.what, ref.number(value))
