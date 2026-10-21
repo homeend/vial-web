@@ -19,7 +19,8 @@ function stepsOf(text: string): Step[] {
   });
 }
 
-// as Qt's text editor writes them: json.dumps([act.save() for act in actions]) (macro_tab.py on_text_window)
+// as Qt's text editor wrote them: json.dumps([act.save() for act in actions]) (upstream vial-gui's macro_tab.py,
+// on_text_window)
 const QT = '[["text", "git status"], ["tap", "KC_ENTER"], ["down", "KC_LSHIFT"], ["tap", "KC_HOME", "KC_END"], ' +
   '["up", "KC_LSHIFT"], ["delay", 50], ["tap", "LCTL(KC_C)"]]';
 

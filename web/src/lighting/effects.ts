@@ -1,5 +1,6 @@
-// The lighting effects by name, as Qt's Lighting tab names them (editor/rgb_configurator.py), and what the firmware
-// does with the colour under some of them (vial-qmk quantum/rgblight/rgblight.c, quantum/rgb_matrix/rgb_matrix.c).
+// The lighting effects by name, as Qt's Lighting tab named them (upstream vial-gui's editor/rgb_configurator.py), and
+// what the firmware does with the colour under some of them (vial-qmk quantum/rgblight/rgblight.c,
+// quantum/rgb_matrix/rgb_matrix.c).
 
 /** VialRGB effects by their VialRGB number (vialrgb_effects.inc: never reordered, only added to) */
 export const VIALRGB_EFFECTS = [

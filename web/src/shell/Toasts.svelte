@@ -36,6 +36,8 @@
     await run();
     if (!hadFocus || toasts.items.some((t) => t.id === id)) return;
     await tick();
+    // the toasts went meanwhile (Vial stopped): there is nowhere to put the focus
+    if (!region) return;
     const next = neighbour && region.querySelector<HTMLElement>(`[data-toast="${neighbour.id}"] button`);
     const target = next ?? (returnTo?.isConnected ? returnTo : region);
     target.focus();

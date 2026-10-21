@@ -65,6 +65,13 @@
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
 }
 
+/* a narrower gutter on a narrow screen, for the top bar, the pages and the stopped page alike */
+@media (max-width: 600px) {
+  :root {
+    --shell-gutter: 12px;
+  }
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #101217;

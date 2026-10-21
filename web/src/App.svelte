@@ -458,10 +458,4 @@
       padding-top: 24px;
     }
   }
-
-  @media (max-width: 600px) {
-    .shell {
-      --shell-gutter: 12px;
-    }
-  }
 </style>
