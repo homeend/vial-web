@@ -1,7 +1,8 @@
 # Parity with the Qt app
 
 Every tab, menu and dialog of the Qt app (`src/main/python/main_window.py`, `editor/`, `unlocker.py`,
-`about_keyboard.py`) and where it lives in the web UI (`web/src/`), or why it is left out. Phase 5's contract: once
+`about_keyboard.py`, removed from this fork in phase 6: see the history, or upstream vial-gui) and where it lives in
+the web UI (`web/src/`), or why it is left out. Phase 5's contract: once
 phase 5b is done, the web UI does all of this except what is marked **dropped** or **later**. Checked against the code
 on 2026-10-20.
 
@@ -25,7 +26,7 @@ navigation, as Qt hides the tabs whose `valid()` is false.
 | Alt Repeat Key (`alt_repeat_key.py`) | Alt-repeat, `#alt-repeat` | |
 | QMK Settings (`qmk_settings.py`) | Settings, `#settings` (`settings/SettingsPage.svelte`) | Grouped as Qt's tabs; Save/Undo; Reset to defaults with a confirmation. |
 | Matrix tester (`matrix_test.py`) | Matrix tester, `#matrix` (`matrix/MatrixPage.svelte`) | Shown when Qt's would be (Vial protocol 3+, a matrix that fits one reply: `server/device.py has_matrix_tester`). Qt tests whenever its tab shows (it reads the keys every 20 ms); here only after Start testing, which unlocks first (Qt shows an Unlock button). Keys pressed do nothing on the page meanwhile, as Qt grabs the keyboard. The test stops when the window loses the focus or the tab is hidden (Alt+Tab), when a dialog takes the focus (another keyboard picked asks first; the unlock dialog keeps the test going), when the keyboard is unplugged or reboots into its bootloader, and when the page is left; Start testing goes on with what was pressed so far. Reset is Qt's; the switch matrix grid (positions without a key) is new. |
-| Firmware updater (`firmware_flasher.py`) | **Later** (phase 7) | The roadmap's optional phase 7. Qt shows it only for keyboards with Vial's own bootloader (`vibl`). Reboot to bootloader (below) is there for flashing with another tool. |
+| Firmware updater (`firmware_flasher.py`) | **Later** (phase 7) | The roadmap's optional phase 7. Its logic, without Qt, is in `src/main/python/protocol/flasher.py` (phase 6): reading a `.vfw` file, finding the bootloader, the flashing protocol. Qt shows it only for keyboards with Vial's own bootloader (`vibl`). Reboot to bootloader (below) is there for flashing with another tool. |
 
 ## Above the tabs
 
@@ -43,14 +44,14 @@ navigation, as Qt hides the tabs whose `valid()` is false.
 | File > Sideload VIA JSON… | **Dropped** | Roadmap decision 5: VIA-only keyboards aren't supported (the server only finds Vial keyboards). |
 | File > Download VIA definitions | **Dropped** | Same decision. |
 | File > Load dummy JSON… | **Dropped** | A developer tool; `vial_web.py --fake --definition FILE` simulates a keyboard from its `vial.json` instead. |
-| File > Exit (Ctrl+Q) | Ctrl+C in Vial's terminal | Closing the tab leaves Vial running (it prints the link to reopen it). |
+| File > Exit (Ctrl+Q) | Top bar, Quit Vial (`shell/TopBar.svelte`; `POST /api/shutdown`) | Asks first when there is work not saved (`lib/unsaved.ts`); every tab then says Vial has stopped. Ctrl+C in Vial's console window, or closing it, stops Vial too. Closing the tab leaves Vial running (it prints the link to reopen it). |
 | Keyboard layout (QWERTY, AZERTY, …) | Top bar, Keyboard language (`shell/TopBar.svelte`) | Remembered in the browser. |
 | Security > Unlock (Ctrl+U) | Top bar, the Locked/Unlocked control; the unlock dialog (`shell/UnlockDialog.svelte`) | A change the firmware refuses while locked starts the unlock too, then is sent again. |
 | Security > Lock (Ctrl+L) | Top bar, the Locked/Unlocked control | |
 | Security > Reboot to bootloader (Ctrl+B) | Keyboard page, Reboot to bootloader… (`about/BootloaderCard.svelte`) | With a confirmation; unlocks first, as Qt does; then a banner, in the tab that rebooted it, says the keyboard is in its bootloader (other tabs say Keyboard unplugged); a reboot the keyboard got and didn't answer is shown as most likely done. A firmware built without the jump says so instead. |
 | Theme (System, Light, Dark, Arc, Nord, …) | Top bar, System / Light / Dark | **Dropped**: Qt's other colour themes. |
 | About > About *keyboard*… (`about_keyboard.py`) | Keyboard page, About this keyboard (`about/AboutCard.svelte`) | The name, Keyboard ID, protocols, matrix, keys, layers, macro memory, entries and features, with Copy. The USB device as Qt shows it: Manufacturer, Product, VID and PID (four hex digits) and Device (the HID path, cut short with its tooltip), from the keyboard list (`GET /api/keyboards`: what hidapi said when the keyboard was found). |
-| About > About Vial… | **Later** (phase 6) | Vial's version comes with the packaging. |
+| About > About Vial… | `vial --version`; Vial.exe's Properties > Details (phase 6) | The version is set in `src/main/python/version.py`. The page doesn't show it. |
 
 The menus' keyboard shortcuts aren't kept: in a browser, Ctrl+O, Ctrl+S and Ctrl+Q are the browser's.
 

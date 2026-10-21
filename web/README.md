@@ -1,9 +1,11 @@
 # Vial web UI
 
 Svelte 5 (runes only) + TypeScript, built with Vite. `npm run build` writes `web/dist`, which
-`vial_web.py` serves; without `dist` it shows a placeholder page.
+`vial_web.py` serves (and `vial.spec` bundles into the executable); without `dist`, `vial_web.py` says how to build
+it and shows a placeholder page.
 
-Where each tab, menu and dialog of the Qt app lives here, or why it is left out: `docs/parity.md`.
+Where each tab, menu and dialog of the Qt app (removed in phase 6) lives here, or why it is left out:
+`docs/parity.md`.
 
 ## Setup
 
@@ -74,7 +76,7 @@ starts the countdown at N instead, as firmware built with another `VIAL_UNLOCK_C
 | `npm run dev` | Build, then rebuild on every change |
 | `npm run check` | `svelte-check` (types, Svelte 5 runes-only syntax; fails on warnings), then `tsc` for the configs, e2e tests and scripts |
 | `npm test` | Vitest unit tests (`src/**/*.test.ts`) |
-| `npm run e2e` | Build, then run the Playwright tests (`e2e/`) against `vial_web.py --fake` |
+| `npm run e2e` | Build, then run the Playwright tests (`e2e/`) against `vial_web.py --fake` (or the executable `$E2E_VIAL_CMD` names) |
 | `npm run gen:api` | Regenerate `src/api/schema.d.ts` from the server's OpenAPI schema |
 | `npm run check:api` | Fail if `src/api/schema.d.ts` is out of date |
 
@@ -91,8 +93,14 @@ CI runs `npm run check:api`.
 default Corne, with VialRGB; `e2e/fixtures/macropad.vial.json` with encoders, a layout option and no
 lighting; the Corne with `--layers 8`, as the owner's keyboard has; the Corne with
 `--lighting qmk_backlight_rgblight`; and the Corne with the macropad as its second keyboard,
-`--second-definition`), reads the links with the session token from their output and stops them. Each
-Playwright worker starts the ones its tests use (fixtures in `e2e/fixtures.ts`) and stops them when it ends. Screenshots, each in the
+`--second-definition`), reads the links with the session token from their output, and at the end asks each to quit
+(`POST /api/shutdown`, as Quit Vial does; one that takes it and doesn't exit within 5 s fails the run), ending it
+only if it can't be asked. Each Playwright worker starts the ones its tests use (fixtures in `e2e/fixtures.ts`) and
+stops them when it ends; a test that ends its server (Quit Vial) gets one of its own (`ownServer`).
+
+`E2E_VIAL_CMD=dist/Vial.exe npx playwright test` runs the same tests against a built executable (a path relative to
+the repository, or absolute) instead of `python vial_web.py`, with the same arguments; CI does so on Windows and
+Linux. Screenshots, each in the
 light and the dark theme (`*-light.png`, `*-dark.png`), go to `e2e/screenshots/` (not committed); a
 full-page one is taken from the top, with the sticky top bar and macro editor footer drawn where they are in the
 page.
@@ -106,6 +114,7 @@ page.
 | `tapdance`, `combos`, `macros` | Editing on those pages: where the focus goes, saves that are slow or fail, recording keys (adding to the end, or replacing the steps: undone by Cancel); removing a macro: at once when nothing uses it, else asked first, Cancel keeping it |
 | `macro-text` | The macro text editor: Qt's JSON shown, Esc and Cancel changing nothing, what can't be read said and not applied, Apply then the page's Save, a `.vim` file saved and loaded; steps not finished going and coming as text; a text too long refused before it is sent; a text being applied dropped when the dialog closes; Ctrl+S on a layout whose letters aren't Latin; the dialog and the record buttons at 1920 and 375 px |
 | `unlock` | The unlock dialog |
+| `quit` | Quit Vial: every tab showing that Vial stopped (the heading taking the focus) and reconnecting no more, the server exiting by itself; asked first with work not saved (Cancel keeping Vial running); the button and the stopped page from 375 px to 1080p, in both themes |
 | `overrides` | The Key overrides and Alt-repeat pages: a new key override built and saved, switched off, removed; an alt-repeat key edited |
 | `settings` | The QMK settings form: a change undone, a number out of range, Save, Reset to defaults with its confirmation |
 | `layoutfile` | Saving the layout, loading it back with its preview; another keyboard's file and a broken one; a file with macros on a locked keyboard |
@@ -145,5 +154,5 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | `src/settings/` | The QMK settings form (Settings): the groups `qmk_settings.json` defines, what changed, Save, Undo and Reset; what the page keeps while another one shows (`state.svelte.ts`) |
 | `src/about/` | The Keyboard page: what the keyboard is (Qt's About keyboard), saving and loading `.vil` layout files with a preview of what changes, and reboot to bootloader |
 | `src/picker/` | Keycode picker: search, categories (no Lighting category on a keyboard without lighting, `offered.ts`), any-keycode entry |
-| `src/shell/` | Top bar (with the keyboard selector, shown while there is more than one keyboard to choose from, and the Lock/Unlock control), navigation, banners, toasts, the unlock dialog |
+| `src/shell/` | Top bar (with the keyboard selector, shown while there is more than one keyboard to choose from, the Lock/Unlock control and Quit Vial), navigation, banners, toasts, the unlock dialog, the page shown once Vial has stopped |
 | `src/ui/` | Small shared controls (a switch, a list, a slider, the Save bar), the name dialog (layers, tap dances, macros) and a confirmation dialog |
