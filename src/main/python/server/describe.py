@@ -96,13 +96,15 @@ class Reference:
 # reports: this table says which layers a key needs the keyboard to have, and they turn on layer 3 when both are held
 # (describe() gives their own layer, triLayer 3). Their layers are numbers the firmware fixes (protocol 5: via.c's
 # layer_on(1), update_tri_layer(1, 2, 3); protocol 6: tri_layer.c's TRI_LAYER_LOWER_LAYER 1, UPPER 2, ADJUST 3 by
-# default), not a field of the keycode.
+# default), not a field of the keycode. PDF (protocol 6 only: protocol 5 firmware has no such keycode) saves its layer
+# as the one the keyboard starts on (process_default_layer.c: set_single_persistent_default_layer).
 REFERENCES = {
     6: (
         Reference(0x4000, 0x4FFF, "layer", "LT", shift=8, width=4),
         Reference(0x5000, 0x51FF, "layer", "LM", shift=5, width=4, key="LM"),
         Reference(0x5200, 0x529F, "layer", "TO, MO, DF, TG and OSL", width=5),
-        Reference(0x52C0, 0x52FF, "layer", "TT and PDF", width=5),
+        Reference(0x52C0, 0x52DF, "layer", "TT", width=5),
+        Reference(0x52E0, 0x52FF, "layer", "PDF", width=5, key="PDF"),
         Reference(0x5700, 0x57FF, "tap dance", "TD"),
         Reference(0x7700, 0x77FF, "macro", "M"),
         Reference(0x7C77, 0x7C78, "layer", "FN_MO13 and FN_MO23", fixed=TRI_LAYER, key="FN_MO"),

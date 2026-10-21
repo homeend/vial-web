@@ -6,6 +6,7 @@ An order lists, for each new position, the layer that goes there: order[new posi
 layer 3 at position 1, and layers 1 and 2 after it. Layer 0 never moves: the keyboard starts on it.
 """
 import dataclasses
+import types
 from typing import Optional
 
 from server.describe import TRI_LAYER, reference_range
@@ -46,7 +47,8 @@ class Problem:
     place: str
     """ one of PLACES """
     where: str
-    """ "layer 2, row 0, column 4", "tap dance 3, hold", "key override 1" """
+    """ "layer 2, row 0, column 4", "tap dance 3, hold", "key override 1, replacement", "key override 1" (its layers)
+    """
     text: str
 
 
@@ -58,13 +60,17 @@ class Arrangement:
     """ (old position, new position) of each layer that moves """
     keys: int
     """ keymap positions and encoder directions that change """
-    references: dict
-    """ by place (PLACES): the keycodes whose layer number changes """
+    references: types.MappingProxyType
+    """ by place (PLACES): the keycodes whose layer number changes (read-only) """
     key_overrides: int
     """ key overrides whose "active on layers" changes """
     tri_layer: Optional[tuple]
     """ a tri-layer key is set and layers 1-3 change: the old layers at positions 1, 2 and 3 after the order (they were
-    1, 2 and 3); None otherwise """
+    1, 2 and 3), None for a position the keyboard doesn't have (fewer than 4 layers); None otherwise """
+    saved_default: tuple
+    """ (old position, new position) of each layer that a PDF key points at and that moves. PDF(n) saves layer n as the
+    layer the keyboard starts on, in its EEPROM, which Vial can't read or write: a layer saved so before keeps its
+    number there (the keyboard then starts on what is at the old position) until a PDF key is pressed again """
     problems: tuple
 
 
@@ -122,6 +128,12 @@ def is_tri_layer_key(code, protocol):
     return ref is not None and ref.what == "layer" and ref.fixed is not None
 
 
+def saved_default_layer(code, protocol):
+    """ The layer a PDF key saves as the one the keyboard starts on, or None for any other keycode """
+    ref = reference_range(code, protocol)
+    return ref.number(code) if ref is not None and ref.key == "PDF" else None
+
+
 def move_mask(mask, mapping):
     """ A key override's layer mask with each layer's bit at its new position; bits of layers mapping doesn't have stay.
     DoesNotFit when a layer in it would go past bit 15. """
@@ -146,10 +158,15 @@ class _Renumbering:
         self.counts = {place: 0 for place in PLACES}
         self.problems = []
         self.tri_layer = False
+        self.saved_default = set()
+        """ (old, new) of the layers PDF keys point at that move """
 
     def code(self, value, place, where):
         if is_tri_layer_key(value, self.protocol):
             self.tri_layer = True
+        saved = saved_default_layer(value, self.protocol)
+        if saved in self.mapping and self.mapping[saved] != saved:
+            self.saved_default.add((saved, self.mapping[saved]))
         try:
             new = renumber(value, self.mapping, self.protocol)
         except DoesNotFit as e:
@@ -162,6 +179,8 @@ class _Renumbering:
 
 TAP_DANCE_SLOTS = ("tap", "hold", "double tap", "tap-hold")
 COMBO_SLOTS = ("key 1", "key 2", "key 3", "key 4", "output")
+KEY_OVERRIDE_SLOTS = ("trigger", "replacement")
+ALT_REPEAT_SLOTS = ("keycode", "alt keycode")
 
 
 KO_ENABLED = 1 << 7
@@ -201,8 +220,8 @@ def arrange(state, order, protocol):
     masks_moved = 0
     for i, e in enumerate(state.key_overrides):
         where = "key override {}".format(i)
-        trigger = r.code(e[0], "keyOverrides", where)
-        replacement = r.code(e[1], "keyOverrides", where)
+        trigger, replacement = (r.code(v, "keyOverrides", "{}, {}".format(where, KEY_OVERRIDE_SLOTS[n]))
+                                for n, v in enumerate(e[:2]))
         mask = e[2]
         if _set(e):
             try:
@@ -213,8 +232,8 @@ def arrange(state, order, protocol):
         key_overrides.append((trigger, replacement, mask) + tuple(e[3:]))
 
     alt_repeat_keys = tuple(
-        (r.code(e[0], "altRepeatKeys", "alt-repeat key {}".format(i)),
-         r.code(e[1], "altRepeatKeys", "alt-repeat key {}".format(i))) + tuple(e[2:])
+        tuple(r.code(v, "altRepeatKeys", "alt-repeat key {}, {}".format(i, ALT_REPEAT_SLOTS[n]))
+              for n, v in enumerate(e[:2])) + tuple(e[2:])
         for i, e in enumerate(state.alt_repeat_keys))
 
     macros = tuple(
@@ -232,8 +251,9 @@ def arrange(state, order, protocol):
         moves=tuple((old, new) for new, old in enumerate(order) if old != new),
         keys=sum(keys.get(pos) != value for pos, value in state.keys.items())
         + sum(encoders.get(pos) != value for pos, value in state.encoders.items()),
-        references=r.counts,
+        references=types.MappingProxyType(r.counts),
         key_overrides=masks_moved,
         tri_layer=tri_layer,
+        saved_default=tuple(sorted(r.saved_default)),
         problems=tuple(r.problems),
     )

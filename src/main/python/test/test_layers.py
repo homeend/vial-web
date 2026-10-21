@@ -191,6 +191,51 @@ def test_tri_layer_warning():
     assert arrange(s, [0, 1, 2, 3, 5, 4], 6).tri_layer is None
 
 
+def test_a_tri_layer_key_with_fewer_than_four_layers():
+    # layer 3, which both tri-layer keys turn on, isn't there: None says so (the API's null)
+    s = state(layers=3, keys={(0, 0, 0): FN_MO[6][0]})
+    assert arrange(s, [0, 2, 1], 6).tri_layer == (2, 1, None)
+    s = state(layers=2, keys={(0, 0, 0): FN_MO[5][1]})
+    assert arrange(s, [0, 1], 5).tri_layer is None  # layer 1 stays
+
+
+def test_the_saved_default_layer_warning():
+    # PDF(n) saves layer n as the layer the keyboard starts on (vial-qmk process_default_layer.c ->
+    # set_single_persistent_default_layer -> eeconfig_update_default_layer), which Vial can't read or write: a layer
+    # that a PDF key points at and that moves is named, wherever the key is
+    s = state(layers=5, keys={(1, 0, 0): V6["PDF"](2), (0, 0, 0): V6["PDF"](0), (2, 0, 0): V6["PDF"](4)},
+              encoders={(0, 0, 0): V6["PDF"](2)},
+              tap_dance=((0, V6["PDF"](3), 0, 0, 200),),
+              macros=((("tap", (V6["PDF"](1),)),),))
+    order = [0, 2, 3, 1, 4]  # 2 -> 1, 3 -> 2, 1 -> 3; 0 and 4 stay
+    result = arrange(s, order, 6)
+    assert result.saved_default == ((1, 3), (2, 1), (3, 2))
+    assert result.target.keys[(3, 0, 0)] == V6["PDF"](1)  # and it is renumbered like any other
+    assert arrange(s, [0, 1, 2, 3, 4], 6).saved_default == ()
+    for place in ("combos", "key_overrides", "alt_repeat_keys"):
+        entry = {"combos": (V6["PDF"](1), 0, 0, 0, 0x04), "key_overrides": (0x04, V6["PDF"](1), 0, 0, 0, 0, 0x87),
+                 "alt_repeat_keys": (0x04, V6["PDF"](1), 0, 0x08)}[place]
+        assert arrange(state(**{place: (entry,)}), [0, 2, 1, 3], 6).saved_default == ((1, 2),), place
+    # protocol 5 firmware has no PDF keycode: its 0x52E1 is MO(0xE1), no warning
+    assert arrange(state(keys={(0, 0, 0): 0x52E1}), [0, 2, 1, 3], 5).saved_default == ()
+
+
+def test_problems_say_which_keycode_of_an_entry():
+    s = state(layers=20, key_overrides=((V6["LT"](2), V6["LT"](3), 1, 0, 0, 0, 0x87),),
+              alt_repeat_keys=((V6["LM"](3), V6["LT"](2), 0, 0x08),))
+    order = [0, 1] + list(range(4, 20)) + [2, 3]
+    wheres = {p.where for p in arrange(s, order, 6).problems}
+    assert wheres == {"key override 0, trigger", "key override 0, replacement", "alt-repeat key 0, keycode",
+                      "alt-repeat key 0, alt keycode"}
+
+
+def test_the_references_counted_are_read_only():
+    result = arrange(state(keys={(0, 0, 0): V6["MO"](1)}), [0, 2, 1, 3], 6)
+    assert result.references["keymap"] == 1
+    with pytest.raises(TypeError):
+        result.references["keymap"] = 2
+
+
 def test_problems_block_and_say_where():
     s = state(layers=20, keys={(2, 0, 4): V6["LT"](2)}, key_overrides=((0x04, 0x05, 1 << 3, 0, 0, 0, 0x87),))
     order = [0, 1] + list(range(4, 20)) + [2, 3]  # layers 2 and 3 go to positions 18 and 19
