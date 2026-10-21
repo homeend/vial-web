@@ -1,6 +1,6 @@
-// Starts a `vial_web.py --fake --no-browser` server (or the Vial executable, see below), on a free port with its own temporary data dir, and stops it:
-// the simulated keyboards the tests use (see SERVERS). Each test worker starts its own (fixtures.ts), so tests that run
-// at the same time never share a keyboard. The URLs carry the session token.
+// Starts a `vial_web.py --fake --no-browser` server (or the Vial executable, see below), on a free port with its own
+// temporary data dir, and stops it: the simulated keyboards the tests use (see SERVERS). Each test worker starts its
+// own (fixtures.ts), so tests that run at the same time never share a keyboard. The URLs carry the session token.
 //
 // $E2E_VIAL_CMD runs a built Vial executable instead (dist/Vial.exe, a path relative to the repository or absolute),
 // with the same arguments: the whole suite then tests what PyInstaller built. The executable serves the web UI it was
@@ -18,19 +18,27 @@ const STOP_MS = 5_000;
 const QUIT_MS = 10_000;
 // Each of the two requests that ask the server to quit
 const ASK_MS = 5_000;
+// After it exits, for the rest of what it printed, before an error quotes it
+const CLOSE_MS = 2_000;
+// For the test runner's own work around the fixture, on a busy machine
+const SPARE_MS = 5_000;
 // What Vial prints once it serves a simulated keyboard, the link on the next line. The token must reach the end
 // of its line, so output that stops in the middle of the link is never taken for the whole link.
-const STARTED = /Vial is running with a simulated keyboard\. Open it at:\r?\n\s*(http:\/\/127\.0\.0\.1:\d+\/\?token=[\w-]+)\r?\n/;
+const STARTED = new RegExp(
+  String.raw`Vial is running with a simulated keyboard\. Open it at:\r?\n\s*` +
+    String.raw`(http://127\.0\.0\.1:\d+/\?token=[\w-]+)\r?\n`,
+);
 const MACROPAD_DEFINITION = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "macropad.vial.json");
 
 /** The unlock keys are held for 10 polls, about 2 s, instead of the firmware's usual 50 (a firmware setting,
  * VIAL_UNLOCK_COUNTER_MAX): the polls keep the firmware's timing */
 const UNLOCK_COUNTER = ["--unlock-counter", "10"];
 
-/** Vial's arguments (vial_web.py's, or the executable's) for each simulated keyboard: the default simulated Corne (VialRGB lighting), a macropad
- * with encoders, rotated keys, an ISO Enter, a decal, a layout option and no lighting, the Corne with 8 layers, as the
- * owner's W-CORNE has, the Corne with QMK's RGB light and backlight instead of VialRGB, and the Corne with the macropad
- * as the second keyboard, which the test hook PUT /api/simulator/second-keyboard plugs in */
+/** Vial's arguments (vial_web.py's, or the executable's) for each simulated keyboard: the default simulated Corne
+ * (VialRGB lighting), a macropad with encoders, rotated keys, an ISO Enter, a decal, a layout option and no lighting,
+ * the Corne with 8 layers, as the owner's W-CORNE has, the Corne with QMK's RGB light and backlight instead of VialRGB,
+ * and the Corne with the macropad as the second keyboard, which the test hook PUT /api/simulator/second-keyboard plugs
+ * in */
 export const SERVERS = {
   corne: [...UNLOCK_COUNTER],
   macropad: ["--definition", MACROPAD_DEFINITION, ...UNLOCK_COUNTER],
@@ -40,18 +48,20 @@ export const SERVERS = {
 } satisfies Record<string, string[]>;
 
 /** Long enough to start a server and to stop it (asked to quit, waited for, then ended if need be: two attempts to end
- * it where SIGKILL follows SIGTERM), on a busy machine too */
-export const SERVER_FIXTURE_MS = STARTUP_MS + 2 * ASK_MS + QUIT_MS + 2 * STOP_MS;
+ * it where SIGKILL follows SIGTERM), to read the rest of its output for an error, and some time to spare, on a busy
+ * machine too */
+export const SERVER_FIXTURE_MS = STARTUP_MS + 2 * ASK_MS + QUIT_MS + 2 * STOP_MS + CLOSE_MS + SPARE_MS;
 
 /** What runs Vial: the executable $E2E_VIAL_CMD names, else vial_web.py with the repository's Python */
 function vialCommand(): { file: string; args: string[]; cwd: string; name: string; env: NodeJS.ProcessEnv } {
   const executable = process.env.E2E_VIAL_CMD;
   if (executable) {
     const file = resolve(repoRoot, executable);
-    // once and clearly, not as an ENOENT from every worker
+    // said clearly (by each server that would start), not as an ENOENT
     if (!existsSync(file)) throw new Error(`E2E_VIAL_CMD names ${file}, which doesn't exist`);
-    // no PYTHON* variables: the frozen executable ignores them
-    return { file, args: [], cwd: repoRoot, name: executable, env: process.env };
+    // run from the system's temp folder, outside the repository, as a downloaded executable is: nothing of the
+    // repository's is in its working directory. No PYTHON* variables: the frozen executable ignores them.
+    return { file, args: [], cwd: tmpdir(), name: executable, env: process.env };
   }
   return {
     file: findPython(),
@@ -63,6 +73,35 @@ function vialCommand(): { file: string; args: string[]; cwd: string; name: strin
 }
 
 const hasExited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
+
+/** POSIX: the servers running, each in a process group of its own (see startServer), which the terminal's Ctrl+C and
+ * hangup don't reach. They are ended with this process when it exits, or when it gets a hangup (the terminal closed).
+ * Killed outright (SIGKILL), this process can do nothing, and they outlive it. */
+const posixServers = new Set<ChildProcess>();
+
+function killPosixServers(): void {
+  for (const server of posixServers) {
+    try {
+      process.kill(-server.pid!, "SIGKILL");
+    } catch {
+      // gone already
+    }
+  }
+  posixServers.clear();
+}
+
+let endingWithThisProcess = false;
+
+function endServersWithThisProcess(): void {
+  if (endingWithThisProcess) return;
+  endingWithThisProcess = true;
+  process.on("exit", killPosixServers);
+  // the hangup still ends this process: with the listener gone, it is raised again for its default action
+  process.once("SIGHUP", () => {
+    killPosixServers();
+    process.kill(process.pid, "SIGHUP");
+  });
+}
 
 /** Resolves true once the process has exited, or false after `ms` */
 function exitWithin(child: ChildProcess, ms: number): Promise<boolean> {
@@ -80,26 +119,29 @@ function exitWithin(child: ChildProcess, ms: number): Promise<boolean> {
   });
 }
 
+/** What came of asking the server to quit: it took the request, it is gone (nothing answers), a request got no answer
+ * within ASK_MS, or it answered and said no (`why`: what it answered) */
+type Asked = { result: "taken" | "gone" | "unanswered" } | { result: "refused"; why: string };
+
 /** Asks the server to quit as Quit Vial does (POST /api/shutdown, with the session the link gives): it closes the
  * keyboard and exits by itself, and a one-file executable removes the folder it unpacked itself to, which ending it
- * would leave behind. Resolves to "taken" when it took the request, "refused" when it is gone or said no, and
- * "unanswered" when a request got no answer within ASK_MS. */
-async function askToQuit(url: string): Promise<"taken" | "refused" | "unanswered"> {
+ * would leave behind. */
+async function askToQuit(url: string): Promise<Asked> {
   try {
     const login = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(ASK_MS) });
     await login.body?.cancel();
     const cookie = login.headers.getSetCookie()[0]?.split(";")[0];
-    if (!cookie) return "refused";
+    if (!cookie) return { result: "refused", why: `its link answered ${login.status} without a session cookie` };
     const reply = await fetch(new URL("/api/shutdown", url), {
       method: "POST",
       headers: { cookie, origin: new URL(url).origin },
       signal: AbortSignal.timeout(ASK_MS),
     });
     await reply.body?.cancel();
-    return reply.status === 204 ? "taken" : "refused";
+    return reply.status === 204 ? { result: "taken" } : { result: "refused", why: `it answered ${reply.status}` };
   } catch (error) {
     const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
-    return timedOut ? "unanswered" : "refused"; // not answering, or gone already
+    return { result: timedOut ? "unanswered" : "gone" };
   }
 }
 
@@ -140,8 +182,25 @@ function removeDataDir(dataDir: string): void {
   rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
 
-/** Resolves with the server's link once it serves, or rejects when it exits, fails to start or takes too long */
-function waitForUrl(server: ChildProcess, name: string, output: { text: string }): Promise<string> {
+/** Resolves once `closed` has (the process's pipes closed: all it printed has been read), or after CLOSE_MS */
+function outputRead(closed: Promise<void>): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, CLOSE_MS);
+    void closed.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+/** Resolves with the server's link once it serves, or rejects when it exits, fails to start or takes too long.
+ * `closed` resolves once its pipes have closed. */
+function waitForUrl(
+  server: ChildProcess,
+  name: string,
+  output: { text: string },
+  closed: Promise<void>,
+): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`${name} did not start within ${STARTUP_MS / 1000} s:\n${output.text}`)),
@@ -163,7 +222,9 @@ function waitForUrl(server: ChildProcess, name: string, output: { text: string }
     });
     server.on("exit", (code, signal) => {
       clearTimeout(timer);
-      reject(new Error(`${name} exited (${signal ?? code}) before serving:\n${output.text}`));
+      // with what it printed last, which may still be on its way
+      void outputRead(closed).then(() =>
+        reject(new Error(`${name} exited (${signal ?? code}) before serving:\n${output.text}`)));
     });
   });
 }
@@ -189,32 +250,44 @@ export async function startServer(extraArgs: string[]): Promise<TestServer> {
         cwd: vial.cwd,
         stdio: ["ignore", "pipe", "pipe"],
         env: vial.env,
-        // POSIX: its own process group, so stopProcess can end the executable's child too (Windows: taskkill /T)
+        // POSIX: its own process group, so stopProcess can end the executable's child too (Windows: taskkill /T).
+        // That also takes it out of the terminal's process group, which the terminal's Ctrl+C and hangup go to: it is
+        // ended with this process instead (posixServers).
         detached: process.platform !== "win32",
       },
     );
-    const exited = new Promise<number | null>((resolve) => server!.once("exit", (code) => resolve(code)));
-    const url = await waitForUrl(server, vial.name, output);
     const running = server;
+    if (process.platform !== "win32" && running.pid !== undefined) {
+      endServersWithThisProcess();
+      posixServers.add(running);
+      running.once("exit", () => posixServers.delete(running));
+    }
+    const exited = new Promise<number | null>((resolve) => running.once("exit", (code) => resolve(code)));
+    const closed = new Promise<void>((resolve) => running.once("close", () => resolve()));
+    const url = await waitForUrl(running, vial.name, output, closed);
     return {
       url,
       stop: async () => {
         // asked to quit first, as Quit Vial does; ended if it can't be asked. Failures are reported only after the
         // server is ended and its data dir removed, so nothing is left behind.
-        const asked = hasExited(running) ? "refused" : await askToQuit(url);
-        const quit = asked === "taken" && (await exitWithin(running, QUIT_MS));
+        const asked: Asked = hasExited(running) ? { result: "gone" } : await askToQuit(url);
+        const quit = asked.result === "taken" && (await exitWithin(running, QUIT_MS));
         if (!hasExited(running)) await stopProcess(running);
         removeDataDir(dataDir);
         let problem = "";
-        if (asked === "unanswered") {
-          problem = `took Quit (POST /api/shutdown) but didn't answer within ${ASK_MS / 1000} s`;
-        } else if (asked === "taken" && !quit) {
+        if (asked.result === "unanswered") {
+          problem = `was asked to quit (POST /api/shutdown) and didn't answer within ${ASK_MS / 1000} s`;
+        } else if (asked.result === "refused") {
+          problem = `was running and didn't take Quit (POST /api/shutdown): ${asked.why}`;
+        } else if (asked.result === "taken" && !quit) {
           problem = `took Quit (POST /api/shutdown) and didn't exit within ${QUIT_MS / 1000} s`;
         } else if (quit && running.exitCode !== 0) {
           problem = `exited with ${running.signalCode ?? running.exitCode} after Quit, not 0`;
         }
-        if (problem) throw new Error(`${vial.name} ${problem}:
-${output.text}`);
+        if (problem) {
+          await outputRead(closed);
+          throw new Error(`${vial.name} ${problem}:\n${output.text}`);
+        }
       },
       exited,
       // waitForUrl keeps reading what it prints
