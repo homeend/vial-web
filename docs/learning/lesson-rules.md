@@ -41,8 +41,9 @@ usually right:
   towards the middle (a thumb cluster) are thumbs; on a plain board the space bar is the thumb.
 - **Rows.** The three rows with the most letters on layer 0 are `top`, `home`, `bottom`; a row above them with
   digits is `number`; the thumb cluster is `thumb`. The resting keys are the four finger columns on the home row of
-  each hand (`reach: rest`, `home: true`). The thumb's resting key is the thumb key nearest the index finger, or
-  the largest thumb key.
+  each hand (`reach: rest`, `home: true`). The thumb's resting key is the thumb key that types Space (or Enter
+  on the other hand), else the widest thumb key, else the one nearest the index finger. Rotated thumb keys are
+  placed by their rotated centre.
 - **Reach** is computed from the resting key of the same finger: same column above → `up`, below → `down`; one
   column towards the gap → `inner`, away → `outer`; number row → `up` from the top row's finger.
 
@@ -252,12 +253,77 @@ Course:
 Eighteen lessons rather than fifteen: the Corne has more symbols on layers than a 60 % board has keys to drill at
 once.
 
-## 8. Scenario C — the owner's W-CORNE
+## 8. Scenario C — the owner's W-CORNE (read from the keyboard on 2026-10-21, read-only)
 
-To be written from the owner's layout export (`learning/layout-export` of the real keyboard, saved by the owner);
-the same tables as scenario B. Expected differences: the owner's letter arrangement, which thumb holds which
-layer, and Polish letters on AltGr or a layer (a later Polish course needs them in the letter lessons:
-`ą ę` after `a e`, with the access path in the guidance).
+The simulated Corne was modelled on this keyboard, so B and C share the home row and most of the letters; the
+differences are the top row, the thumbs, where the symbols live, and that there is only one Shift. Layer 0
+(the four navigation keys in the middle and the extra right column are left out of the drawing):
+
+```
+top     Tab   Q   L   R   B   Z    |  Bksp  W   U   D   J   -
+home    Meh   S   H   N   T   ,    |  .     A   E   O   I   =
+bottom  Alt   F   M   C   V   /    |  G     P   X   K   Y   Esc
+thumbs       Sym  Space  Shift     |  Ctrl  Enter  Fn
+```
+
+- `Q` is a tap dance (tap = Q, double tap = Win); `S` is a tap dance (tap = S, hold = layer 1, navigation);
+  the bottom-left `Alt` is a tap dance (tap/hold = Alt, double tap = one-shot AltGr).
+- Thumbs, from the outside in: left **Sym** = `MO(5)`, **Space**, **Shift** (the only Shift on the board);
+  right **Ctrl**, **Enter** = `LT(4, Enter)` (hold = layer 4, digits), **Fn** = `OSL(3)` (shortcuts and
+  macros, nothing typeable).
+- Layer 5 (hold Sym) under the left hand: `~` (Tab's key), home `; ! + ( ) @`, bottom `$ # { } \`; under the
+  right hand: top `" '` (U's and D's keys), home `* { } = _` and `:` on the outer column, bottom `& | % ^ -`.
+- Layer 4 (hold Enter): `1 2 3 4 5` on the left home row from S to `,`, `6 7 8 9 0` on the right from `.` to I.
+- Combos: `A+E+O` and `H+N+T` give a one-shot AltGr (Polish letters on a Polish OS layout); `,`+`.` gives
+  Alt+Ctrl; thumb combos change the default layer. Not drilled.
+- **Not typeable on this layout:** `[`, `]` and `` ` `` (only `{ }` and `~` exist). A generated course can't
+  teach them; the lesson set's `notes` should say so.
+
+Fingers: as in scenario B (column 1 = pinky … 4 = index, 5 = index inner, 0 = pinky outer; the right half
+mirrored, with `-` `=` `Esc` as the pinky's outer column). Resting keys `S H N T` and `A E O I`; thumb resting
+keys Space and Enter. Capitals: hold the left inner thumb for every capital, both hands.
+
+| Pair / single | Position | Score |
+|---|---|---|
+| r u | middle, top | 8.8 |
+| l d | ring, top | 8.3 |
+| b w | index, top | 3.9 |
+| m k | ring, bottom | 1.2 |
+| c x | middle, bottom | 0.95 |
+| v p | index, bottom | 0.9 |
+| g (single; `/` mirrors it) | index, inner-bottom | −1.0 |
+| z (single; Backspace mirrors it) | index, inner-top | −1.9 |
+| f y | pinky, bottom | −1.8 |
+| q j | pinky, top | −3.75 |
+
+Course:
+
+| # | Lesson | Guidance in one line |
+|---|---|---|
+| 1 | `s h n t a e o i` | The resting keys. "Tap S and let go: holding it switches to the navigation layer." |
+| 2 | `r u` | Middle fingers, up one row. |
+| 3 | `l d` | Ring fingers, up one row. |
+| 4 | `b w` | Index fingers, up one row. |
+| 5 | `, .` | Index fingers, one column inwards on the home row. |
+| 6 | `m k` | Ring fingers, down one row. |
+| 7 | Capital letters | "Hold Shift with the left thumb — the inner thumb key — for every capital, on both hands." |
+| 8 | `c x` | Middle fingers, down. |
+| 9 | `v p` | Index fingers, down. |
+| 10 | `g z` | Right index inwards and down; left index inwards and up. |
+| 11 | `f y` | Pinkies, down. |
+| 12 | `q j` | Pinkies, up. "Q is a tap dance: one tap types Q; a double tap is the Win key, so tap it once and move on." |
+| 13 | `/ ? < >` | Left index inwards and down; Shift for `?`; `< >` are Shift + `, .`. |
+| 14 | `- _ = +` | Right pinky, outer column, top and home; Shift for the second of each. |
+| 15 | `( ) ; : ' "` | Layer 5: "hold Sym with the left thumb" — `( )` left middle and index on the home row, `;` left outer home, `:` right outer home, `' "` right ring and middle on the top row. |
+| 16 | `! @ # $ % ^ & *` | Layer 5: `!` left pinky home, `@` left index inner home, `# $` left ring and pinky bottom, `% ^ & *` right middle, ring, inner bottom and inner home. |
+| 17 | `{ } \ \| ~` | Layer 5: `{ }` under the left middle and index on the bottom row (also on the right home row), `\` left index inner bottom, `\|` right index bottom, `~` left pinky outer top. |
+| 18 | Numbers | "Hold Enter with the right thumb; the digits are on the home row: 1–5 from S to the comma, 6–0 from the full stop to I." |
+| 19 | All keys | Everything. |
+
+Nineteen lessons. `[ ] \`` are missing from the course because the layout has no key for them.
+
+A later Polish course adds `ą ć ę ł ń ó ś ź ż` after their base letters, with the access path "press the
+A E O combo (one-shot AltGr), then the letter" in the guidance; that needs the export made with `language: pl`.
 
 ## 9. Later, not now
 

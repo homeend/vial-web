@@ -5,8 +5,9 @@ it writes a lesson set the app can load. The Claude Code skill `generate-lessons
 
 ## Inputs
 
-1. `layout-export.json` — the keyboard, from **Learning → Fingers → Export** in the app (format:
-   [lesson-format.md](lesson-format.md) section 2).
+1. `layout-export.json` — the keyboard, from **Learning → Fingers → Export** in the app, or until that exists
+   from `python util/learning/export_layout.py keyboard.json -o layout-export.json` with a saved
+   `GET /api/keyboard` reply (format: [lesson-format.md](lesson-format.md) section 2).
 2. [lesson-rules.md](lesson-rules.md) — how to choose and order the lessons and what each exercise contains.
 3. [lesson-format.md](lesson-format.md) and [lesson-set.schema.json](lesson-set.schema.json) — the output.
 4. The course language (`en` unless told otherwise) and, optionally, a lesson set `id` and title.

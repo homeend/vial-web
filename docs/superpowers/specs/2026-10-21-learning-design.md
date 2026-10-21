@@ -114,7 +114,10 @@ New module `server/learning.py`, routes in `app.py`:
 | `GET/PUT /api/learning/settings` | pass accuracy, target WPM, picture in word exercises |
 
 - The finger proposal (lesson-rules.md § 2) is pure Python over `KeyboardModel.keys` (geometry) and layer 0's
-  described keys; unit-tested on the simulated Corne, an ANSI 60 % and a 40 % ortho definition.
+  described keys; unit-tested on the simulated Corne, an ANSI 60 % and a 40 % ortho definition. The prototype is
+  `util/learning/export_layout.py` (rotated key centres, 1u grid rows and columns, finger columns from the
+  home row's letters, thumb resting key = Space/Enter); it was checked on the simulated Corne and the owner's
+  W-CORNE and moves into `server/learning.py`.
 - The export's character map comes from `describe.py`'s legends (`main`/`shifted`/`altGr` per language) and
   `layers.py`/`reach` for how layers are reached; transparent keys resolved through the layer stack with layer 0
   at the bottom. `hash` = SHA-256 over the sorted (key id, layer, tap/shift/altGr) triples.

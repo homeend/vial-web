@@ -11,7 +11,9 @@ Follow `docs/learning/GENERATE.md` to the letter. It names the inputs (the layou
 Short form:
 
 1. Ask for the layout export if none was given (`Learning → Fingers → Export` in the app, or
-   `learning/<uid>/layout-export.json` in the app's config folder). Never work from a `.vil` file or guess fingers.
+   `learning/<uid>/layout-export.json` in the app's config folder; until the app has that page:
+   `python util/learning/export_layout.py keyboard.json -o layout-export.json` from a saved `GET /api/keyboard`
+   reply). Never work from a `.vil` file or guess fingers. Never read the owner's keyboard yourself unless told to.
 2. Read the three documents in `docs/learning/`. Build the teachable-character list, then the course table
    (lesson-rules.md § 4), and show the table to the user before writing the exercises.
 3. Write the lesson set JSON (lesson-format.md § 3) with every exercise of lesson-rules.md § 5, known characters

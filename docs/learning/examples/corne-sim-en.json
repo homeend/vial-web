@@ -3,7 +3,7 @@
   "id": "corne-sim-en",
   "title": "Simulated Corne — English (lessons 1–2 as a worked example)",
   "language": "en",
-  "layout": { "name": "Simulated Corne", "uid": "5EEDC0DE00420042", "hash": "sha256:example0" },
+  "layout": { "name": "Simulated Corne", "uid": "5EEDC0DE00420042", "hash": "sha256:e435c3da038f9048" },
   "generatedBy": { "tool": "hand-written", "at": "2026-10-21T20:00:00Z" },
   "notes": "Scenario B of docs/learning/lesson-rules.md, first two lessons only. The combos K+Y (Esc) and M+C (Enter) are not drilled.",
   "lessons": [
