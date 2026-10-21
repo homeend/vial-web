@@ -11,6 +11,24 @@ visible over the Vial protocol, so it isn't shown.
 This fork is not affiliated with Vial and is not meant for upstream. For Vial itself, its firmware and official
 releases, see [get.vial.today](https://get.vial.today/).
 
+## What it does
+
+- **Keymap:** every key on every layer. Click a key to see what it does on tap and on hold, and change it from a
+  picker. Find which keys type a character or send a key (`ą`, `@`, `Esc`, `MO(2)`). Drag a key onto another to swap
+  or copy it. Name your layers.
+- **Overview:** all layers at once, how each one is reached (layer keys, tap dances, combos), and what is set up but
+  never used.
+- **Arrange layers** (new in 0.9.0): move layers to other positions by dragging them or with ↑ and ↓. Every key that
+  reaches a moved layer follows it: in the keymap, encoders, tap dances, combos, key overrides (and their layer
+  masks), alt-repeat keys and macros. Layer names move too, and layer 0 stays first. A preview shows what will change
+  before Apply; only what changes is written, and Undo puts the old order back. If writing stops partway (the keyboard
+  unplugged, say), Vial offers to finish the arrange or put the layers back as they were.
+- **Tap dance, combos, macros, key overrides, alt-repeat:** a page each. Macros can be edited as text or recorded.
+- **QMK settings, lighting, layout options, matrix tester, reboot to bootloader.**
+- **Layout files:** save the whole layout to a `.vil` file and load one back, with a preview of what it changes.
+- Several keyboards plugged in: choose which one to edit. Unlocking, when the keyboard asks for it.
+- Light and dark themes; key legends in your keyboard language.
+
 ## Status
 
 | Phase | What | State |
@@ -23,6 +41,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 | 5 | Parity with the Qt app: key overrides, alt-repeat, QMK settings, lighting, layout options, matrix tester, `.vil` files, reboot to bootloader, keyboard selector ([`docs/parity.md`](docs/parity.md)) | done |
 | 6 | One executable per system (PyInstaller); Qt and fbs removed; Quit Vial; CI on Windows, Linux and macOS | done |
 | 7 | Firmware flasher (its logic is in `src/main/python/protocol/flasher.py`, without a UI yet) | optional |
+| 8 | Arrange layers: move layers, every layer reference and name follows ([design](docs/superpowers/specs/2026-10-21-arrange-layers-design.md)) | done (0.9.0) |
 
 Design: [`docs/superpowers/specs/2026-10-15-vial-web-ui-design.md`](docs/superpowers/specs/2026-10-15-vial-web-ui-design.md).
 Roadmap: [`docs/superpowers/plans/2026-10-15-roadmap-phases-2-7.md`](docs/superpowers/plans/2026-10-15-roadmap-phases-2-7.md).
