@@ -6,8 +6,8 @@ import { DEFAULT_LANGUAGE, setRequestKeyboard, setRequestLanguage } from "../api
 import { ApiError, causeMessage, failureMessage } from "../api/errors";
 import { connectEvents, type EventsLink, type LinkState, type ServerEvent } from "../api/events";
 import type {
-  AltRepeatKeyIn, ArrangedModel, KeyboardLanguage, KeyboardList, KeyboardModel, KeycodeCategory, KeyOverrideIn, LightingIn,
-  MacroActionIn, MatrixState, Named, QmkSetting, Session, TapDanceIn, UnfinishedArrange,
+  AltRepeatKeyIn, ArrangedModel, KeyboardLanguage, KeyboardList, KeyboardModel, KeycodeCategory, KeyOverrideIn,
+  LightingIn, MacroActionIn, MatrixState, Named, QmkSetting, Session, TapDanceIn, UnfinishedArrange,
 } from "../api/types";
 import { keyTitle, namesOf } from "../keyboard/labels";
 import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
@@ -58,8 +58,8 @@ function hasPosition(model: KeyboardModel, ref: KeyRef): boolean {
  * one (an ApiError says its status and code) */
 export type Report = (message: string, error?: unknown) => void;
 
-/** What writes an arrange: Apply (or Undo), Finish, or Put back */
-export type ArrangeKind = "arrange" | "finish" | "put-back";
+/** What writes an arrange: Apply, its Undo (an arrange with the reverse order), Finish, or Put back */
+export type ArrangeKind = "arrange" | "undo" | "finish" | "put-back";
 
 /** An arrange, Finish or Put back of this tab that stopped partway: the layout version it left, and why (a cause:
  * "The keyboard didn't respond.") */
@@ -158,7 +158,8 @@ export class KeyboardStore {
   #sessionKept = 0;
   /** told once no edit is on its way */
   #editsDone: (() => void)[] = [];
-  /** the last arrange, Finish or Put back of this tab that may have stopped partway (unfinishedStop) */
+  /** the last arrange, Finish or Put back of this tab that may have stopped partway (unfinishedStop), on the
+   * keyboard shown: it goes once another one is */
   #stopped = $state.raw<ArrangeStop | null>(null);
   /** told when the layout version changes (onLayoutVersion) */
   #layoutListeners = new Set<(version: number | null) => void>();
@@ -403,6 +404,8 @@ export class KeyboardStore {
    * included (the caller asked about it, if it was this tab's choice), and the toasts offering to act on it (Undo) */
   #anotherKeyboard(): void {
     this.opened++;
+    // its layout versions count from 0 too: a stop of the one before would pass for its own
+    this.#stopped = null;
     dropUnsavedWork();
     toasts.dropKeyboardActions();
   }
@@ -735,11 +738,12 @@ export class KeyboardStore {
    * server refuses it (409, code "layoutChanged", nothing written) when the layers changed since; null: whatever they
    * are. A keyboard that must be unlocked for it (QK_BOOT moves, or the macros change) is unlocked first, as nothing
    * was written. A write that fails leaves the arrange unfinished (unfinishedArrange). report: says why it wasn't
-   * done, instead of a toast. Resolves to the model the server answered (its new layoutVersion), or null when it
-   * wasn't done. */
-  arrangeLayers(order: number[], expect: number | null, report?: Report, action = "Arranging the layers"):
+   * done, instead of a toast. kind: "undo" for an Undo, said so. Resolves to the model the server answered (its new
+   * layoutVersion), or null when it wasn't done. */
+  arrangeLayers(order: number[], expect: number | null, report?: Report, kind: "arrange" | "undo" = "arrange"):
     Promise<ArrangedModel | null> {
-    return this.#arrange("arrange", action, () => api.arrangeLayers(order, expect), report);
+    return this.#arrange(kind, kind === "undo" ? "Undoing the arrange" : "Arranging the layers",
+      () => api.arrangeLayers(order, expect), report);
   }
 
   /** Write the rest of an arrange that stopped partway, then move the names (or only the names, when that is all it
@@ -769,6 +773,7 @@ export class KeyboardStore {
     if (!this.canEdit) return refuse("the keyboard can't be changed just now.");
     if (this.pending > 0) return refuse("another change was still being saved. Try again.");
     const before = this.layoutVersion;
+    const opened = this.opened;
     let arranged: ArrangedModel | null = null;
     let failure: unknown = undefined;
     await this.#edit(action, model, async () => {
@@ -782,7 +787,7 @@ export class KeyboardStore {
     // it may have written, and stopped partway: the server counted the layout version up once for it. The stop is
     // this one's while the session says that version, with an arrange unfinished: the keyboard may only say so once
     // it is open again (the server resets it after a write that failed).
-    if (!arranged && before !== null && mayHaveWritten(failure)) {
+    if (!arranged && before !== null && mayHaveWritten(failure) && this.opened === opened) {
       this.#stopped = { kind, version: before + 1, cause: causeMessage(failure) };
     }
     await this.refreshSession();

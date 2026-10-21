@@ -455,9 +455,15 @@
     margin-bottom: -6px;
   }
 
-  .arrange-tools :global(.off) {
+  /* off: neither the progress cursor of a button waiting for a write nor a hover (outranking the Button's own
+     rules), as in the dialog */
+  .arrange-tools :global(.btn.off[aria-disabled="true"]) {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .arrange-tools :global(.btn.off[aria-disabled="true"]:hover) {
+    background: var(--surface);
   }
 
   .workspace {

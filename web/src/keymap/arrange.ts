@@ -1,6 +1,7 @@
 // Arrange layers: the order the dialog shows, the server's preview of it in words, and asking for that preview
 // without flooding the server. An order lists, for each position, the layer that goes there (order[position] = layer
 // now): [0, 3, 1, 2] puts layer 3 at position 1. Layer 0 never moves.
+import { errorMessage } from "../api/errors";
 import type { ArrangePreview, ArrangeReferences, LayerMove, UnfinishedArrange } from "../api/types";
 import type { ArrangeKind } from "../lib/keyboard.svelte";
 
@@ -167,53 +168,57 @@ function asClause(cause: string): string {
   return /^[A-Z][a-z']/.test(cause) ? cause[0].toLowerCase() + cause.slice(1) : cause;
 }
 
+/** "…: the keyboard didn't respond." from a cause; the names that couldn't be saved (507) are "they" */
+function causeClause(cause: string): string {
+  const clause = cause === errorMessage(507) ? "they couldn't be saved (see vial.log)." : asClause(cause);
+  return /[.?!]$/.test(clause) ? clause : `${clause}.`;
+}
+
 /** What an arrange stopped partway did, and what is left to do. by: what of this tab's stopped it, its count its own
- * (an arrange, a Finish, a Put back), or null when not known (the count is then the last try's, whatever it was);
- * cause: why it stopped, when this tab saw it. Only the names left to save (namesOnly): no count, as every write went
- * through. */
+ * (an arrange or its Undo, a Finish, a Put back), or null when not known (the count is then the last try's, whatever
+ * it was); cause: why it stopped, when this tab saw it. Only the names left to save (namesOnly): no count, as every
+ * write went through. */
 export function stoppedText(unfinished: UnfinishedArrange, by: ArrangeKind | null = null, cause?: string): string {
   if (unfinished.namesOnly) {
-    return "The layers are arranged; only the layer names still need saving. Finish saves them; Put back puts the " +
-      "layers back as they were.";
+    const left = "The layers are arranged; only the layer names still need saving";
+    return `${cause ? `${left}: ${causeClause(cause)}` : `${left}.`} Finish saves them; Put back puts the layers ` +
+      "back as they were.";
   }
   const writes = (its: string) => (unfinished.done === 0 ? "at its first write"
     : `after ${unfinished.done} of ${its}${unfinished.total} writes`);
   const stopped = by === "arrange" ? `Arranging the layers stopped ${writes("")}`
+    : by === "undo" ? `Undoing the arrange stopped ${writes("")}`
     : by === "finish" ? `Finishing the arrange stopped ${writes("its ")}`
     : by === "put-back" ? `Putting the layers back stopped ${writes("its ")}`
     : `Arranging the layers stopped partway: the last try stopped ${writes("its ")}`;
   // "…: can't reach Vial. Is it still running?" ends as it is
-  const first = cause ? `${stopped}: ${asClause(cause)}` : stopped;
-  return `${first}${/[.?!]$/.test(first) ? "" : "."} The keyboard may hold part of the new order: finish it, or put ` +
+  const first = cause ? `${stopped}: ${causeClause(cause)}` : `${stopped}.`;
+  return `${first} The keyboard may hold part of the new order: finish it, or put ` +
     "it back as it was. Names move once it is finished.";
 }
 
 /** Why an order chosen earlier wasn't written, or Undo wasn't done: the layout version moved on since (the server's
  * 409 "layoutChanged", or the session said so first) */
-export const LAYERS_CHANGED = "the layers were arranged again or a layout file was loaded since, so nothing was written.";
+export const LAYERS_CHANGED =
+  "the layers were arranged again or a layout file was loaded since, so nothing was written.";
 
 /** What the dialog says once the layers changed while it was open (another tab arranged them, or loaded a layout
- * file). applied: Apply was refused for it, nothing written; reset: the order shown is the current one again, as the
- * number of layers changed; else the rows keep the order chosen, of the layers as they are now. */
-export function layersChangedText(applied: boolean, reset: boolean): string {
+ * file): the order shown went back to the current one, as an order chosen for the layers as they were could move
+ * them twice (two tabs applying one order). applied: Apply was refused for it, nothing written. */
+export function layersChangedText(applied: boolean): string {
   const what = applied
     ? "The layers were arranged again or a layout file was loaded since this was shown (in another tab, say), so " +
       "Apply wrote nothing."
     : "The layers were arranged again or a layout file was loaded while this was open (in another tab, say).";
-  return `${what} ${reset ? "The number of layers changed: the order shown is the current one again."
-    : "The rows keep your order, with the layers as they are now: check it, then Apply."}`;
+  return `${what} The order shown is the current one: arrange it again, then Apply.`;
 }
 
 /** What Finish or Put back left as it was: what was changed since the arrange stopped (an edit, a layout file
  * loaded), which held neither the old order's value nor the new one's. The server counts each key, encoder direction,
- * whole tap dance, combo, key override or alt-repeat key, and macro. encoders: the keyboard has encoders. */
-export function keptText(kept: number, encoders = false): string {
-  const direction = encoders ? ["an encoder direction, ", "encoder directions, "] : ["", ""];
-  return kept === 1
-    ? `1 change made since the stop was kept as it is (a key, ${direction[0]}a tap dance, combo, key override or ` +
-      "alt-repeat key, or a macro)."
-    : `${kept} changes made since the stop were kept as they are (keys, ${direction[1]}tap dances, combos, key ` +
-      "overrides, alt-repeat keys or macros).";
+ * whole tap dance, combo, key override or alt-repeat key, and macro. */
+export function keptText(kept: number): string {
+  return kept === 1 ? "1 change made since the stop was kept as it is."
+    : `${kept} changes made since the stop were kept as they are.`;
 }
 
 // ---- asking for the preview ----

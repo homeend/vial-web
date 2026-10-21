@@ -154,7 +154,9 @@
       <path d="M5.5 7V5a2.5 2.5 0 015 0v2" />
     </svg>
     <span class="text">
-      <span class="line"><span class="name" title={nameAfter(model.layers[0], 0)}>{nameAfter(model.layers[0], 0)}</span></span>
+      <span class="line">
+        <span class="name" title={nameAfter(model.layers[0], 0)}>{nameAfter(model.layers[0], 0)}</span>
+      </span>
       <span class="reach">always first: the keyboard starts on it</span>
     </span>
   </li>
@@ -165,7 +167,8 @@
     {@const reach = reachOf(layer)}
     <li class="row" class:dragged={drag?.layer === layer} class:moved={layer !== position} data-layer={layer}>
       <span class="position">{position}</span>
-      <!-- the row's handle: dragged, or with the focus, Alt+↑ and Alt+↓ move the row; ↑ and ↓ go to the next -->
+      <!-- the row's handle: dragged, or with the focus, Alt+↑ and Alt+↓ move the row; ↑ and ↓ go to the next
+           handle -->
       <button
         type="button"
         id={rowId(layer)}

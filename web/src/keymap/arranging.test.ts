@@ -128,8 +128,7 @@ describe("Undo", () => {
       return arranged(2);
     });
     await toasts.act(undoToast()!.id);
-    expect(keyboard.arrangeLayers).toHaveBeenLastCalledWith([0, 2, 3, 1], 1, expect.any(Function),
-      "Undoing the arrange");
+    expect(keyboard.arrangeLayers).toHaveBeenLastCalledWith([0, 2, 3, 1], 1, expect.any(Function), "undo");
     expect(keymapState.layer).toBe(3);
     expect(toasts.items).toEqual([]);
   });
@@ -217,8 +216,7 @@ describe("Finish and Put back", () => {
     expect(await arranger.finish()).toBe(true);
     expect(keymapState.layer).toBe(2);
     expect(messages()).toEqual([
-      "Layers arranged. 2 changes made since the stop were kept as they are (keys, tap dances, combos, key " +
-      "overrides, alt-repeat keys or macros)."]);
+      "Layers arranged. 2 changes made since the stop were kept as they are."]);
     expect(undoToast()).toBeDefined();
   });
 
@@ -229,8 +227,7 @@ describe("Finish and Put back", () => {
     expect(await arranger.putBack()).toBe(true);
     expect(keymapState.layer).toBe(2);
     expect(messages()).toEqual([
-      "The layers were put back as they were. 1 change made since the stop was kept as it is (a key, an encoder " +
-      "direction, a tap dance, combo, key override or alt-repeat key, or a macro)."]);
+      "The layers were put back as they were. 1 change made since the stop was kept as it is."]);
     expect(undoToast()).toBeUndefined();
   });
 

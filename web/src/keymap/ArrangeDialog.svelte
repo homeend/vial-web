@@ -48,9 +48,9 @@
   /** the stop that Apply, Finish or Put back made (keyboard.arrangeStop), if it may have stopped partway: while the
    * stop shown is that one, its text says why (the failure isn't said twice) */
   let failureStop = $state.raw<ArrangeStop | null>(null);
-  /** the layers changed while the dialog was open (another tab arranged them, or loaded a layout file): applied, Apply
-   * was refused for it; reset, the order shown went back to the current one */
-  let changed = $state<{ applied: boolean; reset: boolean } | null>(null);
+  /** the layers changed while the dialog was open (another tab arranged them, or loaded a layout file), and the order
+   * shown went back to the current one; applied: Apply was refused for it */
+  let changed = $state<{ applied: boolean } | null>(null);
   /** the layout version the dialog last took in: another one means the layers changed */
   let seenVersion: number | null = null;
   /** whether an arrange was unfinished, as the dialog last saw */
@@ -92,7 +92,8 @@
 
   // the keyboard read again (an edit, another tab, a reload), or its layers changed (another tab arranged them, or
   // loaded a layout file): the preview is asked for again; another number of layers starts over. The order chosen
-  // was for the layers as they were: the dialog says so.
+  // was for the layers as they were: it goes back to the current one (applied as it was, it could move them twice:
+  // two tabs applying one order), and the dialog says so.
   $effect(() => {
     const layers = model.layers.length;
     const version = keyboard.layoutVersion;
@@ -101,11 +102,11 @@
       if (!follower || working !== null) return;
       const moved = version !== seenVersion;
       seenVersion = version;
-      const reset = order.length !== layers;
       if (moved && !unfinished && !isCurrent(order)) {
-        changed = { applied: changed?.applied ?? false, reset: reset || (changed?.reset ?? false) };
+        changed = { applied: changed?.applied ?? false };
+        order = currentOrder(layers);
       }
-      if (reset) order = currentOrder(layers);
+      if (order.length !== layers) order = currentOrder(layers);
       follower.refresh(order);
     });
   });
@@ -160,10 +161,12 @@
     else rows?.focusFirst();
   }
 
-  /** Another order shown: its preview is asked for after the pause */
+  /** Another order shown: its preview is asked for after the pause. (What the layers changing said, that the order
+   * shown is the current one, is past.) */
   function show(next: number[]) {
     order = next;
     failure = null;
+    changed = null;
     follower?.follow(next);
   }
 
@@ -178,8 +181,8 @@
   }
 
   /** Apply, Finish or Put back. Why it wasn't done is said once: by the stop, when it stopped partway (the stopped
-   * text says how far it got, and why); as the layers having changed, when it was refused for that; else on its
-   * own. */
+   * text says how far it got, and why); as the layers having changed, when it was refused for that (the order shown
+   * goes back to the current one); else on its own. */
   async function run(kind: "apply" | "finish" | "put-back", label: string, act: (report: Report) => Promise<boolean>) {
     if (working !== null) return;
     working = kind;
@@ -194,7 +197,7 @@
       done = await act((message, error) => {
         // nothing written: the preview is asked for again, of the layers as they are now (the version they
         // changed to is taken in then)
-        if (isLayoutChanged(error)) changed = { applied: true, reset: false };
+        if (isLayoutChanged(error)) changed = { applied: true };
         else failure = message;
       });
     } finally {
@@ -207,7 +210,12 @@
       dialog?.close();
     } else {
       writingModel = null;
+      if (changed) order = currentOrder(model.layers.length);
       follower?.refresh(order);
+      // what it showed may have gone meanwhile, with the focus (another tab finished or put back the arrange: the
+      // rows came back)
+      await tick();
+      if (dialog?.open && !dialog.contains(document.activeElement)) focusFirst();
     }
   }
 
@@ -264,8 +272,8 @@
       {/if}
     </p>
     {#if !unfinished}
-      <p id="{uid}-keys" class="keys">Drag a layer by its handle, or use ↑ and ↓. On a handle, Alt+↑ and Alt+↓ move
-        the layer; Alt+Home and Alt+End, to position 1 or the end.</p>
+      <p id="{uid}-keys" class="keys">Drag a layer by its handle, or use its row's ↑ and ↓ buttons. On a handle,
+        Alt+↑ and Alt+↓ move the layer; Alt+Home and Alt+End, to position 1 or the end.</p>
     {/if}
   </header>
 

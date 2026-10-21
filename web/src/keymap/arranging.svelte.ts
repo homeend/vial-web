@@ -116,7 +116,7 @@ export class LayerArranger {
 
   /** What was done, and what was kept as it was (Finish, Put back) */
   #withKept(done: string, arranged: ArrangedModel): string {
-    return arranged.kept > 0 ? `${done} ${keptText(arranged.kept, arranged.encoders.length > 0)}` : done;
+    return arranged.kept > 0 ? `${done} ${keptText(arranged.kept)}` : done;
   }
 
   #dropUndo(): void {
@@ -157,7 +157,7 @@ export class LayerArranger {
     const arranged = await keyboard.arrangeLayers(back, version, (message, error) => {
       changed = isLayoutChanged(error);
       toasts.error(changed ? `${UNDO} failed: ${LAYERS_CHANGED}` : message);
-    }, UNDO);
+    }, "undo");
     if (arranged) {
       if (keyboard.opened === opened) keymapState.layer = positionAfter(back, shown);
       return true;

@@ -191,6 +191,8 @@ test("Esc and Cancel write nothing; Reset goes back to the current order", async
   await dialog.getByRole("button", { name: "Reset" }).click();
   await expect(dialog.locator(".row .name")).toHaveText(["Base", "Layer 1", "Layer 2", "Layer 3"]);
   await expect(handle(dialog, "Layer 1")).toBeFocused();
+  // the summary, short, needs no scrolling: no tab stop
+  await expect(dialog.locator(".summary")).not.toHaveAttribute("tabindex");
   await handle(dialog, "Layer 2").focus();
   await app.keyboard.press("Alt+ArrowDown");
   await app.keyboard.press("Escape");
@@ -310,6 +312,8 @@ test("the button is in the Overview too, and says why it does nothing with the k
     await plugIn(app, false);
     await expect(button).toHaveAttribute("aria-disabled", "true");
     await expect(button).toHaveAttribute("title", "The keyboard can't be changed just now.");
+    // off: not the progress cursor of a button waiting for a write
+    await expect(button).toHaveCSS("cursor", "not-allowed");
     // clicked, it does nothing (forced: Playwright waits for a button aria-disabled to be enabled)
     await button.click({ force: true });
     await expect(dialogOf(app)).toBeHidden();
@@ -319,7 +323,7 @@ test("the button is in the Overview too, and says why it does nothing with the k
   }
 });
 
-test("an Apply the layers changed under is refused, writing nothing; the dialog says so and checks again",
+test("an Apply the layers changed under is refused, writing nothing; the dialog says so and shows the current order",
   async ({ app }) => {
     const restore = await keep(app);
     try {
@@ -336,13 +340,15 @@ test("an Apply the layers changed under is refused, writing nothing; the dialog 
       await dialog.getByRole("button", { name: "Apply", exact: true }).click();
       await expect(dialog.locator(".changed")).toHaveText(
         "The layers were arranged again or a layout file was loaded since this was shown (in another tab, say), so " +
-        "Apply wrote nothing. The rows keep your order, with the layers as they are now: check it, then Apply.");
+        "Apply wrote nothing. The order shown is the current one: arrange it again, then Apply.");
       await expect(dialog).toBeVisible();
       // only the other arrange was written: layer 1 (hold Space) is at position 2
       expect(await codeAt(app, 0, space)).toBe("LT2(KC_SPACE)");
       await expect(dialog.locator(".problem")).toHaveCount(0);
-      // checked again, for the layers as they are now: Apply can be used again
-      await expect(dialog.getByRole("button", { name: "Apply", exact: true })).not.toHaveAttribute("aria-disabled");
+      // the current order again: a second click can't move the layers twice
+      await expect(dialog.locator(".row .was")).toHaveCount(0);
+      await expect(dialog.locator(".summary")).toContainText("Nothing to change.");
+      await expect(dialog.getByRole("button", { name: "Apply", exact: true })).toHaveAttribute("aria-disabled", "true");
       for (const width of [1280, 375]) {
         await app.setViewportSize({ width, height: width === 375 ? 740 : 800 });
         await screenshots(app, `arrange-stale-${width}`);
@@ -355,7 +361,7 @@ test("an Apply the layers changed under is refused, writing nothing; the dialog 
     }
   });
 
-test("the layers arranged elsewhere while the dialog is open: it says so, and checks the order again", async ({ app }) => {
+test("layers arranged elsewhere while the dialog is open: it says so, and shows the current order", async ({ app }) => {
   const restore = await keep(app);
   try {
     const dialog = await openDialog(app);
@@ -365,7 +371,13 @@ test("the layers arranged elsewhere while the dialog is open: it says so, and ch
     await arrangeElsewhere(app, [0, 2, 1, 3]);
     await expect(dialog.locator(".changed")).toHaveText(
       "The layers were arranged again or a layout file was loaded while this was open (in another tab, say). The " +
-      "rows keep your order, with the layers as they are now: check it, then Apply.");
+      "order shown is the current one: arrange it again, then Apply.");
+    await expect(dialog.locator(".row .was")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Apply", exact: true })).toHaveAttribute("aria-disabled", "true");
+    // arranged again: what the layers changing said is past, and Apply can be used
+    await handle(dialog, "Layer 3").focus();
+    await app.keyboard.press("Alt+ArrowUp");
+    await expect(dialog.locator(".changed")).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: "Apply", exact: true })).not.toHaveAttribute("aria-disabled");
     await app.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -442,8 +454,7 @@ test("Finish keeps a key changed since the stop, and says so", async ({ app }) =
     await setCodeAt(app, 1, index, "KC_F13");
     await finish.click();
     await expect(dialog).toBeHidden();
-    const kept = toast(app, "Layers arranged. 1 change made since the stop was kept as it is (a key, a tap dance, " +
-      "combo, key override or alt-repeat key, or a macro).");
+    const kept = toast(app, "Layers arranged. 1 change made since the stop was kept as it is.");
     await expect(kept).toBeVisible();
     expect(await codeAt(app, 1, index)).toBe("KC_F13");
     for (const width of [1280, 375]) {
@@ -457,7 +468,8 @@ test("Finish keeps a key changed since the stop, and says so", async ({ app }) =
   }
 });
 
-test("only the layer names left to save: said so, with no count, and Finish saves them", async ({ page, ownServer }) => {
+test("only the layer names left to save: said so, with why but no count, and Finish saves them",
+  async ({ page, ownServer }) => {
   await open(page, ownServer.url);
   await setLayerName(page, 3, "Num");
   await page.reload();
@@ -472,9 +484,11 @@ test("only the layer names left to save: said so, with no count, and Finish save
     await expect(dialog.locator(".summary")).toContainText("94 keys rewritten");
     await dialog.getByRole("button", { name: "Apply", exact: true }).click();
     const stopped = dialog.locator(".stopped");
-    await expect(stopped).toHaveText("The layers are arranged; only the layer names still need saving. Finish saves " +
-      "them; Put back puts the layers back as they were.");
+    await expect(stopped).toHaveText("The layers are arranged; only the layer names still need saving: they couldn't " +
+      "be saved (see vial.log). Finish saves them; Put back puts the layers back as they were.");
+    // said once: the failure is the stop's
     await expect(dialog.getByRole("alert")).toHaveCount(0);
+    await expect(dialog.getByText("couldn't be saved")).toHaveCount(1);
     await expect(page.getByRole("region", { name: "Arranging the layers stopped" })).toContainText(
       "only the layer names still need saving");
     for (const width of [1280, 375]) {
@@ -492,6 +506,37 @@ test("only the layer names left to save: said so, with no count, and Finish save
     rmSync(blocker, { recursive: true, force: true });
   }
 });
+
+test("Finish refused as another tab put the arrange back meanwhile: the rows come back, with the focus",
+  async ({ app }) => {
+    const restore = await keep(app);
+    try {
+      const dialog = await openDialog(app);
+      await handle(dialog, "Layer 3").focus();
+      await app.keyboard.press("Alt+ArrowUp");
+      await expect(dialog.locator(".summary")).toContainText("Will change: 2 layers move");
+      await api(app).put("/api/simulator/fail-write", { after: 10 });
+      await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+      const finish = dialog.getByRole("button", { name: "Finish" });
+      await expect(finish).not.toHaveAttribute("aria-disabled", { timeout: 15_000 });
+      // another tab puts the layers back just before this Finish reaches the server, and this tab hears of it first
+      await app.route("**/api/layers/arrange/finish", async (route) => {
+        try {
+          const response = await api(app).post("/api/layers/arrange/put-back");
+          if (!response.ok()) throw new Error(`putting back failed: ${response.status()} ${await response.text()}`);
+          await expect(dialog.locator(".rows")).toBeVisible();
+        } finally {
+          await route.continue();
+        }
+      }, { times: 1 });
+      await finish.click();
+      await expect(dialog.locator(".summary .problem")).toContainText("Finishing the arrange failed");
+      // the button clicked went with the stopped view: the focus is on the rows, not lost to the page
+      await expect(dialog.locator(".rows .handle").first()).toBeFocused();
+    } finally {
+      await restore();
+    }
+  });
 
 // ---- the dialog in every window, with a warning, a problem, and stopped ----
 
@@ -596,6 +641,10 @@ test("20 layers: a warning and a problem at once stay in view by the footer", as
       for (let i = 0; i < 17; i++) await page.keyboard.press("Alt+ArrowDown");
       await fits(page, dialog);
       await reasonsInView(dialog, ["Can't apply: 3 layer numbers wouldn't fit", "⚠ Fn1 and Fn2 will reach other layers"]);
+      // a tab stop only while it scrolls, for the keys to scroll it: on a phone it does, in larger windows it needn't
+      const summary = dialog.locator(".summary");
+      if (size.width === 375) await expect(summary).toHaveAttribute("tabindex", "0");
+      else await expect(summary).not.toHaveAttribute("tabindex");
       await dialog.locator(".flag.bad").click();
       await expect(dialog.locator(".problem").first()).toBeInViewport();
       await screenshots(page, `arrange-both20-${size.width}`);

@@ -1576,6 +1576,45 @@ describe("arranging the layers", () => {
     expect(store.unfinishedBy).toBe("arrange");
   });
 
+  it("tells a stopped Undo from an arrange: its own words", async () => {
+    const { store } = await loaded();
+    sessionNow(1);
+    await store.refreshSession();
+    mocked.arrangeLayers.mockRejectedValueOnce(new ApiError(502));
+    sessionNow(2, UNFINISHED);
+    const reported: string[] = [];
+    expect(await store.arrangeLayers([0, 2, 1], 1, (message) => reported.push(message), "undo")).toBeNull();
+    expect(reported).toEqual(["Undoing the arrange failed: The keyboard didn't respond."]);
+    expect(store.unfinishedBy).toBe("undo");
+  });
+
+  it("never takes one keyboard's stop for another's: the stop goes once another keyboard is shown", async () => {
+    const entry = (id: string, open = false) => ({
+      id, name: id.toUpperCase(), product: id.toUpperCase(), manufacturer: "", vendorId: 1, productId: 2,
+      serial: null, path: `usb-${id}`, open, plugged: true,
+    });
+    const inSession = (keyboard: string, layoutVersion: number, arrange: typeof UNFINISHED | null) =>
+      mocked.session.mockResolvedValue({ fake: true, unlock: LOCKED, status: "connected", platform: "win32", keyboard,
+        layoutVersion, arrange } as never);
+    mocked.keyboards.mockResolvedValue({ keyboards: [entry("a", true), entry("b")], chosen: null });
+    inSession("a", 0, null);
+    const { store, emit } = await loaded();
+    mocked.arrangeLayers.mockRejectedValueOnce(new ApiError(502));
+    inSession("a", 1, UNFINISHED);
+    expect(await store.arrangeLayers([0, 2, 1], 0, () => undefined)).toBeNull();
+    expect(store.unfinishedStop?.cause).toBe("The keyboard didn't respond.");
+    // another tab opens keyboard b, with an arrange of its own unfinished at the same layout version
+    mocked.keyboards.mockResolvedValue({ keyboards: [entry("a"), entry("b", true)], chosen: "b" });
+    inSession("b", 1, UNFINISHED);
+    mocked.keyboard.mockResolvedValue({ ...model("KC_A"), uid: "other", name: "Other" } as never);
+    emit("connected");
+    await settle();
+    expect(store.modelKeyboard).toBe("b");
+    expect(store.unfinishedArrange).toEqual(UNFINISHED);
+    expect(store.unfinishedStop).toBeNull();
+    expect(store.unfinishedBy).toBeNull();
+  });
+
   it("tells a stopped Finish and Put back apart", async () => {
     const { store } = await loaded();
     sessionNow(1, UNFINISHED);

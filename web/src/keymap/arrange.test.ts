@@ -145,6 +145,9 @@ describe("the summary", () => {
       /^Finishing the arrange stopped after 3 of its 10 writes\. The keyboard may hold part of the new order/);
     expect(stoppedText({ ...unfinished, done: 3, total: 10 }, "put-back")).toMatch(
       /^Putting the layers back stopped after 3 of its 10 writes\. /);
+    // an Undo (an arrange with the reverse order) says it was one
+    expect(stoppedText({ ...unfinished, done: 3, total: 10 }, "undo")).toMatch(
+      /^Undoing the arrange stopped after 3 of 10 writes\. The keyboard may hold part of the new order/);
     // not known which (another tab's, or the page opened since): the count is the last try's
     expect(stoppedText({ ...unfinished, done: 3, total: 10 }, null)).toMatch(
       /^Arranging the layers stopped partway: the last try stopped after 3 of its 10 writes\. /);
@@ -156,30 +159,31 @@ describe("the summary", () => {
       /^Finishing the arrange stopped after 40 of its 96 writes: can't reach Vial\. Is it still running\? The keyboard/);
   });
 
-  it("says when only the layer names are left to save, never a count", () => {
-    const text = "The layers are arranged; only the layer names still need saving. Finish saves them; Put back " +
-      "puts the layers back as they were.";
-    // the server logs why (vial.log); a cause would only say again that the names weren't saved
-    expect(stoppedText({ order: [0, 3, 1, 2], done: 94, total: 94, namesOnly: true }, "arrange",
-      "The layer names couldn't be saved (see vial.log).")).toBe(text);
-    expect(stoppedText({ order: [0, 3, 1, 2], done: 0, total: 0, namesOnly: true }, null)).toBe(
+  it("says when only the layer names are left to save, never a count, and why when this tab saw it", () => {
+    const left = { order: [0, 3, 1, 2], done: 94, total: 94, namesOnly: true };
+    expect(stoppedText(left, "arrange", "The layer names couldn't be saved (see vial.log).")).toBe(
+      "The layers are arranged; only the layer names still need saving: they couldn't be saved (see vial.log). " +
+      "Finish saves them; Put back puts the layers back as they were.");
+    expect(stoppedText({ ...left, done: 0, total: 0 }, "finish", "Can't reach Vial. Is it still running?")).toBe(
+      "The layers are arranged; only the layer names still need saving: can't reach Vial. Is it still running? " +
+      "Finish saves them; Put back puts the layers back as they were.");
+    // not known why (another tab's, or the page opened since)
+    expect(stoppedText({ ...left, done: 0, total: 0 }, null)).toBe(
       "The layers are arranged; only the layer names still need saving. Finish saves them; Put back puts the " +
       "layers back as they were.");
   });
 
   it("says what Finish and Put back kept as it was", () => {
-    expect(keptText(1)).toBe("1 change made since the stop was kept as it is (a key, a tap dance, combo, key override " +
-      "or alt-repeat key, or a macro).");
-    expect(keptText(4, true)).toBe("4 changes made since the stop were kept as they are (keys, encoder directions, " +
-      "tap dances, combos, key overrides, alt-repeat keys or macros).");
+    expect(keptText(1)).toBe("1 change made since the stop was kept as it is.");
+    expect(keptText(4)).toBe("4 changes made since the stop were kept as they are.");
   });
 
-  it("says the layers changed while the dialog was open", () => {
-    expect(layersChangedText(true, false)).toBe("The layers were arranged again or a layout file was loaded since " +
-      "this was shown (in another tab, say), so Apply wrote nothing. The rows keep your order, with the layers as " +
-      "they are now: check it, then Apply.");
-    expect(layersChangedText(false, true)).toBe("The layers were arranged again or a layout file was loaded while " +
-      "this was open (in another tab, say). The number of layers changed: the order shown is the current one again.");
+  it("says the layers changed while the dialog was open, and that the order shown is the current one", () => {
+    expect(layersChangedText(true)).toBe("The layers were arranged again or a layout file was loaded since this was " +
+      "shown (in another tab, say), so Apply wrote nothing. The order shown is the current one: arrange it again, " +
+      "then Apply.");
+    expect(layersChangedText(false)).toBe("The layers were arranged again or a layout file was loaded while this " +
+      "was open (in another tab, say). The order shown is the current one: arrange it again, then Apply.");
   });
 });
 

@@ -14,7 +14,7 @@
     /** the keyboard can be changed: else Apply waits, and this says so */
     canEdit: boolean;
     /** the layers changed while the dialog was open (see layersChangedText) */
-    changed: { applied: boolean; reset: boolean } | null;
+    changed: { applied: boolean } | null;
     /** why the last Apply wasn't done */
     failure: string | null;
   }
@@ -35,6 +35,28 @@
     return shown?.customName ? shown.name : null;
   }
 
+  let section = $state<HTMLElement>();
+  /** the summary is longer than its room (a long list of problems, a short window): it scrolls, and takes the focus
+   * for the keys to scroll it; else it is no tab stop */
+  let scrolls = $state(false);
+
+  function measure() {
+    if (section) scrolls = section.scrollHeight > section.clientHeight + 1;
+  }
+
+  // its room changes with the window; its length with what it says (measured once drawn)
+  $effect(() => {
+    if (!section) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(section);
+    return () => observer.disconnect();
+  });
+
+  $effect(() => {
+    void [previewState, lastPreview, canEdit, changed, failure];
+    measure();
+  });
+
   /** Scrolls a part of the summary into view (the summary scrolls when it is longer than its room) */
   function reveal(id: string) {
     document.getElementById(id)?.scrollIntoView({ block: "nearest" });
@@ -43,8 +65,9 @@
 
 <!-- by the footer, whatever the list's length: why Apply is off, or what it warns of, is always in view. Longer than
      its room, it scrolls, its first line (the flags) staying put. -->
-<!-- svelte-ignore a11y_no_noninteractive_tabindex (a region that can scroll takes the focus, for the keys) -->
-<section class="summary" class:waiting={previewState.state === "waiting"} aria-label="What Apply changes" tabindex="0">
+<!-- svelte-ignore a11y_no_noninteractive_tabindex (a region that scrolls takes the focus, for the keys) -->
+<section class="summary" class:waiting={previewState.state === "waiting"} aria-label="What Apply changes"
+  bind:this={section} tabindex={scrolls ? 0 : undefined}>
   <p class="visually-hidden" aria-live="polite">{announced}</p>
   {#if previewState.state === "failed"}
     <p class="problem">Couldn't check this order: {causeMessage(previewState.error)}</p>
@@ -94,7 +117,7 @@
   {#if !canEdit}
     <p class="note">The keyboard can't be changed just now: Apply works once it can.</p>
   {/if}
-  {#if changed}<p class="changed" role="alert">{layersChangedText(changed.applied, changed.reset)}</p>{/if}
+  {#if changed}<p class="changed" role="alert">{layersChangedText(changed.applied)}</p>{/if}
   {#if failure}<p class="problem" role="alert">{failure}</p>{/if}
 </section>
 
