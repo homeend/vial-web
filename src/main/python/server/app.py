@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.requests import HTTPConnection
 
 from protocol.qmk_settings_codec import QmkSettingsCodec
-from server import device, edits, languages, model, schemas
+from server import arranger, device, edits, languages, model, schemas
 from server.describe import keyboard_language, parse
 from server.device import JumpUnanswered, KeyboardChanged, NotConnected, KeyboardLocked, KeyboardRefused, \
     UnknownKeyboard
@@ -436,6 +436,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     app.state.manager = manager
     app.state.unlock_follower = follower
     app.state.matrix = matrix
+    arrangements = arranger.Arrangements()
+    """ arranges of the layers left unfinished, by keyboard UID """
+    app.state.arrangements = arrangements
 
     def openapi():
         # WebSocket messages have no place in OpenAPI's paths: the event shape is added as a component, so the UI's
@@ -501,6 +504,14 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     async def too_deep(request, exc):
         return JSONResponse({"detail": "the request is nested too deeply"}, status_code=422)
 
+    @app.exception_handler(arranger.ArrangeRefused)
+    async def arrange_refused(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.exception_handler(arranger.NothingUnfinished)
+    async def nothing_unfinished(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=404)
+
     @app.exception_handler(KeyboardRefused)
     async def refused(request, exc):
         # it answered, and can't take the change: the page shows the message (a 502 would read "didn't respond")
@@ -561,15 +572,24 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         # fake: a second launch only attaches to an instance of its own mode (see vial_web.FAKE_SUBDIR)
         return {"app": "vial", "instance": instance_id, "fake": manager.backend.fake}
 
+    def unfinished_arrange():
+        """ The arrange of the keyboard loaded left unfinished, as the API has it; the device lock held """
+        kb = manager.keyboard
+        unfinished = None if kb is None else arrangements.get(model.uid_of(kb))
+        if unfinished is None:
+            return None
+        return schemas.UnfinishedArrange(order=unfinished.order, done=unfinished.done, total=unfinished.total)
+
     @app.get("/api/session", response_model=schemas.Session)
     def session():
         with manager.lock:  # read together
             status = manager.status()
             unlock = unlock_model(manager.unlock_state())
             error_kind, open_id = manager.error_kind, manager.open_id
+            arrange = unfinished_arrange()
         return schemas.Session(status="connected" if status.connected else "disconnected",
                                fake=manager.backend.fake, device=status.title, error=status.error, errorKind=error_kind,
-                               keyboard=open_id, platform=sys.platform, unlock=unlock)
+                               keyboard=open_id, platform=sys.platform, unlock=unlock, arrange=arrange)
 
     def keyboard_list():
         listed = manager.keyboard_list()
@@ -762,6 +782,54 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         data = await read_limited(request, MAX_LAYOUT_FILE)
         return await asyncio.to_thread(read, lambda kb: edits.preview_layout_file(kb, data, names_for(kb)), lang)
 
+    @app.post("/api/layers/arrange/preview", response_model=schemas.ArrangePreview)
+    def preview_arrange(body: schemas.ArrangeIn):
+        """ What POST /api/layers/arrange would change with this order, checked the same way; nothing is written. It
+        works on a locked keyboard too: needsUnlock says whether writing it needs the keyboard unlocked. """
+        return read(lambda kb: arranger.preview(kb, body.order))
+
+    async def arranging(begin, lang):
+        """ begin(kb) -> arranger.Job, checked and unlocked for (nothing written yet), run under the device lock. A
+        failure while it writes leaves the arrange unfinished (the Job keeps it): the keyboard is read again, every tab
+        told. On success, every tab is told the keyboard changed; returns its new model. """
+        languages.overrides(lang)  # an unknown language is refused before anything is written
+        writing = []
+
+        def go(kb):
+            job = begin(kb)
+            writing.append(True)
+            job.run()
+            return model.build(kb, names_for(kb), manager.unlocked)
+        try:
+            result = await asyncio.to_thread(run, go, lang)
+        except Exception:
+            if writing:
+                await resync()
+            raise
+        await hub.broadcast({"type": "reloaded"})
+        return result
+
+    @app.post("/api/layers/arrange", response_model=schemas.KeyboardModel)
+    async def arrange_layers(body: schemas.ArrangeIn, lang: Lang = languages.DEFAULT):
+        """ Move the layers to this order: every layer reference renumbered (keymap, encoders, tap dance, combos, key
+        overrides and their layers, alt-repeat keys, macros), the layer names moved once everything was written.
+        Computed again from what the keyboard holds now; only what differs is written, under one device lock. 409 when
+        the order has problems, or an arrange of this keyboard is unfinished; 423 when it needs the keyboard unlocked
+        (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange). """
+        return await arranging(lambda kb: arranger.begin(kb, body.order, arrangements, names), lang)
+
+    @app.post("/api/layers/arrange/finish", response_model=schemas.KeyboardModel)
+    async def finish_arrange(lang: Lang = languages.DEFAULT):
+        """ Write what the unfinished arrange of this keyboard still has to (what differs from its new order), then move
+        the names. 404 when none is unfinished. It can be asked again after a failure. """
+        return await arranging(lambda kb: arranger.resume(kb, arrangements, names, finish=True), lang)
+
+    @app.post("/api/layers/arrange/put-back", response_model=schemas.KeyboardModel)
+    async def put_back_arrange(lang: Lang = languages.DEFAULT):
+        """ Write back what the unfinished arrange of this keyboard changed (what differs from the state before it); the
+        names never moved. 404 when none is unfinished. It can be asked again after a failure. """
+        return await arranging(lambda kb: arranger.resume(kb, arrangements, names, finish=False), lang)
+
     @app.post("/api/unlock/start", response_model=schemas.UnlockState)
     async def start_unlock():
         """ Start unlocking the keyboard: the user then holds its unlock keys until the countdown ends, which "unlock"
@@ -905,6 +973,14 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             with manager.lock:
                 manager.backend.set_connected(body.connected)
             return {"connected": body.connected}
+
+        # for UI tests: a write to the first simulated keyboard fails (arranging stopped partway). Never exists for real
+        # keyboards.
+        @app.put("/api/simulator/fail-write", include_in_schema=False)
+        def set_simulator_fail_write(body: schemas.SimulatorFailWrite):
+            with manager.lock:
+                manager.backend.fail_writes(body.after, unplug=body.unplug)
+            return {"after": body.after, "unplug": body.unplug}
 
         # for UI tests: plug a second simulated keyboard in, or unplug it. Never exists for real keyboards.
         @app.put("/api/simulator/second-keyboard", include_in_schema=False)

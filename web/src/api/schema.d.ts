@@ -488,6 +488,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/layers/arrange/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Arrange
+         * @description What POST /api/layers/arrange would change with this order, checked the same way; nothing is written. It
+         *     works on a locked keyboard too: needsUnlock says whether writing it needs the keyboard unlocked.
+         */
+        post: operations["preview_arrange_api_layers_arrange_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/layers/arrange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Arrange Layers
+         * @description Move the layers to this order: every layer reference renumbered (keymap, encoders, tap dance, combos, key
+         *     overrides and their layers, alt-repeat keys, macros), the layer names moved once everything was written.
+         *     Computed again from what the keyboard holds now; only what differs is written, under one device lock. 409 when
+         *     the order has problems, or an arrange of this keyboard is unfinished; 423 when it needs the keyboard unlocked
+         *     (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange).
+         */
+        post: operations["arrange_layers_api_layers_arrange_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/layers/arrange/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish Arrange
+         * @description Write what the unfinished arrange of this keyboard still has to (what differs from its new order), then move
+         *     the names. 404 when none is unfinished. It can be asked again after a failure.
+         */
+        post: operations["finish_arrange_api_layers_arrange_finish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/layers/arrange/put-back": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put Back Arrange
+         * @description Write back what the unfinished arrange of this keyboard changed (what differs from the state before it); the
+         *     names never moved. 404 when none is unfinished. It can be asked again after a failure.
+         */
+        post: operations["put_back_arrange_api_layers_arrange_put_back_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/unlock/start": {
         parameters: {
             query?: never;
@@ -628,6 +715,52 @@ export interface components {
             allowedMods: number;
             /** Options */
             options: number;
+        };
+        /** ArrangeIn */
+        ArrangeIn: {
+            /** Order */
+            order: number[];
+        };
+        /**
+         * ArrangePreview
+         * @description What arranging the layers in an order would change; nothing is written to find out
+         */
+        ArrangePreview: {
+            /** Moves */
+            moves: components["schemas"]["LayerMove"][];
+            /** Keys */
+            keys: number;
+            references: components["schemas"]["ArrangeReferences"];
+            /** Keyoverrides */
+            keyOverrides: number;
+            /** Trilayer */
+            triLayer?: (number | null)[] | null;
+            /** Problems */
+            problems: string[];
+            /** Writes */
+            writes: number;
+            /** Needsunlock */
+            needsUnlock: boolean;
+        };
+        /**
+         * ArrangeReferences
+         * @description By place: the keycodes whose layer number an arrange changes
+         */
+        ArrangeReferences: {
+            /** Keymap */
+            keymap: number;
+            /** Encoders */
+            encoders: number;
+            /** Tapdance */
+            tapDance: number;
+            /** Combos */
+            combos: number;
+            /** Keyoverrides */
+            keyOverrides: number;
+            /** Altrepeatkeys */
+            altRepeatKeys: number;
+            /** Macros */
+            macros: number;
         };
         /** Backlight */
         Backlight: {
@@ -975,6 +1108,16 @@ export interface components {
             encoders: components["schemas"]["Described"][];
         };
         /**
+         * LayerMove
+         * @description A layer that an arrange moves: from position `layer` to position `to`
+         */
+        LayerMove: {
+            /** Layer */
+            layer: number;
+            /** To */
+            to: number;
+        };
+        /**
          * LayoutFilePreview
          * @description What loading a .vil file would change on the keyboard; nothing is written to find out. Each list holds only
          *     what differs from what the keyboard holds now.
@@ -1233,6 +1376,7 @@ export interface components {
             /** Platform */
             platform: string;
             unlock: components["schemas"]["UnlockState"];
+            arrange?: components["schemas"]["UnfinishedArrange"] | null;
         };
         /** SetKeycode */
         SetKeycode: {
@@ -1329,6 +1473,19 @@ export interface components {
             tapHold: string;
             /** Tappingterm */
             tappingTerm: number;
+        };
+        /**
+         * UnfinishedArrange
+         * @description Arranging the layers stopped partway (a write failed): the keyboard may hold part of the new order, until
+         *     POST /api/layers/arrange/finish or /put-back succeeds
+         */
+        UnfinishedArrange: {
+            /** Order */
+            order: number[];
+            /** Done */
+            done: number;
+            /** Total */
+            total: number;
         };
         /**
          * UnlockState
@@ -2262,6 +2419,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LayoutFilePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_arrange_api_layers_arrange_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArrangeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArrangePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arrange_layers_api_layers_arrange_post: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArrangeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyboardModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_arrange_api_layers_arrange_finish_post: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyboardModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_back_arrange_api_layers_arrange_put_back_post: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyboardModel"];
                 };
             };
             /** @description Validation Error */

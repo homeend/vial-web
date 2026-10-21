@@ -120,7 +120,7 @@ def test_session_and_keyboard(client):
     assert client.get("/api/session").json() == \
         {"status": "connected", "fake": True, "device": "Simulated: Simulated Corne", "error": None, "errorKind": None,
          "keyboard": "f00d:cafe:serial:SIM0001#1", "platform": sys.platform,
-         "unlock": {"state": "unlocked", "keys": [], "remaining": 0, "total": 0}}
+         "unlock": {"state": "unlocked", "keys": [], "remaining": 0, "total": 0}, "arrange": None}
     kb = client.get("/api/keyboard").json()
     assert (kb["name"], len(kb["layers"]), len(kb["keys"])) == ("Simulated Corne", 4, 42)
 

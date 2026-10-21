@@ -352,6 +352,54 @@ class LayoutFilePreview(BaseModel):
     """ writing it needs an unlocked keyboard (it changes the macros, or puts QK_BOOT somewhere) """
 
 
+class LayerMove(BaseModel):
+    """ A layer that an arrange moves: from position `layer` to position `to` """
+    layer: int
+    to: int
+
+
+class ArrangeReferences(BaseModel):
+    """ By place: the keycodes whose layer number an arrange changes """
+    keymap: int
+    encoders: int
+    tapDance: int
+    combos: int
+    keyOverrides: int
+    altRepeatKeys: int
+    macros: int
+
+
+class ArrangePreview(BaseModel):
+    """ What arranging the layers in an order would change; nothing is written to find out """
+    moves: list[LayerMove]
+    """ the layers that move, by their position now """
+    keys: int
+    """ keymap keys and encoder directions rewritten """
+    references: ArrangeReferences
+    keyOverrides: int
+    """ key overrides whose "active on layers" changes """
+    triLayer: Optional[list[Optional[int]]] = None
+    """ a tri-layer key (FN_MO13, FN_MO23) is set and layers 1 to 3 change: they use layers 1, 2 and 3 by number,
+    which then hold the layers that are now at these positions (null for one the keyboard doesn't have) """
+    problems: list[str]
+    """ why the order can't be written (a layer number that doesn't fit where it must go); none: it can """
+    writes: int
+    """ the writes it takes: one per key, encoder direction and entry, and one for the macros """
+    needsUnlock: bool
+    """ writing it needs an unlocked keyboard (it moves QK_BOOT, or changes the macros) """
+
+
+class UnfinishedArrange(BaseModel):
+    """ Arranging the layers stopped partway (a write failed): the keyboard may hold part of the new order, until
+    POST /api/layers/arrange/finish or /put-back succeeds """
+    order: list[int]
+    """ the order being written (ArrangeIn.order) """
+    done: int
+    """ the writes the last attempt did before it stopped """
+    total: int
+    """ the writes it had to do """
+
+
 class Session(BaseModel):
     status: Literal["connected", "disconnected"]
     fake: bool
@@ -366,6 +414,8 @@ class Session(BaseModel):
     """ the server's operating system, as Python's sys.platform names it: "win32", "linux", "darwin"... """
     unlock: UnlockState
     """ a keyboard that is unlocking while not connected waits for an unlock started earlier, before it is read """
+    arrange: Optional[UnfinishedArrange] = None
+    """ arranging the layers of the keyboard loaded stopped partway, and hasn't been finished or put back """
 
 
 class KeyboardEntry(BaseModel):
@@ -564,6 +614,20 @@ class SimulatorUnlock(Request):
     keysHeld: Optional[bool] = None
     locked: Optional[bool] = None
     """ true: lock it, as plugging it in again would """
+
+
+class SimulatorFailWrite(Request):
+    """ Fake mode only: the `after`th write from now to the simulated keyboard fails (1: the next one); null: none does.
+    unplug: the keyboard drops off the bus at that write (plugged back in with SimulatorConnection), else it stays
+    plugged in and its connection stops working (the server opens it again, as after a USB reset) """
+    after: Optional[int] = Field(default=None, ge=1, le=100_000)
+    unplug: bool = False
+
+
+class ArrangeIn(Request):
+    order: list[Byte] = Field(min_length=1, max_length=256)
+    """ for each new position, the layer that goes there: [0, 3, 1, 2] puts layer 3 at position 1. Every layer once,
+    layer 0 first. """
 
 
 class SelectKeyboard(Request):
