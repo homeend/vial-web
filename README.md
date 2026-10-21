@@ -4,6 +4,8 @@ A personal fork of [vial-gui](https://github.com/vial-kb/vial-gui) that replaces
 UI: a small Python server on `127.0.0.1` talks to the keyboard, and the browser shows a clearer, Oryx-style view of
 layers, tap dances, combos and macros. It comes as one executable file per system.
 
+Website: **[vial-web.code-drill.eu](https://vial-web.code-drill.eu/)**
+
 The Overview shows how each layer is reached from what Vial can read: layer keys, tap dances and combos. Layer
 switching done in the keyboard's firmware code (for example `update_tri_layer_state` or `layer_state_set_user`) isn't
 visible over the Vial protocol, so it isn't shown.
