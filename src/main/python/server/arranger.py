@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ Arranging a keyboard's layers (server.layers) on the keyboard itself: its loaded state read into a KeyboardState,
-and a KeyboardState written back, only what differs, in a fixed order. An arrange stopped partway is kept, by the
-keyboard's UID, while the server runs: Finish writes the rest of it, Put back writes the state from before.
+and a KeyboardState written back, only what differs, in a fixed order. An arrange stopped partway is kept, by keyboard
+(key_of), while the server runs: Finish writes the rest of it, Put back writes the state from before; neither writes
+over what was changed since.
 
 The functions that take the loaded Keyboard are called by DeviceManager.run, which holds the device lock.
 """
 import dataclasses
+import logging
 import threading
 
 from keycodes.keycodes import Keycode, RESET_KEYCODE
@@ -15,6 +17,8 @@ from protocol.key_override import KeyOverrideEntry
 from protocol.unlock_hook import request_unlock
 from server import layers, model, schemas
 from server.describe import keycode_protocol
+
+log = logging.getLogger(__name__)
 
 
 def _value(code):
@@ -95,6 +99,9 @@ class Plan:
     alt_repeat_keys: list
     macro: bytes = None
     """ the macro buffer, when it changes """
+    kept: int = 0
+    """ keys, encoder directions and entries (the macros as one) left as they are: changed since an arrange stopped
+    (plan's known) """
 
     @property
     def writes(self):
@@ -117,35 +124,57 @@ class Plan:
         ))
 
 
-def plan(kb, target):
-    """ The writes that make the keyboard hold `target` (a KeyboardState of its layers): only what differs. ValueError
-    when the target's macros don't fit. """
-    keys = [(pos, _code(value)) for pos, value in sorted(target.keys.items())
-            if pos in kb.layout and _value(kb.layout[pos]) != value]
-    encoders = [(pos, _code(value)) for pos, value in sorted(target.encoders.items())
-                if pos in kb.encoder_layout and _value(kb.encoder_layout[pos]) != value]
+def _nth(entries, index):
+    """ entries[index], or None past their end """
+    return entries[index] if index < len(entries) else None
 
-    def differing(entries, held, convert):
+
+def plan(kb, target, known=()):
+    """ The writes that make the keyboard hold `target` (a KeyboardState of its layers): only what differs. ValueError
+    when the target's macros don't fit.
+
+    known: KeyboardStates the keyboard is known to hold part of (an arrange's start and target). A key, an encoder
+    direction or an entry (the macros as a whole) that holds the value of none of them was changed since (an edit, a
+    layout file loaded): it is left as it is, and counted in Plan.kept. None known: everything that differs is written.
+    """
+    state = read_state(kb)
+    kept = []
+
+    def ours(held, theirs):
+        """ whether `held` is the value one of the known states has there (theirs: their values); counted when not """
+        if not known or held in theirs:
+            return True
+        kept.append(held)
+        return False
+
+    keys = [(pos, _code(value)) for pos, value in sorted(target.keys.items())
+            if pos in state.keys and state.keys[pos] != value
+            and ours(state.keys[pos], [k.keys.get(pos) for k in known])]
+    encoders = [(pos, _code(value)) for pos, value in sorted(target.encoders.items())
+                if pos in state.encoders and state.encoders[pos] != value
+                and ours(state.encoders[pos], [k.encoders.get(pos) for k in known])]
+
+    def differing(name, held, convert):
+        """ the entries of KeyboardState field `name` to write; held: the keyboard's, as the protocol keeps them """
         out = []
-        for index, entry in enumerate(entries):
+        for index, entry in enumerate(getattr(target, name)):
             new = convert(entry)
-            if index < len(held) and new != held[index]:
+            if index < len(held) and new != held[index] and ours(
+                    getattr(state, name)[index], [_nth(getattr(k, name), index) for k in known]):
                 out.append((index, new))
         return out
 
-    state = read_state(kb)
-    tap_dance = differing(target.tap_dance, kb.tap_dance_entries,
-                          lambda e: tuple(_code(c) for c in e[:4]) + (e[4],))
-    combos = differing(target.combos, kb.combo_entries, lambda e: tuple(_code(c) for c in e))
-    key_overrides = differing(target.key_overrides, kb.key_override_entries,
+    tap_dance = differing("tap_dance", kb.tap_dance_entries, lambda e: tuple(_code(c) for c in e[:4]) + (e[4],))
+    combos = differing("combos", kb.combo_entries, lambda e: tuple(_code(c) for c in e))
+    key_overrides = differing("key_overrides", kb.key_override_entries,
                               lambda e: KeyOverrideEntry((_code(e[0]), _code(e[1])) + tuple(e[2:])))
-    alt_repeat_keys = differing(target.alt_repeat_keys, kb.alt_repeat_key_entries,
+    alt_repeat_keys = differing("alt_repeat_keys", kb.alt_repeat_key_entries,
                                 lambda e: AltRepeatKeyEntry((_code(e[0]), _code(e[1])) + tuple(e[2:])))
     macro = None
-    if tuple(target.macros) != state.macros:
+    if tuple(target.macros) != state.macros and ours(state.macros, [tuple(k.macros) for k in known]):
         data = _macro_data(kb, target.macros)
         macro = data if data != kb.macro else None
-    return Plan(keys, encoders, tap_dance, combos, key_overrides, alt_repeat_keys, macro)
+    return Plan(keys, encoders, tap_dance, combos, key_overrides, alt_repeat_keys, macro, len(kept))
 
 
 def write(kb, todo, written):
@@ -220,37 +249,47 @@ class Unfinished:
 
 
 class Arrangements:
-    """ The arranges left unfinished, by keyboard UID, while the server runs; safe across threads """
+    """ The arranges left unfinished, by keyboard (key_of), while the server runs; safe across threads """
 
     def __init__(self):
         self._unfinished = {}
         self._lock = threading.Lock()
 
-    def get(self, uid):
+    def get(self, key):
         with self._lock:
-            return self._unfinished.get(uid)
+            return self._unfinished.get(key)
 
-    def keep(self, uid, unfinished):
+    def keep(self, key, unfinished):
         with self._lock:
-            self._unfinished[uid] = unfinished
+            self._unfinished[key] = unfinished
 
-    def drop(self, uid):
+    def drop(self, key):
         with self._lock:
-            self._unfinished.pop(uid, None)
+            self._unfinished.pop(key, None)
+
+
+def key_of(kb, keyboard_id):
+    """ What an unfinished arrange is kept by: the keyboard's UID (its names' too) and keyboard_id, the id the keyboard
+    open is listed by (KeyboardInfo.id, the same after a replug). The UID alone is shared by every keyboard built from
+    one firmware: another one with the same UID never gets the arrange, nor its writes. """
+    return model.uid_of(kb), keyboard_id
 
 
 class Job:
     """ Writing a state to the keyboard as part of an arrange (start -> target, by order), under the device lock.
-    Planned and unlocked for when made: nothing is written before run(), which writes `writing`, then calls done(). A
-    failure once something was written keeps the arrange as Unfinished, for Finish or Put back. """
+    Planned and unlocked for when made: nothing is written before run(), which writes `writing`, then calls done(). Any
+    failure (of a write, or of done(), which saves the names) keeps the arrange as Unfinished, for Finish or Put back.
 
-    def __init__(self, kb, writing, start, target, order, arrangements, done):
+    Only what holds the value of start or target is written: anything else was changed since an arrange stopped (an
+    edit, a layout file loaded) and is left as it is (plan's known), and logged. """
+
+    def __init__(self, kb, key, writing, start, target, order, arrangements, done):
         self.kb = kb
-        self.uid = model.uid_of(kb)
+        self.key = key
         self.start, self.target, self.order = start, target, list(order)
         self.arrangements = arrangements
         self.done = done
-        self.todo = plan(kb, writing)
+        self.todo = plan(kb, writing, (start, target))
         self.written = []
         if self.todo.needs_unlock():
             request_unlock(kb)
@@ -266,37 +305,44 @@ class Job:
         except Exception:
             # even the first write may have reached the keyboard, its answer lost: it may hold part of either state.
             # After every write, it holds `writing` (done == total): Finish then only saves the names.
-            self.arrangements.keep(self.uid, Unfinished(self.start, self.target, self.order, len(self.written),
+            self.arrangements.keep(self.key, Unfinished(self.start, self.target, self.order, len(self.written),
                                                         self.todo.writes))
             raise
+        if self.todo.kept:
+            log.warning("arranging the layers: %d changed since the stop were kept as they are (keys, encoder "
+                        "directions and entries; the macros count as one)", self.todo.kept)
 
 
-def begin(kb, order, arrangements, names):
+def begin(kb, keyboard_id, order, arrangements, names):
     """ A Job arranging the keyboard's layers to `order`, computed from what it holds now. ArrangeRefused while an
     arrange of it is unfinished, or when the order has problems; ValueError for a bad order. The names move once every
-    write has succeeded. """
-    uid = model.uid_of(kb)
-    if arrangements.get(uid) is not None:
+    write has succeeded. keyboard_id: see key_of. """
+    key = key_of(kb, keyboard_id)
+    if arrangements.get(key) is not None:
         raise ArrangeRefused("arranging this keyboard's layers stopped partway: finish it or put it back first")
     start = read_state(kb)
     result = layers.arrange(start, order, keycode_protocol())
     if result.problems:
         raise ArrangeRefused("the layers can't be arranged so: " + "; ".join(
             "{}: {}".format(p.where, p.text) for p in result.problems))
-    return Job(kb, result.target, start, result.target, order, arrangements, lambda: names.move_layers(uid, order))
-
-
-def resume(kb, arrangements, names, finish):
-    """ A Job writing the unfinished arrange of this keyboard to its end (finish: its target, then the names), or back
-    to where it started (its start state; the names were never moved). NothingUnfinished when there is none. """
     uid = model.uid_of(kb)
-    unfinished = arrangements.get(uid)
+    return Job(kb, key, result.target, start, result.target, order, arrangements,
+               lambda: names.move_layers(uid, order))
+
+
+def resume(kb, keyboard_id, arrangements, names, finish):
+    """ A Job writing the unfinished arrange of this keyboard to its end (finish: its target, then the names), or back
+    to where it started (its start state; the names were never moved). What was changed since it stopped is left as it
+    is (see Job). NothingUnfinished when there is none. keyboard_id: see key_of. """
+    key = key_of(kb, keyboard_id)
+    unfinished = arrangements.get(key)
     if unfinished is None:
         raise NothingUnfinished("no arrange of this keyboard's layers is unfinished")
+    uid = model.uid_of(kb)
 
     def done():
         if finish:
             names.move_layers(uid, unfinished.order)
-        arrangements.drop(uid)
+        arrangements.drop(key)
     writing = unfinished.target if finish else unfinished.start
-    return Job(kb, writing, unfinished.start, unfinished.target, unfinished.order, arrangements, done)
+    return Job(kb, key, writing, unfinished.start, unfinished.target, unfinished.order, arrangements, done)

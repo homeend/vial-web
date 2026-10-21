@@ -437,7 +437,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     app.state.unlock_follower = follower
     app.state.matrix = matrix
     arrangements = arranger.Arrangements()
-    """ arranges of the layers left unfinished, by keyboard UID """
+    """ arranges of the layers left unfinished, by keyboard (arranger.key_of) """
     app.state.arrangements = arrangements
 
     def openapi():
@@ -582,7 +582,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     def unfinished_arrange():
         """ The arrange of the keyboard loaded left unfinished, as the API has it; the device lock held """
         kb = manager.keyboard
-        unfinished = None if kb is None else arrangements.get(model.uid_of(kb))
+        unfinished = None if kb is None else arrangements.get(arranger.key_of(kb, manager.open_id))
         if unfinished is None:
             return None
         return schemas.UnfinishedArrange(order=unfinished.order, done=unfinished.done, total=unfinished.total)
@@ -823,19 +823,20 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         Computed again from what the keyboard holds now; only what differs is written, under one device lock. 409 when
         the order has problems, or an arrange of this keyboard is unfinished; 423 when it needs the keyboard unlocked
         (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange). """
-        return await arranging(lambda kb: arranger.begin(kb, body.order, arrangements, names), lang)
+        return await arranging(lambda kb: arranger.begin(kb, manager.open_id, body.order, arrangements, names), lang)
 
     @app.post("/api/layers/arrange/finish", response_model=schemas.KeyboardModel)
     async def finish_arrange(lang: Lang = languages.DEFAULT):
         """ Write what the unfinished arrange of this keyboard still has to (what differs from its new order), then move
         the names. 404 when none is unfinished. It can be asked again after a failure. """
-        return await arranging(lambda kb: arranger.resume(kb, arrangements, names, finish=True), lang)
+        return await arranging(lambda kb: arranger.resume(kb, manager.open_id, arrangements, names, finish=True), lang)
 
     @app.post("/api/layers/arrange/put-back", response_model=schemas.KeyboardModel)
     async def put_back_arrange(lang: Lang = languages.DEFAULT):
         """ Write back what the unfinished arrange of this keyboard changed (what differs from the state before it); the
         names never moved. 404 when none is unfinished. It can be asked again after a failure. """
-        return await arranging(lambda kb: arranger.resume(kb, arrangements, names, finish=False), lang)
+        return await arranging(lambda kb: arranger.resume(kb, manager.open_id, arrangements, names, finish=False),
+                               lang)
 
     @app.post("/api/unlock/start", response_model=schemas.UnlockState)
     async def start_unlock():

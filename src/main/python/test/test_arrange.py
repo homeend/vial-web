@@ -61,15 +61,23 @@ def name_layers(client, names):
         assert client.put("/api/names/layers/{}".format(index), json={"name": name}).status_code == 200
 
 
-def arranged_elsewhere(tmp_path, monkeypatch, prepare, order):
-    """ What a fresh simulated Corne holds after prepare(client) and an arrange that goes through """
-    manager, _, app = make_app(tmp_path / "elsewhere", monkeypatch)
-    (tmp_path / "elsewhere").mkdir(exist_ok=True)
+def held_elsewhere(tmp_path, monkeypatch, steps, folder="elsewhere"):
+    """ What a fresh simulated Corne holds after steps(client) """
+    manager, _, app = make_app(tmp_path / folder, monkeypatch)
+    (tmp_path / folder).mkdir(exist_ok=True)
     with TestClient(app, base_url=BASE) as client:
         client.get("/?token=" + TOKEN, follow_redirects=False)
+        steps(client)
+        return snapshot(manager.backend.virtual)
+
+
+def arranged_elsewhere(tmp_path, monkeypatch, prepare, order, then=lambda c: None, folder="elsewhere"):
+    """ What a fresh simulated Corne holds after prepare(client), an arrange that goes through, and then(client) """
+    def steps(client):
         prepare(client)
         assert arrange(client, order).status_code == 200
-        return snapshot(manager.backend.virtual)
+        then(client)
+    return held_elsewhere(tmp_path, monkeypatch, steps, folder)
 
 
 # ---------- the preview ----------
@@ -295,6 +303,77 @@ def test_a_failure_at_the_first_write_can_be_put_back(setup):
     virtual.writes.clear()
     assert client.post("/api/layers/arrange/put-back").status_code == 200
     assert virtual.writes == [] and snapshot(virtual) == start
+
+
+TD0 = {"tap": "KC_TAB", "doubleTap": "KC_CAPS", "tapHold": "KC_NO", "tappingTerm": 200}
+
+
+def refer_to_layer_2(client):
+    """ A tap dance and a macro the arrange renumbers; written after the keymap, so after a stop at write 10 """
+    assert client.put("/api/tap-dance/0", json=dict(TD0, hold="MO(2)")).status_code == 200
+    assert client.put("/api/macros", json={"items": [[{"type": "tap", "keys": ["MO(2)", "KC_A"]}]] + [[]] * 15}) \
+        .status_code == 200
+
+
+def edit_after_the_stop(client):
+    """ A key, a tap dance and the macros changed to values neither the start nor the target has """
+    assert client.put("/api/keymap/3/1/1", json={"code": "KC_F13"}).status_code == 200
+    assert client.put("/api/tap-dance/0", json=dict(TD0, hold="MO(1)")).status_code == 200
+    assert client.put("/api/macros", json={"items": [[{"type": "tap", "keys": ["KC_X"]}]] + [[]] * 15}) \
+        .status_code == 200
+
+
+KEPT = "3 changed since the stop were kept as they are"
+
+
+@pytest.mark.parametrize("finish", [True, False])
+def test_finish_and_put_back_keep_what_was_changed_since_the_stop(setup, tmp_path, monkeypatch, caplog, finish):
+    client, manager, _ = setup
+    refer_to_layer_2(client)
+    if finish:
+        expected = arranged_elsewhere(tmp_path, monkeypatch, refer_to_layer_2, ORDER, then=edit_after_the_stop)
+    else:
+        expected = held_elsewhere(tmp_path, monkeypatch, lambda c: (refer_to_layer_2(c), edit_after_the_stop(c)))
+    virtual = manager.backend.virtual
+    virtual.fail_writes(10)
+    assert arrange(client).status_code == 502
+    manager.check()
+    edit_after_the_stop(client)
+    with caplog.at_level("INFO", logger="server.arranger"):
+        response = client.post("/api/layers/arrange/" + ("finish" if finish else "put-back"))
+    assert response.status_code == 200, response.text
+    assert snapshot(virtual) == expected
+    assert manager.run(lambda kb: kb.layout[(3, 1, 1)]) == "KC_F13"
+    assert KEPT in caplog.text
+    assert client.get("/api/session").json()["arrange"] is None
+
+
+def test_another_keyboard_with_the_same_uid_never_gets_the_stopped_arrange(tmp_path, monkeypatch):
+    """ Keyboards built from one firmware share its UID: the arrange stopped on one is kept for that one only """
+    manager, _, app = make_app(tmp_path, monkeypatch, second=make_corne)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN, follow_redirects=False)
+        manager.backend.set_second_connected(True)
+        manager.check()
+        first, second = (e.info.id for e in manager.keyboard_list().entries)
+        virtual, other = manager.backend.virtual, manager.backend.second
+        assert manager.run(lambda kb: kb.keyboard_id) == other.uid == virtual.uid
+        start, other_start = snapshot(virtual), snapshot(other)
+        virtual.fail_writes(10)
+        assert arrange(client).status_code == 502
+        manager.check()
+        assert client.post("/api/keyboards/select", json={"id": second}).status_code == 200
+        assert client.get("/api/session").json()["arrange"] is None
+        other.writes.clear()
+        assert client.post("/api/layers/arrange/put-back").status_code == 404
+        assert client.post("/api/layers/arrange/finish").status_code == 404
+        assert other.writes == [] and snapshot(other) == other_start
+        # it can be arranged meanwhile, as any other keyboard
+        assert arrange(client).status_code == 200
+        assert client.post("/api/keyboards/select", json={"id": first}).status_code == 200
+        assert client.get("/api/session").json()["arrange"]["done"] == 9
+        assert client.post("/api/layers/arrange/put-back").status_code == 200
+        assert snapshot(virtual) == start
 
 
 def names_held_by_another_program(monkeypatch, names):
