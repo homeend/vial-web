@@ -160,10 +160,10 @@ def check_exercise(ex, where, known, new, report):
     return text
 
 
-def check(data, keys, report):
+def check(data, keys, report, known_before="", first_lesson=0):
     if not check_header(data, report):
         return
-    known = {" "}
+    known = {" "} | set(known_before)
     lesson_ids, exercise_ids = set(), set()
     for i, lesson in enumerate(data["lessons"]):
         where = f"lessons[{i}]"
@@ -205,7 +205,7 @@ def check(data, keys, report):
             kinds.append(ex.get("kind"))
             if text:
                 drilled |= set(text)
-        expected = LESSON_1_KINDS if i == 0 else MAIN_KINDS
+        expected = LESSON_1_KINDS if i + first_lesson == 0 else MAIN_KINDS
         for kind in expected:
             if kind not in kinds:
                 report.warn(where, f"has no {kind} exercise")
@@ -220,6 +220,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("lesson_set", help="the lesson set JSON file")
     parser.add_argument("--layout", help="the layout export the set was made from; checks the new keys")
+    parser.add_argument("--known", default="",
+                        help="characters taught before this file's first lesson (for checking a batch of lessons)")
+    parser.add_argument("--first-lesson", type=int, default=0,
+                        help="0-based number of this file's first lesson in the course (with --known)")
+    parser.add_argument("--course", help="the whole course (a lesson set, exercises may be empty): what is known "
+                                         "before this file's first lesson is taken from its earlier lessons")
     args = parser.parse_args(argv)
 
     report = Report()
@@ -234,10 +240,20 @@ def main(argv=None):
             layout = data.get("layout") if isinstance(data, dict) else None
             if isinstance(layout, dict) and layout.get("hash") != export.get("hash"):
                 report.warn("layout/hash", "differs from the export's hash: the set was made from another layout")
+    known, first = args.known, args.first_lesson
+    if args.course and isinstance(data, dict) and data.get("lessons"):
+        course = load(args.course, report, "course")
+        first_id = (data["lessons"][0] or {}).get("id") if isinstance(data["lessons"][0], dict) else None
+        ids = [l.get("id") for l in (course or {}).get("lessons", []) if isinstance(l, dict)]
+        if first_id not in ids:
+            report.error("course", f"lesson {first_id!r} is not in {args.course}")
+        else:
+            first = ids.index(first_id)
+            known = "".join(n.get("char", "") for l in course["lessons"][:first] for n in (l.get("new") or []))
     note = None
     if data is not None:
         note = schema_check(data, report)
-        check(data, keys, report)
+        check(data, keys, report, known, first)
 
     if note:
         print(note)

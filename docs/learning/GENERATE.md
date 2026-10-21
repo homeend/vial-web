@@ -25,6 +25,11 @@ it writes a lesson set the app can load. The Claude Code skill `generate-lessons
    known characters; **never use a character that isn't known yet** — that includes capitals before the capitals
    lesson, apostrophes, hyphens, digits. Real words only in word/blind/text exercises; sentences in text exercises
    once capitals and the full stop are known. Vary the words between exercises of the same lesson.
+   A full course is about 180 exercises; the way that worked: first save the plan as a **skeleton** (the lesson
+   set with every lesson's `new` and `guidance` and empty `exercises`), then write the exercises in batches of
+   three or four lessons (one subagent per batch, each with the same brief), check each batch with
+   `check_lessons.py <batch>.json --course <skeleton>.json` (it takes the known characters from the skeleton's
+   earlier lessons), and merge the batches back in the skeleton's order.
 4. **Write the guidance** of each lesson (rules § 4.5): hand, finger, move, access path, "tap, don't hold" when the
    key also holds. Plain words.
 5. **Fill the header**: `format`, `id`, `title`, `language`, `layout` (name, uid and **hash copied from the

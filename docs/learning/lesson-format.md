@@ -127,7 +127,9 @@ How the app shows each kind:
 | `text` | shown | no | as `words`; Enter ends a line | one under another |
 
 Known characters at lesson *n* = space + the `new` characters of lessons 1…n. Every character in every line of
-lesson *n* must be known at *n*; the checker enforces it. The checker also warns when an exercise is outside its
+lesson *n* must be known at *n*; the checker enforces it. A file holding only some lessons of a course (a batch
+being written) is checked with `--course <whole course>.json`: the known characters before its first lesson come
+from that file's earlier lessons. The checker also warns when an exercise is outside its
 size range, when a `new-keys` exercise has under 40 % new characters, when a group isn't doubled, and when a
 `new` key doesn't exist in the export or doesn't type that character (when the export is given).
 

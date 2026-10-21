@@ -110,7 +110,9 @@ Sort the letter lessons by score, highest first. Then adjust by hand, in this or
 2. **Comma and full stop** become a lesson as soon as six or more letters beyond lesson 1 are known, and no later
    than the sixth lesson. If `,` and `.` are on the same keys as letters of a later lesson (shifted), they wait for
    that lesson.
-3. **Capitals** come right after the comma/full-stop lesson: by then twelve to sixteen letters are known.
+3. **Capitals** come right after the comma/full-stop lesson: by then twelve to sixteen letters are known. The
+   capitals lesson lists every known letter's capital as new; a letter lesson after it lists both cases
+   (`c C x X`), so a lesson set always says exactly which characters are known.
 4. Lessons whose score is below 0 (rare letters, awkward positions) stay at the end, in score order.
 
 ### 4.4 After the letters
