@@ -73,7 +73,7 @@ def test_the_rest_of_the_keycode_stays(protocol):
 
 
 def test_protocol_5_to_keeps_when_it_acts():
-    # bits 4-5 of protocol 5's TO say when it acts (keymap_common.c): kept
+    # bits 4-5 of protocol 5's TO held ON_PRESS (when it acts) in older builds, and vial-gui still writes them: kept
     assert renumber(0x5021, {1: 2}, 5) == 0x5022
 
 

@@ -4,7 +4,7 @@ import pytest
 
 from keycodes.keycodes import Keycode
 from test.test_core_isolation import run_isolated
-from server.describe import describe, parse, parse_value, one_line, reference
+from server.describe import REFERENCES, describe, parse, parse_value, one_line, reference, reference_range
 
 
 @pytest.fixture(autouse=True)
@@ -251,6 +251,30 @@ def test_parse_uses_the_firmware_value_of_numbered_keycodes():
 def test_reference(monkeypatch, protocol, value, expected):
     monkeypatch.setattr(Keycode, "protocol", protocol)
     assert reference(value) == expected
+
+
+def test_a_range_numbered_from_a_base_takes_another_number():
+    # protocol 5's macros: M0 to M109 are 0x5F12 to 0x5F7F, numbered from 0x5F12 rather than from bit 0
+    macros = reference_range(0x5F14, 5)
+    assert (macros.names, macros.largest) == ("M", 109)
+    assert macros.with_number(0x5F14, 7) == 0x5F19
+    with pytest.raises(ValueError, match="M hold numbers 0 to 109, not 110"):
+        macros.with_number(0x5F14, 110)
+
+
+@pytest.mark.parametrize("protocol, value", [(6, 0x7C77), (6, 0x7C78), (5, 0x5F10), (5, 0x5F11)])
+def test_a_fixed_range_holds_only_its_layer(protocol, value):
+    tri = reference_range(value, protocol)
+    assert tri.largest == 3
+    with pytest.raises(ValueError, match="always point at layer 3"):
+        tri.with_number(value, 2)
+
+
+def test_the_ranges_other_code_looks_up_have_a_key():
+    # looked up by key (not by their names, which messages use): one range per key and protocol
+    for protocol, refs in REFERENCES.items():
+        keys = [ref.key for ref in refs if ref.key is not None]
+        assert sorted(keys) == sorted(set(keys)) and {"LM", "FN_MO"} <= set(keys), protocol
 
 
 @pytest.mark.parametrize("label, expected", [
