@@ -168,6 +168,15 @@ def test_an_empty_key_override_keeps_its_mask():
     assert arrange(s, [0, 2, 1, 3], 6).target.key_overrides == s.key_overrides
 
 
+def test_an_enabled_key_override_with_no_trigger_and_no_replacement_still_acts_and_its_mask_moves():
+    # the firmware activates an enabled entry with trigger KC_NO whenever its trigger modifiers are held
+    s = state(key_overrides=((0, 0, 0b0110, 0x02, 0, 0, 0x87),))
+    assert arrange(s, [0, 2, 3, 1], 6).target.key_overrides == ((0, 0, 0b1010, 0x02, 0, 0, 0x87),)
+    s = state(layers=20, key_overrides=((0, 0, 1 << 3, 0x02, 0, 0, 0x87),))
+    result = arrange(s, [0, 1] + list(range(4, 20)) + [2, 3], 6)
+    assert [(p.place, p.where) for p in result.problems] == [("keyOverrides", "key override 0")]
+
+
 def test_tri_layer_warning():
     s = state(keys={(0, 0, 0): FN_MO[6][0]})
     assert arrange(s, [0, 3, 1, 2], 6).tri_layer == (3, 1, 2)
@@ -208,11 +217,14 @@ def random_code(rng, layers, protocol):
         return FN_MO[protocol][rng.randrange(2)]
     name = rng.choice(sorted(table))
     top = min(layers - 1, largest(protocol, name))
-    return table[name](rng.randrange(top + 1))
+    layer = rng.randrange(top + 1)
+    if protocol == 5 and name == "TO":
+        return 0x5000 | (rng.randrange(4) << 4) | layer  # bits 4-5 are not the layer
+    return table[name](layer)
 
 
 def random_state(rng, protocol):
-    layers = rng.randrange(3, 13)
+    layers = rng.randrange(17, 21) if rng.randrange(4) == 0 else rng.randrange(3, 13)
     code = lambda: random_code(rng, layers, protocol)  # noqa: E731
     keys = {(layer, row, col): code() for layer in range(layers) for row in range(2) for col in range(3)}
     encoders = {(layer, 0, d): code() for layer in range(layers) for d in range(2)}
@@ -220,7 +232,8 @@ def random_state(rng, protocol):
         layers=layers, keys=keys, encoders=encoders,
         tap_dance=tuple((code(), code(), code(), code(), rng.randrange(500)) for _ in range(3)),
         combos=tuple(tuple(code() for _ in range(5)) for _ in range(3)),
-        key_overrides=tuple((code(), code(), rng.randrange(1 << 16), 2, 0, 2, 0x87) for _ in range(3)),
+        key_overrides=tuple((code(), code(), rng.randrange(1 << 16), 2, 0, 2, 0x87) for _ in range(3))
+        + ((0, 0, rng.randrange(1 << 16), 2, 0, 0, 0x87), (0, 0, 0xFFFF, 0, 0, 0, 0x07)),
         alt_repeat_keys=tuple((code(), code(), 0, 8) for _ in range(2)),
         macros=tuple((("text", "x"), ("tap", (code(), code())), ("down", (code(),))) for _ in range(2)),
     )
@@ -232,7 +245,9 @@ def test_arranging_then_the_reverse_order_gives_the_start_back(protocol, tmp_pat
     names = NamesStore(str(tmp_path / "names.json"))
     for attempt in range(150):
         s = random_state(rng, protocol)
-        order = [0] + rng.sample(range(1, s.layers), s.layers - 1)
+        # layers 0 to 15 stay among themselves when there are more: the 4-bit fields and the 16-bit mask can't go further
+        low = min(s.layers, 16)
+        order = [0] + rng.sample(range(1, low), low - 1) + rng.sample(range(low, s.layers), s.layers - low)
         uid = "K{}".format(attempt)
         for layer in rng.sample(range(s.layers), rng.randrange(s.layers)):
             names.set(uid, "layers", layer, "name {}".format(layer))

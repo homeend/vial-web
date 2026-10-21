@@ -77,7 +77,7 @@ class BadOrder(ValueError):
 
 
 def check_order(order, layers):
-    """ ValueError unless order holds every layer 0 to layers - 1 once, layer 0 first """
+    """ BadOrder unless order holds every layer 0 to layers - 1 once, layer 0 first """
     order = list(order)
     if len(order) != layers or sorted(order) != list(range(layers)):
         raise BadOrder("the order must list each of the {} layers (0 to {}) once".format(layers, layers - 1))
@@ -164,9 +164,16 @@ TAP_DANCE_SLOTS = ("tap", "hold", "double tap", "tap-hold")
 COMBO_SLOTS = ("key 1", "key 2", "key 3", "key 4", "output")
 
 
+KO_ENABLED = 1 << 7
+""" the options bit that switches a key override on (vial-qmk vial.h, vial_ko_enabled) """
+
+
 def _set(key_override):
-    """ A key override that is set: an empty one (no trigger, no replacement) does nothing, and keeps its mask """
-    return key_override[0] != 0 or key_override[1] != 0
+    """ A key override that is set, so its layers matter: it has a trigger or a replacement, or it is enabled. The
+    firmware activates an enabled entry with no trigger (KC_NO) whenever its trigger modifiers are held, so one with
+    nothing else set still acts on its layers. Only an entry with all of these empty (the firmware's own reset
+    entries: every layer, options 0x07, not enabled) does nothing, and keeps its mask. """
+    return key_override[0] != 0 or key_override[1] != 0 or bool(key_override[6] & KO_ENABLED)
 
 
 def arrange(state, order, protocol):
