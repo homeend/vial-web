@@ -233,6 +233,8 @@ function waitForUrl(
 /** A test server: its link, what stops it, its exit code once it exits (by itself: Quit Vial), and what it printed */
 export interface TestServer {
   url: string;
+  /** the server's --data-dir (fake mode keeps its files in its "fake" folder): removed once it is stopped */
+  dataDir: string;
   stop: () => Promise<void>;
   exited: Promise<number | null>;
   output: () => string;
@@ -268,6 +270,7 @@ export async function startServer(extraArgs: string[]): Promise<TestServer> {
     const url = await waitForUrl(running, vial.name, output, closed);
     return {
       url,
+      dataDir,
       stop: async () => {
         // asked to quit first, as Quit Vial does; ended if it can't be asked. Failures are reported only after the
         // server is ended and its data dir removed, so nothing is left behind.

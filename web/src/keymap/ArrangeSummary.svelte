@@ -47,7 +47,7 @@
 <section class="summary" class:waiting={previewState.state === "waiting"} aria-label="What Apply changes" tabindex="0">
   <p class="visually-hidden" aria-live="polite">{announced}</p>
   {#if previewState.state === "failed"}
-    <p class="problem" role="alert">Couldn't check this order: {causeMessage(previewState.error)}</p>
+    <p class="problem">Couldn't check this order: {causeMessage(previewState.error)}</p>
   {:else if shownPreview}
     {@const p = shownPreview}
     {#if p.problems.length > 0 || triText || pdfText}
