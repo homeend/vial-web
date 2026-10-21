@@ -1633,6 +1633,26 @@ describe("arranging the layers", () => {
       "Putting the layers back failed: the keyboard can't be changed just now."]);
   });
 
+  it("finishes or puts back nothing while another change is being saved: the bar's buttons say so in a toast",
+    async () => {
+      const { store } = await loaded();
+      sessionNow(1, UNFINISHED);
+      await store.refreshSession();
+      const saving = deferred<never>();
+      mocked.setMacros.mockReturnValueOnce(saving.promise);
+      void store.setMacros([[]]);
+      expect(await store.finishArrange()).toBeNull();
+      expect(await store.putBackArrange()).toBeNull();
+      expect(mocked.finishArrange).not.toHaveBeenCalled();
+      expect(mocked.putBackArrange).not.toHaveBeenCalled();
+      expect(toasts.items.map((t) => t.message)).toEqual([
+        "Finishing the arrange failed: another change was still being saved. Try again.",
+        "Putting the layers back failed: another change was still being saved. Try again.",
+      ]);
+      saving.reject(new ApiError(502));
+      await settle();
+    });
+
   it("tells those listening when the layout version changes, not when it is read the same again", async () => {
     const { store } = await loaded();
     const heard: (number | null)[] = [];
