@@ -11,6 +11,7 @@ import threading
 import pytest
 import uvicorn
 
+import resources
 import vial_web
 from protocol.unlock_hook import set_unlock_handler
 from server import device as device_module
@@ -394,7 +395,8 @@ def test_launch_takes_over_when_the_starting_one_exits(home, fake_server, capsys
         other.wait()
     out, err = capsys.readouterr()
     assert fake_server.seen["session"]["url"] in out
-    assert err == ""
+    # nothing else is said, but that the web UI isn't built when it isn't (tests from source may run without it)
+    assert [line for line in err.splitlines() if "the web UI isn't built" not in line] == []
 
 
 def test_lock_file_that_cannot_be_opened_is_a_clear_error(home, no_keyboard, monkeypatch, capsys):
@@ -494,6 +496,14 @@ def test_serving_announces_the_bound_port_and_cleans_up(home, fake_server, capsy
         threading.Event().wait(0.02)
     assert home == [url]
     assert not os.path.exists(vial_web.session_file(True))
+
+
+def test_serving_without_the_web_ui_built_says_how_to_build_it(home, fake_server, monkeypatch, capsys):
+    monkeypatch.setattr(resources, "WEB_DIST", resources.Resource("web/not-built", "web"))
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    out, err = capsys.readouterr()
+    assert "the web UI isn't built" in err and "cd web && npm ci && npm run build" in err
+    assert "Open it at" in out  # the API and the page that says so are served all the same
 
 
 def test_instance_is_claimed_before_connecting_and_released_at_exit(home, fake_server, monkeypatch):

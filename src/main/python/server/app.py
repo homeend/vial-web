@@ -49,7 +49,8 @@ PLACEHOLDER_PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><title>Vial</title></head>
 <body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; padding: 0 1rem">
 <h1>Vial server is running</h1>
-<p>The web interface isn't built yet. The API is available under <code>/api</code>.</p>
+<p>The web interface isn't built yet. Build it with <code>cd web &amp;&amp; npm ci &amp;&amp; npm run build</code>, then start
+Vial again. The API is available under <code>/api</code>.</p>
 <script>
 // an open events connection is how Vial knows this tab is open, and tells in its terminal once all are closed
 (function connect() {

@@ -1,11 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ Encodes and decodes QMK settings values, driven by qmk_settings.json. Must not import Qt. """
 import json
-import os
 from collections import defaultdict
 
-DEFAULT_DEFINITIONS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                   "..", "..", "resources", "base", "qmk_settings.json")
+import resources
 
 
 class QmkSettingsCodec:
@@ -15,9 +13,9 @@ class QmkSettingsCodec:
 
     @classmethod
     def load(cls, path=None):
-        """ Load setting definitions; the default path works when running from source """
+        """ Load setting definitions: from path, by default the qmk_settings.json bundled with Vial """
         cls.qsid_fields = defaultdict(list)
-        with open(path or DEFAULT_DEFINITIONS, "r", encoding="utf-8") as inf:
+        with open(path or resources.path(resources.QMK_SETTINGS), "r", encoding="utf-8") as inf:
             cls.settings_defs = json.load(inf)
         for tab in cls.settings_defs["tabs"]:
             for field in tab["fields"]:

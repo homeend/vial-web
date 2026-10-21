@@ -20,6 +20,8 @@ from logging.handlers import RotatingFileHandler
 
 import platformdirs
 
+import resources
+
 APP_NAME = "Vial"
 FAKE_SUBDIR = "fake"
 """ Fake mode keeps its own instance lock, server.json, vial.log and names.json in this subfolder of the data and
@@ -508,15 +510,19 @@ def serve(args, manager, sock):
     token = secrets.token_urlsafe(24)
     instance = secrets.token_hex(8)
     url = "http://127.0.0.1:{}/?token={}".format(port, token)
-    static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "web", "dist")
+    missing_ui = resources.web_ui_missing()
+    if missing_ui:
+        # from source only: the executable always has it (vial.spec refuses to build without it)
+        print("Vial: {}, then start Vial again. Until then the page only says so.".format(missing_ui), file=sys.stderr,
+              flush=True)
     names = NamesStore(names_file(args.fake))
 
     def all_tabs_closed():
         print(REOPEN_MESSAGE.format(url=url), flush=True)
         logging.info("all browser tabs closed")
 
-    app = create_app(manager, names, token, port, static_dir=static_dir, on_all_clients_gone=all_tabs_closed,
-                     instance_id=instance)
+    app = create_app(manager, names, token, port, static_dir=resources.path(resources.WEB_DIST),
+                     on_all_clients_gone=all_tabs_closed, instance_id=instance)
 
     write_session({"port": port, "url": url, "instance": instance, "fake": bool(args.fake)})
     try:
