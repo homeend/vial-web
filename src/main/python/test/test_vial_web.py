@@ -986,3 +986,38 @@ def test_fake_lighting_defaults_to_the_definitions_and_is_checked(capsys):
     with pytest.raises(SystemExit):
         vial_web.parse_args(["--lighting", "vialrgb"])
     assert "only work with --fake" in capsys.readouterr().err
+
+
+def test_a_console_event_while_serving_stops_the_server_and_the_keyboard_is_closed_before_it_is_released(
+        home, fake_server, monkeypatch):
+    """ serve() runs inside console.StopOnConsoleClose: Ctrl+Break (or a closed window) asks the server to stop, and the
+    keyboard is closed before released() lets a waiting close end the process """
+    opened = []
+
+    class Device(SimulatedHidDevice):
+        def __init__(self, keyboard):
+            super().__init__(keyboard)
+            opened.append(self)
+    made = []
+    real = console.StopOnConsoleClose
+
+    def recorded(stop, *args, **kwargs):
+        made.append(real(stop, *args, **kwargs))
+        return made[-1]
+    released = []
+
+    def console_event():
+        (block,) = made
+        stop = block.console_stop
+        release = stop.released
+        stop.released = lambda: released.append([d.closed for d in opened]) or release()
+        assert not getattr(fake_server.seen["server"], "should_exit", False)
+        assert stop.handle(console.CTRL_BREAK_EVENT) is True
+        assert fake_server.seen["server"].should_exit
+        assert [d.closed for d in opened] == [False]  # still serving
+    monkeypatch.setattr(device_module, "SimulatedHidDevice", Device)
+    monkeypatch.setattr(console, "StopOnConsoleClose", recorded)
+    fake_server.while_serving = console_event
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert released == [[True]]  # the keyboard was closed by then
+    assert not os.path.exists(vial_web.session_file(True))
