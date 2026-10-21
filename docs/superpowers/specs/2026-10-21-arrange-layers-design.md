@@ -99,8 +99,13 @@ lighting not saved) makes Arrange ask first, as Quit and the keyboard switch do.
     references are renumbered in each place, and how many key overrides' layers change.
   - Warning: a tri-layer key (`FN_MO13` / `FN_MO23`) is anywhere in the keymap, encoders, tap dance, combos, key
     overrides, alt-repeat or macros while any of layers 1–3 moves. The warning says what they reach before and after.
-- Nothing else has layer numbers: QMK settings, lighting and layout options are left alone. The keyboard's saved
-  default layer isn't touched (layer 0 can't move, so it can't change).
+  - Warning: a PDF key (anywhere a keycode can be) points at a layer that moves (`savedDefault`: the layers, old →
+    new). PDF(n) saves layer n in the keyboard's EEPROM as the layer it starts on (vial-qmk `process_default_layer.c`
+    → `set_single_persistent_default_layer`), which Vial can't read or write: if one was pressed, press it again after
+    Apply. Protocol 6 only: protocol 5 firmware has no PDF.
+- Nothing else that Vial reads or writes has layer numbers: QMK settings, lighting and layout options are left alone.
+  The keyboard itself holds a few Vial can't reach: the start-up default layer a PDF key saved (the warning above),
+  and, until it restarts, the layers switched on at Apply (TG) and the default set by DF, which keep their old numbers.
 
 ### Routes (`server/app.py`)
 
@@ -109,6 +114,10 @@ lighting not saved) makes Arrange ask first, as Quit and the keyboard switch do.
 - **`POST /api/layers/arrange`** `{order}` → the new full state, as `POST /api/layout-file` returns it. Computes the
   target again from the keyboard's current state (never from the preview), refuses (409) when it has problems, then
   writes it (section 3).
+- Added in the end batch: each keyboard's `layoutVersion` (in memory, counted up by every arrange, Finish, Put back
+  and `.vil` load, also one stopped partway) is in the session, the preview and the responses of Apply, Finish and Put
+  back (which also say how many changes made since a stop they `kept`). Apply with `expect` set to another version is
+  refused (409, code `layoutChanged`), so an Undo or a dialog shown before another tab's arrange can't apply twice.
 - Both check `X-Vial-Keyboard` like every keyboard route, so a keyboard switch in between is refused.
 - Request and response models go in `server/schemas.py`; the OpenAPI schema and `web/src/api/schema.d.ts` are
   regenerated with them.
