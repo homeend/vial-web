@@ -3,8 +3,17 @@ name: Test
 on: [push, pull_request]
 
 jobs:
-  test-linux:
-    runs-on: ubuntu-22.04
+  # the Python tests: the simulator and the server, never a real keyboard
+  pytest:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, ubuntu-24.04, macos-15]
+
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
 
     steps:
     - uses: actions/checkout@v4
@@ -13,29 +22,34 @@ jobs:
       with:
         python-version: '3.13'
 
-    - name: Install dependencies
+    - name: hidapi's libraries
+      if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libusb-1.0-0-dev libudev-dev xvfb libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 \
-          libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 libxcb-shape0 libegl1
+        sudo apt-get install -y libusb-1.0-0-dev libudev-dev
 
-    - name: Setup venv
-      run: |
-        python -m venv venv
-        . venv/bin/activate
-        pip install -r test-requirements.txt
-        pip install --no-deps -r requirements-fbs.txt
+    - name: Python packages
+      run: python -m pip install -r test-requirements.txt
 
     - name: Run tests
-      run: |
-        source venv/bin/activate
-        pytest -v -n auto --dist worksteal src/main/python/test
+      run: python -m pytest -v -n auto --dist worksteal src/main/python/test
 
+  # the web UI: checks, unit tests, the build, the API types, and the end-to-end tests against vial_web.py --fake
   web:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            checks: true
+          # end-to-end only: the rest doesn't depend on the system
+          - runner: windows-2025
+            checks: false
 
+    runs-on: ${{ matrix.runner }}
     defaults:
       run:
+        shell: bash
         working-directory: web
 
     steps:
@@ -51,28 +65,34 @@ jobs:
         cache: npm
         cache-dependency-path: web/package-lock.json
 
-    # the server code generates the API types and serves the UI in the end-to-end tests (simulated keyboard only)
-    - name: Python venv
+    # the server code generates the API types and serves the UI in the end-to-end tests (simulated keyboard only);
+    # VIAL_PYTHON tells web/scripts/python.mjs which Python runs it
+    - name: Python packages
       working-directory: .
       run: |
-        sudo apt-get update
-        sudo apt-get install -y libusb-1.0-0-dev libudev-dev
-        python -m venv .venv
-        .venv/bin/pip install -r requirements.txt
+        if [ "$RUNNER_OS" = Linux ]; then
+          sudo apt-get update
+          sudo apt-get install -y libusb-1.0-0-dev libudev-dev
+        fi
+        python -m pip install -r requirements.txt
+        echo "VIAL_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
 
     - name: Install
       run: npm ci
 
     - name: Check (svelte-check, tsc)
+      if: matrix.checks
       run: npm run check
 
     - name: Unit tests
+      if: matrix.checks
       run: npm test
 
     - name: Build
       run: npm run build
 
     - name: API types are up to date
+      if: matrix.checks
       run: npm run check:api
 
     - name: End-to-end tests
@@ -83,7 +103,7 @@ jobs:
     - uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: e2e-screenshots
+        name: e2e-screenshots-${{ runner.os }}
         path: |
           web/e2e/screenshots/
           web/test-results/

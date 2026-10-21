@@ -1,108 +1,91 @@
-name: CI
+name: Build
+
+# Vial as one executable on each system: dist/Vial.exe (Windows), dist/vial (Linux, macOS). Each build is smoke-tested
+# with the simulated keyboard (--fake: the runners have no keyboards, and --fake is the rule anyway), and uploaded. On
+# Windows and Linux the end-to-end tests run against the built executable too.
 
 on: [push, pull_request]
 
 jobs:
-  build-linux:
-    # Disabled until phase 6 moves the Linux builder from Python 3.6 to 3.13
-    if: false
-    runs-on: ubuntu-22.04
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: windows
+            runner: windows-2025
+            executable: dist/Vial.exe
+            e2e: true
+          # the oldest Ubuntu runner: the executable needs at least its glibc (2.35)
+          - system: linux
+            runner: ubuntu-22.04
+            executable: dist/vial
+            e2e: true
+          # arm64, built as is: not tested beyond the smoke test
+          - system: macos
+            runner: macos-15
+            executable: dist/vial
+            e2e: false
+
+    name: build-${{ matrix.system }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Build
-      run: ./util/linux-builder/build-in-docker.sh
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: vial-linux
-        path: util/linux-builder/output/Vial-x86_64.AppImage
-
-  build-mac:
-    # Disabled until phase 6 moves the macOS build from Python 3.6 to 3.13
-    if: false
-    runs-on: macos-15
-    env:
-      PYTHON_VERSION: 3.6.8
-      MACOSX_DEPLOYMENT_TARGET: 10.9
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Get Python
-      run: curl https://www.python.org/ftp/python/${PYTHON_VERSION}/python-${PYTHON_VERSION}-macosx${MACOSX_DEPLOYMENT_TARGET}.pkg -o "python.pkg"
-
-    - name: Verify download
-      run: shasum -a 256 -c <<< '4bcd53faffc98d193ef7cdccd5668de3829c702af4db45258819a84a2cab60d0 *python.pkg'
-
-    - name: Install Python
-      run: |
-        sudo installer -pkg python.pkg -target /
-
-    - name: Setup venv
-      run: |
-        python3.6 -m venv venv
-        source venv/bin/activate
-        pip install -r requirements.txt
-
-    - name: Build
-      run: |
-        source venv/bin/activate
-        fbs freeze
-        hdiutil create -volname Vial -srcfolder "target/Vial.app" -ov -format UDZO vial-mac.dmg
-
-    - uses: actions/upload-artifact@v4
-      with:
-        name: vial-mac
-        path: vial-mac.dmg
-
-  build-win:
-    runs-on: windows-2025
-
-    steps:
-    - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
         python-version: '3.13'
 
-    - name: Setup venv
-      run: |
-        python -m venv venv
-        if ($LASTEXITCODE) { exit $LASTEXITCODE }
-        . .\venv\Scripts\activate.ps1
-        pip install -r requirements.txt
-        if ($LASTEXITCODE) { exit $LASTEXITCODE }
-        pip install --no-deps -r requirements-fbs.txt
-        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+        cache: npm
+        cache-dependency-path: web/package-lock.json
 
-    - name: Install NSIS
+    # what hidapi's Linux backends link to, as the tests' runners install it
+    - name: hidapi's libraries
+      if: runner.os == 'Linux'
       run: |
-        Invoke-WebRequest "https://github.com/vial-kb/vial-deps/releases/download/v1/nsis-3.06.1-setup.exe" -UserAgent "wget" -OutFile nsis-3.06.1-setup.exe
-        if ((Get-FileHash nsis-3.06.1-setup.exe -Algorithm sha256).Hash -ne "f60488a676308079bfdf6845dc7114cfd4bbff47b66be4db827b89bb8d7fdc52") { Write-Error 'SHA256 mismatch' }
-        Start-Process -FilePath "nsis-3.06.1-setup.exe" -ArgumentList "/S", "/D=C:\Program Files (x86)\NSIS" -NoNewWindow -Wait
+        sudo apt-get update
+        sudo apt-get install -y libusb-1.0-0-dev libudev-dev
 
-    # fbs freeze, without fbs' copying of the Visual C++ 2010/2012 runtimes (a Python 3.6 workaround): see the script
-    - name: Build
+    - name: Python packages
+      run: python -m pip install -r requirements.txt
+
+    - name: Build the web UI
+      working-directory: web
       run: |
-        . .\venv\Scripts\activate.ps1
-        python util\fbs_build.py freeze
-        if ($LASTEXITCODE) { exit $LASTEXITCODE }
-        Compress-Archive -Path "target\Vial" -DestinationPath vial-win.zip
+        npm ci
+        npm run build
+
+    - name: Build the executable
+      run: python -m PyInstaller vial.spec
+
+    - name: Smoke test (simulated keyboard)
+      run: python util/smoke_test.py ${{ matrix.executable }}
 
     - uses: actions/upload-artifact@v4
       with:
-        name: vial-win
-        path: vial-win.zip
+        name: vial-${{ matrix.system }}
+        path: ${{ matrix.executable }}
+        if-no-files-found: error
 
-    - name: Create installer
+    - name: End-to-end tests against the executable
+      if: matrix.e2e
+      working-directory: web
+      env:
+        E2E_VIAL_CMD: ${{ matrix.executable }}
       run: |
-        $env:Path += ";C:\Program Files (x86)\NSIS"
-        . .\venv\Scripts\activate.ps1
-        fbs installer
-        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        npx playwright install --with-deps chromium
+        npx playwright test
 
     - uses: actions/upload-artifact@v4
+      if: failure() && matrix.e2e
       with:
-        name: vial-win-installer
-        path: target\VialSetup.exe
+        name: e2e-results-${{ matrix.system }}
+        path: web/test-results/
+        if-no-files-found: ignore
