@@ -60,18 +60,40 @@ class NamesStore:
                 entry[str(index)] = name
             else:
                 entry.pop(str(index), None)
-            os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
-            tmp = self.path + ".tmp"
-            try:
-                with open(tmp, "w", encoding="utf-8") as outf:
-                    json.dump(data, outf, indent=2, ensure_ascii=False)
-                    outf.flush()
-                    os.fsync(outf.fileno())
-                os.replace(tmp, self.path)
-            finally:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
+            self._save(data)
         return self.get(uid)
+
+    def move_layers(self, uid, order):
+        """ The layer names follow their layers to new positions, in one write: order[new position] = old layer (see
+        server.layers). A layer that had no name has none at its new position either; names of layers past the order
+        stay where they are. """
+        with self.lock:
+            data = self._load(for_write=True)
+            old = data.get(uid, {}).get("layers", {})
+            moved = {k: v for k, v in old.items() if not (k.isdigit() and int(k) < len(order))}
+            for new, layer in enumerate(order):
+                name = old.get(str(layer))
+                if name:
+                    moved[str(new)] = name
+            if moved != old:
+                data.setdefault(uid, {})["layers"] = moved
+                self._save(data)
+        return self.get(uid)
+
+    def _save(self, data):
+        """ Write the names file whole: a new file put in place of the old one, so that a failure leaves the old one
+        """
+        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+        tmp = self.path + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as outf:
+                json.dump(data, outf, indent=2, ensure_ascii=False)
+                outf.flush()
+                os.fsync(outf.fileno())
+            os.replace(tmp, self.path)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
 
 
 def suggest_tap_dance_name(described_slots):

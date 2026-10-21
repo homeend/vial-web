@@ -4,6 +4,7 @@ import random
 import pytest
 
 from server.layers import BadOrder, DoesNotFit, KeyboardState, arrange, check_order, move_mask, renumber, reverse
+from server.names import NamesStore
 
 # protocol 6 (vial-qmk quantum/keycodes.h, quantum_keycodes.h)
 V6 = {
@@ -226,16 +227,24 @@ def random_state(rng, protocol):
 
 
 @pytest.mark.parametrize("protocol", [5, 6])
-def test_arranging_then_the_reverse_order_gives_the_start_back(protocol):
+def test_arranging_then_the_reverse_order_gives_the_start_back(protocol, tmp_path):
     rng = random.Random(8)
+    names = NamesStore(str(tmp_path / "names.json"))
     for attempt in range(150):
         s = random_state(rng, protocol)
         order = [0] + rng.sample(range(1, s.layers), s.layers - 1)
+        uid = "K{}".format(attempt)
+        for layer in rng.sample(range(s.layers), rng.randrange(s.layers)):
+            names.set(uid, "layers", layer, "name {}".format(layer))
+        named = names.get(uid)
         there = arrange(s, order, protocol)
         assert there.problems == ()
+        names.move_layers(uid, order)
         back = arrange(there.target, reverse(order), protocol)
         assert back.problems == ()
         assert back.target == s, (order, attempt)
+        names.move_layers(uid, reverse(order))
+        assert names.get(uid) == named
 
 
 def test_describes_ranges_come_from_the_one_definition():

@@ -1,5 +1,6 @@
 import codecs
 import json
+import os
 
 import pytest
 
@@ -122,3 +123,40 @@ def test_file_with_a_byte_order_mark_is_read(tmp_path):
     assert store.get("ABC")["layers"] == {"0": "base"}
     assert store.set("ABC", "layers", 1, "nav")["layers"] == {"0": "base", "1": "nav"}
     assert not (tmp_path / "names.json.corrupt").exists()
+
+
+# ---------- moving layer names (Arrange layers) ----------
+
+def test_move_layers_moves_names_with_their_layers(tmp_path):
+    store = NamesStore(str(tmp_path / "names.json"))
+    store.set("K", "layers", 1, "Sym")
+    store.set("K", "layers", 3, "Num")
+    store.set("K", "layers", 9, "Past the order")
+    store.set("K", "macros", 1, "Mail")
+    names = store.move_layers("K", [0, 3, 1, 2])
+    # layer 2 had no name: position 3 has none either; names past the order and of other kinds stay
+    assert names["layers"] == {"1": "Num", "2": "Sym", "9": "Past the order"}
+    assert names["macros"] == {"1": "Mail"}
+    assert store.move_layers("K", [0, 2, 3, 1])["layers"] == {"1": "Sym", "3": "Num", "9": "Past the order"}
+
+
+def test_move_layers_writes_nothing_when_no_name_moves(tmp_path):
+    path = tmp_path / "names.json"
+    store = NamesStore(str(path))
+    assert store.move_layers("K", [0, 2, 1]) == {"layers": {}, "tapDance": {}, "macros": {}}
+    assert not path.exists()
+
+
+def test_move_layers_is_one_write_that_keeps_the_old_file_on_failure(tmp_path, monkeypatch):
+    path = tmp_path / "names.json"
+    store = NamesStore(str(path))
+    store.set("K", "layers", 1, "Sym")
+    before = path.read_bytes()
+
+    def broken(src, dst):
+        raise OSError("disk full")
+    monkeypatch.setattr(os, "replace", broken)
+    with pytest.raises(OSError):
+        store.move_layers("K", [0, 2, 1])
+    assert path.read_bytes() == before
+    assert not (tmp_path / "names.json.tmp").exists()
