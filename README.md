@@ -31,19 +31,27 @@ The Qt app was removed in phase 6; it is in the history before that, and in upst
 
 ## Download and run
 
-The CI's Build workflow builds one file per system and keeps it as an artifact of the run for 30 days: open a
-successful run of [**Build**](https://github.com/homeend/vial-web/actions/workflows/main.yml) on `main` from the last
-30 days under Actions (signed in to GitHub), download `vial-windows`, `vial-linux` or `vial-macos`, and unzip it.
+Download the file for your system from [**Releases**](https://github.com/homeend/vial-web/releases):
+`Vial-<version>-windows-x64.exe`, `vial-<version>-linux-x64.tar.gz` or `vial-<version>-macos-arm64.tar.gz`
+(`SHA256SUMS.txt` has each file's SHA-256). The CI's Build workflow makes a release when a version tag is pushed.
+
+Each push's build is also an artifact of its run for 30 days: open a successful run of
+[**Build**](https://github.com/homeend/vial-web/actions/workflows/main.yml) under Actions (signed in to GitHub),
+download `vial-windows`, `vial-linux` or `vial-macos`, and unzip it. An artifact doesn't keep the Linux and macOS
+file's executable bit: `chmod +x vial` gives it back.
+
 Close Vial's Qt app or another configurator first: they would use the keyboard at the same time.
 
-- **Windows:** `Vial.exe`. Put it in any folder and double-click it. A console window opens and shows the link, and
-  the browser opens it. The file isn't signed: if SmartScreen stops it, choose *More info*, then *Run anyway*.
-- **Linux:** `vial`, built on Ubuntu 22.04 (it needs glibc 2.35 or newer). Make it executable and run it from a
-  terminal: `chmod +x vial && ./vial`. Vial needs a udev rule to see keyboards: add it as
+- **Windows:** `Vial.exe` (in a release, `Vial-<version>-windows-x64.exe`). Put it in any folder and double-click it.
+  A console window opens and shows the link, and the browser opens it. The file isn't signed: if SmartScreen stops
+  it, choose *More info*, then *Run anyway*.
+- **Linux:** `vial`, built on Ubuntu 22.04 (it needs glibc 2.35 or newer). Unpack it and run it from a terminal:
+  `tar -xzf vial-<version>-linux-x64.tar.gz && ./vial`. Vial needs a udev rule to see keyboards: add it as
   [get.vial.today's Linux instructions](https://get.vial.today/manual/linux-udev.html) say, then plug the keyboard in
   again.
 - **macOS** (Apple silicon): `vial`, built as is and not tested beyond the CI's smoke test. It isn't signed with a
-  developer certificate or notarized. Run `chmod +x vial && ./vial` in Terminal; if macOS refuses to open it, run
+  developer certificate or notarized. Run `tar -xzf vial-<version>-macos-arm64.tar.gz && ./vial` in Terminal (for an
+  artifact: `chmod +x vial && ./vial`); if macOS refuses to open it, run
   `xattr -d com.apple.quarantine vial`, then `./vial` again.
 
 To try it without a keyboard, start it with `--fake`: it serves a simulated Corne and never looks for real hardware.
