@@ -5,7 +5,9 @@ import type { paths } from "./schema";
 type Method = "get" | "put" | "post";
 type Operation<P extends keyof paths, M extends Method> = paths[P][M];
 type Json<T> = T extends { content: { "application/json": infer R } } ? R : never;
-type Reply<Op> = Op extends { responses: { 200: infer R } } ? Json<R> : never;
+/** the reply's JSON; null for a route that answers nothing (204) */
+type Reply<Op> = Op extends { responses: { 200: infer R } } ? Json<R>
+  : Op extends { responses: { 204: unknown } } ? null : never;
 type Body<Op> = Op extends { requestBody: { content: { "application/json": infer B } } } ? B : undefined;
 type PathParams<Op> = Op extends { parameters: { path: infer P } } ? P : undefined;
 

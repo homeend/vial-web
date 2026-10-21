@@ -29,11 +29,15 @@
     unlockOpen: boolean;
     onunlock: () => void;
     onlock: () => void;
+    /** Quit Vial is on its way to the server */
+    quitting: boolean;
+    /** Quit Vial was pressed */
+    onquit: () => void;
   }
 
   let {
     name, keyboards, keyboardId, switching, onkeyboard, status, fake, languages, language, onlanguage, lock, lockBusy,
-    unlockOpen, onunlock, onlock,
+    unlockOpen, onunlock, onlock, quitting, onquit,
   }: Props = $props();
 
   const shownKeyboard = $derived(keyboards.find((k) => k.id === keyboardId));
@@ -172,6 +176,23 @@
           {/each}
         </select>
       </label>
+      <!-- here on every page, with or without a keyboard: stopping Vial is about the app, not one keyboard -->
+      <button
+        id="quit-button"
+        type="button"
+        class="quit"
+        aria-disabled={quitting || undefined}
+        title="Stop Vial: it lets go of the keyboard and its console window closes"
+        onclick={() => {
+          if (!quitting) onquit();
+        }}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 2.5v5" />
+          <path d="M4.7 4.6a4.6 4.6 0 1 0 6.6 0" />
+        </svg>
+        {quitting ? "Quitting…" : "Quit Vial"}
+      </button>
     </div>
   </div>
 </header>
@@ -332,6 +353,40 @@
     gap: 6px;
     color: var(--text-2);
     font-size: 12px;
+  }
+
+  .quit {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--text-2);
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .quit:hover {
+    border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+    color: var(--danger);
+  }
+
+  .quit[aria-disabled="true"] {
+    cursor: progress;
+    opacity: 0.6;
+  }
+
+  .quit svg {
+    width: 13px;
+    height: 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
   }
 
   .language select {

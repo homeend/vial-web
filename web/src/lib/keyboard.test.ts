@@ -31,6 +31,7 @@ vi.mock("../api/api", () => ({
     setLighting: vi.fn(),
     saveLighting: vi.fn(),
     rebootToBootloader: vi.fn(),
+    shutdown: vi.fn(),
   },
 }));
 vi.mock("../api/events", () => ({ connectEvents: vi.fn(() => ({ close: vi.fn(), send: vi.fn() })) }));
@@ -1404,5 +1405,45 @@ describe("the keyboard selector", () => {
     await settle();
     expect(store.model).toBeNull();
     expect(store.session?.error).toBe("unsupported");
+  });
+});
+
+describe("quitting Vial", () => {
+  /** the events link the store opened */
+  const eventsLink = () => vi.mocked(connectEvents).mock.results.at(-1)!.value as { close: ReturnType<typeof vi.fn> };
+
+  it("quits: the server answered, so Vial has stopped and the events link is closed for good", async () => {
+    const { store } = await loaded();
+    const reply = deferred<null>();
+    mocked.shutdown.mockReturnValueOnce(reply.promise);
+    const quitting = store.quit();
+    expect(store.quitting).toBe(true);
+    expect(store.stopped).toBe(false);
+    // pressed again meanwhile: asked once
+    void store.quit();
+    expect(mocked.shutdown).toHaveBeenCalledTimes(1);
+    reply.resolve(null);
+    expect(await quitting).toBe(true);
+    expect(store.stopped).toBe(true);
+    expect(store.quitting).toBe(false);
+    expect(eventsLink().close).toHaveBeenCalled();
+  });
+
+  it("says why Vial couldn't be quit, and goes on as before", async () => {
+    const { store } = await loaded();
+    mocked.shutdown.mockRejectedValueOnce(new ApiError(0));
+    expect(await store.quit()).toBe(false);
+    expect(store.stopped).toBe(false);
+    expect(store.quitting).toBe(false);
+    expect(toasts.items.map((t) => t.message)).toEqual(["Quitting Vial failed: Can't reach Vial. Is it still running?"]);
+    expect(eventsLink().close).not.toHaveBeenCalled();
+  });
+
+  it("shows Vial stopped when another tab quit it (the stopped event)", async () => {
+    const { store, emit } = await loaded();
+    emit("stopped");
+    expect(store.stopped).toBe(true);
+    expect(eventsLink().close).toHaveBeenCalled();
+    expect(mocked.shutdown).not.toHaveBeenCalled();
   });
 });

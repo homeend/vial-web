@@ -31,8 +31,8 @@ export const SERVERS = {
   twoKeyboards: ["--second-definition", MACROPAD_DEFINITION, ...UNLOCK_COUNTER],
 } satisfies Record<string, string[]>;
 
-/** Long enough to start a server, on a busy machine too */
-export const SERVER_FIXTURE_MS = STARTUP_MS + 2 * STOP_MS;
+/** Long enough to start a server and to stop it (asked to quit, then ended), on a busy machine too */
+export const SERVER_FIXTURE_MS = STARTUP_MS + 3 * STOP_MS;
 
 const hasExited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null;
 
@@ -52,7 +52,24 @@ function exitWithin(child: ChildProcess, ms: number): Promise<boolean> {
   });
 }
 
-/** Stops the server and waits for it, at most a few seconds per attempt. On Windows the venv's python.exe is a
+/** Asks the server to quit as Quit Vial does (POST /api/shutdown, with the session the link gives): it closes the
+ * keyboard and exits by itself. Resolves to whether it took the request. */
+async function askToQuit(url: string): Promise<boolean> {
+  try {
+    const login = await fetch(url, { redirect: "manual" });
+    const cookie = login.headers.get("set-cookie")?.split(";")[0];
+    if (!cookie) return false;
+    const reply = await fetch(new URL("/api/shutdown", url), {
+      method: "POST",
+      headers: { cookie, origin: new URL(url).origin },
+    });
+    return reply.status === 204;
+  } catch {
+    return false; // gone already, or not answering
+  }
+}
+
+/** Ends the server and waits for it, at most a few seconds per attempt. On Windows the venv's python.exe is a
  * launcher that runs the real Python as its child, and there is no gentler stop than terminating, so the whole tree
  * is ended at once. Elsewhere SIGTERM, then SIGKILL if it hasn't exited in time. */
 async function stopProcess(child: ChildProcess): Promise<void> {
@@ -106,7 +123,15 @@ function waitForUrl(server: ChildProcess, output: { text: string }): Promise<str
   });
 }
 
-export async function startServer(extraArgs: string[]): Promise<{ url: string; stop: () => Promise<void> }> {
+/** A test server: its link, what stops it, its exit code once it exits (by itself: Quit Vial), and what it printed */
+export interface TestServer {
+  url: string;
+  stop: () => Promise<void>;
+  exited: Promise<number | null>;
+  output: () => string;
+}
+
+export async function startServer(extraArgs: string[]): Promise<TestServer> {
   const dataDir = mkdtempSync(join(tmpdir(), "vial-e2e-"));
   let server: ChildProcess | undefined;
   const output = { text: "" };
@@ -116,14 +141,25 @@ export async function startServer(extraArgs: string[]): Promise<{ url: string; s
       ["vial_web.py", "--fake", "--no-browser", "--port", "0", "--data-dir", dataDir, ...extraArgs],
       { cwd: pythonRoot, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONUNBUFFERED: "1" } },
     );
+    const exited = new Promise<number | null>((resolve) => server!.once("exit", (code) => resolve(code)));
     const url = await waitForUrl(server, output);
     const running = server;
     return {
       url,
       stop: async () => {
-        await stopProcess(running);
+        // asked to quit first, as Quit Vial does; ended if it can't be asked
+        const asked = !hasExited(running) && (await askToQuit(url));
+        const quit = asked && (await exitWithin(running, STOP_MS));
+        if (!hasExited(running)) await stopProcess(running);
         removeDataDir(dataDir);
+        if (asked && !quit) {
+          const why = `vial_web.py took Quit (POST /api/shutdown) and didn't exit within ${STOP_MS / 1000} s`;
+          throw new Error(`${why}:\n${output.text}`);
+        }
       },
+      exited,
+      // waitForUrl keeps reading what it prints
+      output: () => output.text,
     };
   } catch (error) {
     // never leave a half-started server or its data dir behind

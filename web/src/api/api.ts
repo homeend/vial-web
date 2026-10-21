@@ -52,4 +52,6 @@ export const api = {
   /** the keyboard reboots into its bootloader and leaves; answers the session without it. 504: it got the reboot and
    * didn't answer, so it most likely went (the server closed it) */
   rebootToBootloader: () => request("post", "/api/bootloader"),
+  /** quits Vial: the keyboard is let go of, every tab gets a "stopped" event, and the server stops once it answered */
+  shutdown: () => request("post", "/api/shutdown"),
 };

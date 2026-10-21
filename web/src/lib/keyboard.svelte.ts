@@ -91,6 +91,10 @@ export class KeyboardStore {
   keyboards = $state.raw<KeyboardList | null>(null);
   /** the keyboard being opened (selectKeyboard), until the server has answered */
   switching = $state<string | null>(null);
+  /** Quit Vial is on its way to the server */
+  quitting = $state(false);
+  /** Vial has stopped (Quit Vial, in this tab or another): there is nothing more to show or to reconnect to */
+  stopped = $state(false);
 
   /** grows each time the keyboard shown is another one (or none): a keyboard of another uid, or another keyboard of
    * the same uid (one alike, KeyboardEntry.id), took its place. What was opened or offered for the one before (pages,
@@ -191,6 +195,10 @@ export class KeyboardStore {
   }
 
   #onEvent(event: ServerEvent): void {
+    if (event.type === "stopped") {
+      this.#stop();
+      return;
+    }
     if (event.type === "unlock") {
       if (event.unlock) this.unlock.update(event.unlock);
       return;
@@ -229,6 +237,31 @@ export class KeyboardStore {
       const at = ++this.#sessionReads;
       api.session().then((s) => this.#useSession(s, at), () => undefined);
     }
+  }
+
+  /** Quit Vial: the server lets go of the keyboard, tells every tab, and stops. Resolves to whether it did; a toast
+   * says why not. */
+  async quit(): Promise<boolean> {
+    if (this.quitting || this.stopped) return this.stopped;
+    this.quitting = true;
+    try {
+      await api.shutdown();
+    } catch (error) {
+      this.quitting = false;
+      toasts.error(failureMessage("Quitting Vial", error));
+      return false;
+    }
+    this.#stop();
+    return true;
+  }
+
+  /** Vial has stopped: the events link closes for good (it may have closed itself already) */
+  #stop(): void {
+    this.stopped = true;
+    this.quitting = false;
+    this.matrix = null;
+    this.#link?.close();
+    this.#link = null;
   }
 
   /** Read the keyboard (and its keycode catalogue) from the server; only the latest load is kept */

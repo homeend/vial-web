@@ -58,7 +58,7 @@ UVICORN_LOGGING = {
 
 STARTED_MESSAGE = """Vial is running{fake}. Open it at:
   {url}
-To stop it, press Ctrl+C or close this window."""
+To stop it, use Quit Vial on the page, press Ctrl+C or close this window."""
 
 REOPEN_MESSAGE = """Browser window closed. Vial is still running. Reopen it at:
   {url}

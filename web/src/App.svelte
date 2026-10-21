@@ -24,6 +24,7 @@
   import { unsavedWork } from "./lib/unsaved";
   import Banner from "./shell/Banner.svelte";
   import Nav, { type Section } from "./shell/Nav.svelte";
+  import StoppedPage from "./shell/StoppedPage.svelte";
   import Toasts from "./shell/Toasts.svelte";
   import TopBar from "./shell/TopBar.svelte";
   import UnlockDialog from "./shell/UnlockDialog.svelte";
@@ -74,7 +75,9 @@
   });
 
   $effect(() => {
-    document.title = `${sections.find((s) => s.id === section)?.label ?? "Keymap"} · Vial`;
+    document.title = keyboard.stopped
+      ? "Vial has stopped"
+      : `${sections.find((s) => s.id === section)?.label ?? "Keymap"} · Vial`;
   });
 
   // another page shown from the address (the back or forward button), or the keymap shown as another keyboard has no
@@ -189,163 +192,194 @@
   function openKeyboard(id: string) {
     void keyboard.selectKeyboard(id);
   }
+
+  /** Quit Vial pressed while there is work not saved: what the confirmation says is lost */
+  let askingQuit = $state<string | null>(null);
+
+  function quit() {
+    const work = unsavedWork(keyboard.model);
+    if (work.length === 0) {
+      void keyboard.quit();
+      return;
+    }
+    askingQuit = `Vial stops and lets go of the keyboard. Not saved yet, and lost if you quit: ${listed(work)}.`;
+  }
 </script>
 
-<TopBar
-  name={keyboard.model?.name ?? null}
-  keyboards={keyboardChoices}
-  keyboardId={keyboardShown}
-  switching={keyboard.switching !== null}
-  onkeyboard={chooseKeyboard}
-  {status}
-  fake={keyboard.session?.fake ?? false}
-  languages={keyboard.languages}
-  language={keyboard.language}
-  onlanguage={(lang) => keyboard.setLanguage(lang)}
-  {lock}
-  lockBusy={keyboard.unlock.busy}
-  unlockOpen={keyboard.unlock.open}
-  onunlock={() => void keyboard.unlock.start()}
-  onlock={() => void keyboard.unlock.lock()}
-/>
+{#if keyboard.stopped}
+  <StoppedPage />
+{:else}
+  <TopBar
+    name={keyboard.model?.name ?? null}
+    keyboards={keyboardChoices}
+    keyboardId={keyboardShown}
+    switching={keyboard.switching !== null}
+    onkeyboard={chooseKeyboard}
+    {status}
+    fake={keyboard.session?.fake ?? false}
+    languages={keyboard.languages}
+    language={keyboard.language}
+    onlanguage={(lang) => keyboard.setLanguage(lang)}
+    {lock}
+    lockBusy={keyboard.unlock.busy}
+    unlockOpen={keyboard.unlock.open}
+    onunlock={() => void keyboard.unlock.start()}
+    onlock={() => void keyboard.unlock.lock()}
+    quitting={keyboard.quitting}
+    onquit={quit}
+  />
 
-<div class="shell">
-  <Nav {sections} active={section} onselect={(id) => router.go(id)} />
+  <div class="shell">
+    <Nav {sections} active={section} onselect={(id) => router.go(id)} />
 
-  <main class="content">
-    {#if opening !== null}
-      <!-- no aria-busy here (the selector has it): it would hold back what the live region says, and this goes once
-           the keyboard is open -->
-      <p class="opening" role="status">Opening {opening}…</p>
-    {/if}
-    {#if status === "offline"}
-      <Banner tone="warning" title="Lost contact with Vial" message="Reconnecting… If this lasts, check that Vial is still running." />
-    {:else if blocked && inBootloader}
-      <Banner
-        id="bootloader-banner"
-        tone="warning"
-        title={keyboard.bootloaderUnanswered
-          ? "The keyboard has most likely rebooted into its bootloader"
-          : "The keyboard is in its bootloader"}
-        message="{keyboard.bootloaderUnanswered ? "It went without answering the reboot. " : ""}It usually doesn't work as a keyboard until it is flashed, or unplugged and plugged back in. It shows up here again then."
-      />
-    {:else if blocked && error && blockedBy !== "unplugged"}
-      <Banner tone="danger" title={READ_PROBLEMS[blockedBy].title} message="{error} {READ_PROBLEMS[blockedBy].retry}" />
-    {:else if blocked}
-      <Banner
-        tone="danger"
-        title="Keyboard unplugged"
-        message="Changes are blocked until it is plugged back in. It is then read again."
-      />
-    {/if}
-    {#if unlock.state === "cancelled"}
-      <Banner
-        tone="warning"
-        title="The keyboard still waits to be unlocked"
-        message="It takes no changes until its unlock keys are held, or it is unplugged and plugged back in."
-        actionLabel="Unlock"
-        onaction={() => void keyboard.unlock.start()}
-      />
-    {/if}
-    {#if keyboard.loadError}
-      <Banner
-        tone="danger"
-        title="Couldn't load the keyboard"
-        message={keyboard.loadError}
-        actionLabel="Try again"
-        onaction={() => void keyboard.load()}
-      />
-    {/if}
+    <main class="content">
+      {#if opening !== null}
+        <!-- no aria-busy here (the selector has it): it would hold back what the live region says, and this goes once
+             the keyboard is open -->
+        <p class="opening" role="status">Opening {opening}…</p>
+      {/if}
+      {#if status === "offline"}
+        <Banner tone="warning" title="Lost contact with Vial" message="Reconnecting… If this lasts, check that Vial is still running." />
+      {:else if blocked && inBootloader}
+        <Banner
+          id="bootloader-banner"
+          tone="warning"
+          title={keyboard.bootloaderUnanswered
+            ? "The keyboard has most likely rebooted into its bootloader"
+            : "The keyboard is in its bootloader"}
+          message="{keyboard.bootloaderUnanswered ? "It went without answering the reboot. " : ""}It usually doesn't work as a keyboard until it is flashed, or unplugged and plugged back in. It shows up here again then."
+        />
+      {:else if blocked && error && blockedBy !== "unplugged"}
+        <Banner tone="danger" title={READ_PROBLEMS[blockedBy].title} message="{error} {READ_PROBLEMS[blockedBy].retry}" />
+      {:else if blocked}
+        <Banner
+          tone="danger"
+          title="Keyboard unplugged"
+          message="Changes are blocked until it is plugged back in. It is then read again."
+        />
+      {/if}
+      {#if unlock.state === "cancelled"}
+        <Banner
+          tone="warning"
+          title="The keyboard still waits to be unlocked"
+          message="It takes no changes until its unlock keys are held, or it is unplugged and plugged back in."
+          actionLabel="Unlock"
+          onaction={() => void keyboard.unlock.start()}
+        />
+      {/if}
+      {#if keyboard.loadError}
+        <Banner
+          tone="danger"
+          title="Couldn't load the keyboard"
+          message={keyboard.loadError}
+          actionLabel="Try again"
+          onaction={() => void keyboard.load()}
+        />
+      {/if}
 
-    {#if keyboard.model && placement && analysis}
-      <!-- made anew for another keyboard, even one alike (the same uid): an editor open was for the one before -->
-      {#key keyboard.opened}
-        <div class="page" class:list={section !== "keymap"} class:blocked={greyed} inert={greyed}>
-          {#if section === "tap-dance"}
-            <TapDancePage model={keyboard.model} {analysis} item={router.route.item} />
-          {:else if section === "combos"}
-            <CombosPage model={keyboard.model} {placement} {analysis} item={router.route.item} />
-          {:else if section === "macros"}
-            <MacrosPage model={keyboard.model} {analysis} item={router.route.item} />
-          {:else if section === "key-overrides"}
-            <KeyOverridesPage model={keyboard.model} item={router.route.item} />
-          {:else if section === "alt-repeat"}
-            <AltRepeatPage model={keyboard.model} item={router.route.item} />
-          {:else if section === "settings"}
-            <SettingsPage model={keyboard.model} />
-          {:else if section === "layout"}
-            <LayoutPage model={keyboard.model} {placement} />
-          {:else if section === "lighting"}
-            <LightingPage model={keyboard.model} />
-          {:else if section === "matrix"}
-            <MatrixPage model={keyboard.model} {placement} />
-          {:else if section === "keyboard"}
-            <KeyboardPage model={keyboard.model} {analysis} usb={shownUsb} />
-          {:else}
-            <KeymapPage model={keyboard.model} {placement} {analysis} />
+      {#if keyboard.model && placement && analysis}
+        <!-- made anew for another keyboard, even one alike (the same uid): an editor open was for the one before -->
+        {#key keyboard.opened}
+          <div class="page" class:list={section !== "keymap"} class:blocked={greyed} inert={greyed}>
+            {#if section === "tap-dance"}
+              <TapDancePage model={keyboard.model} {analysis} item={router.route.item} />
+            {:else if section === "combos"}
+              <CombosPage model={keyboard.model} {placement} {analysis} item={router.route.item} />
+            {:else if section === "macros"}
+              <MacrosPage model={keyboard.model} {analysis} item={router.route.item} />
+            {:else if section === "key-overrides"}
+              <KeyOverridesPage model={keyboard.model} item={router.route.item} />
+            {:else if section === "alt-repeat"}
+              <AltRepeatPage model={keyboard.model} item={router.route.item} />
+            {:else if section === "settings"}
+              <SettingsPage model={keyboard.model} />
+            {:else if section === "layout"}
+              <LayoutPage model={keyboard.model} {placement} />
+            {:else if section === "lighting"}
+              <LightingPage model={keyboard.model} />
+            {:else if section === "matrix"}
+              <MatrixPage model={keyboard.model} {placement} />
+            {:else if section === "keyboard"}
+              <KeyboardPage model={keyboard.model} {analysis} usb={shownUsb} />
+            {:else}
+              <KeymapPage model={keyboard.model} {placement} {analysis} />
+            {/if}
+          </div>
+        {/key}
+      {:else}
+        <!-- the empty page: what it says is read when it changes (a keyboard found and being read, an error that comes or
+             goes), as a screen reader would hear nothing else -->
+        <div class="empty-page" aria-live="polite">
+          {#if status === "disconnected" && isWaiting(unlock)}
+            <div class="empty">
+              <h1>The keyboard waits to be unlocked</h1>
+              <p>An unlock started earlier wasn't finished. It is read once its unlock keys have been held.</p>
+            </div>
+          {:else if status === "disconnected" && away}
+            <div class="empty">
+              <h1>{awayName} is unplugged</h1>
+              <p>Vial opens it again as soon as it is plugged back in.</p>
+              {#if keyboardChoices.length > 1}
+                <p>To use another keyboard, choose it at the top of the page.</p>
+              {/if}
+            </div>
+          {:else if status === "disconnected" && error}
+            {@const problem = READ_PROBLEMS[keyboard.session?.errorKind === "list" ? "list" : "unread"]}
+            <div class="empty">
+              <h1>{problem.title}</h1>
+              <p>{error}</p>
+              <p>{problem.retry}</p>
+            </div>
+          {:else if status === "disconnected"}
+            <div class="empty">
+              <h1>No keyboard found</h1>
+              <p>Plug in a Vial keyboard. It shows up here as soon as it is found.</p>
+              {#if keyboard.session?.platform.startsWith("linux")}
+                <p class="hint">
+                  Vial needs a udev rule to see keyboards:
+                  <a href="https://get.vial.today/manual/linux-udev.html" target="_blank" rel="noreferrer">how to add it</a>.
+                </p>
+              {/if}
+            </div>
+          {:else if !keyboard.loadError}
+            <div class="empty">
+              <h1>Reading the keyboard…</h1>
+            </div>
           {/if}
         </div>
-      {/key}
-    {:else}
-      <!-- the empty page: what it says is read when it changes (a keyboard found and being read, an error that comes or
-           goes), as a screen reader would hear nothing else -->
-      <div class="empty-page" aria-live="polite">
-        {#if status === "disconnected" && isWaiting(unlock)}
-          <div class="empty">
-            <h1>The keyboard waits to be unlocked</h1>
-            <p>An unlock started earlier wasn't finished. It is read once its unlock keys have been held.</p>
-          </div>
-        {:else if status === "disconnected" && away}
-          <div class="empty">
-            <h1>{awayName} is unplugged</h1>
-            <p>Vial opens it again as soon as it is plugged back in.</p>
-            {#if keyboardChoices.length > 1}
-              <p>To use another keyboard, choose it at the top of the page.</p>
-            {/if}
-          </div>
-        {:else if status === "disconnected" && error}
-          {@const problem = READ_PROBLEMS[keyboard.session?.errorKind === "list" ? "list" : "unread"]}
-          <div class="empty">
-            <h1>{problem.title}</h1>
-            <p>{error}</p>
-            <p>{problem.retry}</p>
-          </div>
-        {:else if status === "disconnected"}
-          <div class="empty">
-            <h1>No keyboard found</h1>
-            <p>Plug in a Vial keyboard. It shows up here as soon as it is found.</p>
-            {#if keyboard.session?.platform.startsWith("linux")}
-              <p class="hint">
-                Vial needs a udev rule to see keyboards:
-                <a href="https://get.vial.today/manual/linux-udev.html" target="_blank" rel="noreferrer">how to add it</a>.
-              </p>
-            {/if}
-          </div>
-        {:else if !keyboard.loadError}
-          <div class="empty">
-            <h1>Reading the keyboard…</h1>
-          </div>
-        {/if}
-      </div>
-    {/if}
-  </main>
-</div>
+      {/if}
+    </main>
+  </div>
 
-<UnlockDialog unlocker={keyboard.unlock} model={keyboard.model} {placement} {names} />
-<ConfirmDialog
-  open={asking !== null}
-  title={asking?.title ?? ""}
-  message={asking?.message ?? ""}
-  confirmLabel="Switch keyboard"
-  onconfirm={async () => {
-    if (asking) openKeyboard(asking.id);
-    return true;
-  }}
-  onclose={() => {
-    asking = null;
-    void tick().then(() => document.getElementById("keyboard-select")?.focus());
-  }}
-/>
+  <UnlockDialog unlocker={keyboard.unlock} model={keyboard.model} {placement} {names} />
+  <ConfirmDialog
+    open={asking !== null}
+    title={asking?.title ?? ""}
+    message={asking?.message ?? ""}
+    confirmLabel="Switch keyboard"
+    onconfirm={async () => {
+      if (asking) openKeyboard(asking.id);
+      return true;
+    }}
+    onclose={() => {
+      asking = null;
+      void tick().then(() => document.getElementById("keyboard-select")?.focus());
+    }}
+  />
+  <ConfirmDialog
+    open={askingQuit !== null}
+    title="Quit Vial?"
+    message={askingQuit ?? ""}
+    confirmLabel="Quit Vial"
+    danger
+    onconfirm={() => keyboard.quit()}
+    onclose={() => {
+      askingQuit = null;
+      // quit: the page that says so takes the focus
+      if (!keyboard.stopped) void tick().then(() => document.getElementById("quit-button")?.focus());
+    }}
+  />
+{/if}
 <Toasts />
 
 <style>

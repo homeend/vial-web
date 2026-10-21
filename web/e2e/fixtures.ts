@@ -2,7 +2,7 @@ import { test as base, expect, type Page } from "@playwright/test";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Lighting } from "../src/api/types";
-import { SERVER_FIXTURE_MS, SERVERS, startServer } from "./servers";
+import { SERVER_FIXTURE_MS, SERVERS, startServer, type TestServer } from "./servers";
 
 /** e2e/screenshots/, wherever the tests are run from */
 const SCREENSHOTS = fileURLToPath(new URL("./screenshots/", import.meta.url));
@@ -36,9 +36,10 @@ function serverOf(
  * simulated macropad with encoders, `eightLayers` the simulated Corne with 8 layers (4-7 empty), `qmkLighting` the
  * simulated Corne with QMK's RGB light and backlight, `twoKeyboards` the simulated Corne of a server whose second
  * keyboard (the macropad) is plugged in by secondKeyboard(). `corneUrl` is the simulated Corne's link, for a test that
- * opens it itself. */
+ * opens it itself. `ownServer` is a simulated Corne's server of the test's own, started for it and stopped after it,
+ * for a test that ends it (Quit Vial). */
 export const test = base.extend<
-  { app: Page; macropad: Page; eightLayers: Page; qmkLighting: Page; twoKeyboards: Page },
+  { app: Page; macropad: Page; eightLayers: Page; qmkLighting: Page; twoKeyboards: Page; ownServer: TestServer },
   { corneUrl: string; macropadUrl: string; eightLayersUrl: string; qmkLightingUrl: string; twoKeyboardsUrl: string }
 >({
   corneUrl: serverOf(SERVERS.corne),
@@ -61,6 +62,17 @@ export const test = base.extend<
   twoKeyboards: async ({ page, twoKeyboardsUrl }, use) => {
     await use(await open(page, twoKeyboardsUrl));
   },
+  ownServer: [
+    async ({}, use) => {
+      const server = await startServer(SERVERS.corne);
+      try {
+        await use(server);
+      } finally {
+        await server.stop();
+      }
+    },
+    { timeout: SERVER_FIXTURE_MS },
+  ],
 });
 
 export { expect };
