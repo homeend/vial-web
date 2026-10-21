@@ -582,7 +582,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     def unfinished_arrange():
         """ The arrange of the keyboard loaded left unfinished, as the API has it; the device lock held """
         kb = manager.keyboard
-        unfinished = None if kb is None else arrangements.get(arranger.key_of(kb, manager.open_id))
+        unfinished = None if kb is None else arranger.unfinished_of(kb, manager.open_id, arrangements)
         if unfinished is None:
             return None
         return schemas.UnfinishedArrange(order=unfinished.order, done=unfinished.done, total=unfinished.total)

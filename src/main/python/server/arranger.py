@@ -326,9 +326,24 @@ class Arrangements:
 
 def key_of(kb, keyboard_id):
     """ What an unfinished arrange is kept by: the keyboard's UID (its names' too) and keyboard_id, the id the keyboard
-    open is listed by (KeyboardInfo.id, the same after a replug). The UID alone is shared by every keyboard built from
-    one firmware: another one with the same UID never gets the arrange, nor its writes. """
+    open is listed by (KeyboardInfo.id). The UID alone is shared by every keyboard built from one firmware; the id tells
+    them apart by their own USB serial number, else only by a number among keyboards alike, which two of them replugged
+    can swap (keyboard_infos). So unfinished_of also checks the keyboard holds what the arrange wrote. """
     return model.uid_of(kb), keyboard_id
+
+
+def unfinished_of(kb, keyboard_id, arrangements):
+    """ The arrange of this keyboard left unfinished, or None. One kept under its key (key_of) is taken for this
+    keyboard's only when more than half of the keymap positions it changes hold its start's or its target's value (any
+    when it changes none): a keyboard that got another's id after a replug holds neither in most of them, unless both
+    keymaps are alike, when Finish or Put back writes only what holds one of them anyway. """
+    unfinished = arrangements.get(key_of(kb, keyboard_id))
+    if unfinished is None:
+        return None
+    start, target = unfinished.start.keys, unfinished.target.keys
+    changed = [pos for pos, value in start.items() if target.get(pos) != value]
+    held = sum(1 for pos in changed if pos in kb.layout and _value(kb.layout[pos]) in (start[pos], target.get(pos)))
+    return unfinished if 2 * held > len(changed) or not changed else None
 
 
 class Job:
@@ -377,7 +392,7 @@ def begin(kb, keyboard_id, order, arrangements, names):
     arrange of it is unfinished, or when the order has problems; ValueError for a bad order. The names move once every
     write has succeeded. keyboard_id: see key_of. """
     key = key_of(kb, keyboard_id)
-    if arrangements.get(key) is not None:
+    if unfinished_of(kb, keyboard_id, arrangements) is not None:
         raise ArrangeRefused("arranging this keyboard's layers stopped partway: finish it or put it back first")
     start = read_state(kb)
     result = layers.arrange(start, order, keycode_protocol())
@@ -393,7 +408,7 @@ def resume(kb, keyboard_id, arrangements, names, finish):
     to where it started (its start state; the names were never moved). What was changed since it stopped is left as it
     is (see Job). NothingUnfinished when there is none. keyboard_id: see key_of. """
     key = key_of(kb, keyboard_id)
-    unfinished = arrangements.get(key)
+    unfinished = unfinished_of(kb, keyboard_id, arrangements)
     if unfinished is None:
         raise NothingUnfinished("no arrange of this keyboard's layers is unfinished")
     uid = model.uid_of(kb)

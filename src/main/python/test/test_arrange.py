@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 import transport
 from keycodes.keycodes import Keycode
 from protocol.unlock_hook import set_unlock_handler
+from server import model
 from server.app import create_app
 from server.device import DeviceManager, FakeBackend, require_unlocked
 from server.layers import reverse
@@ -374,6 +375,48 @@ def test_another_keyboard_with_the_same_uid_never_gets_the_stopped_arrange(tmp_p
         assert client.get("/api/session").json()["arrange"]["done"] == 9
         assert client.post("/api/layers/arrange/put-back").status_code == 200
         assert snapshot(virtual) == start
+
+
+def other_keymap():
+    """ A Corne like the sample, but for its layers 1 to 3, all KC_F24 """
+    virtual = make_corne()
+    for layer in virtual.keymap[1:]:
+        for row in layer:
+            row[:] = [encode("KC_F24")] * len(row)
+    return virtual
+
+
+def test_a_stopped_arrange_kept_under_another_keyboard_is_not_its_own(tmp_path, monkeypatch):
+    """ Keyboards alike with no serial number of their own can swap ids after both are replugged (keyboard_infos): the
+    arrange stopped on one is then kept under the id of the other. It is shown, finished or put back only on a keyboard
+    where most keymap positions it changes hold the start's or the target's value. """
+    manager, _, app = make_app(tmp_path, monkeypatch, second=other_keymap)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN, follow_redirects=False)
+        manager.backend.set_second_connected(True)
+        manager.check()
+        first, second = (e.info.id for e in manager.keyboard_list().entries)
+        other = manager.backend.second
+        manager.backend.virtual.fail_writes(10)
+        assert arrange(client).status_code == 502
+        manager.check()
+        # the ids swapped: what was kept for the first is now under the second's
+        arrangements, uid = app.state.arrangements, manager.run(model.uid_of)
+        arrangements.keep((uid, second), arrangements.get((uid, first)))
+        arrangements.drop((uid, first))
+        assert client.post("/api/keyboards/select", json={"id": second}).status_code == 200
+        assert client.get("/api/session").json()["arrange"] is None
+        other_start = snapshot(other)
+        other.writes.clear()
+        assert client.post("/api/layers/arrange/put-back").status_code == 404
+        assert client.post("/api/layers/arrange/finish").status_code == 404
+        assert other.writes == [] and snapshot(other) == other_start
+        # it is arranged as any other keyboard
+        assert arrange(client).status_code == 200
+        # back under its own id, the first keyboard's is shown again
+        arrangements.keep((uid, first), arrangements.get((uid, second)))
+        assert client.post("/api/keyboards/select", json={"id": first}).status_code == 200
+        assert client.get("/api/session").json()["arrange"]["done"] == 9
 
 
 LONG = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ"
