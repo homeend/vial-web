@@ -30,6 +30,12 @@ export function moveTo(order: number[], from: number, to: number): number[] {
   return next;
 }
 
+/** Where a dragged row goes: after every other movable row whose middle the pointer (at `y`) has passed. rows: the
+ * other movable rows' boxes, in order (layer 0's row never moves, and is left out). */
+export function dropPosition(rows: { top: number; height: number }[], y: number): number {
+  return 1 + rows.filter((row) => y > row.top + row.height / 2).length;
+}
+
 /** One step up (towards position 1) or down; unchanged at the end it is already at */
 export function moveStep(order: number[], from: number, step: -1 | 1): number[] {
   return moveTo(order, from, from + step);
@@ -218,7 +224,7 @@ export type PreviewState<T> =
   | { state: "ready"; preview: T }
   | { state: "failed"; error: unknown };
 
-interface Timers {
+export interface Timers {
   set: (run: () => void, ms: number) => unknown;
   clear: (handle: unknown) => void;
 }
@@ -265,12 +271,14 @@ export class PreviewFollower<T> {
     }, this.#pause);
   }
 
-  /** Ask again now for the order shown (after the keyboard changed) */
+  /** Ask again now for the order shown (after the keyboard changed). It waits meanwhile: the answer shown was for the
+   * keyboard as it was, not the one to apply (the dialog keeps it, faint, until the new one comes). */
   refresh(order: number[]): void {
     if (this.#stopped) return;
     if (this.#timer !== null) this.#timers.clear(this.#timer);
     this.#timer = null;
     this.#shown = orderKey(order);
+    this.#show({ state: "waiting" });
     void this.#ask([...order]);
   }
 

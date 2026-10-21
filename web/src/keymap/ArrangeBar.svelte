@@ -16,6 +16,8 @@
   let { unfinished, stop, canEdit, onfinish, onputback }: Props = $props();
 
   let working = $state<"finish" | "put-back" | null>(null);
+  /** why the buttons do nothing just now */
+  const blocked = $derived(canEdit ? undefined : "The keyboard can't be changed just now.");
 
   async function run(kind: "finish" | "put-back", act: () => Promise<boolean>) {
     if (working !== null || !canEdit) return;
@@ -32,12 +34,14 @@
      focus) while one runs; the bar goes once it is done, and the focus with it goes to the page's heading. -->
 <div class="bar" role="region" aria-label="Arranging the layers stopped">
   <p>{stoppedText(unfinished, stop?.kind ?? null, stop?.cause)}</p>
+  <!-- aria-disabled rather than disabled, so that their tooltips say why they do nothing -->
   <div class="buttons">
-    <Button aria-disabled={working !== null || !canEdit || undefined} onclick={() => void run("put-back", onputback)}>
+    <Button class={!canEdit && working === null ? "off" : undefined} title={blocked}
+      aria-disabled={working !== null || !canEdit || undefined} onclick={() => void run("put-back", onputback)}>
       {working === "put-back" ? "Putting back…" : "Put back"}
     </Button>
-    <Button variant="primary" aria-disabled={working !== null || !canEdit || undefined}
-      onclick={() => void run("finish", onfinish)}>
+    <Button variant="primary" class={!canEdit && working === null ? "off" : undefined} title={blocked}
+      aria-disabled={working !== null || !canEdit || undefined} onclick={() => void run("finish", onfinish)}>
       {working === "finish" ? "Finishing…" : "Finish"}
     </Button>
   </div>
@@ -66,5 +70,19 @@
   .buttons {
     display: flex;
     gap: 8px;
+  }
+
+  /* a button that can't be used just now: no progress cursor (a write waited for) nor hover */
+  .buttons :global(.btn.off[aria-disabled="true"]) {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .buttons :global(.btn.off[aria-disabled="true"]:hover) {
+    background: var(--surface);
+  }
+
+  .buttons :global(.btn.primary.off[aria-disabled="true"]:hover) {
+    background: var(--accent);
   }
 </style>

@@ -55,8 +55,12 @@
   class="confirm-dialog"
   aria-labelledby="{uid}-title"
   aria-describedby="{uid}-message"
+  onkeydown={(event) => {
+    // Esc waits for what is being done, as Cancel does: pressed again, the browser would close the dialog all the same
+    // (a second close request can't be refused), so the key itself is stopped
+    if (event.key === "Escape" && working) event.preventDefault();
+  }}
   oncancel={(event) => {
-    // Esc waits for what is being done, as Cancel does
     if (working) event.preventDefault();
   }}
   onclose={onclose}

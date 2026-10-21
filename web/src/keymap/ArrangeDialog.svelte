@@ -1,16 +1,16 @@
 <script lang="ts">
+  // The Arrange layers dialog: the rows in their new order (ArrangeRows), what Apply would change (ArrangeSummary),
+  // and Apply; or, while an arrange is unfinished, what stopped and Finish or Put back.
   import { tick, untrack } from "svelte";
   import type { Analysis } from "../analysis/analysis";
-  import { unreachedReason, wayLabel, type PhraseContext } from "../analysis/phrases";
+  import type { PhraseContext } from "../analysis/phrases";
   import { api } from "../api/api";
-  import { causeMessage } from "../api/errors";
   import type { ArrangePreview, KeyboardModel } from "../api/types";
   import { keyboard, type ArrangeStop, type Report } from "../lib/keyboard.svelte";
   import Button from "../ui/Button.svelte";
-  import {
-    canStep, currentOrder, isCurrent, layersChangedText, moveStep, moveTo, nameAfter, PreviewFollower,
-    savedDefaultWarning, stoppedText, summaryText, triLayerWarning, writingLabel, type PreviewState,
-  } from "./arrange";
+  import { currentOrder, isCurrent, PreviewFollower, stoppedText, writingLabel, type PreviewState } from "./arrange";
+  import ArrangeRows from "./ArrangeRows.svelte";
+  import ArrangeSummary from "./ArrangeSummary.svelte";
   import { isLayoutChanged } from "./arranging.svelte";
 
   interface Props {
@@ -31,7 +31,7 @@
 
   const uid = $props.id();
   let dialog = $state<HTMLDialogElement>();
-  let list = $state<HTMLOListElement>();
+  let rows = $state<ReturnType<typeof ArrangeRows>>();
   /** the layer (by its position now) at each position */
   let order = $state<number[]>([]);
   let previewState = $state<PreviewState<ArrangePreview>>({ state: "waiting" });
@@ -40,6 +40,9 @@
   /** Apply, Finish or Put back is being written */
   let working = $state<"apply" | "finish" | "put-back" | null>(null);
   let workingLabel = $state("");
+  /** the model the rows showed when Apply was asked for: kept while it writes, as the keyboard's reply (the order
+   * applied) replaces the model before the dialog closes */
+  let writingModel = $state.raw<KeyboardModel | null>(null);
   /** why the last Apply, Finish or Put back wasn't done */
   let failure = $state<string | null>(null);
   /** the stop that Apply, Finish or Put back made (keyboard.arrangeStop), if it may have stopped partway: while the
@@ -50,22 +53,20 @@
   let changed = $state<{ applied: boolean; reset: boolean } | null>(null);
   /** the layout version the dialog last took in: another one means the layers changed */
   let seenVersion: number | null = null;
-  /** a row dragged by its handle */
-  let drag = $state<{ layer: number; pointerId: number; before: number[] } | null>(null);
+  /** whether an arrange was unfinished, as the dialog last saw */
+  let wasStopped = false;
+  /** a row is being dragged by its handle */
+  let dragging = $state(false);
   let follower: PreviewFollower<ArrangePreview> | null = null;
 
   const unfinished = $derived(keyboard.unfinishedArrange);
   const canEdit = $derived(keyboard.canEdit);
+  const shownModel = $derived(writingModel ?? model);
   const preview = $derived(previewState.state === "ready" ? previewState.preview : null);
-  const shownPreview = $derived(preview ?? lastPreview);
   const canApply = $derived(
-    working === null && drag === null && preview !== null && preview.moves.length > 0 &&
+    working === null && !dragging && preview !== null && preview.moves.length > 0 &&
       preview.problems.length === 0 && canEdit && keyboard.pending === 0,
   );
-  const hasEncoders = $derived(model.encoders.length > 0);
-  const triText = $derived(shownPreview?.triLayer
-    ? triLayerWarning(shownPreview.triLayer, ownName, model.vialProtocol >= 6) : null);
-  const pdfText = $derived(shownPreview ? savedDefaultWarning(shownPreview.savedDefault, ownName) : null);
   const stoppedNow = $derived(unfinished
     ? stoppedText(unfinished, keyboard.unfinishedBy, keyboard.unfinishedStop?.cause) : "");
   /** the failure, unless the stop shown says it */
@@ -81,6 +82,12 @@
     } else if (!open && dialog.open) {
       dialog.close();
     }
+  });
+
+  // the page goes (another keyboard is shown) with the dialog open: nothing more is asked
+  $effect(() => () => {
+    follower?.stop();
+    follower = null;
   });
 
   // the keyboard read again (an edit, another tab, a reload), or its layers changed (another tab arranged them, or
@@ -103,18 +110,29 @@
     });
   });
 
-  // an arrange that stopped while the focus was on a button that went: the focus goes to what it says
+  // an arrange stopped while the focus was on a button that went: the focus goes to what it says. One finished or
+  // put back elsewhere (another tab) while the dialog said so: the rows come back, of the layers as they are now,
+  // and the focus goes to them if it was on what went.
   $effect(() => {
-    if (unfinished && dialog?.open) {
-      untrack(() => {
-        void tick().then(() => {
-          const focused = document.activeElement;
-          if (!focused || focused === document.body || !dialog?.contains(focused)) {
-            document.getElementById(`${uid}-stopped`)?.focus();
-          }
-        });
+    const stopped = unfinished !== null;
+    untrack(() => {
+      const ended = wasStopped && !stopped && working === null;
+      wasStopped = stopped;
+      if (!dialog?.open || (!stopped && !ended)) return;
+      if (ended) {
+        order = currentOrder(model.layers.length);
+        failure = null;
+        failureStop = null;
+        changed = null;
+        seenVersion = keyboard.layoutVersion;
+        follower?.refresh(order);
+      }
+      void tick().then(() => {
+        const focused = document.activeElement;
+        if (focused && focused !== document.body && dialog?.contains(focused)) return;
+        focusFirst();
       });
-    }
+    });
   });
 
   function start() {
@@ -123,11 +141,13 @@
     previewState = { state: "waiting" };
     lastPreview = null;
     working = null;
+    writingModel = null;
     failure = null;
     failureStop = null;
     changed = null;
     seenVersion = keyboard.layoutVersion;
-    drag = null;
+    wasStopped = unfinished !== null;
+    dragging = false;
     follower = new PreviewFollower(api.previewArrange, (state) => {
       previewState = state;
       if (state.state === "ready") lastPreview = state.preview;
@@ -137,91 +157,24 @@
 
   function focusFirst() {
     if (unfinished) document.getElementById(`${uid}-stopped`)?.focus();
-    else if (order.length > 1) document.getElementById(rowId(order[1]))?.focus();
+    else rows?.focusFirst();
   }
 
-  const rowId = (layer: number) => `${uid}-row-${layer}`;
-  const stepId = (layer: number, step: -1 | 1) => `${uid}-${step < 0 ? "up" : "down"}-${layer}`;
-
-  /** A new order shown: its preview is asked for after the pause */
+  /** Another order shown: its preview is asked for after the pause */
   function show(next: number[]) {
-    if (next === order) return;
     order = next;
     failure = null;
     follower?.follow(next);
   }
 
-  /** ↑ or ↓ (or Alt+↑, Alt+↓) on the row at a position; the focus stays on what had it, in the row moved */
-  async function step(position: number, direction: -1 | 1, keep: string) {
-    if (working !== null || drag !== null || !canStep(order, position, direction)) return;
-    show(moveStep(order, position, direction));
-    await tick();
-    document.getElementById(keep)?.focus();
-  }
-
-  function rowKeys(event: KeyboardEvent, position: number) {
-    const layer = order[position];
-    const direction = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
-    if (direction === 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    if (event.altKey) {
-      event.preventDefault();
-      const target = event.target as HTMLElement;
-      void step(position, direction, target.id || rowId(layer));
-    } else if ((event.target as HTMLElement).classList.contains("handle")) {
-      // plain arrows go from handle to handle
-      event.preventDefault();
-      const next = order[position + direction];
-      if (next !== undefined && position + direction >= 1) document.getElementById(rowId(next))?.focus();
-    }
-  }
-
-  // ---- dragging a row by its handle ----
-
-  function grab(event: PointerEvent, layer: number) {
-    if (event.button !== 0 || working !== null || drag !== null) return;
-    // the row moves among the others as the pointer goes: its events are followed on the window (a pointer captured
-    // by the handle would lose it as the handle moves in the page)
-    event.preventDefault();
-    drag = { layer, pointerId: event.pointerId, before: order };
-  }
-
-  function dragMove(event: PointerEvent) {
-    if (!drag || event.pointerId !== drag.pointerId || !list) return;
-    const from = order.indexOf(drag.layer);
-    // the position the pointer is at: after every other row whose middle it has passed
-    let to = 1;
-    for (const row of list.querySelectorAll<HTMLElement>("li[data-layer]")) {
-      if (Number(row.dataset.layer) === drag.layer) continue;
-      const box = row.getBoundingClientRect();
-      if (event.clientY > box.top + box.height / 2) to++;
-    }
-    if (to !== from) order = moveTo(order, from, to);
-  }
-
-  function drop(event: PointerEvent) {
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    const layer = drag.layer;
-    const before = drag.before;
-    drag = null;
-    const next = order;
-    order = before;
-    show(next);
-    document.getElementById(rowId(layer))?.focus();
-  }
-
-  function dragCancel(event: PointerEvent) {
-    if (drag && event.pointerId === drag.pointerId) {
-      order = drag.before;
-      drag = null;
-    }
-  }
-
   // ---- the buttons ----
 
-  function reset() {
-    if (working !== null) return;
+  async function reset() {
+    if (working !== null || dragging || isCurrent(order)) return;
     show(currentOrder(model.layers.length));
-    if (order.length > 1) document.getElementById(rowId(order[1]))?.focus();
+    // once the rows are drawn in that order
+    await tick();
+    rows?.focusFirst();
   }
 
   /** Apply, Finish or Put back. Why it wasn't done is said once: by the stop, when it stopped partway (the stopped
@@ -231,6 +184,7 @@
     if (working !== null) return;
     working = kind;
     workingLabel = label;
+    writingModel = model;
     failure = null;
     failureStop = null;
     changed = null;
@@ -252,6 +206,7 @@
     if (done) {
       dialog?.close();
     } else {
+      writingModel = null;
       follower?.refresh(order);
     }
   }
@@ -260,7 +215,7 @@
     if (!canApply || !preview) return;
     const chosen = [...order];
     const expect = preview.layoutVersion;
-    void run("apply", writingLabel(preview, hasEncoders), (report) => onapply(chosen, expect, report));
+    void run("apply", writingLabel(preview, model.encoders.length > 0), (report) => onapply(chosen, expect, report));
   }
 
   function finish() {
@@ -273,46 +228,29 @@
     void run("put-back", "Putting back…", onputback);
   }
 
-  /** A layer's own name, or null when it was never named */
-  function ownName(layer: number): string | null {
-    const shown = model.layers[layer];
-    return shown?.customName ? shown.name : null;
-  }
-
-  /** Scrolls a part of the summary into view (the summary scrolls when it is longer than its room) */
-  function reveal(id: string) {
-    document.getElementById(id)?.scrollIntoView({ block: "nearest" });
-  }
-
-  /** How a layer is reached, in one line: the Overview's labels */
-  function reachOf(layer: number): string {
-    const reach = analysis.reach[layer];
-    if (!reach) return "";
-    const warning = unreachedReason(reach);
-    const ways = reach.ways.map((w) => wayLabel(w, phrases)).join("; ");
-    return warning ? `${warning}${ways ? `: ${ways}` : ""}` : ways;
+  /** Esc waits for a write (pressed twice, the browser would close the dialog all the same: the key is stopped
+   * here); during a drag it only puts the row back */
+  function escape(event: KeyboardEvent) {
+    if (event.key !== "Escape") return;
+    if (working !== null || rows?.cancelDrag()) event.preventDefault();
   }
 </script>
-
-<svelte:window onpointermove={dragMove} onpointerup={drop} onpointercancel={dragCancel} />
 
 <dialog
   bind:this={dialog}
   class="arrange-dialog"
   aria-labelledby="{uid}-title"
   aria-describedby="{uid}-about"
+  onkeydown={escape}
   oncancel={(event) => {
-    // Esc waits for a write; during a drag it only puts the row back
-    if (working !== null) event.preventDefault();
-    else if (drag !== null) {
-      event.preventDefault();
-      order = drag.before;
-      drag = null;
-    }
+    // a close asked for some other way (a gesture) waits too
+    if (working !== null || dragging) event.preventDefault();
+    rows?.cancelDrag();
   }}
   onclose={() => {
     follower?.stop();
     follower = null;
+    writingModel = null;
     onclose();
   }}
 >
@@ -327,7 +265,7 @@
     </p>
     {#if !unfinished}
       <p id="{uid}-keys" class="keys">Drag a layer by its handle, or use ↑ and ↓. On a handle, Alt+↑ and Alt+↓ move
-        the layer.</p>
+        the layer; Alt+Home and Alt+End, to position 1 or the end.</p>
     {/if}
   </header>
 
@@ -343,134 +281,51 @@
     </div>
     <footer class="foot">
       <p class="saving">Finish and Put back write to the keyboard at once.</p>
-      <Button aria-disabled={working !== null || undefined} onclick={() => {
-        if (working === null) dialog?.close();
-      }}>Close</Button>
-      <Button aria-disabled={working !== null || !canEdit || undefined} onclick={putBack}>
-        {working === "put-back" ? workingLabel : "Put back"}
-      </Button>
-      <Button variant="primary" aria-disabled={working !== null || !canEdit || undefined} onclick={finish}>
-        {working === "finish" ? workingLabel : "Finish"}
-      </Button>
+      <div class="buttons">
+        <Button aria-disabled={working !== null || undefined} onclick={() => {
+          if (working === null) dialog?.close();
+        }}>Close</Button>
+        <Button class={!canEdit && working === null ? "off" : undefined}
+          aria-disabled={working !== null || !canEdit || undefined} onclick={putBack}>
+          {working === "put-back" ? workingLabel : "Put back"}
+        </Button>
+        <Button variant="primary" class={!canEdit && working === null ? "off" : undefined}
+          aria-disabled={working !== null || !canEdit || undefined} onclick={finish}>
+          {working === "finish" ? workingLabel : "Finish"}
+        </Button>
+      </div>
     </footer>
   {:else}
     <div class="body rows-body">
-      <ol class="rows" bind:this={list} aria-label="Layers, in their new order">
-        <li class="row fixed">
-          <span class="position">0</span>
-          <svg class="lock" viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
-            <path d="M5.5 7V5a2.5 2.5 0 015 0v2" />
-          </svg>
-          <span class="text">
-            <span class="line"><span class="name" title={nameAfter(model.layers[0], 0)}>{nameAfter(model.layers[0], 0)}</span></span>
-            <span class="reach">always first: the keyboard starts on it</span>
-          </span>
-        </li>
-        {#each order.slice(1) as layer, i (layer)}
-          {@const position = i + 1}
-          <!-- the name it will have: a layer never named takes its new position's default name -->
-          {@const name = nameAfter(model.layers[layer], position)}
-          {@const reach = reachOf(layer)}
-          <li class="row" class:dragging={drag?.layer === layer} class:moved={layer !== position} data-layer={layer}>
-            <span class="position">{position}</span>
-            <!-- the row's handle: dragged, or with the focus, Alt+↑ and Alt+↓ move the row; ↑ and ↓ go to the next -->
-            <button
-              type="button"
-              id={rowId(layer)}
-              class="handle"
-              aria-label="{name}, position {position}{layer !== position ? `, was ${layer}` : ""}"
-              aria-describedby="{uid}-keys"
-              title="Drag to move {name}"
-              onkeydown={(e) => rowKeys(e, position)}
-              onpointerdown={(e) => grab(e, layer)}
-            >
-              <svg viewBox="0 0 10 16" aria-hidden="true">
-                {#each [3, 8, 13] as y (y)}<circle cx="3" cy={y} r="1.3" /><circle cx="7" cy={y} r="1.3" />{/each}
-              </svg>
-            </button>
-            <span class="text">
-              <span class="line">
-                <span class="name" title={name}>{name}</span>
-                {#if layer !== position}<span class="was">← was {layer}</span>{/if}
-              </span>
-              <span class="reach" title={reach || undefined}>{reach || "nothing reaches it"}</span>
-            </span>
-            <span class="steps">
-              <button type="button" id={stepId(layer, -1)} class="step" aria-label="Move {name} up"
-                aria-disabled={!canStep(order, position, -1) || working !== null || undefined}
-                onkeydown={(e) => rowKeys(e, position)}
-                onclick={() => void step(position, -1, stepId(layer, -1))}>↑</button>
-              <button type="button" id={stepId(layer, 1)} class="step" aria-label="Move {name} down"
-                aria-disabled={!canStep(order, position, 1) || working !== null || undefined}
-                onkeydown={(e) => rowKeys(e, position)}
-                onclick={() => void step(position, 1, stepId(layer, 1))}>↓</button>
-            </span>
-          </li>
-        {/each}
-      </ol>
+      <ArrangeRows
+        bind:this={rows}
+        {order}
+        model={shownModel}
+        {analysis}
+        {phrases}
+        busy={working !== null}
+        {uid}
+        keysId="{uid}-keys"
+        onorder={show}
+        ondrag={(on) => (dragging = on)}
+      />
     </div>
 
-    <!-- by the footer, whatever the list's length: why Apply is off, or what it warns of, is always in view. Longer
-         than its room, it scrolls, its first line (the flags) staying put. -->
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex (a region that can scroll takes the focus, for the keys) -->
-    <section class="summary" class:waiting={previewState.state === "waiting"} aria-label="What Apply changes"
-      tabindex="0">
-      <div aria-live="polite">
-        {#if previewState.state === "failed"}
-          <p class="problem">Couldn't check this order: {causeMessage(previewState.error)}</p>
-        {:else if shownPreview}
-          {@const p = shownPreview}
-          {#if p.problems.length > 0 || triText || pdfText}
-            <p class="flags">
-              {#if p.problems.length > 0}
-                <button type="button" class="flag bad" onclick={() => reveal(`${uid}-problems`)}>
-                  Can't apply: {p.problems.length === 1 ? "a layer number wouldn't fit" :
-                    `${p.problems.length} layer numbers wouldn't fit`}
-                </button>
-              {/if}
-              {#if triText}
-                <button type="button" class="flag warn" onclick={() => reveal(`${uid}-warning`)}>
-                  ⚠ Fn1 and Fn2 will reach other layers
-                </button>
-              {/if}
-              {#if pdfText}
-                <button type="button" class="flag warn" onclick={() => reveal(`${uid}-start-up`)}>
-                  ⚠ A saved start-up layer keeps its number
-                </button>
-              {/if}
-            </p>
-          {/if}
-          <p class="will">{previewState.state === "waiting" ? "Checking… " : ""}{summaryText(p, hasEncoders)}</p>
-          {#if p.problems.length > 0}
-            <div class="problem" id="{uid}-problems">
-              <p>This order can't be written: a layer number wouldn't fit where it must go.</p>
-              <ul>
-                {#each p.problems as problem, n (n)}<li>{problem}</li>{/each}
-              </ul>
-            </div>
-          {/if}
-          {#if triText}
-            <p class="warning" id="{uid}-warning">{triText}</p>
-          {/if}
-          {#if pdfText}
-            <p class="warning start-up" id="{uid}-start-up">{pdfText}</p>
-          {/if}
-          {#if p.needsUnlock && p.moves.length > 0 && keyboard.unlock.state.state !== "unlocked"}
-            <p class="note">Apply asks for the keyboard to be unlocked first: it moves QK_BOOT or changes macros.</p>
-          {/if}
-        {:else}
-          <p class="will">Checking what this order changes…</p>
-        {/if}
-      </div>
-      {#if changed}<p class="changed" role="alert">{layersChangedText(changed.applied, changed.reset)}</p>{/if}
-      {#if failure}<p class="problem" role="alert">{failure}</p>{/if}
-    </section>
+    <ArrangeSummary
+      {previewState}
+      {lastPreview}
+      model={shownModel}
+      {uid}
+      {canEdit}
+      {changed}
+      failure={failureShown}
+    />
 
     <footer class="foot">
       <p class="saving">Nothing is written until you Apply.</p>
       <div class="buttons">
-        <Button aria-disabled={working !== null || isCurrent(order) || undefined} onclick={reset}>Reset</Button>
+        <Button class={isCurrent(order) && working === null ? "off" : undefined}
+          aria-disabled={working !== null || isCurrent(order) || undefined} onclick={() => void reset()}>Reset</Button>
         <Button aria-disabled={working !== null || undefined} onclick={() => {
           if (working === null) dialog?.close();
         }}>Cancel</Button>
@@ -537,234 +392,14 @@
     overflow-y: auto;
   }
 
-  .rows {
-    display: grid;
-    gap: 6px;
-    margin: 0;
-    padding: 2px;
-    list-style: none;
-  }
-
-  .row {
-    display: grid;
-    grid-template-columns: 26px 18px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    padding: 7px 8px 7px 6px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface);
-  }
-
-  .row.fixed {
-    background: var(--surface-2);
-  }
-
-  .row.moved {
-    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  }
-
-  .row.dragging {
-    border-color: var(--accent);
-    background: var(--accent-weak);
-    box-shadow: var(--shadow-lg);
-  }
-
-  .position {
-    display: inline-grid;
-    place-items: center;
-    height: 22px;
-    border-radius: 6px;
-    background: color-mix(in srgb, var(--tone-layer) 14%, transparent);
-    color: var(--tone-layer);
-    font-size: 12px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .lock {
-    width: 15px;
-    height: 15px;
-    justify-self: center;
-    fill: none;
-    stroke: var(--text-3);
-    stroke-width: 1.4;
-  }
-
-  .handle {
-    display: grid;
-    place-items: center;
-    height: 30px;
-    border-radius: 6px;
-    color: var(--text-3);
-    cursor: grab;
-    touch-action: none;
-  }
-
-  .handle {
-    width: 18px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-  }
-
-  .handle:hover {
-    background: var(--surface-2);
-    color: var(--text);
-  }
-
-  .row:focus-within {
-    border-color: var(--border-strong);
-  }
-
-  .row.dragging .handle {
-    cursor: grabbing;
-  }
-
-  .handle svg {
-    width: 10px;
-    height: 16px;
-    fill: currentColor;
-  }
-
-  .text {
-    display: grid;
-    min-width: 0;
-  }
-
-  .line {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  /* a long name is cut short; the tooltip has all of it */
-  .name {
-    min-width: 0;
-    overflow: hidden;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .was {
-    flex: none;
-    color: var(--accent);
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  .reach {
-    overflow: hidden;
-    color: var(--text-3);
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .steps {
-    display: flex;
-    gap: 4px;
-  }
-
-  .step {
-    width: 30px;
-    height: 30px;
-    border: 1px solid var(--border-strong);
-    border-radius: 7px;
-    background: var(--surface);
-    font-size: 14px;
-    cursor: pointer;
-  }
-
-  .step:hover:not([aria-disabled="true"]) {
-    background: var(--surface-2);
-  }
-
-  .step[aria-disabled="true"] {
-    opacity: 0.4;
-    cursor: default;
-  }
-
   /* the rows scroll; the summary below them keeps its place by the footer */
   .rows-body {
     flex: 1 1 auto;
     min-height: 120px;
   }
 
-  .summary {
-    display: grid;
-    flex: 0 0 auto;
-    gap: 8px;
-    max-height: 40vh;
-    max-height: 40dvh;
-    padding: 10px 20px 12px;
-    overflow-y: auto;
-    border-top: 1px solid var(--border);
-    font-size: 13px;
-  }
-
-  .summary > div {
-    display: grid;
-    gap: 8px;
-  }
-
-  .summary:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-  }
-
-  /* why Apply is off, or what it warns of, in one line that stays while the summary scrolls */
-  .flags {
-    position: sticky;
-    top: -10px;
-    z-index: 1;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: -10px -4px 0;
-    padding: 10px 4px 4px;
-    background: var(--surface);
-  }
-
-  .flag {
-    padding: 3px 9px;
-    border: 1px solid;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .flag.bad {
-    border-color: var(--danger-line);
-    background: var(--danger-weak);
-    color: var(--danger);
-  }
-
-  .flag.warn {
-    border-color: color-mix(in srgb, var(--warning-text) 30%, var(--border));
-    background: var(--warning-weak);
-    color: var(--warning-text);
-  }
-
-  .summary p,
   .stopped p {
     margin: 0;
-  }
-
-  .summary.waiting .will {
-    color: var(--text-3);
-  }
-
-  .warning {
-    padding: 8px 12px;
-    border: 1px solid color-mix(in srgb, var(--warning-text) 25%, var(--border));
-    border-radius: 8px;
-    background: var(--warning-weak);
-    color: var(--warning-text);
   }
 
   .problem {
@@ -777,26 +412,8 @@
     font-size: 13px;
   }
 
-  .problem p {
-    margin: 0;
-  }
-
-  .problem ul {
-    margin: 4px 0 0;
-    padding-left: 18px;
-    overflow-wrap: anywhere;
-  }
-
   .note {
     color: var(--text-2);
-  }
-
-  .changed {
-    padding: 8px 12px;
-    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-    border-radius: 8px;
-    background: var(--accent-weak);
-    color: var(--text);
   }
 
   .stopped {
@@ -836,9 +453,18 @@
     gap: 8px;
   }
 
-  /* Apply that can't be used: it keeps the focus (aria-disabled), and looks off */
-  .foot :global(.off) {
+  /* a button that can't be used just now: it keeps the focus (aria-disabled), and looks off, with neither the
+     progress cursor of a button waiting for a write nor a hover (outranking the Button's own rules) */
+  .foot :global(.btn.off[aria-disabled="true"]) {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+
+  .foot :global(.btn.off[aria-disabled="true"]:hover) {
+    background: var(--surface);
+  }
+
+  .foot :global(.btn.primary.off[aria-disabled="true"]:hover) {
+    background: var(--accent);
   }
 </style>

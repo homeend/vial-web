@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArrangePreview } from "../api/types";
 import {
-  arrangeBlocked, canStep, currentOrder, isCurrent, keptText, layersChangedText, moveStep, moveTo, nameAfter,
+  arrangeBlocked, canStep, currentOrder, dropPosition, isCurrent, keptText, layersChangedText, moveStep, moveTo, nameAfter,
   positionAfter, PREVIEW_PAUSE_MS, PreviewFollower, reverseOrder, savedDefaultWarning, stoppedText, summaryText,
   triLayerWarning, unsavedQuestion, writingLabel, type PreviewState,
 } from "./arrange";
@@ -53,6 +53,17 @@ describe("the order", () => {
       expect(back.map((position) => order[position])).toEqual(currentOrder(order.length));
     }
     expect(reverseOrder([0, 3, 1, 2])).toEqual([0, 2, 3, 1]);
+  });
+
+  it("puts a dragged row after every other row whose middle the pointer has passed", () => {
+    // the other movable rows, 30 px tall with 6 px between: their middles at 15, 51 and 87
+    const rows = [{ top: 0, height: 30 }, { top: 36, height: 30 }, { top: 72, height: 30 }];
+    expect(dropPosition(rows, -40)).toBe(1);
+    expect(dropPosition(rows, 15)).toBe(1);
+    expect(dropPosition(rows, 16)).toBe(2);
+    expect(dropPosition(rows, 60)).toBe(3);
+    expect(dropPosition(rows, 500)).toBe(4);
+    expect(dropPosition([], 10)).toBe(1);
   });
 
   it("tells where a layer goes, for the Edit view to follow it", () => {
@@ -229,6 +240,55 @@ describe("PreviewFollower", () => {
     await vi.runAllTimersAsync();
     expect(last()).toEqual({ state: "ready", preview: "newer" });
     expect(shown.filter((s) => s.state === "ready")).toHaveLength(1);
+  });
+
+  it("waits again when asked again (the keyboard changed): the answer shown is no longer the one to apply", async () => {
+    follower.follow([0, 2, 1, 3]);
+    vi.advanceTimersByTime(PREVIEW_PAUSE_MS);
+    asked[0].answer("before");
+    await vi.runAllTimersAsync();
+    follower.refresh([0, 2, 1, 3]);
+    expect(last()).toEqual({ state: "waiting" });
+    asked[1].answer("after");
+    await vi.runAllTimersAsync();
+    expect(last()).toEqual({ state: "ready", preview: "after" });
+  });
+
+  it("A, then B, then A again: A's first answer, late, is used only if no later answer was", async () => {
+    follower.follow([0, 2, 1, 3]);
+    vi.advanceTimersByTime(PREVIEW_PAUSE_MS);
+    follower.follow([0, 1, 3, 2]);
+    vi.advanceTimersByTime(PREVIEW_PAUSE_MS);
+    follower.follow([0, 2, 1, 3]);
+    vi.advanceTimersByTime(PREVIEW_PAUSE_MS);
+    expect(asked.map((a) => a.order)).toEqual([[0, 2, 1, 3], [0, 1, 3, 2], [0, 2, 1, 3]]);
+    // B's answer: its order is no longer shown
+    asked[1].answer("B");
+    await vi.runAllTimersAsync();
+    expect(last()).toEqual({ state: "waiting" });
+    // A's second answer, then its first, late: the first is older, and dropped
+    asked[2].answer("A again");
+    await vi.runAllTimersAsync();
+    asked[0].answer("A first");
+    await vi.runAllTimersAsync();
+    expect(last()).toEqual({ state: "ready", preview: "A again" });
+    expect(shown.filter((s) => s.state === "ready")).toHaveLength(1);
+  });
+
+  it("A, then B, then A again: A's first answer, before the second, is shown until the second comes", async () => {
+    follower.follow([0, 2, 1, 3]);
+    vi.advanceTimersByTime(PREVIEW_PAUSE_MS);
+    follower.follow([0, 1, 3, 2]);
+    vi.advanceTimersByTime(PREVIEW_PAUSE_MS);
+    follower.follow([0, 2, 1, 3]);
+    vi.advanceTimersByTime(PREVIEW_PAUSE_MS);
+    // for the order shown, from the same keyboard: the second replaces it once it comes
+    asked[0].answer("A first");
+    await vi.runAllTimersAsync();
+    expect(last()).toEqual({ state: "ready", preview: "A first" });
+    asked[2].answer("A again");
+    await vi.runAllTimersAsync();
+    expect(last()).toEqual({ state: "ready", preview: "A again" });
   });
 
   it("shows a failure, and nothing once stopped", async () => {

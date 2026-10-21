@@ -215,12 +215,13 @@
       ? combosUsing(analysis.combos, model, analysis.codes[kept.layer] ?? new Map(), kept.layer, kept.selection)
       : [],
   );
-  /** Finish or Put back from the bar: the bar goes once it is done, and the focus, if it was on it, to the heading */
+  /** Finish or Put back from the bar: the bar goes once it is done (or once the session says nothing is unfinished:
+   * another tab finished it), and the focus, if it was on it, to the heading */
   async function fromBar(run: () => Promise<boolean>): Promise<boolean> {
     const done = await run();
     await tick();
     const focused = document.activeElement;
-    if (done && (!focused || focused === document.body)) document.getElementById("keymap-title")?.focus();
+    if (!focused || focused === document.body) document.getElementById("keymap-title")?.focus();
     return done;
   }
 
