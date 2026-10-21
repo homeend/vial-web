@@ -13,13 +13,15 @@ class QmkSettingsCodec:
 
     @classmethod
     def load(cls, path=None):
-        """ Load setting definitions: from path, by default the qmk_settings.json bundled with Vial """
-        cls.qsid_fields = defaultdict(list)
+        """ Load setting definitions: from path, by default the qmk_settings.json bundled with Vial. If that fails,
+        nothing changes (and the next use tries again). """
         with open(path or resources.path(resources.QMK_SETTINGS), "r", encoding="utf-8") as inf:
-            cls.settings_defs = json.load(inf)
-        for tab in cls.settings_defs["tabs"]:
+            settings_defs = json.load(inf)
+        qsid_fields = defaultdict(list)
+        for tab in settings_defs["tabs"]:
             for field in tab["fields"]:
-                cls.qsid_fields[field["qsid"]].append(field)
+                qsid_fields[field["qsid"]].append(field)
+        cls.settings_defs, cls.qsid_fields = settings_defs, qsid_fields
 
     @classmethod
     def fields(cls):

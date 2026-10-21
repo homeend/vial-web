@@ -1,8 +1,10 @@
+import gc
 import logging
 import signal
 import sys
 import threading
 import time
+import weakref
 
 import pytest
 import uvicorn
@@ -96,6 +98,22 @@ def test_the_console_handler_is_installed_while_in_the_block_and_removed_after(m
         assert handler.routine(console.CTRL_BREAK_EVENT) == 1 and stops == [True]
     assert handler.removed
     assert handler.routine in console._KEEP  # Windows may still be calling it as it is removed: never freed
+    assert handler.routine(console.CTRL_BREAK_EVENT) == 0 and stops == [True]  # removed: left to the next handler
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the console handler is Windows'")
+def test_a_removed_console_handler_keeps_nothing_of_vial_alive():
+    """ _KEEP holds every routine for good: once removed, a routine must not hold the server (and its keyboard) """
+    class Stop:
+        def __call__(self):
+            pass
+    stop = Stop()
+    alive = weakref.ref(stop)
+    with console.StopOnConsoleClose(stop):
+        pass
+    del stop
+    gc.collect()
+    assert alive() is None
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="the console handler is Windows'")
@@ -131,7 +149,8 @@ def test_signal_handlers_that_cannot_be_installed_are_logged_and_vial_runs_on_wi
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no SIGHUP, and nothing sends it SIGTERM")
 @pytest.mark.parametrize("name", ["SIGHUP", "SIGTERM"])
 def test_a_signal_ignored_by_what_started_vial_stays_ignored(name):
-    """ nohup: Vial runs on when its terminal is closed """
+    """ Vial doesn't take a signal ignored by what started it. SIGHUP: nohup, Vial runs on when its terminal is closed.
+    SIGTERM: uvicorn takes it all the same while serving, and stops on it. """
     signum = getattr(signal, name)
     before = signal.signal(signum, signal.SIG_IGN)
     try:
@@ -147,11 +166,20 @@ def test_sigterm_stops_the_server_and_vial_cleans_up_although_uvicorn_raises_it_
     """ uvicorn takes SIGTERM (log-out, kill) while serving. Once stopped it restores the previous handler and raises
     SIGTERM again: with the default handler the process would end before serve() closes the keyboard """
     before = signal.getsignal(signal.SIGTERM)
-    server = uvicorn.Server(uvicorn.Config(None))
-    stops = []
-    with console.StopOnConsoleClose(lambda: stops.append(True)):
-        with server.capture_signals():  # what uvicorn.Server.serve() runs in
-            signal.raise_signal(signal.SIGTERM)
-            assert server.should_exit and stops == []  # uvicorn's own handler
-        assert stops == [True]  # raised again: here, and the block goes on to its cleanup
-    assert signal.getsignal(signal.SIGTERM) == before
+    outside = []
+
+    def recording(signum, frame):  # stands in for the default handler: a SIGTERM that gets past Vial fails the test
+        outside.append(signum)    # instead of ending pytest
+    signal.signal(signal.SIGTERM, recording)
+    try:
+        server = uvicorn.Server(uvicorn.Config(None))
+        stops = []
+        with console.StopOnConsoleClose(lambda: stops.append(True)):
+            with server.capture_signals():  # what uvicorn.Server.serve() runs in
+                signal.raise_signal(signal.SIGTERM)
+                assert server.should_exit and stops == []  # uvicorn's own handler
+            assert stops == [True]  # raised again: here, and the block goes on to its cleanup
+        assert outside == []
+        assert signal.getsignal(signal.SIGTERM) is recording
+    finally:
+        signal.signal(signal.SIGTERM, before or signal.SIG_DFL)

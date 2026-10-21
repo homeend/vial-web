@@ -11,7 +11,8 @@ handle.
 
 Elsewhere a terminal closed sends SIGHUP, and log-out or kill sends SIGTERM. Each would end the process at once
 (uvicorn takes SIGTERM while serving, but raises it again once it has stopped, before the keyboard is closed): both ask
-the server to stop instead, unless what started Vial ignores them (nohup).
+the server to stop instead. A SIGHUP ignored by what started Vial (nohup) stays ignored: Vial runs on when its terminal
+is closed.
 """
 import logging
 import signal
@@ -32,7 +33,8 @@ ENDING_SIGNALS = ("SIGHUP", "SIGTERM")
 """ signals that end the process at once (a terminal closed; log-out or kill), where the platform has them """
 
 _KEEP = []
-""" every console control routine installed: Windows may still be calling one as it is removed, so none is freed """
+""" every console control routine installed: Windows may still be calling one as it is removed, so none is freed. A
+removed one holds nothing else of Vial (see _Installed.uninstall). """
 
 
 class ConsoleStop:
@@ -73,13 +75,19 @@ class _Installed:
         self.kernel32.SetConsoleCtrlHandler.restype = wintypes.BOOL
         # Ctrl+C reaches Vial even if what started it ignored Ctrl+C, which a process inherits
         self.kernel32.SetConsoleCtrlHandler(routine(), False)  # routine(): no routine (NULL)
-        self.routine = routine(lambda event: bool(console_stop.handle(event)))
+        self.routine = routine(self._handle)
         _KEEP.append(self.routine)  # kept for good: Windows calls it while installed, and maybe as it is removed
         if not self.kernel32.SetConsoleCtrlHandler(self.routine, True):
             raise ctypes.WinError(ctypes.get_last_error())
 
+    def _handle(self, event):
+        console_stop = self.console_stop
+        return console_stop is not None and bool(console_stop.handle(event))
+
     def uninstall(self):
         self.kernel32.SetConsoleCtrlHandler(self.routine, False)
+        # the routine is kept for good: it lets go of the server (and the app, the keyboard's manager) it would stop
+        self.console_stop = None
 
 
 class StopOnConsoleClose:

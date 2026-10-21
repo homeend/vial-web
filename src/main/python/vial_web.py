@@ -50,11 +50,31 @@ SHUTDOWN_GRACE = 2
 or a browser killed) may never be let go of on Windows: asyncio's proactor transport fails to shut such a socket down
 before it tells the server the connection is gone, and the server would wait for it forever. Less than
 console.CLOSE_WAIT, so that a console window closed still lets Vial close the keyboard. """
+GRACE_EXCEEDED = "timeout graceful shutdown exceeded"
+""" in what uvicorn logs once SHUTDOWN_GRACE has run out: "Cancel N running task(s), timeout graceful ..." """
+
+
+class GraceExceededIsNoError(logging.Filter):
+    """ uvicorn logs as an error that it cancelled what was still running when SHUTDOWN_GRACE ran out. That is how Vial
+    stops when a tab's connection doesn't close in time (see SHUTDOWN_GRACE), after Quit Vial or Ctrl+C: logged as
+    information instead. """
+
+    def filter(self, record):
+        if record.levelno >= logging.ERROR and GRACE_EXCEEDED in str(record.msg):
+            record.levelno, record.levelname = logging.INFO, logging.getLevelName(logging.INFO)
+        return True
+
+
 UVICORN_LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {"grace_exceeded": {"()": GraceExceededIsNoError}},
     # no handlers of uvicorn's own: its messages, such as tracebacks of unhandled errors, go to vial.log
-    "loggers": {name: {"handlers": [], "propagate": True} for name in ("uvicorn", "uvicorn.error", "uvicorn.access")},
+    "loggers": {
+        "uvicorn": {"handlers": [], "propagate": True},
+        "uvicorn.error": {"handlers": [], "propagate": True, "filters": ["grace_exceeded"]},
+        "uvicorn.access": {"handlers": [], "propagate": True},
+    },
 }
 
 STARTED_MESSAGE = """Vial is running{fake}. Open it at:
@@ -545,13 +565,20 @@ def serve(args, manager, sock):
         if server is not None:
             server.should_exit = True
 
+    quit_used = []
+
     def quit_from_page():
-        # POST /api/shutdown has answered, and closed the keyboard
+        # POST /api/shutdown has answered, and closed the keyboard. Once: Quit asked again says nothing more.
+        if quit_used:
+            return
+        quit_used.append(True)
+        stop_server()  # first: a console that is gone already must not keep Vial running
         print(QUIT_MESSAGE, flush=True)
         logging.info("Quit Vial was used on the page")
-        stop_server()
 
-    app = create_app(manager, names, token, port, static_dir=resources.path(resources.WEB_DIST),
+    # the page says the web UI isn't built whenever the console does: also when web/dist is there without its page
+    web_ui = None if missing_ui else resources.path(resources.WEB_DIST)
+    app = create_app(manager, names, token, port, static_dir=web_ui,
                      on_all_clients_gone=all_tabs_closed, instance_id=instance, on_stop=quit_from_page)
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning", log_config=UVICORN_LOGGING,
                                            timeout_graceful_shutdown=SHUTDOWN_GRACE))

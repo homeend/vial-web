@@ -528,13 +528,14 @@ def test_quit_on_the_page_stops_the_server_once_the_keyboard_is_let_go_of(home, 
             assert not getattr(fake_server.seen["server"], "should_exit", False)
             fake_server.seen["quit"] = page.post("/api/shutdown", headers={"origin": base}).status_code
             fake_server.seen["closed"] = [d.closed for d in opened]
+            fake_server.seen["quit again"] = page.post("/api/shutdown", headers={"origin": base}).status_code
     monkeypatch.setattr(device_module, "SimulatedHidDevice", Device)
     fake_server.while_serving = quit_on_the_page
     assert vial_web.main(["--fake", "--no-browser"]) == 0
-    assert fake_server.seen["quit"] == 204
+    assert fake_server.seen["quit"] == fake_server.seen["quit again"] == 204
     assert fake_server.seen["closed"] == [True]  # by the time it answered
     assert fake_server.seen["server"].should_exit is True  # uvicorn stops
-    assert vial_web.QUIT_MESSAGE in capsys.readouterr().out
+    assert capsys.readouterr().out.count(vial_web.QUIT_MESSAGE) == 1  # asked twice, said once
     assert not os.path.exists(vial_web.session_file(True))
 
 
@@ -544,6 +545,43 @@ def test_serving_without_the_web_ui_built_says_how_to_build_it(home, fake_server
     out, err = capsys.readouterr()
     assert "the web UI isn't built" in err and "cd web && npm ci && npm run build" in err
     assert "Open it at" in out  # the API and the page that says so are served all the same
+
+
+def test_a_web_ui_folder_without_its_page_is_served_as_not_built(home, fake_server, monkeypatch, tmp_path, capsys):
+    """ web/dist there, but no index.html in it (a build that failed half-way): the page says so as the console does,
+    instead of answering 404 """
+    from fastapi.testclient import TestClient
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "assets" / "app.js").write_text("", encoding="utf-8")
+    where = resources.path
+    monkeypatch.setattr(resources, "path", lambda resource: str(dist) if resource == resources.WEB_DIST
+                        else where(resource))
+
+    def open_the_page():
+        base = "http://127.0.0.1:{}".format(fake_server.seen["address"][1])
+        with TestClient(fake_server.seen["app"], base_url=base) as page:
+            assert page.get(fake_server.seen["session"]["url"], follow_redirects=False).status_code == 303
+            response = page.get("/")
+            fake_server.seen["page"] = response.status_code, response.text
+    fake_server.while_serving = open_the_page
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert "the web UI isn't built" in capsys.readouterr().err
+    status, text = fake_server.seen["page"]
+    assert status == 200 and "The web interface isn't built yet" in text
+
+
+def test_uvicorn_running_out_of_grace_is_no_error(home, fake_server, caplog):
+    """ after Quit Vial or Ctrl+C, a tab's connection that doesn't close in time is cut (see SHUTDOWN_GRACE): that is
+    logged as information, not as an alarming error. uvicorn's real errors stay errors. """
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    uvicorn_log = logging.getLogger("uvicorn.error")
+    with caplog.at_level(logging.INFO):
+        uvicorn_log.error("Cancel %s running task(s), timeout graceful shutdown exceeded", 2)
+        uvicorn_log.error("Exception in ASGI application")
+    levels = {r.getMessage(): r.levelname for r in caplog.records if r.name == "uvicorn.error"}
+    assert levels == {"Cancel 2 running task(s), timeout graceful shutdown exceeded": "INFO",
+                      "Exception in ASGI application": "ERROR"}
 
 
 def test_stopping_waits_for_the_tabs_only_so_long(home, fake_server):

@@ -61,7 +61,7 @@ def test_frozen_the_unpacked_folder_is_read(frozen):
 
 
 def test_frozen_by_another_tool_without_an_unpacked_folder_reads_the_repository(monkeypatch):
-    # sys.frozen alone (another freezer, or a one-folder build that sets no _MEIPASS) is not PyInstaller's one-file
+    # sys.frozen alone (another freezer, that sets only sys.frozen) is not a PyInstaller build
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.delattr(sys, "_MEIPASS", raising=False)
     assert not resources.is_frozen()
@@ -77,6 +77,22 @@ def test_settings_definitions_are_read_from_the_unpacked_folder_when_frozen(froz
     monkeypatch.setattr(QmkSettingsCodec, "qsid_fields", None)
     QmkSettingsCodec.load()
     assert QmkSettingsCodec.settings_defs == definitions
+
+
+@pytest.mark.parametrize("missing", ["file", "garbled"])
+def test_settings_definitions_that_fail_to_load_are_tried_again_next_time(monkeypatch, tmp_path, missing):
+    """ A failed load leaves nothing half-loaded: the next use tries again (and fails again), instead of finding every
+    setting unsupported from then on """
+    monkeypatch.setattr(QmkSettingsCodec, "settings_defs", None)
+    monkeypatch.setattr(QmkSettingsCodec, "qsid_fields", None)
+    path = tmp_path / "qmk_settings.json"
+    if missing == "garbled":
+        path.write_text('{"tabs": [{"fields": [{"no qsid": 1}]}]}', encoding="utf-8")
+    monkeypatch.setattr(resources, "path", lambda resource: str(path))
+    for attempt in range(2):
+        with pytest.raises((OSError, KeyError)):
+            QmkSettingsCodec.is_qsid_supported(1)
+        assert QmkSettingsCodec.qsid_fields is None and QmkSettingsCodec.settings_defs is None
 
 
 def test_web_ui_missing_says_how_to_build_it(from_source, source_root):
@@ -101,6 +117,20 @@ def test_pyinstaller_datas_put_each_resource_at_its_bundled_path(from_source, so
         (os.path.join(str(source_root), "web", "dist"), "web"),
         (os.path.join(str(source_root), "src", "main", "resources", "base", "qmk_settings.json"), "."),
     ]
+
+
+def test_pyinstaller_datas_look_at_the_repository_only(source_root, monkeypatch, tmp_path_factory):
+    """ even run from a PyInstaller build: the web UI in the build's own folder is not what a new build bundles """
+    unpacked = tmp_path_factory.mktemp("unpacked")
+    (unpacked / "web").mkdir()
+    (unpacked / "web" / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(unpacked), raising=False)
+    with pytest.raises(FileNotFoundError, match="npm run build"):
+        resources.pyinstaller_datas()  # the repository has none
+    build_web_ui(source_root)
+    (unpacked / "web" / "index.html").unlink()
+    assert resources.pyinstaller_datas()[0] == (os.path.join(str(source_root), "web", "dist"), "web")
 
 
 def test_pyinstaller_datas_refuse_a_build_without_the_web_ui(from_source, source_root):

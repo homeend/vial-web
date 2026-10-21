@@ -29,38 +29,48 @@ BUNDLED = (WEB_DIST, QMK_SETTINGS)
 
 
 def is_frozen():
-    """ Whether this is the one-file executable (PyInstaller sets sys.frozen and sys._MEIPASS) """
+    """ Whether this is a PyInstaller build, such as the one-file executable: PyInstaller sets sys.frozen, and
+    sys._MEIPASS to the folder holding the bundled files (the one-file executable unpacks them there at start) """
     return bool(getattr(sys, "frozen", False)) and getattr(sys, "_MEIPASS", None) is not None
+
+
+def source_path(resource):
+    """ The resource's path in the repository """
+    return os.path.join(SOURCE_ROOT, *resource.source.split("/"))
 
 
 def path(resource):
     """ The resource's path: in the unpacked executable when frozen, else in the repository """
     if is_frozen():
         return os.path.join(sys._MEIPASS, *resource.bundled.split("/"))
-    return os.path.join(SOURCE_ROOT, *resource.source.split("/"))
+    return source_path(resource)
 
 
 WEB_BUILD_HINT = "build it first: cd web && npm ci && npm run build"
 
 
-def web_ui_missing():
-    """ Why the built web UI can't be served (a message saying how to build it), or None when it is there """
-    index = os.path.join(path(WEB_DIST), "index.html")
+def _web_ui_missing_in(folder):
+    index = os.path.join(folder, "index.html")
     if os.path.isfile(index):
         return None
     return "the web UI isn't built ({} is missing): {}".format(os.path.normpath(index), WEB_BUILD_HINT)
+
+
+def web_ui_missing():
+    """ Why the built web UI can't be served (a message saying how to build it), or None when it is there """
+    return _web_ui_missing_in(path(WEB_DIST))
 
 
 def pyinstaller_datas():
     """ vial.spec's `datas`, from the repository: (path in the repository, folder in the bundle) for each resource. A
     folder is copied into the folder of its bundled path, a file into the folder its bundled path names ("." for the
     top). FileNotFoundError when one is missing, so that an executable is never built without it. """
-    problem = web_ui_missing()
+    problem = _web_ui_missing_in(source_path(WEB_DIST))
     if problem:
         raise FileNotFoundError(problem)
     datas = []
     for resource in BUNDLED:
-        source = os.path.join(SOURCE_ROOT, *resource.source.split("/"))
+        source = source_path(resource)
         if not os.path.exists(source):
             raise FileNotFoundError("{} is missing".format(os.path.normpath(source)))
         if os.path.isdir(source):

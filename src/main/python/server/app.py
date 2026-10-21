@@ -790,13 +790,40 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     stopping = []
     """ the task letting go of the keyboard, once POST /api/shutdown was asked """
+    told_stopped = []
+    """ [True] once the tabs were told that Vial stopped: a tab connecting after that is told so first """
+    stop_called = []
+    """ [True] once on_stop was called: it is called once, however often Quit is asked """
 
     async def let_go():
-        await follower.shutdown()
-        await matrix.shutdown()
-        await asyncio.to_thread(manager.close)
-        log.info("the keyboard was let go of: stopping, as asked from the page")
-        await hub.broadcast({"type": "stopped"})
+        """ Each step is taken even if one before it failed (that is logged): the keyboard is let go of and the tabs
+        are told in any case. Never raises: the server stops all the same, and vial_web closes the keyboard again on
+        its way out. """
+        # the tabs close their links once told: that isn't "all tabs closed while Vial runs on"
+        hub.on_all_clients_gone = None
+        hub.stop()
+        try:
+            for name, step in (("the unlock follower", follower.shutdown), ("the matrix tester", matrix.shutdown)):
+                try:
+                    await step()
+                except Exception:
+                    log.exception("quit: stopping %s failed", name)
+            try:
+                await asyncio.to_thread(manager.close)
+                log.info("the keyboard was let go of: stopping, as asked from the page")
+            except Exception:
+                log.exception("quit: letting go of the keyboard failed; stopping all the same")
+        finally:
+            told_stopped.append(True)
+            try:
+                await hub.broadcast({"type": "stopped"})
+            except Exception:
+                log.exception("quit: telling the tabs that Vial stopped failed")
+
+    def stop_once():
+        if not stop_called:
+            stop_called.append(True)
+            on_stop()
 
     @app.post("/api/shutdown", status_code=204, response_class=Response)
     async def shutdown(background: BackgroundTasks):
@@ -808,8 +835,12 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             raise HTTPException(501, "this server can't be stopped from the page")
         if not stopping:
             stopping.append(asyncio.ensure_future(let_go()))
-        await asyncio.shield(stopping[0])
-        background.add_task(on_stop)
+        try:
+            await asyncio.shield(stopping[0])
+        except Exception:  # let_go never raises: should it all the same, Vial still stops
+            log.exception("quit: letting go of the keyboard failed; stopping all the same")
+        # by each request, in case one's answer never gets out: only the first to get there stops the server
+        background.add_task(stop_once)
         return Response(status_code=204)
 
     @app.websocket("/api/events")
@@ -821,7 +852,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         await ws.accept()
         await hub.add(ws)
         try:
-            await ws.send_json({"type": "connected" if manager.connected else "disconnected"})
+            if told_stopped:  # Quit was used: Vial is gone for good, whatever the keyboard
+                first = {"type": "stopped"}
+            else:
+                first = {"type": "connected" if manager.connected else "disconnected"}
+            await ws.send_json(first)
             while True:
                 message = await ws.receive()
                 if message["type"] == "websocket.disconnect":
