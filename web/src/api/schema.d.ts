@@ -532,9 +532,9 @@ export interface paths {
          *
          *     409 with code "layoutChanged" when `expect` isn't the keyboard's layout version (nothing was written); 409 when
          *     the order has problems, or an arrange of this keyboard is unfinished; 422 for an order that isn't the keyboard's
-         *     layers with layer 0 first; 423 when it needs the keyboard unlocked (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange), as does 507: every
-         *     write went through but the layer names couldn't be saved (Session.arrange.namesOnly). Either way the layout
-         *     version was counted up.
+         *     layers with layer 0 first; 423 when it needs the keyboard unlocked (nothing was written). A write that fails
+         *     leaves the arrange unfinished (Session.arrange), as does 507: every write went through but the layer names
+         *     couldn't be saved (Session.arrange.namesOnly). Either way the layout version was counted up.
          */
         post: operations["arrange_layers_api_layers_arrange_post"];
         delete?: never;
