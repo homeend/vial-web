@@ -78,7 +78,7 @@ lighting not saved) makes Arrange ask first, as Quit and the keyboard switch do.
 
 - **`renumber(code, mapping, protocol)`**: the keycode with its layer number changed through `mapping` (old layer →
   new layer), or the same keycode when it holds no layer number.
-  - "Holds a layer number" is defined once, with `describe.py`'s ranges (`_REFERENCES_V6` / `_REFERENCES_V5`): MO,
+  - "Holds a layer number" is defined once, with `describe.py`'s ranges (one `REFERENCES` table): MO,
     TG, TO, TT, OSL, DF, PDF, `LT`, and LM with its own bit layout on each protocol (layer in bits 5–8 on protocol 6,
     bits 4–7 on protocol 5). `describe.py` and `layers.py` share these definitions; none is copied.
   - A new number that doesn't fit the keycode's field (LT and LM: layers 0–15 on protocol 6) is a **problem**, never
@@ -109,8 +109,8 @@ lighting not saved) makes Arrange ask first, as Quit and the keyboard switch do.
 
 ### Routes (`server/app.py`)
 
-- **`POST /api/layers/arrange/preview`** `{order}` → `{moves, keys, references, keyOverrides, warnings, problems,
-  needsUnlock}`. Writes nothing.
+- **`POST /api/layers/arrange/preview`** `{order}` → `{moves, keys, references, keyOverrides, triLayer, savedDefault,
+  problems, writes, needsUnlock, layoutVersion}`. Writes nothing.
 - **`POST /api/layers/arrange`** `{order}` → the new full state, as `POST /api/layout-file` returns it. Computes the
   target again from the keyboard's current state (never from the preview), refuses (409) when it has problems, then
   writes it (section 3).
@@ -138,8 +138,8 @@ through the existing broadcast (`{"type": "reloaded"}`).
 
 **A write fails partway** (unplugged, no answer):
 
-- The server re-reads the keyboard (as `.vil` load does) and keeps S and T in memory for that keyboard's UID while
-  Vial runs.
+- The server re-reads the keyboard (as `.vil` load does) and keeps S and T in memory, by the keyboard's UID and keyboard
+  id, while Vial runs.
 - The dialog stays open: "Arranging stopped after 40 of 96 writes. The keyboard has part of the new order." Two
   buttons:
   - **Finish**: write what still differs from T, then the names;
