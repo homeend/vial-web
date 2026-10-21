@@ -380,7 +380,9 @@
     }}
   />
 {/if}
-<Toasts />
+{#if !keyboard.stopped}
+  <Toasts />
+{/if}
 
 <style>
   .shell {

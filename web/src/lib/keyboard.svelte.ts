@@ -247,6 +247,8 @@ export class KeyboardStore {
     try {
       await api.shutdown();
     } catch (error) {
+      // the stopped event came, though the answer was lost: Vial has stopped, which is what was asked
+      if (this.stopped) return true;
       this.quitting = false;
       toasts.error(failureMessage("Quitting Vial", error));
       return false;
@@ -259,6 +261,8 @@ export class KeyboardStore {
   #stop(): void {
     this.stopped = true;
     this.quitting = false;
+    // what they offer (Undo) or report no longer matters: the page says that Vial has stopped
+    for (const toast of [...toasts.items]) toasts.dismiss(toast.id);
     this.matrix = null;
     this.#link?.close();
     this.#link = null;

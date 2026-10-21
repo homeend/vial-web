@@ -20,13 +20,14 @@ test("Quit Vial stops the server; every tab says so and stops reconnecting", asy
   await expect(page).toHaveTitle("Vial has stopped");
   // the other tab is told too
   await expect(stoppedHeading(other)).toBeVisible();
+  await expect(stoppedHeading(other)).toBeFocused();
   await expect(page.getByRole("button", { name: "Quit Vial" })).toHaveCount(0);
 
   // the server process ends by itself
   expect(await ownServer.exited, ownServer.output()).toBe(0);
   // nothing tries to reach it any more: no "lost contact" banner comes, however long the tabs stay open
   const sockets: string[] = [];
-  page.on("websocket", (ws) => sockets.push(ws.url()));
+  for (const tab of [page, other]) tab.on("websocket", (ws) => sockets.push(ws.url()));
   await page.waitForTimeout(6000);
   expect(sockets).toEqual([]);
   for (const tab of [page, other]) {

@@ -1441,9 +1441,37 @@ describe("quitting Vial", () => {
 
   it("shows Vial stopped when another tab quit it (the stopped event)", async () => {
     const { store, emit } = await loaded();
+    const keyboardReads = mocked.keyboard.mock.calls.length;
+    const sessionReads = mocked.session.mock.calls.length;
     emit("stopped");
+    await settle();
     expect(store.stopped).toBe(true);
     expect(eventsLink().close).toHaveBeenCalled();
     expect(mocked.shutdown).not.toHaveBeenCalled();
+    // not an ordinary event: nothing is read again, and the keyboard isn't taken for gone
+    expect(mocked.keyboard.mock.calls.length).toBe(keyboardReads);
+    expect(mocked.session.mock.calls.length).toBe(sessionReads);
+    expect(store.stale).toBe(false);
+  });
+
+  it("clears the toasts when Vial stops: they would show under 'Vial has stopped'", async () => {
+    const { store, emit } = await loaded();
+    toasts.error("Changing the key failed: Can't reach Vial. Is it still running?");
+    toasts.info("Key changed", { label: "Undo", run: async () => true });
+    expect(toasts.items.length).toBe(2);
+    emit("stopped");
+    expect(store.stopped).toBe(true);
+    expect(toasts.items).toEqual([]);
+  });
+
+  it("doesn't report a failure when the stopped event came but the answer was lost", async () => {
+    const { store, emit } = await loaded();
+    mocked.shutdown.mockImplementationOnce(async () => {
+      emit("stopped");
+      throw new ApiError(0);
+    });
+    expect(await store.quit()).toBe(true);
+    expect(store.stopped).toBe(true);
+    expect(toasts.items).toEqual([]);
   });
 });

@@ -182,7 +182,7 @@
         type="button"
         class="quit"
         aria-disabled={quitting || undefined}
-        title="Stop Vial: it lets go of the keyboard and its console window closes"
+        title="Stop Vial: it lets go of the keyboard and exits"
         onclick={() => {
           if (!quitting) onquit();
         }}

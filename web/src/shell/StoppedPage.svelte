@@ -23,6 +23,13 @@
     padding: 96px var(--shell-gutter) 48px;
   }
 
+  /* the app's gutter on a narrow screen (see App.svelte) */
+  @media (max-width: 600px) {
+    .stopped-page {
+      --shell-gutter: 12px;
+    }
+  }
+
   .stopped {
     width: 100%;
     max-width: var(--list-max);
