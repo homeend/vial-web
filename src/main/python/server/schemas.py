@@ -422,7 +422,9 @@ class UnfinishedArrange(BaseModel):
     namesOnly: bool
     """ every write went through (done == total; 0 of 0 after a Finish that only had the names left): the layers are
     arranged, and only the layer names couldn't be saved (the 507 of POST /api/layers/arrange or /finish). Finish
-    saves them; Put back writes the layers back. """
+    saves them, writing nothing else; Put back writes the layers back. Only while the keyboard holds the new order:
+    once it doesn't (a layout file loaded that holds the old one, say), false, with done and total still the stop's
+    own, and Finish writes the new order again, then the names. """
 
 
 class Session(BaseModel):

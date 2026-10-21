@@ -75,16 +75,26 @@ def read_state(kb):
     )
 
 
+class MacrosTooBig(ValueError):
+    """ The macros would need more bytes than the keyboard's macro memory has; where and text: as a problem
+    (layers.Problem) """
+
+    def __init__(self, needed, memory):
+        super().__init__("the macros would need {} bytes but the keyboard has {}".format(needed, memory))
+        self.where = "macros"
+        self.text = "they would need {} bytes but the keyboard has {}".format(needed, memory)
+
+
 def _macro_data(kb, macros):
     """ The macro buffer for these macros' steps: the bytes the keyboard holds for each macro whose steps don't change
-    (so a macro that reads back otherwise than it was written stays as it is), the others written anew. ValueError when
-    it doesn't fit the macro memory. """
+    (so a macro that reads back otherwise than it was written stays as it is), the others written anew. MacrosTooBig
+    when it doesn't fit the macro memory. """
     held = (kb.macro.split(b"\x00") + [b""] * kb.macro_count)[:kb.macro_count]
     current = [_steps(actions) for actions in kb.macros_deserialize(kb.macro)]
     data = b"".join((held[i] if steps == current[i] else kb.macro_serialize(_actions(steps))) + b"\x00"
                     for i, steps in enumerate(macros))
     if len(data) > kb.macro_memory:
-        raise ValueError("the macros would need {} bytes but the keyboard has {}".format(len(data), kb.macro_memory))
+        raise MacrosTooBig(len(data), kb.macro_memory)
     return data
 
 
@@ -163,8 +173,8 @@ def _macros_of(kb, held, known, buffers):
 
 
 def plan(kb, target, known=(), buffers=(), buffer=None):
-    """ The writes that make the keyboard hold `target` (a KeyboardState of its layers): only what differs. ValueError
-    when the target's macros don't fit.
+    """ The writes that make the keyboard hold `target` (a KeyboardState of its layers): only what differs. MacrosTooBig
+    (a ValueError) when the target's macros don't fit.
 
     known: KeyboardStates the keyboard is known to hold part of (an arrange's start and target). A key, an encoder
     direction, an entry or a macro that holds the value of none of them was changed since (an edit, a layout file
@@ -247,7 +257,7 @@ def write(kb, todo, written):
 
 
 def _problem_text(problem):
-    """ A layers.Problem as the API says it: "where: what" """
+    """ A layers.Problem (or MacrosTooBig) as the API says it: "where: what" """
     return "{}: {}".format(problem.where, problem.text)
 
 
@@ -258,9 +268,9 @@ def preview(kb, order, layout_version=0):
     result = layers.arrange(read_state(kb), order, keycode_protocol())
     try:
         todo = plan(kb, result.target)
-    except ValueError as e:
+    except MacrosTooBig as e:
         todo = None
-        problems = [str(e)]
+        problems = [_problem_text(e)]
     else:
         problems = []
     return schemas.ArrangePreview(
@@ -311,8 +321,8 @@ class Unfinished:
     target_macro: bytes
     """ the macro buffer of target, as it is written """
     names_only: bool = False
-    """ every write of the last attempt went through (done == total): only the names couldn't be saved (NamesNotSaved)
-    """
+    """ every write of the last attempt went through (done == total): only the names couldn't be saved (NamesNotSaved).
+    True of the keyboard only while it holds what was written: names_only() """
 
 
 class Arrangements:
@@ -370,6 +380,21 @@ def unfinished_of(kb, keyboard_id, arrangements):
     changed = [pos for pos, value in start.items() if target.get(pos) != value]
     held = sum(1 for pos in changed if pos in kb.layout and _value(kb.layout[pos]) in (start[pos], target.get(pos)))
     return unfinished if 2 * held > len(changed) or not changed else None
+
+
+def names_only(kb, unfinished):
+    """ Whether only the names of this unfinished arrange are left to save: they couldn't be (Unfinished.names_only),
+    and Finish would write nothing else, the keyboard holding the target wherever it holds the start's or the target's
+    value (what holds neither, changed since, Finish keeps as it is). Not once a layout file put the old order back,
+    say: Finish then writes the target again. """
+    if not unfinished.names_only:
+        return False
+    try:
+        todo = plan(kb, unfinished.target, (unfinished.start, unfinished.target),
+                    (unfinished.start_macro, unfinished.target_macro), unfinished.target_macro)
+    except MacrosTooBig:
+        return False
+    return todo.writes == 0
 
 
 class Job:

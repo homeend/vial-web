@@ -3,6 +3,7 @@ write that fails partway with Finish and Put back, and a keyboard with encoders 
 import copy
 import json
 import random
+import re
 import urllib.parse
 
 import pytest
@@ -241,6 +242,17 @@ def test_problems_refuse_apply(tmp_path, monkeypatch):
         response = arrange(client, order)
         assert response.status_code == 409 and "can't go to position 19" in response.json()["detail"]
         assert virtual.writes == []
+
+
+def test_macros_that_would_not_fit_are_a_problem_where_what(setup):
+    """ The macros renumbered would need more than the macro memory: a problem as the others are, "where: what" """
+    client, manager, _ = setup
+    refer_to_layer_2(client)
+    manager.run(lambda kb: setattr(kb, "macro_memory", 8))
+    result = preview(client)
+    assert result["writes"] == 0
+    assert len(result["problems"]) == 1
+    assert re.fullmatch(r"macros: they would need \d+ bytes but the keyboard has 8", result["problems"][0])
 
 
 # ---------- the layout version ----------
@@ -634,6 +646,39 @@ def test_names_not_saved_after_every_write_then_put_back(setup, monkeypatch):
     assert response.status_code == 200, response.text
     assert snapshot(virtual) == start
     assert client.get("/api/names").json()["layers"] == {"3": "Num"}
+    assert client.get("/api/session").json()["arrange"] is None
+
+
+def test_names_only_while_the_keyboard_holds_the_new_order(setup, monkeypatch):
+    """ After the names couldn't be saved, only the names are left while Finish would write nothing else: an edit since
+    (kept by Finish) leaves it so; a layout file that puts the old order back doesn't. The session then says the stop
+    as any other (its own counts), and Finish writes the new order again, then the names. """
+    client, manager, names = setup
+    name_layers(client, {3: "Num"})
+    virtual = manager.backend.virtual
+    backup = client.get("/api/layout-file").content
+    start = snapshot(virtual)
+    total = preview(client)["writes"]
+    move_layers = names_held_by_another_program(monkeypatch, names)
+    assert arrange(client).status_code == 507
+    monkeypatch.setattr(names, "move_layers", move_layers)
+    names_only = {"order": ORDER, "done": total, "total": total, "namesOnly": True}
+    assert client.get("/api/session").json()["arrange"] == names_only
+    # a key the arrange changed, edited to what neither order has there: Finish keeps it, and writes nothing else
+    old = manager.run(lambda kb: kb.layout[(1, 1, 1)])
+    assert client.put("/api/keymap/1/1/1", json={"code": "KC_F13"}).status_code == 200
+    assert client.get("/api/session").json()["arrange"] == names_only
+    assert client.put("/api/keymap/1/1/1", json={"code": old}).status_code == 200
+    target = snapshot(virtual)
+    # the layout file saved before the arrange, loaded: the keyboard holds the old order again
+    assert client.post("/api/layout-file", content=backup).status_code == 200
+    assert snapshot(virtual) == start
+    assert client.get("/api/session").json()["arrange"] == dict(names_only, namesOnly=False)
+    virtual.writes.clear()
+    response = client.post("/api/layers/arrange/finish")
+    assert response.status_code == 200, response.text
+    assert len(virtual.writes) > 0 and snapshot(virtual) == target
+    assert client.get("/api/names").json()["layers"] == {"1": "Num"}
     assert client.get("/api/session").json()["arrange"] is None
 
 

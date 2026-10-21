@@ -591,7 +591,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         if unfinished is None:
             return None
         return schemas.UnfinishedArrange(order=unfinished.order, done=unfinished.done, total=unfinished.total,
-                                         namesOnly=unfinished.names_only)
+                                         namesOnly=arranger.names_only(kb, unfinished))
 
     def layout_version():
         """ The layout version of the keyboard loaded, or None; the device lock held """
@@ -851,8 +851,8 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         the keyboard's model with its new layout version (layoutVersion) and kept (0).
 
         409 with code "layoutChanged" when `expect` isn't the keyboard's layout version (nothing was written); 409 when
-        the order has problems, or an arrange of this keyboard is unfinished; 423 when it needs the keyboard unlocked
-        (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange), as does 507: every
+        the order has problems, or an arrange of this keyboard is unfinished; 422 for an order that isn't the keyboard's
+        layers with layer 0 first; 423 when it needs the keyboard unlocked (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange), as does 507: every
         write went through but the layer names couldn't be saved (Session.arrange.namesOnly). Either way the layout
         version was counted up. """
         return await arranging(lambda kb: arranger.begin(kb, manager.open_id, body.order, arrangements, names,
