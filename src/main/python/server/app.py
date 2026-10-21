@@ -27,10 +27,10 @@ log = logging.getLogger(__name__)
 MAX_LAYOUT_FILE = 1024 * 1024
 """ largest .vil upload, in bytes """
 UNLOCK_POLL_INTERVAL = 0.2
-""" seconds between two readings of the unlock countdown, as Qt's unlocker """
+""" seconds between two readings of the unlock countdown, as upstream vial-gui's unlocker """
 MATRIX_POLL_INTERVAL = 0.05
-""" seconds from one reading of the switch matrix to the next while a tab watches it: 20 a second (Qt's tester reads
-it every 20 ms, and the unlock state as well each time) """
+""" seconds from one reading of the switch matrix to the next while a tab watches it: 20 a second (upstream vial-gui's
+tester reads it every 20 ms, and the unlock state as well each time) """
 MATRIX_POLL_GAP = 0.02
 """ seconds the keyboard is left alone at least after each reading of the matrix, however long that took: other
 requests (edits, the unlock countdown) take the device lock in between """
@@ -276,8 +276,9 @@ def unlock_model(state):
 
 
 class UnlockFollower:
-    """ Reads the countdown of the keyboard's unlock as Qt's unlocker does, every `interval` seconds until the unlock
-    ends, and sends the events it brings with broadcast_events(events, progress). One task does that at a time.
+    """ Reads the countdown of the keyboard's unlock as upstream vial-gui's unlocker does, every `interval` seconds
+    until the unlock ends, and sends the events it brings with broadcast_events(events, progress). One task does that at
+    a time.
 
     The task stops by itself before its next reading once it is no longer the one following (release(), a cancel) or
     the unlock is no longer followed (manager.poll_unlock then sends nothing): events it has taken are always sent

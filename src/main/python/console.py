@@ -12,7 +12,9 @@ handle.
 Elsewhere a terminal closed sends SIGHUP, and log-out or kill sends SIGTERM. Each would end the process at once
 (uvicorn takes SIGTERM while serving, but raises it again once it has stopped, before the keyboard is closed): both ask
 the server to stop instead. A SIGHUP ignored by what started Vial (nohup) stays ignored: Vial runs on when its terminal
-is closed.
+is closed. With the Linux or macOS executable, Ctrl+C or a SIGTERM sent to the whole process group reaches the Python
+process twice: from the terminal, and again forwarded by PyInstaller's parent process. A second SIGINT makes uvicorn
+skip its graceful wait for the tabs' connections, but the keyboard is still closed, in vial_web.serve()'s finally.
 """
 import logging
 import signal

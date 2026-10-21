@@ -81,9 +81,9 @@ def require_unlocked(keyboard):
 
 
 def has_matrix_tester(keyboard):
-    """ Whether the keyboard tells which of its keys are held (Qt's matrix tester): Vial protocol 3 or later, and a
-    matrix that fits in one reply by the firmware's own estimate (via.c: (MATRIX_COLS / 8 + 1) * MATRIX_ROWS <= 28;
-    a larger one leaves the reply empty) """
+    """ Whether the keyboard tells which of its keys are held (upstream vial-gui's matrix tester): Vial protocol 3 or
+    later, and a matrix that fits in one reply by the firmware's own estimate (via.c: (MATRIX_COLS / 8 + 1) *
+    MATRIX_ROWS <= 28; a larger one leaves the reply empty) """
     return keyboard.vial_protocol >= VIAL_PROTOCOL_MATRIX_TESTER and (keyboard.cols // 8 + 1) * keyboard.rows <= 28
 
 
@@ -113,8 +113,8 @@ def read_matrix(keyboard):
 
 
 def matrix_pressed(data, rows, cols):
-    """ The (row, col) of each key held, from the reply to a switch matrix request, as Qt's matrix tester reads it:
-    after the 2 bytes of the request, each row takes ceil(cols / 8) bytes, the highest columns first """
+    """ The (row, col) of each key held, from the reply to a switch matrix request, as upstream vial-gui's matrix tester
+    reads it: after the 2 bytes of the request, each row takes ceil(cols / 8) bytes, the highest columns first """
     row_size = (cols + 7) // 8
     pressed = []
     for row in range(rows):
@@ -371,9 +371,9 @@ class HidBackend:
 
     def present(self, desc):
         """ Asked only when the hot-plug poll's own listing missed the keyboard open or failed, and after a request to
-        it failed (DeviceManager._present). That listing (find) enumerates every HID device, once a poll, as Qt's
-        autorefresh does on Linux and macOS (on Linux, is_raw_hid even opens each Vial keyboard found); this asks for
-        this keyboard's vendor and product IDs only, and opens nothing. """
+        it failed (DeviceManager._present). That listing (find) enumerates every HID device, once a poll, as upstream
+        vial-gui's autorefresh does on Linux and macOS (on Linux, is_raw_hid even opens each Vial keyboard found); this
+        asks for this keyboard's vendor and product IDs only, and opens nothing. """
         from hidproxy import hid
         listed = hid.enumerate(desc.get("vendor_id", 0), desc.get("product_id", 0))
         return any(d["path"] == desc["path"] for d in listed)
@@ -402,7 +402,7 @@ class KeyboardInfo:
     manufacturer: str = ""
     """ its USB manufacturer name ("" if it gives none) """
     path: str = ""
-    """ its HID device path, as text (hidapi gives bytes): what Qt's About keyboard calls the Device """
+    """ its HID device path, as text (hidapi gives bytes): what upstream vial-gui's About keyboard calls the Device """
     product: str = ""
     """ its USB product string ("" if it gives none: `name` is then made of what it gives else) """
 
@@ -521,15 +521,16 @@ class DeviceManager:
     one closed, if it was loaded. The chosen keyboard unplugged stays listed, as unplugged, and is waited for: another
     one is not opened instead (but for one alike that can't be told from it: see keyboard_infos).
 
-    Unlocking works as Qt's unlocker does: start_unlock() sends unlock_start, then poll_unlock() (called about every
-    200 ms while the state is "unlocking") reads the keyboard's countdown, which runs while the user holds the unlock
-    keys, until it is unlocked. While the keyboard waits for its unlock keys it answers nothing else, so run() refuses
-    every request then (KeyboardLocked); read() still works. A keyboard found waiting for an unlock started earlier (by
-    a Vial closed meanwhile) is opened but not read: that unlock is finished first, as Qt does, then the keyboard is
-    read ("connected"). The unlock state changing (started, done, cancelled, locked) is an "unlock" event; the readings
-    of the countdown are not events, whoever follows the unlock (the server app) sends them on. Unplugging a loaded
-    keyboard mid-unlock ends the unlock with only a "disconnected" event, no "unlock" one: the UI must close its unlock
-    dialog on that. (A keyboard that waited to be read is reported with an "unlock" event, as the UI never had it.)
+    Unlocking works as upstream vial-gui's unlocker does: start_unlock() sends unlock_start, then poll_unlock() (called
+    about every 200 ms while the state is "unlocking") reads the keyboard's countdown, which runs while the user holds
+    the unlock keys, until it is unlocked. While the keyboard waits for its unlock keys it answers nothing else, so
+    run() refuses every request then (KeyboardLocked); read() still works. A keyboard found waiting for an unlock
+    started earlier (by a Vial closed meanwhile) is opened but not read: that unlock is finished first, as upstream
+    vial-gui does, then the keyboard is read ("connected"). The unlock state changing (started, done, cancelled, locked)
+    is an "unlock" event; the readings of the countdown are not events, whoever follows the unlock (the server app)
+    sends them on. Unplugging a loaded keyboard mid-unlock ends the unlock with only a "disconnected" event, no "unlock"
+    one: the UI must close its unlock dialog on that. (A keyboard that waited to be read is reported with an "unlock"
+    event, as the UI never had it.)
 
     unlock_poll_gap: seconds poll_unlock() leaves at least between two unlock requests it sends (0: none; the real app
     uses SAFE_UNLOCK_POLL_GAP), so that polls that come too fast can't keep the firmware from counting down.
@@ -665,8 +666,9 @@ class DeviceManager:
         """ Open the first keyboard found and load everything from it. Returns True when connected.
 
         A keyboard found waiting for an unlock started earlier can't be read until it is unlocked: it is sent
-        unlock_start, as Qt's unlocker does, and the unlock is followed (unlock_state() "unlocking"). With
-        resume_unlock False (a dry run) it is sent nothing: the unlock is left as it is, not followed ("cancelled"). """
+        unlock_start, as upstream vial-gui's unlocker does, and the unlock is followed (unlock_state() "unlocking").
+        With resume_unlock False (a dry run) it is sent nothing: the unlock is left as it is, not followed
+        ("cancelled"). """
         return self._connect(wait_after_failures=False, resume_unlock=resume_unlock)
 
     def _connect(self, wait_after_failures, resume_unlock=True, found=None):
@@ -701,7 +703,7 @@ class DeviceManager:
                     unlock_keys = interrupted_unlock_keys(keyboard)
                     if unlock_keys is not None:
                         if resume_unlock:
-                            keyboard.unlock_start()  # as Qt's unlocker does for every unlock
+                            keyboard.unlock_start()  # as upstream vial-gui's unlocker does for every unlock
                             self.unlock_sent = self.clock()
                     else:
                         keyboard.reload()
@@ -820,10 +822,10 @@ class DeviceManager:
         raise NotConnected("no keyboard connected")
 
     def start_unlock(self):
-        """ Start unlocking as Qt's unlocker does: unlock_start, after which poll_unlock() follows the countdown. An
-        unlock being followed already (started from another tab) is left to run: starting it again would start its
-        countdown over. A cancelled unlock is followed again (the keyboard starts its countdown over). An unlocked
-        keyboard is left alone. Refused when the request is meant for another keyboard (meant_for). Returns
+        """ Start unlocking as upstream vial-gui's unlocker does: unlock_start, after which poll_unlock() follows the
+        countdown. An unlock being followed already (started from another tab) is left to run: starting it again would
+        start its countdown over. A cancelled unlock is followed again (the keyboard starts its countdown over). An
+        unlocked keyboard is left alone. Refused when the request is meant for another keyboard (meant_for). Returns
         unlock_state(). """
         with self.lock:
             self._check_meant_for()
@@ -900,8 +902,8 @@ class DeviceManager:
             return self.unlock_state()
 
     def lock_keyboard(self):
-        """ Lock the keyboard again (Qt's Security > Lock); an "unlock" event if that changed it. Refused while the
-        keyboard waits for its unlock keys (KeyboardLocked). Returns unlock_state(). """
+        """ Lock the keyboard again (upstream vial-gui's Security > Lock); an "unlock" event if that changed it. Refused
+        while the keyboard waits for its unlock keys (KeyboardLocked). Returns unlock_state(). """
         with self.lock:
             def lock(kb):
                 kb.lock()
@@ -942,12 +944,12 @@ class DeviceManager:
             return MatrixReading("testing", tuple(matrix_pressed(data, keyboard.rows, keyboard.cols)))
 
     def reboot_to_bootloader(self):
-        """ Restart the keyboard into its bootloader, as Qt's Security > Reboot to bootloader does: the keyboard must
-        be unlocked (KeyboardLocked otherwise), and then jumps (via.c id_bootloader_jump), leaving Vial: it is closed,
-        with a "disconnected" event. Firmware built without the bootloader jump answers id_unhandled: KeyboardRefused,
-        and the keyboard stays. A jump sent whose answer doesn't come (the keyboard dropped off the bus first) is most
-        likely taken: the keyboard is closed all the same, and JumpUnanswered says so; a jump that couldn't be sent
-        fails as any request does.
+        """ Restart the keyboard into its bootloader, as upstream vial-gui's Security > Reboot to bootloader does: the
+        keyboard must be unlocked (KeyboardLocked otherwise), and then jumps (via.c id_bootloader_jump), leaving Vial:
+        it is closed, with a "disconnected" event. Firmware built without the bootloader jump answers id_unhandled:
+        KeyboardRefused, and the keyboard stays. A jump sent whose answer doesn't come (the keyboard dropped off the bus
+        first) is most likely taken: the keyboard is closed all the same, and JumpUnanswered says so; a jump that
+        couldn't be sent fails as any request does.
 
         After a jump, the keyboard closed isn't opened again while it is still listed, for RETRY_FIRST seconds: the
         firmware leaves the bus only 100 ms after its answer, and the system drops it later still, so a hot-plug poll
@@ -998,7 +1000,7 @@ class DeviceManager:
         if self.stopped:
             return self.take_events()
         # outside the device lock: listing every HID device can take a while on some systems, and requests to the
-        # open keyboard go on meanwhile (as Qt's autorefresh thread lists them)
+        # open keyboard go on meanwhile (as upstream vial-gui's autorefresh thread lists them)
         found = self._find()
         with self.lock:
             candidates, failure = found

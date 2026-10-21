@@ -300,10 +300,27 @@ def wait_for_other_instance(timeout, fake):
         time.sleep(0.25)
 
 
+def restore_library_path():
+    """ Give the programs Vial starts (the browser, and xdg-open or gio on the way) the system's own library path.
+    PyInstaller's bootloader on Linux puts the executable's unpack folder (sys._MEIPASS) first in LD_LIBRARY_PATH, and
+    keeps the value it had in LD_LIBRARY_PATH_ORIG (PyInstaller's documentation, "Common Issues and Pitfalls": reset
+    it from LD_LIBRARY_PATH_ORIG, or clear it, before launching an external program). A system program started with it
+    may load Vial's older bundled libraries instead of its own and fail ("version ... not found"), and the browser
+    never opens. Vial itself is not affected: glibc reads LD_LIBRARY_PATH only as a process starts. """
+    if not (resources.is_frozen() and sys.platform.startswith("linux")):
+        return
+    original = os.environ.get("LD_LIBRARY_PATH_ORIG")
+    if original is None:
+        os.environ.pop("LD_LIBRARY_PATH", None)
+    else:
+        os.environ["LD_LIBRARY_PATH"] = original
+
+
 def open_running(url, args):
     print("Vial is already running{}. Open it at:\n  {}".format(" with a simulated keyboard" if args.fake else "", url),
           flush=True)
     if not args.no_browser:
+        restore_library_path()
         webbrowser.open(url)
     return 0
 
@@ -590,6 +607,7 @@ def serve(args, manager, sock):
             print(STARTED_MESSAGE.format(url=url, fake=" with a simulated keyboard" if args.fake else ""), flush=True)
             logging.info("serving on port %d", port)
             if not args.no_browser:
+                restore_library_path()
                 threading.Thread(target=webbrowser.open, args=[url], daemon=True).start()
             server.run(sockets=[sock])
         except KeyboardInterrupt:

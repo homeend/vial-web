@@ -239,6 +239,57 @@ def test_second_launch_without_browser_prints_the_url(home, no_keyboard, monkeyp
     assert LIVE_URL in capsys.readouterr().out
 
 
+# ---------- the Linux executable's library path ----------
+
+BUNDLED = "/tmp/_MEIabc123"
+""" where a one-file executable unpacks itself: PyInstaller's bootloader puts it first in LD_LIBRARY_PATH """
+
+
+def library_path(monkeypatch, platform, frozen, **variables):
+    monkeypatch.setattr(vial_web.sys, "platform", platform)
+    monkeypatch.setattr(resources, "is_frozen", lambda: frozen)
+    for name in ("LD_LIBRARY_PATH", "LD_LIBRARY_PATH_ORIG"):
+        if name in variables:
+            monkeypatch.setenv(name, variables[name])
+        else:
+            monkeypatch.delenv(name, raising=False)
+
+
+def library_variables():
+    return {name: os.environ[name] for name in ("LD_LIBRARY_PATH", "LD_LIBRARY_PATH_ORIG") if name in os.environ}
+
+
+@pytest.mark.parametrize("platform, frozen, before, after", [
+    ("linux", True, {"LD_LIBRARY_PATH": BUNDLED + ":/opt/lib", "LD_LIBRARY_PATH_ORIG": "/opt/lib"},
+     {"LD_LIBRARY_PATH": "/opt/lib", "LD_LIBRARY_PATH_ORIG": "/opt/lib"}),
+    ("linux", True, {"LD_LIBRARY_PATH": BUNDLED}, {}),
+    ("linux", False, {"LD_LIBRARY_PATH": "/opt/lib"}, {"LD_LIBRARY_PATH": "/opt/lib"}),
+    ("darwin", True, {"LD_LIBRARY_PATH": BUNDLED, "LD_LIBRARY_PATH_ORIG": "/opt/lib"},
+     {"LD_LIBRARY_PATH": BUNDLED, "LD_LIBRARY_PATH_ORIG": "/opt/lib"}),
+], ids=["with the original", "without an original", "not frozen", "not Linux"])
+def test_the_linux_executable_gives_programs_it_starts_the_systems_library_path(monkeypatch, platform, frozen, before,
+                                                                                after):
+    library_path(monkeypatch, platform, frozen, **before)
+    vial_web.restore_library_path()
+    assert library_variables() == after
+
+
+@pytest.mark.parametrize("launch", ["first", "second"])
+def test_the_browser_starts_without_the_bundled_libraries(home, fake_server, monkeypatch, launch):
+    library_path(monkeypatch, "linux", True, LD_LIBRARY_PATH=BUNDLED + ":/opt/lib", LD_LIBRARY_PATH_ORIG="/opt/lib")
+    monkeypatch.setattr(resources, "path", resources.source_path)  # frozen, yet with the repository's files
+    seen = []
+    monkeypatch.setattr(vial_web.webbrowser, "open", lambda url, *a, **k: seen.append(library_variables()))
+    if launch == "second":
+        monkeypatch.setattr(vial_web, "running_session", running_in_mode(True))
+    assert vial_web.main(["--fake"]) == 0
+    for _ in range(100):  # the first launch opens the browser from a thread
+        if seen:
+            break
+        threading.Event().wait(0.02)
+    assert seen == [{"LD_LIBRARY_PATH": "/opt/lib", "LD_LIBRARY_PATH_ORIG": "/opt/lib"}]
+
+
 def test_real_dry_run_refuses_while_vial_is_running(home, no_keyboard, monkeypatch, capsys):
     monkeypatch.setattr(vial_web, "running_session", running_in_mode(False))
     assert vial_web.main(["--dry-run"]) != 0
@@ -660,7 +711,9 @@ def test_a_tab_closing_its_link_as_vial_stops_doesnt_make_vial_fail(home, monkey
     keyboard.
     - "when told Vial stopped": what every tab does. The server closes the links itself before it stops, so uvicorn
       finds none to close.
-    - "before Quit": a tab closed just before; uvicorn fails, and Vial still ends cleanly. """
+    - "before Quit": a tab closed just before; uvicorn may fail (when its stop comes within the second), and Vial
+      still ends cleanly. Whether it fails depends on timing, so it isn't required here: the failure itself is made
+      certain in test_a_server_failing_as_it_stops_still_ends_vial_cleanly. """
     from uvicorn.protocols.websockets import websockets_sansio_impl as sansio
     lost = sansio.WebSocketsSansIOProtocol.connection_lost
 
@@ -744,8 +797,9 @@ def test_a_tab_closing_its_link_as_vial_stops_doesnt_make_vial_fail(home, monkey
     assert vial_web.QUIT_MESSAGE in capsys.readouterr().out
     failed = "the server failed as it stopped" in caplog.text
     if closes == "before Quit":
-        assert seen["frames"] == ["connected"]
-        assert failed and "connection is closing" in caplog.text  # uvicorn's failure, all the same
+        assert seen["frames"] == ["connected"]  # not told: its link was gone already
+        if failed:  # only uvicorn's failure (a slow machine may stop after the second, and see none)
+            assert "connection is closing" in caplog.text, caplog.text
     else:
         assert seen["frames"] == ["connected", "stopped", "close 1001"]  # told, then closed by the server
         assert not failed, caplog.text
