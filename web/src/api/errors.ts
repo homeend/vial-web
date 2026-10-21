@@ -4,12 +4,15 @@
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string | undefined;
+  /** what the server calls this refusal, to tell it from others of its status: "layoutChanged" (409) */
+  readonly code: string | undefined;
 
-  constructor(status: number, detail?: string) {
+  constructor(status: number, detail?: string, code?: string) {
     super(errorMessage(status, detail));
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 
@@ -30,6 +33,9 @@ export function errorMessage(status: number, detail?: string): string {
       return "The keyboard didn't respond.";
     case 503:
       return "The keyboard isn't connected.";
+    case 507:
+      // an arrange's writes all went through; the names file couldn't be written (the server logs why)
+      return "The layer names couldn't be saved (see vial.log).";
     default:
       return detail || `The request failed (HTTP ${status}).`;
   }

@@ -12,6 +12,8 @@ describe("errorMessage", () => {
     [401, "missing or wrong session token",
       "This page's session has ended. Open Vial again from the link in its terminal."],
     [0, undefined, "Can't reach Vial. Is it still running?"],
+    [507, "The layers were arranged, but the layer names couldn't be saved: [Errno 13] Permission denied",
+      "The layer names couldn't be saved (see vial.log)."],
   ])("%i: %s", (status, detail, message) => {
     expect(errorMessage(status, detail)).toBe(message);
   });

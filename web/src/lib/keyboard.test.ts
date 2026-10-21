@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
 import type {
-  Described, KeyboardEntry, KeyboardLanguage, KeyboardList, KeyboardModel, ServerEvent, Session, SettingField,
+  ArrangedModel, Described, KeyboardEntry, KeyboardLanguage, KeyboardList, KeyboardModel, ServerEvent, Session, SettingField,
   UnlockState,
 } from "../api/types";
 
@@ -32,6 +32,9 @@ vi.mock("../api/api", () => ({
     saveLighting: vi.fn(),
     rebootToBootloader: vi.fn(),
     shutdown: vi.fn(),
+    arrangeLayers: vi.fn(),
+    finishArrange: vi.fn(),
+    putBackArrange: vi.fn(),
   },
 }));
 vi.mock("../api/events", () => ({ connectEvents: vi.fn(() => ({ close: vi.fn(), send: vi.fn() })) }));
@@ -1488,5 +1491,145 @@ describe("quitting Vial", () => {
     expect(await store.quit()).toBe(true);
     expect(store.stopped).toBe(true);
     expect(toasts.items).toEqual([]);
+  });
+});
+
+describe("arranging the layers", () => {
+  const UNFINISHED = { order: [0, 2, 1], done: 9, total: 94, namesOnly: false };
+
+  /** The model an arrange answers: model(code) with its layout version and what it kept */
+  function arranged(code: string, layoutVersion: number, kept = 0): ArrangedModel {
+    return { ...model(code), layoutVersion, kept } as unknown as ArrangedModel;
+  }
+
+  /** The session the server answers from now on: connected, with this layout version and arrange left unfinished */
+  function sessionNow(layoutVersion: number, arrange: typeof UNFINISHED | null = null) {
+    mocked.session.mockResolvedValue({ fake: true, unlock: LOCKED, status: "connected", layoutVersion, arrange } as never);
+  }
+
+  it("sends the order with the layout version expected, keeps the model it answers, and reads the session again",
+    async () => {
+      const { store } = await loaded();
+      const reads = mocked.session.mock.calls.length;
+      mocked.arrangeLayers.mockResolvedValueOnce(arranged("KC_B", 4));
+      // the reply is shown; the keyboard is read again after it (as after a layout file): it says the same
+      mocked.keyboard.mockResolvedValue(model("KC_B"));
+      sessionNow(4);
+      const done = await store.arrangeLayers([0, 2, 1], 3);
+      expect(mocked.arrangeLayers).toHaveBeenCalledWith([0, 2, 1], 3);
+      expect(done?.layoutVersion).toBe(4);
+      expect(store.model!.layers[0].keys[0].code).toBe("KC_B");
+      expect(mocked.session.mock.calls.length).toBeGreaterThan(reads);
+      expect(store.layoutVersion).toBe(4);
+      expect(toasts.items).toEqual([]);
+    });
+
+  it("is unlocked for when the locked keyboard refuses it (423), and sent again once, the same order", async () => {
+    const { store, send } = await loaded();
+    mocked.arrangeLayers.mockRejectedValueOnce(new ApiError(423, "the keyboard is locked"))
+      .mockResolvedValueOnce(arranged("KC_B", 1));
+    mocked.unlockStart.mockResolvedValueOnce(UNLOCKING);
+    mocked.keyboard.mockResolvedValue(model("KC_B"));
+    const arranging = store.arrangeLayers([0, 2, 1], 0);
+    await settle();
+    expect(store.unlock.open).toBe(true);
+    send({ type: "unlock", unlock: UNLOCKED });
+    expect(await arranging).not.toBeNull();
+    expect(mocked.arrangeLayers.mock.calls).toEqual([[[0, 2, 1], 0], [[0, 2, 1], 0]]);
+    expect(store.model!.layers[0].keys[0].code).toBe("KC_B");
+  });
+
+  it("says why it stopped partway where the caller asks, not in a toast, and knows the arrange it left unfinished",
+    async () => {
+      const { store } = await loaded();
+      sessionNow(0);
+      await store.refreshSession();
+      mocked.arrangeLayers.mockRejectedValueOnce(new ApiError(502, "the keyboard didn't respond: timeout"));
+      sessionNow(1, UNFINISHED);
+      const reported: [string, unknown][] = [];
+      expect(await store.arrangeLayers([0, 2, 1], 0, (message, error) => reported.push([message, error]))).toBeNull();
+      expect(reported.map(([message]) => message)).toEqual(["Arranging the layers failed: The keyboard didn't respond."]);
+      expect((reported[0][1] as ApiError).status).toBe(502);
+      expect(toasts.items).toEqual([]);
+      // read again: the session says the arrange is unfinished
+      expect(store.unfinishedArrange).toEqual(UNFINISHED);
+      // this tab's arrange stopped it, at the layout version it left
+      expect(store.unfinishedBy).toBe("arrange");
+      sessionNow(2, UNFINISHED);
+      await store.refreshSession();
+      // something else wrote since (another tab's Finish that stopped, say): this tab no longer knows what stopped
+      expect(store.unfinishedBy).toBeNull();
+    });
+
+  it("tells a stopped Finish and Put back apart", async () => {
+    const { store } = await loaded();
+    sessionNow(1, UNFINISHED);
+    await store.refreshSession();
+    mocked.putBackArrange.mockRejectedValueOnce(new ApiError(502));
+    sessionNow(2, { ...UNFINISHED, done: 3, total: 10 });
+    expect(await store.putBackArrange(() => undefined)).toBeNull();
+    expect(store.unfinishedBy).toBe("put-back");
+    mocked.finishArrange.mockRejectedValueOnce(new ApiError(502));
+    sessionNow(3, { ...UNFINISHED, done: 2, total: 10 });
+    expect(await store.finishArrange(() => undefined)).toBeNull();
+    expect(store.unfinishedBy).toBe("finish");
+    // refused before anything was written: what stopped it is still the Finish
+    mocked.putBackArrange.mockRejectedValueOnce(new ApiError(423, "locked"));
+    mocked.unlockStart.mockRejectedValueOnce(new ApiError(502));
+    expect(await store.putBackArrange(() => undefined)).toBeNull();
+    expect(store.unfinishedBy).toBe("finish");
+  });
+
+  it("is refused by the server when the layers changed since the version expected: said, and the keyboard read again",
+    async () => {
+      const { store } = await loaded();
+      const loads = mocked.keyboard.mock.calls.length;
+      mocked.arrangeLayers.mockRejectedValueOnce(
+        new ApiError(409, "The layers changed since this was shown.", "layoutChanged"));
+      const reported: [string, unknown][] = [];
+      expect(await store.arrangeLayers([0, 2, 1], 3, (message, error) => reported.push([message, error]))).toBeNull();
+      expect(reported[0][0]).toBe("Arranging the layers failed: The layers changed since this was shown.");
+      expect((reported[0][1] as ApiError).code).toBe("layoutChanged");
+      await settle();
+      expect(mocked.keyboard.mock.calls.length).toBe(loads + 1);
+    });
+
+  it("sends nothing while the keyboard can't be changed, or another change is being saved, and says so", async () => {
+    const { store, emit } = await loaded();
+    const reported: string[] = [];
+    const saving = deferred<never>();
+    mocked.setMacros.mockReturnValueOnce(saving.promise);
+    void store.setMacros([[]]);
+    expect(await store.arrangeLayers([0, 2, 1], 0, (message) => reported.push(message))).toBeNull();
+    saving.reject(new ApiError(502));
+    await settle();
+    toasts.items = [];
+    emit("disconnected");
+    expect(await store.finishArrange((message) => reported.push(message))).toBeNull();
+    expect(await store.putBackArrange()).toBeNull();
+    expect(mocked.arrangeLayers).not.toHaveBeenCalled();
+    expect(mocked.finishArrange).not.toHaveBeenCalled();
+    expect(mocked.putBackArrange).not.toHaveBeenCalled();
+    expect(reported).toEqual([
+      "Arranging the layers failed: another change was still being saved. Try again.",
+      "Finishing the arrange failed: the keyboard can't be changed just now.",
+    ]);
+    expect(toasts.items.map((t) => t.message)).toEqual([
+      "Putting the layers back failed: the keyboard can't be changed just now."]);
+  });
+
+  it("tells those listening when the layout version changes, not when it is read the same again", async () => {
+    const { store } = await loaded();
+    const heard: (number | null)[] = [];
+    const stop = store.onLayoutVersion((version) => heard.push(version));
+    sessionNow(0);
+    await store.refreshSession();
+    await store.refreshSession();
+    sessionNow(2);
+    await store.refreshSession();
+    stop();
+    sessionNow(3);
+    await store.refreshSession();
+    expect(heard).toEqual([0, 2]);
   });
 });

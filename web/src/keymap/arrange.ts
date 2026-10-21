@@ -144,6 +144,34 @@ export function stoppedText(unfinished: UnfinishedArrange): string {
     "back as it was. Names move once it is finished.";
 }
 
+/** Why an order chosen earlier wasn't written, or Undo wasn't done: the layout version moved on since (the server's
+ * 409 "layoutChanged", or the session said so first) */
+export const LAYERS_CHANGED = "the layers were arranged again or a layout file was loaded since, so nothing was written.";
+
+/** What the dialog says once the layers changed while it was open (another tab arranged them, or loaded a layout
+ * file). applied: Apply was refused for it, nothing written; reset: the order shown is the current one again, as the
+ * number of layers changed; else the rows keep the order chosen, of the layers as they are now. */
+export function layersChangedText(applied: boolean, reset: boolean): string {
+  const what = applied
+    ? "The layers were arranged again or a layout file was loaded since this was shown (in another tab, say), so " +
+      "Apply wrote nothing."
+    : "The layers were arranged again or a layout file was loaded while this was open (in another tab, say).";
+  return `${what} ${reset ? "The number of layers changed: the order shown is the current one again."
+    : "The rows keep your order, with the layers as they are now: check it, then Apply."}`;
+}
+
+/** What Finish or Put back left as it was: what was changed since the arrange stopped (an edit, a layout file
+ * loaded), which held neither the old order's value nor the new one's. The server counts each key, encoder direction,
+ * whole tap dance, combo, key override or alt-repeat key, and macro. encoders: the keyboard has encoders. */
+export function keptText(kept: number, encoders = false): string {
+  const direction = encoders ? ["an encoder direction, ", "encoder directions, "] : ["", ""];
+  return kept === 1
+    ? `1 change made since the stop was kept as it is (a key, ${direction[0]}a tap dance, combo, key override or ` +
+      "alt-repeat key, or a macro)."
+    : `${kept} changes made since the stop were kept as they are (keys, ${direction[1]}tap dances, combos, key ` +
+      "overrides, alt-repeat keys or macros).";
+}
+
 // ---- asking for the preview ----
 
 /** What the preview follower says about the order shown */

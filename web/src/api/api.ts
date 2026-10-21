@@ -46,8 +46,11 @@ export const api = {
   loadLayoutFile: (text: string) => request("post", "/api/layout-file", { raw: text }),
   /** what arranging the layers in this order would change (order[position] = layer now); nothing is written */
   previewArrange: (order: number[]) => request("post", "/api/layers/arrange/preview", { body: { order } }),
-  /** moves the layers to this order, every layer reference following, and their names; answers the new model */
-  arrangeLayers: (order: number[]) => request("post", "/api/layers/arrange", { body: { order } }),
+  /** moves the layers to this order, every layer reference following, and their names; answers the new model with
+   * its layout version. expect: the layout version the order was chosen for (a preview's): refused (409, code
+   * "layoutChanged") when the layers changed since; null: whatever they are */
+  arrangeLayers: (order: number[], expect: number | null = null) =>
+    request("post", "/api/layers/arrange", { body: { order, expect } }),
   /** writes the rest of an arrange that stopped partway, then moves the names */
   finishArrange: () => request("post", "/api/layers/arrange/finish"),
   /** writes back what an arrange that stopped partway changed */

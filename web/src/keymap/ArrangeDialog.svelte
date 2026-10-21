@@ -5,22 +5,24 @@
   import { api } from "../api/api";
   import { causeMessage } from "../api/errors";
   import type { ArrangePreview, KeyboardModel } from "../api/types";
-  import { keyboard } from "../lib/keyboard.svelte";
+  import { keyboard, type Report } from "../lib/keyboard.svelte";
   import Button from "../ui/Button.svelte";
   import {
-    canStep, currentOrder, isCurrent, moveStep, moveTo, nameAfter, PreviewFollower, stoppedText, summaryText,
-    triLayerWarning, writingLabel, type PreviewState,
+    canStep, currentOrder, isCurrent, layersChangedText, moveStep, moveTo, nameAfter, PreviewFollower, stoppedText,
+    summaryText, triLayerWarning, writingLabel, type PreviewState,
   } from "./arrange";
+  import { isLayoutChanged } from "./arranging.svelte";
 
   interface Props {
     open: boolean;
     model: KeyboardModel;
     analysis: Analysis;
     phrases: PhraseContext;
-    /** Apply: resolves to whether it was done (the dialog then closes); report says why not */
-    onapply: (order: number[], report: (message: string) => void) => Promise<boolean>;
-    onfinish: (report: (message: string) => void) => Promise<boolean>;
-    onputback: (report: (message: string) => void) => Promise<boolean>;
+    /** Apply, the order chosen for layout version `expect` (its preview's): resolves to whether it was done (the dialog
+     * then closes); report says why not */
+    onapply: (order: number[], expect: number, report: Report) => Promise<boolean>;
+    onfinish: (report: Report) => Promise<boolean>;
+    onputback: (report: Report) => Promise<boolean>;
     /** closed, applied or not: the caller gives the focus back */
     onclose: () => void;
   }
@@ -40,6 +42,11 @@
   let workingLabel = $state("");
   /** why the last Apply, Finish or Put back wasn't done */
   let failure = $state<string | null>(null);
+  /** the layers changed while the dialog was open (another tab arranged them, or loaded a layout file): applied, Apply
+   * was refused for it; reset, the order shown went back to the current one */
+  let changed = $state<{ applied: boolean; reset: boolean } | null>(null);
+  /** the layout version the dialog last took in: another one means the layers changed */
+  let seenVersion: number | null = null;
   /** a row dragged by its handle */
   let drag = $state<{ layer: number; pointerId: number; before: number[] } | null>(null);
   let follower: PreviewFollower<ArrangePreview> | null = null;
@@ -66,14 +73,22 @@
     }
   });
 
-  // the keyboard read again (an edit, another tab, a reload): the preview is asked for again; another number of
-  // layers starts over
+  // the keyboard read again (an edit, another tab, a reload), or its layers changed (another tab arranged them, or
+  // loaded a layout file): the preview is asked for again; another number of layers starts over. The order chosen
+  // was for the layers as they were: the dialog says so.
   $effect(() => {
     const layers = model.layers.length;
+    const version = keyboard.layoutVersion;
     void model;
     untrack(() => {
       if (!follower || working !== null) return;
-      if (order.length !== layers) order = currentOrder(layers);
+      const moved = version !== seenVersion;
+      seenVersion = version;
+      const reset = order.length !== layers;
+      if (moved && !unfinished && !isCurrent(order)) {
+        changed = { applied: changed?.applied ?? false, reset: reset || (changed?.reset ?? false) };
+      }
+      if (reset) order = currentOrder(layers);
       follower.refresh(order);
     });
   });
@@ -99,6 +114,8 @@
     lastPreview = null;
     working = null;
     failure = null;
+    changed = null;
+    seenVersion = keyboard.layoutVersion;
     drag = null;
     follower = new PreviewFollower(api.previewArrange, (state) => {
       previewState = state;
@@ -201,11 +218,14 @@
     working = kind;
     workingLabel = label;
     failure = null;
+    changed = null;
     let done = false;
     try {
       done = await act();
     } finally {
       working = null;
+      // what this wrote moved the layout version on (a stop partway): not a change elsewhere
+      if (!changed) seenVersion = keyboard.layoutVersion;
     }
     if (done) {
       dialog?.close();
@@ -217,7 +237,12 @@
   function apply() {
     if (!canApply || !preview) return;
     const chosen = [...order];
-    void run("apply", writingLabel(preview), () => onapply(chosen, (message) => (failure = message)));
+    const expect = preview.layoutVersion;
+    void run("apply", writingLabel(preview), () => onapply(chosen, expect, (message, error) => {
+      // nothing written: the preview is asked for again, of the layers as they are now
+      if (isLayoutChanged(error)) changed = { applied: true, reset: false };
+      else failure = message;
+    }));
   }
 
   function finish() {
@@ -412,6 +437,7 @@
           <p class="will">Checking what this order changes…</p>
         {/if}
       </div>
+      {#if changed}<p class="changed" role="alert">{layersChangedText(changed.applied, changed.reset)}</p>{/if}
       {#if failure}<p class="problem" role="alert">{failure}</p>{/if}
     </section>
 
@@ -737,6 +763,14 @@
 
   .note {
     color: var(--text-2);
+  }
+
+  .changed {
+    padding: 8px 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    border-radius: 8px;
+    background: var(--accent-weak);
+    color: var(--text);
   }
 
   .stopped {

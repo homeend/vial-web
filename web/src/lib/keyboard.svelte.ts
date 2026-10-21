@@ -6,7 +6,7 @@ import { DEFAULT_LANGUAGE, setRequestKeyboard, setRequestLanguage } from "../api
 import { ApiError, causeMessage, failureMessage } from "../api/errors";
 import { connectEvents, type EventsLink, type LinkState, type ServerEvent } from "../api/events";
 import type {
-  AltRepeatKeyIn, KeyboardLanguage, KeyboardList, KeyboardModel, KeycodeCategory, KeyOverrideIn, LightingIn,
+  AltRepeatKeyIn, ArrangedModel, KeyboardLanguage, KeyboardList, KeyboardModel, KeycodeCategory, KeyOverrideIn, LightingIn,
   MacroActionIn, MatrixState, Named, QmkSetting, Session, TapDanceIn, UnfinishedArrange,
 } from "../api/types";
 import { keyTitle, namesOf } from "../keyboard/labels";
@@ -53,6 +53,13 @@ function hasPosition(model: KeyboardModel, ref: KeyRef): boolean {
   const encoder = model.encoders[ref.index];
   return encoder?.encoder != null && encoder.direction != null;
 }
+
+/** Where a failure's message goes instead of a toast (a dialog that shows it); error: the failure itself, when there is
+ * one (an ApiError says its status and code) */
+export type Report = (message: string, error?: unknown) => void;
+
+/** What writes an arrange: Apply (or Undo), Finish, or Put back */
+export type ArrangeKind = "arrange" | "finish" | "put-back";
 
 /** An edit of several writes stopped as another keyboard was plugged in meanwhile: the page's own failure, not the
  * server's refusal of a change meant for another keyboard (409), so nothing more is read for it */
@@ -137,6 +144,10 @@ export class KeyboardStore {
   #sessionKept = 0;
   /** told once no edit is on its way */
   #editsDone: (() => void)[] = [];
+  /** what of this tab's stopped an arrange partway, and the layout version it left (unfinishedBy) */
+  #stoppedBy = $state<{ kind: ArrangeKind; version: number | null } | null>(null);
+  /** told when the layout version changes (onLayoutVersion) */
+  #layoutListeners = new Set<(version: number | null) => void>();
 
   /** the keyboard (KeyboardEntry.id) the model shown was read from; null while none is */
   get modelKeyboard(): string | null {
@@ -322,7 +333,9 @@ export class KeyboardStore {
   #keepSession(session: Session, at: number): void {
     if (at < this.#sessionKept) return;
     this.#sessionKept = at;
+    const version = this.layoutVersion;
     this.session = session;
+    if (this.layoutVersion !== version) for (const listener of [...this.#layoutListeners]) listener(this.layoutVersion);
   }
 
   /** Read the list of keyboards, and the session (why none could be read): only the latest reading is kept. A model
@@ -704,35 +717,74 @@ export class KeyboardStore {
   }
 
   /** Move the layers to `order` (order[position] = layer now): the server renumbers every layer reference and moves
-   * the names, writing only what differs. A keyboard that must be unlocked for it (QK_BOOT moves, or the macros change)
-   * is unlocked first, as nothing was written. A write that fails leaves the arrange unfinished (unfinishedArrange).
-   * report: says why it wasn't done, instead of a toast. Returns whether it was done. */
-  arrangeLayers(order: number[], report?: (message: string) => void, action = "Arranging the layers"):
-    Promise<boolean> {
-    return this.#arrange(action, () => api.arrangeLayers(order), report);
+   * the names, writing only what differs. expect: the layout version the order was chosen for (a preview's): the
+   * server refuses it (409, code "layoutChanged", nothing written) when the layers changed since; null: whatever they
+   * are. A keyboard that must be unlocked for it (QK_BOOT moves, or the macros change) is unlocked first, as nothing
+   * was written. A write that fails leaves the arrange unfinished (unfinishedArrange). report: says why it wasn't
+   * done, instead of a toast. Resolves to the model the server answered (its new layoutVersion), or null when it
+   * wasn't done. */
+  arrangeLayers(order: number[], expect: number | null, report?: Report, action = "Arranging the layers"):
+    Promise<ArrangedModel | null> {
+    return this.#arrange("arrange", action, () => api.arrangeLayers(order, expect), report);
   }
 
-  /** Write the rest of an arrange that stopped partway, then move the names */
-  finishArrange(report?: (message: string) => void): Promise<boolean> {
-    return this.#arrange("Finishing the arrange", () => api.finishArrange(), report);
+  /** Write the rest of an arrange that stopped partway, then move the names (or only the names, when that is all it
+   * has left: UnfinishedArrange.namesOnly) */
+  finishArrange(report?: Report): Promise<ArrangedModel | null> {
+    return this.#arrange("finish", "Finishing the arrange", () => api.finishArrange(), report);
   }
 
   /** Write back what an arrange that stopped partway changed */
-  putBackArrange(report?: (message: string) => void): Promise<boolean> {
-    return this.#arrange("Putting the layers back", () => api.putBackArrange(), report);
+  putBackArrange(report?: Report): Promise<ArrangedModel | null> {
+    return this.#arrange("put-back", "Putting the layers back", () => api.putBackArrange(), report);
   }
 
-  /** An arrange's request; the session (which says whether one is unfinished) is read again afterwards, done or not */
-  async #arrange(action: string, send: () => Promise<KeyboardModel>, report?: (message: string) => void):
-    Promise<boolean> {
+  /** An arrange's request; the session (which says whether one is unfinished) is read again afterwards, done or not.
+   * Nothing is sent while the keyboard can't be changed, or while another change is being saved (it could be one the
+   * arrange would renumber). */
+  async #arrange(kind: ArrangeKind, action: string, send: () => Promise<ArrangedModel>, report?: Report):
+    Promise<ArrangedModel | null> {
     const model = this.model;
-    if (!model || !this.canEdit) return false;
-    const done = await this.#edit(action, model, async () => {
-      const arranged = await send();
+    if (!model) return null;
+    const refuse = (why: string) => {
+      const message = `${action} failed: ${why}`;
+      if (report) report(message);
+      else toasts.error(message);
+      return null;
+    };
+    if (!this.canEdit) return refuse("the keyboard can't be changed just now.");
+    if (this.pending > 0) return refuse("another change was still being saved. Try again.");
+    const before = this.layoutVersion;
+    let arranged: ArrangedModel | null = null;
+    await this.#edit(action, model, async () => {
+      arranged = await send();
       if (this.model === model) this.model = arranged;
     }, undefined, report);
     await this.refreshSession();
-    return done;
+    // it wrote, and stopped partway: this is what stopped it, while the layout version is the one it left
+    if (!arranged && this.unfinishedArrange && this.layoutVersion !== before) {
+      this.#stoppedBy = { kind, version: this.layoutVersion };
+    }
+    return arranged;
+  }
+
+  /** The keyboard's layout version, as the session last said: it goes up each time its layers are arranged (finished,
+   * put back, or stopped partway) or a layout file is loaded, from any tab; null while no keyboard is open */
+  get layoutVersion(): number | null {
+    return this.session?.layoutVersion ?? null;
+  }
+
+  /** What this tab did that left the arrange unfinished: an arrange, a Finish or a Put back that stopped partway;
+   * null when it doesn't know (another tab's, or the page was opened since), or when nothing is unfinished */
+  get unfinishedBy(): ArrangeKind | null {
+    const stopped = this.#stoppedBy;
+    return this.unfinishedArrange && stopped && stopped.version === this.layoutVersion ? stopped.kind : null;
+  }
+
+  /** Call `listener` each time the session says another layout version (see layoutVersion). Returns what stops it. */
+  onLayoutVersion(listener: (version: number | null) => void): () => void {
+    this.#layoutListeners.add(listener);
+    return () => this.#layoutListeners.delete(listener);
   }
 
   /** Read the session again (whether an arrange is unfinished, the unlock state) */
@@ -769,16 +821,18 @@ export class KeyboardStore {
    * that shows it). */
   async #edit(
     action: string, model: KeyboardModel, write: () => Promise<void>,
-    putBack?: (sameKeyboard: boolean) => Promise<string>, report?: (message: string) => void,
+    putBack?: (sameKeyboard: boolean) => Promise<string>, report?: Report,
   ): Promise<boolean> {
     this.pending++;
     const loads = this.#loads;
     const plugs = this.#plugs;
     /** the server said another keyboard is open than the one the change was for */
     let changed = false;
-    const fail = async (message: string) => {
+    const fail = async (message: string, error?: unknown) => {
       const note = putBack ? await putBack(this.#plugs === plugs && !changed) : "";
-      (report ?? ((text: string) => toasts.error(text)))(note ? `${message} ${note}` : message);
+      const text = note ? `${message} ${note}` : message;
+      if (report) report(text, error);
+      else toasts.error(text);
       return false;
     };
     try {
@@ -787,7 +841,9 @@ export class KeyboardStore {
       } catch (error) {
         if (!(error instanceof ApiError && error.status === 423)) throw error;
         const outcome = await this.unlock.unlockQuietly();
-        if (!outcome.unlocked || this.#plugs !== plugs) return await fail(this.#notUnlocked(action, outcome));
+        if (!outcome.unlocked || this.#plugs !== plugs) {
+          return await fail(this.#notUnlocked(action, outcome), outcome.unlocked ? undefined : outcome.failure);
+        }
         await write();
       }
       // a load started or landed meanwhile and may have read the keyboard before this edit (it can land after it,
@@ -797,14 +853,15 @@ export class KeyboardStore {
     } catch (error) {
       if (error instanceof ApiError && error.status === 503) this.connected = false;
       if (error instanceof ApiError && error.status === 409) {
-        // another keyboard was opened (from another tab), and the change refused: nothing more is sent to it (no
-        // putting back either), and what there is now is read
+        // refused, nothing written: another keyboard is open now (another tab opened it), or (an arrange) the layers
+        // changed since the order was shown, one is unfinished, or the order has problems. Nothing more is sent (no
+        // putting back either), and what there is now is read.
         changed = true;
         void this.#readKeyboards();
         if (this.connected) void this.load();
       }
       return await fail(
-        error instanceof PluggedMeanwhile ? `${action} failed: ${error.message}` : failureMessage(action, error),
+        error instanceof PluggedMeanwhile ? `${action} failed: ${error.message}` : failureMessage(action, error), error,
       );
     } finally {
       this.pending--;

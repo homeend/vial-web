@@ -2,13 +2,20 @@
 // toast and Undo, Finish and Put back after an arrange stopped partway, and the Edit view following the layer it showed
 // to its new position. The order logic and the words are in arrange.ts.
 import { tick } from "svelte";
-import { keyboard } from "../lib/keyboard.svelte";
+import { ApiError } from "../api/errors";
+import type { ArrangedModel } from "../api/types";
+import { keyboard, type Report } from "../lib/keyboard.svelte";
 import { toasts } from "../lib/toasts.svelte";
 import { unsavedWork } from "../lib/unsaved";
-import { arrangeBlocked, positionAfter, reverseOrder, unsavedQuestion } from "./arrange";
+import { arrangeBlocked, keptText, LAYERS_CHANGED, positionAfter, reverseOrder, unsavedQuestion } from "./arrange";
 import { keymapState } from "./state.svelte";
 
 const UNDO = "Undoing the arrange";
+
+/** Whether a failure is the server's refusal of an order chosen for layers that changed since (nothing was written) */
+export function isLayoutChanged(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && error.code === "layoutChanged";
+}
 
 export class LayerArranger {
   /** the dialog shows */
@@ -17,8 +24,15 @@ export class LayerArranger {
   asking = $state<string | null>(null);
   /** the element (by id) that opened the dialog: it gets the focus back */
   #opener: string | null = null;
-  /** the toast offering to undo the last arrange: it goes once another arrange is made */
-  #undoToast: number | null = null;
+  /** the toast offering to undo the last arrange, and the layout version that arrange left: the toast goes once
+   * another arrange is made, or the layout version moves past it (another tab's arrange, a layout file loaded) */
+  #undo: { toast: number; version: number } | null = null;
+
+  constructor() {
+    keyboard.onLayoutVersion((version) => {
+      if (this.#undo && version !== null && version > this.#undo.version) this.#dropUndo();
+    });
+  }
 
   /** Why the Arrange layers button does nothing just now, or null */
   get blocked(): string | null {
@@ -60,47 +74,70 @@ export class LayerArranger {
     this.#opener = null;
   }
 
-  /** Apply in the dialog. report: the failure's message, which the dialog shows */
-  async apply(order: number[], report: (message: string) => void): Promise<boolean> {
+  /** Apply in the dialog: `order` chosen for layout version `expect` (its preview's). report: the failure's message,
+   * which the dialog shows. Resolves to whether it was done. */
+  async apply(order: number[], expect: number | null, report: Report): Promise<boolean> {
     const shown = keymapState.layer;
-    const done = await keyboard.arrangeLayers(order, report);
-    if (done) this.#arranged(order, shown);
-    return done;
+    const opened = keyboard.opened;
+    const arranged = await keyboard.arrangeLayers(order, expect, report);
+    if (arranged) this.#arranged(order, shown, opened, arranged);
+    return arranged !== null;
   }
 
   /** Finish an arrange that stopped partway: the Edit view follows its layer, and Undo is offered */
-  async finish(report?: (message: string) => void): Promise<boolean> {
+  async finish(report?: Report): Promise<boolean> {
     const order = keyboard.unfinishedArrange?.order;
     const shown = keymapState.layer;
-    const done = await keyboard.finishArrange(report);
-    if (done && order) this.#arranged(order, shown);
-    return done;
+    const opened = keyboard.opened;
+    const arranged = await keyboard.finishArrange(report);
+    if (arranged && order) this.#arranged(order, shown, opened, arranged);
+    return arranged !== null;
   }
 
   /** Put back an arrange that stopped partway */
-  async putBack(report?: (message: string) => void): Promise<boolean> {
-    const done = await keyboard.putBackArrange(report);
-    if (done) toasts.info("The layers were put back as they were.");
-    return done;
+  async putBack(report?: Report): Promise<boolean> {
+    const arranged = await keyboard.putBackArrange(report);
+    if (arranged) toasts.info(this.#withKept("The layers were put back as they were.", arranged));
+    return arranged !== null;
   }
 
-  #arranged(order: number[], shown: number): void {
+  /** Done: the Edit view follows the layer it showed, and Undo is offered; not when another keyboard is shown now
+   * (opened: keyboard.opened when it was asked for), where neither would make sense */
+  #arranged(order: number[], shown: number, opened: number, arranged: ArrangedModel): void {
+    if (keyboard.opened !== opened) return;
     keymapState.layer = positionAfter(order, shown);
-    if (this.#undoToast !== null) toasts.dismiss(this.#undoToast);
-    const opened = keyboard.opened;
-    this.#undoToast = toasts.info("Layers arranged.", {
-      label: "Undo", run: () => this.#undo(order, opened), onKeyboardShown: true,
+    this.#dropUndo();
+    const version = arranged.layoutVersion;
+    const toast = toasts.info(this.#withKept("Layers arranged.", arranged), {
+      label: "Undo", run: () => this.#runUndo(order, opened, version), onKeyboardShown: true,
     });
+    this.#undo = { toast, version };
   }
 
-  /** Arranges with the reverse order. Resolves to whether its toast can go. */
-  async #undo(order: number[], opened: number): Promise<boolean> {
+  /** What was done, and what was kept as it was (Finish, Put back) */
+  #withKept(done: string, arranged: ArrangedModel): string {
+    return arranged.kept > 0 ? `${done} ${keptText(arranged.kept, arranged.encoders.length > 0)}` : done;
+  }
+
+  #dropUndo(): void {
+    if (this.#undo) toasts.dismiss(this.#undo.toast);
+    this.#undo = null;
+  }
+
+  /** Arranges with the reverse order, refused when the layers changed since the arrange it undoes (version: the
+   * layout version that left). Resolves to whether its toast can go. */
+  async #runUndo(order: number[], opened: number, version: number): Promise<boolean> {
     if (keyboard.opened !== opened) {
       toasts.error(`${UNDO} failed: another keyboard is shown now.`);
       return true;
     }
     if (keyboard.unfinishedArrange) {
       toasts.error(`${UNDO} failed: an arrange is unfinished. Finish it or put it back first.`);
+      return true;
+    }
+    const now = keyboard.layoutVersion;
+    if (now !== null && now > version) {
+      toasts.error(`${UNDO} failed: ${LAYERS_CHANGED}`);
       return true;
     }
     if (keyboard.pending > 0) {
@@ -113,13 +150,22 @@ export class LayerArranger {
     }
     const back = reverseOrder(order);
     const shown = keymapState.layer;
-    const done = await keyboard.arrangeLayers(back, undefined, UNDO);
-    if (done) {
-      keymapState.layer = positionAfter(back, shown);
-      this.#undoToast = null;
+    // its own arrange moves the layout version on: the toast goes when it is done, not before
+    const held = this.#undo;
+    this.#undo = null;
+    let changed = false;
+    const arranged = await keyboard.arrangeLayers(back, version, (message, error) => {
+      changed = isLayoutChanged(error);
+      toasts.error(changed ? `${UNDO} failed: ${LAYERS_CHANGED}` : message);
+    }, UNDO);
+    if (arranged) {
+      if (keyboard.opened === opened) keymapState.layer = positionAfter(back, shown);
+      return true;
     }
     // stopped partway: the bar offers Finish and Put back from now on
-    return done || keyboard.unfinishedArrange !== null;
+    if (changed || keyboard.unfinishedArrange !== null) return true;
+    if (held && this.#undo === null) this.#undo = held;
+    return false;
   }
 
   async #focusOpener(): Promise<void> {

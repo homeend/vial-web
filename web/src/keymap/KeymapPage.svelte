@@ -386,7 +386,7 @@
   {model}
   {analysis}
   {phrases}
-  onapply={(order, report) => layerArranger.apply(order, report)}
+  onapply={(order, expect, report) => layerArranger.apply(order, expect, report)}
   onfinish={(report) => layerArranger.finish(report)}
   onputback={(report) => layerArranger.putBack(report)}
   onclose={() => layerArranger.closed()}

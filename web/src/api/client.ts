@@ -42,6 +42,12 @@ function detailOf(body: unknown): string | undefined {
   return undefined;
 }
 
+/** What the server calls a refusal (its "code"), if it does */
+function codeOf(body: unknown): string | undefined {
+  const code = (body as { code?: unknown } | null)?.code;
+  return typeof code === "string" ? code : undefined;
+}
+
 export async function request<P extends keyof paths, M extends Method>(
   method: M,
   path: P,
@@ -62,7 +68,7 @@ export async function request<P extends keyof paths, M extends Method>(
     body,
   });
   const reply: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(response.status, detailOf(reply));
+  if (!response.ok) throw new ApiError(response.status, detailOf(reply), codeOf(reply));
   return reply as Reply<Operation<P, M>>;
 }
 

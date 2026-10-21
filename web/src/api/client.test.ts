@@ -92,6 +92,14 @@ describe("request", () => {
     expect(error.message).toBe("not a valid keycode: FOO");
   });
 
+  it("keeps the code a refusal names, to tell it from others of its status", async () => {
+    fetchMock.mockResolvedValue(reply(409, { detail: "The layers changed since this was shown.", code: "layoutChanged" }));
+    const error = await failure(request("post", "/api/layers/arrange", { body: { order: [0, 2, 1], expect: 3 } }));
+    expect([error.status, error.code, error.detail]).toEqual([409, "layoutChanged", "The layers changed since this was shown."]);
+    fetchMock.mockResolvedValue(reply(409, { detail: "another keyboard is open" }));
+    expect((await failure(request("post", "/api/layers/arrange", { body: { order: [0, 2, 1] } }))).code).toBeUndefined();
+  });
+
   it("joins FastAPI's list of validation errors into the detail", async () => {
     fetchMock.mockResolvedValue(reply(422, {
       detail: [
