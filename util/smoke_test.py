@@ -8,6 +8,7 @@ Vial runs with --fake (the simulated keyboard: no keyboard is looked for or open
 simulated keyboard), quits with POST /api/shutdown, and checks that Vial exits with 0 by itself. Prints how long it
 took to start. Python's standard library only. Exits 1 on any failure, and stops whatever it started first.
 """
+import http.client
 import http.cookiejar
 import json
 import os
@@ -25,6 +26,8 @@ START_TIMEOUT = 60
 EXIT_TIMEOUT = 20
 STOP_WAIT = 5
 """ seconds stop() gives Vial at each step before it takes the next, harder one """
+KILL_WAIT = 10
+""" seconds stop() waits for Vial to end once killed """
 LINK = re.compile(r"Open it at:\r?\n\s*(http://127\.0\.0\.1:(\d+)/\?token=[\w-]+)\r?\n")
 WINDOWS = sys.platform == "win32"
 
@@ -54,17 +57,35 @@ def _ended(process, wait):
         return False
 
 
+def kill_group(process):
+    """ Kills a process started by start(), with its whole group. None, or why that failed. """
+    if WINDOWS:
+        result = subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, text=True,
+                                errors="replace")
+        if result.returncode != 0:
+            return "taskkill exited with {}: {}".format(result.returncode, (result.stdout + result.stderr).strip())
+        return None
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return None  # the group has just ended
+    except OSError as e:
+        return str(e)
+    return None
+
+
 def stop(process, shutdown=None, wait=STOP_WAIT):
     """ Stops a process started by start(), with its whole group, if it still runs. First shutdown() (POST
     /api/shutdown, once Vial's link is known); then Ctrl+Break (Windows) or SIGTERM to its group only, which Vial takes
-    as a clean stop; each is given `wait` seconds. Then the group is killed. """
+    as a clean stop; each is given `wait` seconds. Then the group is killed, which is told on stderr, and given
+    KILL_WAIT seconds to end. Never raises: it runs on the way out of a failure, whose message comes first. """
     if process.poll() is not None:
         return
     if shutdown is not None:
         try:
             shutdown()
-        except OSError:
-            pass  # no answer: on to the next step at once
+        except Exception:  # no answer, or a garbled one: on to the next step at once
+            pass
         else:
             if _ended(process, wait):
                 return
@@ -78,24 +99,25 @@ def stop(process, shutdown=None, wait=STOP_WAIT):
     else:
         if _ended(process, wait):
             return
-    if WINDOWS:
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except OSError:
-            pass
-    process.wait()
+    print("smoke test: process {} didn't stop when asked: killing it with its process group".format(process.pid),
+          file=sys.stderr, flush=True)
+    problem = kill_group(process)
+    if problem and process.poll() is None:
+        print("smoke test: killing it failed: " + problem, file=sys.stderr, flush=True)
+    if not _ended(process, KILL_WAIT):
+        print("smoke test: process {} still runs {} s after it was killed".format(process.pid, KILL_WAIT),
+              file=sys.stderr, flush=True)
 
 
 def fetch(opener, request, output):
-    """ opener.open(request): (its status, its body). Fails with Vial's output (a list of lines) on an HTTP error or no
-    answer. """
+    """ opener.open(request): (its status, its body). Fails with Vial's output (a list of lines) on an HTTP error, no
+    answer or a garbled one. """
     try:
         with opener.open(request, timeout=10) as response:
             return response.status, response.read()
-    except OSError as e:  # urllib.error.HTTPError and URLError, and a timeout, are all OSErrors
+    # urllib.error.HTTPError and URLError, and a timeout, are all OSErrors; an answer that isn't HTTP is an
+    # http.client.HTTPException
+    except (OSError, http.client.HTTPException) as e:
         url = request if isinstance(request, str) else request.full_url
         fail("{} failed: {}".format(url, e), "".join(output))
 

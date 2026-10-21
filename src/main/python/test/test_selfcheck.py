@@ -1,4 +1,9 @@
+import ast
+import importlib.util
+import os
+
 import pytest
+import uvicorn
 
 import resources
 import selfcheck
@@ -65,9 +70,41 @@ def test_vial_self_check_says_what_is_missing_and_never_looks_for_a_keyboard(mon
         assert "this build has everything it needs" in out and "No keyboard was looked for." in out
 
 
+SPEC = os.path.join(resources.SOURCE_ROOT, "vial.spec")
+
+
+def uvicorn_imports_by_name():
+    """ The modules uvicorn imports by name as Vial runs it, from uvicorn's own tables: its "auto" choices (Vial sets
+    none of loop, http, ws and lifespan), and the implementations they pick here """
+    from uvicorn import config
+    from uvicorn.protocols.http.auto import AutoHTTPProtocol
+    from uvicorn.protocols.websockets.auto import AutoWebSocketsProtocol
+    defaults = uvicorn.Config(None)
+    assert (defaults.loop, defaults.http, defaults.ws, defaults.lifespan) == ("auto", "auto", "auto", "auto")
+    names = {table["auto"].split(":")[0]
+             for table in (config.LOOP_FACTORIES, config.HTTP_PROTOCOLS, config.WS_PROTOCOLS, config.LIFESPAN)}
+    # uvicorn.loops.auto picks uvloop's loop if it can import uvloop (Vial doesn't install it)
+    names.add("uvicorn.loops.uvloop" if importlib.util.find_spec("uvloop") else "uvicorn.loops.asyncio")
+    names.add(AutoHTTPProtocol.__module__)
+    names.add(AutoWebSocketsProtocol.__module__)
+    return names
+
+
+def spec_hidden_imports():
+    """ the names in vial.spec's HIDDEN_IMPORTS """
+    with open(SPEC, encoding="utf-8") as inf:
+        tree = ast.parse(inf.read())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and [getattr(t, "id", None) for t in node.targets] == ["HIDDEN_IMPORTS"]:
+            return {n.value for n in ast.walk(node.value) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+    raise AssertionError("vial.spec has no HIDDEN_IMPORTS")
+
+
 def test_the_self_check_imports_what_uvicorn_imports_by_name():
-    # uvicorn's "auto" choices, and the implementations they pick here (vial.spec's hidden imports)
-    for name in ("uvicorn.loops.auto", "uvicorn.loops.asyncio", "uvicorn.protocols.http.auto",
-                 "uvicorn.protocols.http.h11_impl", "uvicorn.protocols.websockets.auto",
-                 "uvicorn.protocols.websockets.websockets_sansio_impl", "uvicorn.lifespan.on"):
-        assert name in selfcheck.SERVER_MODULES
+    expected = uvicorn_imports_by_name()
+    assert {"uvicorn.loops.auto", "uvicorn.protocols.http.auto", "uvicorn.lifespan.on"} <= expected
+    assert {name for name in selfcheck.SERVER_MODULES if name.startswith("uvicorn.")} == expected
+
+
+def test_the_executable_bundles_what_uvicorn_imports_by_name():
+    assert uvicorn_imports_by_name() <= spec_hidden_imports()

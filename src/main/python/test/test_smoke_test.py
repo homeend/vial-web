@@ -1,10 +1,12 @@
 """ util/smoke_test.py: how it stops what it started (a one-file build runs as two processes), and how it fails.
 Nothing here runs Vial: the processes stopped are small Python scripts, each started in a process group of its own. """
+import http.client
 import importlib.util
 import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -137,11 +139,43 @@ def test_stop_then_sends_ctrl_break_or_sigterm_to_the_group_only(started):
     assert gone(child)
 
 
-def test_stop_kills_the_whole_group_when_it_ignores_being_asked(started):
+def test_stop_kills_the_whole_group_when_it_ignores_being_asked(started, capsys):
     process, child = started("tree-ignore")
     smoke_test.stop(process, wait=1)
     assert process.returncode is not None
     assert gone(child)  # the child too, as a one-file build's Python process
+    err = capsys.readouterr().err
+    assert "didn't stop when asked: killing it" in err
+    assert "failed" not in err and "still runs" not in err
+
+
+def test_stop_goes_on_when_asking_fails_in_any_way(started):
+    """ e.g. something on Vial's port that doesn't speak HTTP: not an OSError """
+    process, child = started("tree-ignore")
+
+    def garbled():
+        raise http.client.BadStatusLine("garbage")
+    smoke_test.stop(process, garbled, wait=1)
+    assert process.returncode is not None
+    assert gone(child)
+
+
+def test_a_kill_that_fails_is_told(started, monkeypatch, capsys):
+    process, pid = started("leaf-ignore")
+    monkeypatch.setattr(smoke_test, "kill_group", lambda process: "taskkill exited with 1: Access is denied.")
+    monkeypatch.setattr(smoke_test, "KILL_WAIT", 0.2)
+    smoke_test.stop(process, wait=0.2)  # returns all the same: the process is left running (the fixture kills it)
+    err = capsys.readouterr().err
+    assert "killing it failed: taskkill exited with 1: Access is denied." in err
+    assert "still runs" in err
+    assert process.poll() is None
+
+
+@pytest.mark.skipif(not WINDOWS, reason="taskkill is Windows'")
+def test_taskkill_failing_is_reported():
+    class Gone:
+        pid = 2 ** 31 - 2  # no such process
+    assert "taskkill exited with" in smoke_test.kill_group(Gone())
 
 
 def test_stop_of_an_ended_process_does_nothing(started):
@@ -155,10 +189,12 @@ def test_stop_of_an_ended_process_does_nothing(started):
 def test_a_self_check_that_hangs_is_stopped_and_fails_with_its_output(script, tmp_path, capsys):
     pid_file = tmp_path / "check.pid"
     with pytest.raises(SystemExit) as exited:
-        smoke_test.self_check([sys.executable, str(script), "tree-ignore", str(pid_file)], timeout=5, wait=1)
+        # long enough for the script to start on a busy machine
+        smoke_test.self_check([sys.executable, str(script), "tree-ignore", str(pid_file)], timeout=15, wait=1)
     assert exited.value.code == 1
     err = capsys.readouterr().err
-    assert "--self-check did not finish within 5 s" in err
+    assert pid_file.exists(), "the script didn't start within 15 s:\n" + err
+    assert "--self-check did not finish within 15 s" in err
     assert "child output" in err
     assert gone(int(pid_file.read_text()))
 
@@ -171,6 +207,31 @@ def test_an_http_error_fails_with_vials_output(capsys):
     url = "http://127.0.0.1:{}/api/session".format(port)
     with pytest.raises(SystemExit) as exited:
         smoke_test.fetch(opener, url, ["Vial said this\n"])
+    assert exited.value.code == 1
+    err = capsys.readouterr().err
+    assert "smoke test FAILED: {} failed:".format(url) in err
+    assert "Vial said this" in err
+
+
+def test_an_answer_that_isnt_http_fails_with_vials_output(capsys):
+    """ http.client's errors for a garbled answer aren't OSErrors """
+    with socket.socket() as server:
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+
+        def answer():
+            connection, _ = server.accept()
+            with connection:
+                connection.recv(4096)
+                connection.sendall(b"garbage\r\n\r\n")
+        thread = threading.Thread(target=answer, daemon=True)
+        thread.start()
+        opener = smoke_test.urllib.request.build_opener(smoke_test.urllib.request.ProxyHandler({}))
+        url = "http://127.0.0.1:{}/api/session".format(port)
+        with pytest.raises(SystemExit) as exited:
+            smoke_test.fetch(opener, url, ["Vial said this\n"])
+        thread.join(5)
     assert exited.value.code == 1
     err = capsys.readouterr().err
     assert "smoke test FAILED: {} failed:".format(url) in err
