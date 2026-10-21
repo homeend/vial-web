@@ -240,3 +240,17 @@ describe("the matrix tester on the events link", () => {
     expect(FakeSocket.latest.sent).toEqual([]);
   });
 });
+
+describe("Vial stopping", () => {
+  it("passes on the stopped event, then closes the link for good: it isn't opened again", () => {
+    connect();
+    FakeSocket.latest.accept();
+    FakeSocket.latest.deliver(JSON.stringify({ type: "stopped" }));
+    expect(events).toEqual([{ type: "stopped" }]);
+    expect(FakeSocket.latest.closed).toBe(true);
+    vi.advanceTimersByTime(60_000);
+    expect(FakeSocket.all).toHaveLength(1);
+    // the link didn't drop: it ended
+    expect(links).toEqual(["connecting", "open"]);
+  });
+});

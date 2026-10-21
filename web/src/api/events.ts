@@ -1,5 +1,6 @@
-// Live events from the server: the keyboard was plugged in, unplugged, read again, or its unlock state changed; and,
-// while the page asks for them, the keys held (the matrix tester).
+// Live events from the server: the keyboard was plugged in, unplugged, read again, or its unlock state changed; while
+// the page asks for them, the keys held (the matrix tester); and Vial stopping (Quit Vial), after which the link isn't
+// opened again.
 import type { ServerEvent } from "./types";
 
 export type { ServerEvent };
@@ -19,7 +20,7 @@ const RETRY_FIRST_MS = 500;
 const RETRY_MAX_MS = 5000;
 
 const EVENTS: Record<ServerEvent["type"], true> = {
-  connected: true, disconnected: true, reloaded: true, unlock: true, matrix: true, keyboards: true,
+  connected: true, disconnected: true, reloaded: true, unlock: true, matrix: true, keyboards: true, stopped: true,
 };
 
 /** An event of a known type; an "unlock" one must carry the unlock state, a "matrix" one the keys held */
@@ -34,7 +35,8 @@ function isServerEvent(frame: unknown): frame is ServerEvent {
   return true;
 }
 
-/** Keeps a WebSocket to /api/events open, reconnecting when it drops */
+/** Keeps a WebSocket to /api/events open, reconnecting when it drops; after a "stopped" event it closes for good, as
+ * there is nothing to reconnect to */
 export function connectEvents(
   onEvent: (event: ServerEvent) => void,
   onLink: (state: LinkState) => void,
@@ -62,7 +64,14 @@ export function connectEvents(
       } catch {
         return; // not JSON: not an event
       }
-      if (isServerEvent(frame)) onEvent(frame);
+      if (!isServerEvent(frame)) return;
+      if (frame.type === "stopped") {
+        // Vial is stopping: the link ends, without the "closed" a drop would bring
+        stopped = true;
+        clearTimeout(timer);
+        current.close();
+      }
+      onEvent(frame);
     };
     current.onclose = () => {
       socket = null;

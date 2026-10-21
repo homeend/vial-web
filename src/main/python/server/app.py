@@ -10,7 +10,7 @@ import sys
 import urllib.parse
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -327,11 +327,13 @@ class UnlockFollower:
 
 def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone=None,
                poll_interval=1.0, close_grace=3.0, instance_id=None, unlock_interval=UNLOCK_POLL_INTERVAL,
-               matrix_interval=MATRIX_POLL_INTERVAL, matrix_gap=MATRIX_POLL_GAP):
+               matrix_interval=MATRIX_POLL_INTERVAL, matrix_gap=MATRIX_POLL_GAP, on_stop=None):
     """
     manager: DeviceManager; names: NamesStore; token: session secret; port: the port the server listens on
     static_dir: built UI (web/dist) or None for a placeholder page
     on_all_clients_gone: called once the last UI tab has been closed for close_grace seconds
+    on_stop: stops the server (uvicorn's should_exit), called once POST /api/shutdown has answered; None: that route
+    refuses (501)
     poll_interval: seconds between hot-plug checks (0: none); unlock_interval: between readings of an unlock countdown
     matrix_interval, matrix_gap: the matrix tester's readings (MatrixWatcher)
     """
@@ -785,6 +787,30 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         finally:
             await broadcast_events(await asyncio.to_thread(manager.take_events))
         return await asyncio.to_thread(session)
+
+    stopping = []
+    """ the task letting go of the keyboard, once POST /api/shutdown was asked """
+
+    async def let_go():
+        await follower.shutdown()
+        await matrix.shutdown()
+        await asyncio.to_thread(manager.close)
+        log.info("the keyboard was let go of: stopping, as asked from the page")
+        await hub.broadcast({"type": "stopped"})
+
+    @app.post("/api/shutdown", status_code=204, response_class=Response)
+    async def shutdown(background: BackgroundTasks):
+        """ Quit Vial: the keyboard is let go of (an unlock followed and the matrix tester stop first, and no keyboard
+        is opened any more), every tab is told ("stopped" event: Vial is gone for good, there is nothing to reconnect
+        to), and the server stops once it has answered. Asked again meanwhile, it answers the same, once that is
+        done. """
+        if on_stop is None:
+            raise HTTPException(501, "this server can't be stopped from the page")
+        if not stopping:
+            stopping.append(asyncio.ensure_future(let_go()))
+        await asyncio.shield(stopping[0])
+        background.add_task(on_stop)
+        return Response(status_code=204)
 
     @app.websocket("/api/events")
     async def events(ws: WebSocket):

@@ -241,9 +241,9 @@ class MatrixState(BaseModel):
 class Event(BaseModel):
     """ What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed; the
     keyboards plugged in, the one chosen or open, or why none could be read (Session.error) changed ("keyboards":
-    GET /api/keyboards and /api/session tell how); and, to a tab that asked for it ({"type": "matrix", "watch": true}),
-    the keys held, at every change """
-    type: Literal["connected", "disconnected", "reloaded", "unlock", "matrix", "keyboards"]
+    GET /api/keyboards and /api/session tell how); to a tab that asked for it ({"type": "matrix", "watch": true}), the
+    keys held, at every change; and Vial is stopping, as Quit Vial was used in a tab ("stopped": the last event) """
+    type: Literal["connected", "disconnected", "reloaded", "unlock", "matrix", "keyboards", "stopped"]
     unlock: Optional[UnlockState] = None
     """ with "unlock": the new state; sent at every change, and with each reading of the countdown """
     matrix: Optional[MatrixState] = None

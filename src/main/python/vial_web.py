@@ -43,6 +43,10 @@ MAX_UNLOCK_COUNTER = 255
 LIGHTING_KINDS = ("none", "qmk_backlight", "qmk_rgblight", "qmk_backlight_rgblight", "vialrgb")
 """ --lighting: what vial.json's "lighting" can say (simulator.corne.LIGHTING; not imported, as a real launch never
 loads the simulator) """
+SHUTDOWN_GRACE = 2
+""" seconds the server waits, once stopping, for the tabs' connections to close. A connection the browser reset (a tab
+or a browser killed) may never be let go of on Windows: asyncio's proactor transport fails to shut such a socket down
+before it tells the server the connection is gone, and the server would wait for it forever. """
 UVICORN_LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -57,6 +61,8 @@ Press Ctrl+C to stop."""
 REOPEN_MESSAGE = """Browser window closed. Vial is still running. Reopen it at:
   {url}
 Press Ctrl+C to stop."""
+
+QUIT_MESSAGE = "Quit Vial was used on the page: Vial is stopping."
 
 log = logging.getLogger(__name__)
 
@@ -501,7 +507,7 @@ def load_layout_file(manager, path):
 
 
 def serve(args, manager, sock):
-    """ Serve the UI on the bound socket until Ctrl+C """
+    """ Serve the UI on the bound socket until Quit Vial on the page (POST /api/shutdown) or Ctrl+C """
     import uvicorn
     from server.app import create_app
     from server.names import NamesStore
@@ -521,8 +527,23 @@ def serve(args, manager, sock):
         print(REOPEN_MESSAGE.format(url=url), flush=True)
         logging.info("all browser tabs closed")
 
+    server = None
+
+    def stop_server():
+        """ Ask the server to stop, as Ctrl+C does (from any thread) """
+        if server is not None:
+            server.should_exit = True
+
+    def quit_from_page():
+        # POST /api/shutdown has answered, and closed the keyboard
+        print(QUIT_MESSAGE, flush=True)
+        logging.info("Quit Vial was used on the page")
+        stop_server()
+
     app = create_app(manager, names, token, port, static_dir=resources.path(resources.WEB_DIST),
-                     on_all_clients_gone=all_tabs_closed, instance_id=instance)
+                     on_all_clients_gone=all_tabs_closed, instance_id=instance, on_stop=quit_from_page)
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", log_config=UVICORN_LOGGING,
+                                           timeout_graceful_shutdown=SHUTDOWN_GRACE))
 
     write_session({"port": port, "url": url, "instance": instance, "fake": bool(args.fake)})
     try:
@@ -531,7 +552,7 @@ def serve(args, manager, sock):
         logging.info("serving on port %d", port)
         if not args.no_browser:
             threading.Thread(target=webbrowser.open, args=[url], daemon=True).start()
-        uvicorn.Server(uvicorn.Config(app, log_level="warning", log_config=UVICORN_LOGGING)).run(sockets=[sock])
+        server.run(sockets=[sock])
     except KeyboardInterrupt:
         pass  # uvicorn shuts down cleanly on Ctrl+C, then raises it again
     finally:

@@ -464,6 +464,8 @@ class FakeServer:
 
     def __init__(self, config):
         FakeServer.seen["app"] = config.app
+        FakeServer.seen["config"] = config
+        FakeServer.seen["server"] = self
 
     def run(self, sockets):
         (sock,) = sockets
@@ -498,12 +500,45 @@ def test_serving_announces_the_bound_port_and_cleans_up(home, fake_server, capsy
     assert not os.path.exists(vial_web.session_file(True))
 
 
+def test_quit_on_the_page_stops_the_server_once_the_keyboard_is_let_go_of(home, fake_server, monkeypatch, capsys):
+    from fastapi.testclient import TestClient
+    opened = []
+
+    class Device(SimulatedHidDevice):
+        def __init__(self, keyboard):
+            super().__init__(keyboard)
+            opened.append(self)
+
+    def quit_on_the_page():
+        port = fake_server.seen["address"][1]
+        base = "http://127.0.0.1:{}".format(port)
+        with TestClient(fake_server.seen["app"], base_url=base) as page:
+            assert page.get(fake_server.seen["session"]["url"], follow_redirects=False).status_code == 303
+            assert not getattr(fake_server.seen["server"], "should_exit", False)
+            fake_server.seen["quit"] = page.post("/api/shutdown", headers={"origin": base}).status_code
+            fake_server.seen["closed"] = [d.closed for d in opened]
+    monkeypatch.setattr(device_module, "SimulatedHidDevice", Device)
+    fake_server.while_serving = quit_on_the_page
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert fake_server.seen["quit"] == 204
+    assert fake_server.seen["closed"] == [True]  # by the time it answered
+    assert fake_server.seen["server"].should_exit is True  # uvicorn stops
+    assert vial_web.QUIT_MESSAGE in capsys.readouterr().out
+    assert not os.path.exists(vial_web.session_file(True))
+
+
 def test_serving_without_the_web_ui_built_says_how_to_build_it(home, fake_server, monkeypatch, capsys):
     monkeypatch.setattr(resources, "WEB_DIST", resources.Resource("web/not-built", "web"))
     assert vial_web.main(["--fake", "--no-browser"]) == 0
     out, err = capsys.readouterr()
     assert "the web UI isn't built" in err and "cd web && npm ci && npm run build" in err
     assert "Open it at" in out  # the API and the page that says so are served all the same
+
+
+def test_stopping_waits_for_the_tabs_only_so_long(home, fake_server):
+    """ a tab's connection reset by the browser may never close (see SHUTDOWN_GRACE) """
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert fake_server.seen["config"].timeout_graceful_shutdown == vial_web.SHUTDOWN_GRACE
 
 
 def test_instance_is_claimed_before_connecting_and_released_at_exit(home, fake_server, monkeypatch):

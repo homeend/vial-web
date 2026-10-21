@@ -573,6 +573,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Shutdown
+         * @description Quit Vial: the keyboard is let go of (an unlock followed and the matrix tester stop first, and no keyboard
+         *     is opened any more), every tab is told ("stopped" event: Vial is gone for good, there is nothing to reconnect
+         *     to), and the server stops once it has answered. Asked again meanwhile, it answers the same, once that is
+         *     done.
+         */
+        post: operations["shutdown_api_shutdown_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1376,15 +1399,15 @@ export interface components {
          * Event
          * @description What /api/events sends: the keyboard was plugged in, unplugged, read again, or its unlock state changed; the
          *     keyboards plugged in, the one chosen or open, or why none could be read (Session.error) changed ("keyboards":
-         *     GET /api/keyboards and /api/session tell how); and, to a tab that asked for it ({"type": "matrix", "watch": true}),
-         *     the keys held, at every change
+         *     GET /api/keyboards and /api/session tell how); to a tab that asked for it ({"type": "matrix", "watch": true}), the
+         *     keys held, at every change; and Vial is stopping, as Quit Vial was used in a tab ("stopped": the last event)
          */
         Event: {
             /**
              * Type
              * @enum {string}
              */
-            type: "connected" | "disconnected" | "reloaded" | "unlock" | "matrix" | "keyboards";
+            type: "connected" | "disconnected" | "reloaded" | "unlock" | "matrix" | "keyboards" | "stopped";
             /** @default null */
             unlock: components["schemas"]["UnlockState"] | null;
             /** @default null */
@@ -2329,6 +2352,24 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Session"];
                 };
+            };
+        };
+    };
+    shutdown_api_shutdown_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -575,6 +575,8 @@ class DeviceManager:
         """ candidate key -> (failed attempts, clock time of the next attempt) """
         self.present_error_logged = None
         """ clock time a failing present() was last logged """
+        self.stopped = False
+        """ close() was called: the server is stopping, and no keyboard is looked for or opened any more """
 
     @property
     def connected(self):
@@ -671,6 +673,8 @@ class DeviceManager:
         """ found: what _find() gave, if it was called already """
         with self.lock:
             self._close()
+            if self.stopped:
+                return False
             candidates, failure = self._find() if found is None else found
             if failure is not None:
                 log.error("could not list keyboards", exc_info=failure)
@@ -989,7 +993,10 @@ class DeviceManager:
     # ---------- hot-plug ----------
 
     def check(self):
-        """ Hot-plug poll, called about once a second. Returns the events since the last call. """
+        """ Hot-plug poll, called about once a second. Returns the events since the last call; once stopped, it looks
+        for no keyboard. """
+        if self.stopped:
+            return self.take_events()
         # outside the device lock: listing every HID device can take a while on some systems, and requests to the
         # open keyboard go on meanwhile (as Qt's autorefresh thread lists them)
         found = self._find()
@@ -1042,8 +1049,9 @@ class DeviceManager:
             return None
 
     def close(self):
-        """ Let go of the keyboard: the server is stopping """
+        """ Let go of the keyboard: the server is stopping. No keyboard is opened from now on. """
         with self.lock:
+            self.stopped = True
             self._close()
 
     @staticmethod

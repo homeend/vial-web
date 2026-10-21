@@ -33,6 +33,20 @@ def test_run_without_keyboard_raises():
         m.run(lambda kb: None)
 
 
+def test_closed_the_manager_opens_no_keyboard_any_more(manager):
+    """ The server is stopping: the keyboard still plugged in is neither looked for nor opened again """
+    found = []
+    find = manager.backend.find
+    manager.backend.find = lambda: found.append(True) or find()
+    manager.close()
+    assert not manager.connected
+    assert manager.check() == []
+    assert found == []
+    assert not manager.connect()
+    assert manager.select(manager.listed[0].id) is False
+    assert manager.device is None
+
+
 def test_unplug_and_replug_are_reported(manager):
     manager.backend.virtual.connected = False
     assert manager.check() == ["disconnected"]
