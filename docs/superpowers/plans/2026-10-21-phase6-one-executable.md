@@ -9,7 +9,7 @@
 - **Quit.**
   - On the server, `POST /api/shutdown` stops the unlock follower and the matrix tester, then closes the keyboard; from then on `DeviceManager` opens none. It sends every tab a `stopped` event, answers 204, and then sets uvicorn's `should_exit`.
   - In the web UI, a "Quit Vial" button sits in the top bar. It asks first when there is unsaved work. Afterwards `StoppedPage` replaces the app, and the events link isn't opened again.
-- **The console.** `console.py` handles a closed console window, log-off, shutdown and Ctrl+Break on Windows (`SetConsoleCtrlHandler`), and SIGHUP elsewhere. Each asks the server to stop and holds the process until the keyboard is closed. Ctrl+C stays Python's `KeyboardInterrupt`. uvicorn waits at most `SHUTDOWN_GRACE` (2 s) for the tabs' connections.
+- **The console.** `console.py` handles a closed console window and Ctrl+Break on Windows (`SetConsoleCtrlHandler`), and SIGHUP elsewhere. Each asks the server to stop and holds the process until the keyboard is closed. At log-off or shutdown, Windows ends Vial and the system closes the keyboard's handle: Windows doesn't send those events to a process that has loaded `user32.dll`, as `ctypes` does. Ctrl+C stays Python's `KeyboardInterrupt`. uvicorn waits at most `SHUTDOWN_GRACE` (2 s) for the tabs' connections.
 - **Qt removed.** The Qt modules, their tests and the dead code they leave go, and so do PyQt5, keyboard, pywin32, certifi, pytest-qt and pytest-xvfb. The firmware updater's logic moves to `protocol/flasher.py`. `test_core_isolation` now checks that no source imports Qt.
 - **The executable.** `vial.spec` builds a PyInstaller one-file console executable with hidden imports for uvicorn, no UPX, and Windows version info from `version.py`. `vial --self-check` checks a build without looking for any keyboard. `util/smoke_test.py` starts a build with `--fake`, reads the session and quits it.
 - **e2e against the executable.** With `E2E_VIAL_CMD`, the e2e servers are the built executable instead of `vial_web.py`. Every server is asked to quit first.
@@ -141,7 +141,7 @@ One phase 5b Python test is flaky under load: `test_keyboards.py::test_the_poll_
 | `src/main/python/server/app.py` | the placeholder page says how to build the UI; `POST /api/shutdown` (`create_app(…, on_stop=…)`, 501 without it), the `stopped` event |
 | `src/main/python/server/device.py` | `DeviceManager.stopped`: after `close()` no keyboard is looked for or opened |
 | `src/main/python/server/schemas.py` | the `stopped` event type |
-| `src/main/python/console.py` | **new.** `ConsoleStop`, `StopOnConsoleClose`: a closed console window, log-off, shutdown or Ctrl+Break (Windows) or SIGHUP (elsewhere) stops the server and waits until the keyboard is closed; Ctrl+C turned back on if inherited as ignored |
+| `src/main/python/console.py` | **new.** `ConsoleStop`, `StopOnConsoleClose`: a closed console window or Ctrl+Break (Windows) or SIGHUP (elsewhere) stops the server and waits until the keyboard is closed (log-off and shutdown never reach Vial: Windows ends it, and the system closes the keyboard's handle); Ctrl+C turned back on if inherited as ignored |
 | `src/main/python/vial_web.py` | the web UI through `resources`, and a hint when it isn't built; `quit_from_page`, `QUIT_MESSAGE`, `SHUTDOWN_GRACE`; the console handler and the keyboard closed in `serve()`; the console messages; `--version`; `--self-check` |
 | `src/main/python/version.py` | **new.** `VERSION = "0.8.0"`, `PRODUCT = "Vial (web)"` |
 | `src/main/python/selfcheck.py` | **new.** `problems()`, `main()`: hidapi loads, the server and uvicorn's run-time modules import, the web UI and the QMK settings are there |
@@ -190,7 +190,8 @@ These come from the verified prototype (`proto-phase6`).
    - It was checked at 375, 800, 1280 and 1920 px in both themes: no sideways scroll, a visible focus ring, and no CSS Firefox lacks.
    - On the server, `POST /api/shutdown` has the token and Host/Origin checks of every route. It stops the unlock follower and the matrix watcher and closes the keyboard; `DeviceManager.close()` sets `stopped`, so `check`, `connect` and `select` open nothing afterwards. Then it broadcasts `stopped`, answers 204, and a `BackgroundTask` sets uvicorn's `should_exit`. Calls made at the same time share one close. A server created without `on_stop` (the tests, the schema dump) answers 501.
 2. **The console.**
-   - **Windows:** `SetConsoleCtrlHandler` takes the close, log-off and shutdown events and Ctrl+Break. It asks uvicorn to stop and holds the process, at most `CLOSE_WAIT` = 4.5 s (Windows ends it 5 s after the event), until `serve()` has closed the keyboard. Ctrl+C stays Python's `KeyboardInterrupt`, which uvicorn stops on.
+   - **Windows:** `SetConsoleCtrlHandler` takes the close event and Ctrl+Break. It asks uvicorn to stop and holds the process, at most `CLOSE_WAIT` = 4.5 s (Windows ends it 5 s after the event), until `serve()` has closed the keyboard. Ctrl+C stays Python's `KeyboardInterrupt`, which uvicorn stops on.
+   - **Log-off and shutdown** never reach the handler. Windows doesn't send `CTRL_LOGOFF_EVENT` or `CTRL_SHUTDOWN_EVENT` to a process that has loaded `user32.dll` or `gdi32.dll`, and `import ctypes` loads both (through ole32). At log-off or shutdown, Windows ends Vial and the system closes the keyboard's handle. `ENDING_EVENTS` keeps the two events all the same (harmless).
    - Windows passes "ignore Ctrl+C" on to child processes. The handler therefore turns Ctrl+C processing back on (`SetConsoleCtrlHandler(NULL, FALSE)`, called with `routine()` because ctypes needs a NULL routine).
    - **Linux and macOS:** SIGHUP (the terminal closed) does the same.
    - `serve()` closes the keyboard in its own `finally`, inside that window.
@@ -1249,7 +1250,7 @@ The console window stays: it shows the link and the reopen message. Ctrl+C alrea
 - `ConsoleStop(stop, wait)` decides what each console event does:
   - Ctrl+C is left to Python (`False`);
   - Ctrl+Break calls `stop()` and lets the process run on, because uvicorn would otherwise end the process before the keyboard is closed;
-  - a closed window, log-off and shutdown call `stop()`, then wait until `released()`, at most `CLOSE_WAIT` (4.5 s).
+  - a closed window calls `stop()`, then waits until `released()`, at most `CLOSE_WAIT` (4.5 s). Log-off and shutdown are handled alike but never arrive: Windows doesn't send them to a process that has loaded `user32.dll`, as `ctypes` does. At log-off or shutdown, Windows ends Vial and the system closes the keyboard's handle.
 - `StopOnConsoleClose(stop)` is a `with` block. On Windows it installs `ConsoleStop` as a console control handler (`SetConsoleCtrlHandler`). It first turns Ctrl+C processing back on, because Windows passes "ignore Ctrl+C" on to child processes. Elsewhere it handles SIGHUP (a closed terminal) by calling `stop()`. Leaving the block releases a waiting close and removes the handler.
 
 `serve()` runs uvicorn inside that block, and its `finally` closes the keyboard (`manager.close()`) inside the window a close leaves. The console messages say how to stop Vial: Ctrl+C or closing the window. `SHUTDOWN_GRACE` (2 s) is shorter than `CLOSE_WAIT`, which the test now checks.
@@ -1402,12 +1403,14 @@ Create `src/main/python/console.py`:
 # SPDX-License-Identifier: GPL-2.0-or-later
 """ Closing Vial's console window stops it cleanly, as Ctrl+C does: the server stops and the keyboard is let go of.
 
-Ctrl+C reaches Python as KeyboardInterrupt, and uvicorn stops on it. On Windows a console window being closed (or
-logging off, shutting down) doesn't: Windows ends the process as soon as its console handlers return, or at the latest
-5 seconds after the event. The handler installed here asks the server to stop and waits, up to CLOSE_WAIT seconds,
-until Vial has let go of the keyboard (released()). Ctrl+Break is taken here too: uvicorn would stop on it, then end the
-process with it before the keyboard is closed. Elsewhere a terminal closed sends SIGHUP, which would end the process at
-once: it asks the server to stop instead.
+Ctrl+C reaches Python as KeyboardInterrupt, and uvicorn stops on it. On Windows a console window being closed doesn't:
+Windows ends the process as soon as its console handlers return, or at the latest 5 seconds after the event. The
+handler installed here asks the server to stop and waits, up to CLOSE_WAIT seconds, until Vial has let go of the
+keyboard (released()). Ctrl+Break is taken here too: uvicorn would stop on it, then end the process with it before the
+keyboard is closed. Log-off and shutdown never reach the handler: Windows doesn't send them to a process that has
+loaded user32.dll, as ctypes does. At log-off or shutdown Windows ends Vial, and the system closes the keyboard's
+handle. Elsewhere a terminal closed sends SIGHUP, which would end the process at once: it asks the server to stop
+instead.
 """
 import signal
 import sys
@@ -1419,7 +1422,8 @@ CTRL_CLOSE_EVENT = 2
 CTRL_LOGOFF_EVENT = 5
 CTRL_SHUTDOWN_EVENT = 6
 ENDING_EVENTS = (CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT)
-""" the process is ended once the handlers return """
+""" the process is ended once the handlers return. Only the close reaches Vial: Windows sends log-off and shutdown only
+to processes that haven't loaded user32.dll, and ctypes loads it. They are handled alike all the same. """
 CLOSE_WAIT = 4.5
 """ seconds a close waits for Vial to stop: Windows ends the process 5 seconds after the event anyway """
 
