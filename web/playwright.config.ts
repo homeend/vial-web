@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 // Runs the built UI (npm run build) against `vial_web.py --fake`, started by the fixtures (e2e/fixtures.ts); with
 // $E2E_VIAL_CMD set, against a built Vial executable instead (`E2E_VIAL_CMD=dist/Vial.exe npx playwright test`).
+// The executable serves the web UI it was built with, so it must be rebuilt after the UI changes.
 // Never touches a real keyboard: the server only ever runs with --fake and a temporary data dir.
 // The tests run in parallel, each worker with its own servers, which keep every edit while the worker lasts. A worker
 // runs its tests one at a time, and each test that changes a key, an encoder or a name puts it back (in a `finally`,
