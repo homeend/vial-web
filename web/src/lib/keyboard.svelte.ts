@@ -61,6 +61,20 @@ export type Report = (message: string, error?: unknown) => void;
 /** What writes an arrange: Apply (or Undo), Finish, or Put back */
 export type ArrangeKind = "arrange" | "finish" | "put-back";
 
+/** An arrange, Finish or Put back of this tab that stopped partway: the layout version it left, and why (a cause:
+ * "The keyboard didn't respond.") */
+export interface ArrangeStop {
+  kind: ArrangeKind;
+  version: number;
+  cause: string;
+}
+
+/** Whether a request that failed so may have written to the keyboard: not one refused before it wrote (the keyboard
+ * locked, another keyboard open, the layers changed, nothing unfinished, a bad order, the session ended) */
+function mayHaveWritten(error: unknown): boolean {
+  return error instanceof ApiError && ![401, 403, 404, 409, 422, 423].includes(error.status);
+}
+
 /** An edit of several writes stopped as another keyboard was plugged in meanwhile: the page's own failure, not the
  * server's refusal of a change meant for another keyboard (409), so nothing more is read for it */
 class PluggedMeanwhile extends Error {}
@@ -144,8 +158,8 @@ export class KeyboardStore {
   #sessionKept = 0;
   /** told once no edit is on its way */
   #editsDone: (() => void)[] = [];
-  /** what of this tab's stopped an arrange partway, and the layout version it left (unfinishedBy) */
-  #stoppedBy = $state<{ kind: ArrangeKind; version: number | null } | null>(null);
+  /** the last arrange, Finish or Put back of this tab that may have stopped partway (unfinishedStop) */
+  #stopped = $state.raw<ArrangeStop | null>(null);
   /** told when the layout version changes (onLayoutVersion) */
   #layoutListeners = new Set<(version: number | null) => void>();
 
@@ -756,15 +770,22 @@ export class KeyboardStore {
     if (this.pending > 0) return refuse("another change was still being saved. Try again.");
     const before = this.layoutVersion;
     let arranged: ArrangedModel | null = null;
+    let failure: unknown = undefined;
     await this.#edit(action, model, async () => {
       arranged = await send();
       if (this.model === model) this.model = arranged;
-    }, undefined, report);
-    await this.refreshSession();
-    // it wrote, and stopped partway: this is what stopped it, while the layout version is the one it left
-    if (!arranged && this.unfinishedArrange && this.layoutVersion !== before) {
-      this.#stoppedBy = { kind, version: this.layoutVersion };
+    }, undefined, (message, error) => {
+      failure = error;
+      if (report) report(message, error);
+      else toasts.error(message);
+    });
+    // it may have written, and stopped partway: the server counted the layout version up once for it. The stop is
+    // this one's while the session says that version, with an arrange unfinished: the keyboard may only say so once
+    // it is open again (the server resets it after a write that failed).
+    if (!arranged && before !== null && mayHaveWritten(failure)) {
+      this.#stopped = { kind, version: before + 1, cause: causeMessage(failure) };
     }
+    await this.refreshSession();
     return arranged;
   }
 
@@ -774,11 +795,21 @@ export class KeyboardStore {
     return this.session?.layoutVersion ?? null;
   }
 
-  /** What this tab did that left the arrange unfinished: an arrange, a Finish or a Put back that stopped partway;
-   * null when it doesn't know (another tab's, or the page was opened since), or when nothing is unfinished */
+  /** The arrange, Finish or Put back of this tab that left the arrange unfinished, and why it stopped; null when it
+   * isn't known (another tab's, or the page was opened since), or when nothing is unfinished */
+  get unfinishedStop(): ArrangeStop | null {
+    const stopped = this.#stopped;
+    return this.unfinishedArrange && stopped && stopped.version === this.layoutVersion ? stopped : null;
+  }
+
+  /** The last arrange, Finish or Put back of this tab that may have stopped partway, whatever the session says now */
+  get arrangeStop(): ArrangeStop | null {
+    return this.#stopped;
+  }
+
+  /** What of this tab's left the arrange unfinished (unfinishedStop), or null */
   get unfinishedBy(): ArrangeKind | null {
-    const stopped = this.#stoppedBy;
-    return this.unfinishedArrange && stopped && stopped.version === this.layoutVersion ? stopped.kind : null;
+    return this.unfinishedStop?.kind ?? null;
   }
 
   /** Call `listener` each time the session says another layout version (see layoutVersion). Returns what stops it. */
@@ -841,9 +872,8 @@ export class KeyboardStore {
       } catch (error) {
         if (!(error instanceof ApiError && error.status === 423)) throw error;
         const outcome = await this.unlock.unlockQuietly();
-        if (!outcome.unlocked || this.#plugs !== plugs) {
-          return await fail(this.#notUnlocked(action, outcome), outcome.unlocked ? undefined : outcome.failure);
-        }
+        // nothing was written: the message says why (the unlock's failure in it)
+        if (!outcome.unlocked || this.#plugs !== plugs) return await fail(this.#notUnlocked(action, outcome));
         await write();
       }
       // a load started or landed meanwhile and may have read the keyboard before this edit (it can land after it,

@@ -160,7 +160,10 @@ test("an arrange that stops partway is finished from the dialog", async ({ app }
     await api(app).put("/api/simulator/fail-write", { after: 10 });
     await dialog.getByRole("button", { name: "Apply", exact: true }).click();
     const stopped = dialog.locator(".stopped");
-    await expect(stopped).toContainText("Arranging the layers stopped after 9 of 94 writes.", { timeout: 15_000 });
+    await expect(stopped).toContainText(
+      "Arranging the layers stopped after 9 of 94 writes: the keyboard didn't respond.", { timeout: 15_000 });
+    // said once: the failure is the stop's
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
     await expect(stopped).toBeFocused();
     // the server opens the keyboard again (a USB reset): then Finish works
     const finish = dialog.getByRole("button", { name: "Finish" });

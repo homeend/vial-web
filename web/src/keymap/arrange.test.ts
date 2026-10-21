@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArrangePreview } from "../api/types";
 import {
-  arrangeBlocked, canStep, currentOrder, isCurrent, moveStep, moveTo, nameAfter, positionAfter, PREVIEW_PAUSE_MS,
-  PreviewFollower,
-  reverseOrder, stoppedText, summaryText, triLayerWarning, unsavedQuestion, writingLabel, type PreviewState,
+  arrangeBlocked, canStep, currentOrder, isCurrent, keptText, layersChangedText, moveStep, moveTo, nameAfter,
+  positionAfter, PREVIEW_PAUSE_MS, PreviewFollower, reverseOrder, savedDefaultWarning, stoppedText, summaryText,
+  triLayerWarning, unsavedQuestion, writingLabel, type PreviewState,
 } from "./arrange";
 
 const NONE = { keymap: 0, encoders: 0, tapDance: 0, combos: 0, keyOverrides: 0, altRepeatKeys: 0, macros: 0 };
@@ -89,6 +89,22 @@ describe("the summary", () => {
       "was 2 instead of the one that was 1 (“Sym”); Fn2 turns on the layer that was 1 (“Sym”) instead of the one " +
       "that was 2.");
     expect(triLayerWarning([1, 3, 2], (l) => names[l], false)).toMatch(/After this, Fn2 turns on the layer that was 3/);
+    // nothing changes for them: no warning
+    expect(triLayerWarning([1, 2, 3], (l) => names[l], false)).toBeNull();
+    expect(triLayerWarning([1, 2, null], (l) => names[l], true)).toBeNull();
+  });
+
+  it("warns that a start-up layer a PDF key saved keeps its number, naming the layer and the key's new one", () => {
+    const names = [null, null, null, "Num", null, null];
+    expect(savedDefaultWarning([], (l) => names[l])).toBeNull();
+    expect(savedDefaultWarning([{ layer: 3, to: 5 }], (l) => names[l])).toBe(
+      "If a PDF key saved layer 3 (“Num”) as the start-up layer, the keyboard still starts on layer 3 after a " +
+      "restart, which is now a different layer. Press the PDF key (now for layer 5) once to save it again.");
+    expect(savedDefaultWarning([{ layer: 1, to: 2 }, { layer: 2, to: 1 }], (l) => names[l])).toBe(
+      "If a PDF key saved layer 1 as the start-up layer, the keyboard still starts on layer 1 after a restart, " +
+      "which is now a different layer. Press the PDF key (now for layer 2) once to save it again. If a PDF key saved " +
+      "layer 2 as the start-up layer, the keyboard still starts on layer 2 after a restart, which is now a different " +
+      "layer. Press the PDF key (now for layer 1) once to save it again.");
   });
 
   it("names each row as it will be named: its own name, else its new position's default name", () => {
@@ -104,13 +120,55 @@ describe("the summary", () => {
     expect(writingLabel(preview({ keys: 1, writes: 1 }))).toBe("Writing 1 key…");
     expect(writingLabel(preview({ writes: 97 }))).toBe("Writing 97 changes…");
     expect(writingLabel(null)).toBe("Writing…");
+    // with encoders, the keys count their directions too: not called keys
+    expect(writingLabel(preview(), true)).toBe("Writing 94 changes…");
   });
 
-  it("says how far an arrange got before it stopped", () => {
-    expect(stoppedText({ order: [0, 3, 1, 2], done: 40, total: 96, namesOnly: false })).toMatch(
-      /^Arranging the layers stopped after 40 of 96 writes\. The keyboard may hold part of the new order/);
-    expect(stoppedText({ order: [0, 3, 1, 2], done: 0, total: 96, namesOnly: false })).toMatch(
-      /stopped at its first write\./);
+  it("says how far an arrange got before it stopped, and which of this tab's stopped it", () => {
+    const unfinished = { order: [0, 3, 1, 2], done: 40, total: 96, namesOnly: false };
+    expect(stoppedText(unfinished, "arrange")).toBe("Arranging the layers stopped after 40 of 96 writes. The " +
+      "keyboard may hold part of the new order: finish it, or put it back as it was. Names move once it is finished.");
+    expect(stoppedText({ ...unfinished, done: 0 }, "arrange")).toMatch(/^Arranging the layers stopped at its first write\. /);
+    // a Finish or a Put back of its own writes: its own count
+    expect(stoppedText({ ...unfinished, done: 3, total: 10 }, "finish")).toMatch(
+      /^Finishing the arrange stopped after 3 of its 10 writes\. The keyboard may hold part of the new order/);
+    expect(stoppedText({ ...unfinished, done: 3, total: 10 }, "put-back")).toMatch(
+      /^Putting the layers back stopped after 3 of its 10 writes\. /);
+    // not known which (another tab's, or the page opened since): the count is the last try's
+    expect(stoppedText({ ...unfinished, done: 3, total: 10 }, null)).toMatch(
+      /^Arranging the layers stopped partway: the last try stopped after 3 of its 10 writes\. /);
+    expect(stoppedText({ ...unfinished, done: 0, total: 10 }, null)).toMatch(/the last try stopped at its first write\. /);
+    // why, when this tab saw it stop
+    expect(stoppedText(unfinished, "arrange", "The keyboard didn't respond.")).toMatch(
+      /^Arranging the layers stopped after 40 of 96 writes: the keyboard didn't respond\. The keyboard may hold/);
+    expect(stoppedText(unfinished, "finish", "Can't reach Vial. Is it still running?")).toMatch(
+      /^Finishing the arrange stopped after 40 of its 96 writes: can't reach Vial\. Is it still running\? The keyboard/);
+  });
+
+  it("says when only the layer names are left to save, never a count", () => {
+    const text = "The layers are arranged; only the layer names still need saving. Finish saves them; Put back " +
+      "puts the layers back as they were.";
+    // the server logs why (vial.log); a cause would only say again that the names weren't saved
+    expect(stoppedText({ order: [0, 3, 1, 2], done: 94, total: 94, namesOnly: true }, "arrange",
+      "The layer names couldn't be saved (see vial.log).")).toBe(text);
+    expect(stoppedText({ order: [0, 3, 1, 2], done: 0, total: 0, namesOnly: true }, null)).toBe(
+      "The layers are arranged; only the layer names still need saving. Finish saves them; Put back puts the " +
+      "layers back as they were.");
+  });
+
+  it("says what Finish and Put back kept as it was", () => {
+    expect(keptText(1)).toBe("1 change made since the stop was kept as it is (a key, a tap dance, combo, key override " +
+      "or alt-repeat key, or a macro).");
+    expect(keptText(4, true)).toBe("4 changes made since the stop were kept as they are (keys, encoder directions, " +
+      "tap dances, combos, key overrides, alt-repeat keys or macros).");
+  });
+
+  it("says the layers changed while the dialog was open", () => {
+    expect(layersChangedText(true, false)).toBe("The layers were arranged again or a layout file was loaded since " +
+      "this was shown (in another tab, say), so Apply wrote nothing. The rows keep your order, with the layers as " +
+      "they are now: check it, then Apply.");
+    expect(layersChangedText(false, true)).toBe("The layers were arranged again or a layout file was loaded while " +
+      "this was open (in another tab, say). The number of layers changed: the order shown is the current one again.");
   });
 });
 

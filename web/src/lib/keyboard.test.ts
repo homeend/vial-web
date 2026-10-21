@@ -1553,13 +1553,28 @@ describe("arranging the layers", () => {
       expect(toasts.items).toEqual([]);
       // read again: the session says the arrange is unfinished
       expect(store.unfinishedArrange).toEqual(UNFINISHED);
-      // this tab's arrange stopped it, at the layout version it left
+      // this tab's arrange stopped it, at the layout version it left, and why
       expect(store.unfinishedBy).toBe("arrange");
+      expect(store.unfinishedStop?.cause).toBe("The keyboard didn't respond.");
       sessionNow(2, UNFINISHED);
       await store.refreshSession();
       // something else wrote since (another tab's Finish that stopped, say): this tab no longer knows what stopped
       expect(store.unfinishedBy).toBeNull();
     });
+
+  it("knows its stop once the keyboard is open again: the server resets it after a write that failed", async () => {
+    const { store } = await loaded();
+    sessionNow(4);
+    await store.refreshSession();
+    mocked.arrangeLayers.mockRejectedValueOnce(new ApiError(502));
+    // the keyboard is being opened again: no arrange is said unfinished yet, and no layout version
+    mocked.session.mockResolvedValue({ fake: true, unlock: LOCKED, status: "disconnected" } as never);
+    expect(await store.arrangeLayers([0, 2, 1], 4, () => undefined)).toBeNull();
+    expect(store.unfinishedBy).toBeNull();
+    sessionNow(5, UNFINISHED);
+    await store.refreshSession();
+    expect(store.unfinishedBy).toBe("arrange");
+  });
 
   it("tells a stopped Finish and Put back apart", async () => {
     const { store } = await loaded();

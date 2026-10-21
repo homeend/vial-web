@@ -262,6 +262,7 @@
   {#if keyboard.unfinishedArrange}
     <ArrangeBar
       unfinished={keyboard.unfinishedArrange}
+      stop={keyboard.unfinishedStop}
       canEdit={keyboard.canEdit}
       onfinish={() => fromBar(() => layerArranger.finish())}
       onputback={() => fromBar(() => layerArranger.putBack())}

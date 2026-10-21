@@ -5,11 +5,11 @@
   import { api } from "../api/api";
   import { causeMessage } from "../api/errors";
   import type { ArrangePreview, KeyboardModel } from "../api/types";
-  import { keyboard, type Report } from "../lib/keyboard.svelte";
+  import { keyboard, type ArrangeStop, type Report } from "../lib/keyboard.svelte";
   import Button from "../ui/Button.svelte";
   import {
-    canStep, currentOrder, isCurrent, layersChangedText, moveStep, moveTo, nameAfter, PreviewFollower, stoppedText,
-    summaryText, triLayerWarning, writingLabel, type PreviewState,
+    canStep, currentOrder, isCurrent, layersChangedText, moveStep, moveTo, nameAfter, PreviewFollower,
+    savedDefaultWarning, stoppedText, summaryText, triLayerWarning, writingLabel, type PreviewState,
   } from "./arrange";
   import { isLayoutChanged } from "./arranging.svelte";
 
@@ -42,6 +42,9 @@
   let workingLabel = $state("");
   /** why the last Apply, Finish or Put back wasn't done */
   let failure = $state<string | null>(null);
+  /** the stop that Apply, Finish or Put back made (keyboard.arrangeStop), if it may have stopped partway: while the
+   * stop shown is that one, its text says why (the failure isn't said twice) */
+  let failureStop = $state.raw<ArrangeStop | null>(null);
   /** the layers changed while the dialog was open (another tab arranged them, or loaded a layout file): applied, Apply
    * was refused for it; reset, the order shown went back to the current one */
   let changed = $state<{ applied: boolean; reset: boolean } | null>(null);
@@ -60,6 +63,13 @@
       preview.problems.length === 0 && canEdit && keyboard.pending === 0,
   );
   const hasEncoders = $derived(model.encoders.length > 0);
+  const triText = $derived(shownPreview?.triLayer
+    ? triLayerWarning(shownPreview.triLayer, ownName, model.vialProtocol >= 6) : null);
+  const pdfText = $derived(shownPreview ? savedDefaultWarning(shownPreview.savedDefault, ownName) : null);
+  const stoppedNow = $derived(unfinished
+    ? stoppedText(unfinished, keyboard.unfinishedBy, keyboard.unfinishedStop?.cause) : "");
+  /** the failure, unless the stop shown says it */
+  const failureShown = $derived(failureStop !== null && keyboard.unfinishedStop === failureStop ? null : failure);
 
   // opened: the current order, its preview asked for at once; closed: nothing more is asked
   $effect(() => {
@@ -114,6 +124,7 @@
     lastPreview = null;
     working = null;
     failure = null;
+    failureStop = null;
     changed = null;
     seenVersion = keyboard.layoutVersion;
     drag = null;
@@ -213,20 +224,31 @@
     if (order.length > 1) document.getElementById(rowId(order[1]))?.focus();
   }
 
-  async function run(kind: "apply" | "finish" | "put-back", label: string, act: () => Promise<boolean>) {
+  /** Apply, Finish or Put back. Why it wasn't done is said once: by the stop, when it stopped partway (the stopped
+   * text says how far it got, and why); as the layers having changed, when it was refused for that; else on its
+   * own. */
+  async function run(kind: "apply" | "finish" | "put-back", label: string, act: (report: Report) => Promise<boolean>) {
     if (working !== null) return;
     working = kind;
     workingLabel = label;
     failure = null;
+    failureStop = null;
     changed = null;
+    const stopBefore = keyboard.arrangeStop;
     let done = false;
     try {
-      done = await act();
+      done = await act((message, error) => {
+        // nothing written: the preview is asked for again, of the layers as they are now (the version they
+        // changed to is taken in then)
+        if (isLayoutChanged(error)) changed = { applied: true, reset: false };
+        else failure = message;
+      });
     } finally {
       working = null;
-      // what this wrote moved the layout version on (a stop partway): not a change elsewhere
-      if (!changed) seenVersion = keyboard.layoutVersion;
     }
+    // what this wrote moved the layout version on: not a change made elsewhere
+    if (!changed) seenVersion = keyboard.layoutVersion;
+    if (keyboard.arrangeStop !== stopBefore) failureStop = keyboard.arrangeStop;
     if (done) {
       dialog?.close();
     } else {
@@ -238,21 +260,17 @@
     if (!canApply || !preview) return;
     const chosen = [...order];
     const expect = preview.layoutVersion;
-    void run("apply", writingLabel(preview), () => onapply(chosen, expect, (message, error) => {
-      // nothing written: the preview is asked for again, of the layers as they are now
-      if (isLayoutChanged(error)) changed = { applied: true, reset: false };
-      else failure = message;
-    }));
+    void run("apply", writingLabel(preview, hasEncoders), (report) => onapply(chosen, expect, report));
   }
 
   function finish() {
     if (!canEdit) return;
-    void run("finish", "Finishing…", () => onfinish((message) => (failure = message)));
+    void run("finish", "Finishing…", onfinish);
   }
 
   function putBack() {
     if (!canEdit) return;
-    void run("put-back", "Putting back…", () => onputback((message) => (failure = message)));
+    void run("put-back", "Putting back…", onputback);
   }
 
   /** A layer's own name, or null when it was never named */
@@ -316,12 +334,12 @@
   {#if unfinished}
     <div class="body">
       <div class="stopped" id="{uid}-stopped" tabindex="-1" role="group" aria-labelledby="{uid}-stopped-text">
-        <p id="{uid}-stopped-text">{stoppedText(unfinished)}</p>
+        <p id="{uid}-stopped-text">{stoppedNow}</p>
         {#if !canEdit}
           <p class="note">The keyboard can't be changed just now: once it is back, Finish and Put back work.</p>
         {/if}
       </div>
-      {#if failure}<p class="problem" role="alert">{failure}</p>{/if}
+      {#if failureShown}<p class="problem" role="alert">{failureShown}</p>{/if}
     </div>
     <footer class="foot">
       <p class="saving">Finish and Put back write to the keyboard at once.</p>
@@ -403,7 +421,7 @@
           <p class="problem">Couldn't check this order: {causeMessage(previewState.error)}</p>
         {:else if shownPreview}
           {@const p = shownPreview}
-          {#if p.problems.length > 0 || p.triLayer}
+          {#if p.problems.length > 0 || triText || pdfText}
             <p class="flags">
               {#if p.problems.length > 0}
                 <button type="button" class="flag bad" onclick={() => reveal(`${uid}-problems`)}>
@@ -411,9 +429,14 @@
                     `${p.problems.length} layer numbers wouldn't fit`}
                 </button>
               {/if}
-              {#if p.triLayer}
+              {#if triText}
                 <button type="button" class="flag warn" onclick={() => reveal(`${uid}-warning`)}>
                   ⚠ Fn1 and Fn2 will reach other layers
+                </button>
+              {/if}
+              {#if pdfText}
+                <button type="button" class="flag warn" onclick={() => reveal(`${uid}-start-up`)}>
+                  ⚠ A saved start-up layer keeps its number
                 </button>
               {/if}
             </p>
@@ -427,8 +450,11 @@
               </ul>
             </div>
           {/if}
-          {#if p.triLayer}
-            <p class="warning" id="{uid}-warning">{triLayerWarning(p.triLayer, ownName, model.vialProtocol >= 6)}</p>
+          {#if triText}
+            <p class="warning" id="{uid}-warning">{triText}</p>
+          {/if}
+          {#if pdfText}
+            <p class="warning start-up" id="{uid}-start-up">{pdfText}</p>
           {/if}
           {#if p.needsUnlock && p.moves.length > 0 && keyboard.unlock.state.state !== "unlocked"}
             <p class="note">Apply asks for the keyboard to be unlocked first: it moves QK_BOOT or changes macros.</p>

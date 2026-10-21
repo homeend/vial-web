@@ -1,16 +1,19 @@
 <script lang="ts">
   import type { UnfinishedArrange } from "../api/types";
+  import type { ArrangeStop } from "../lib/keyboard.svelte";
   import Button from "../ui/Button.svelte";
   import { stoppedText } from "./arrange";
 
   interface Props {
     unfinished: UnfinishedArrange;
+    /** what of this tab's stopped it, and why (keyboard.unfinishedStop), or null when not known */
+    stop: ArrangeStop | null;
     canEdit: boolean;
     onfinish: () => Promise<boolean>;
     onputback: () => Promise<boolean>;
   }
 
-  let { unfinished, canEdit, onfinish, onputback }: Props = $props();
+  let { unfinished, stop, canEdit, onfinish, onputback }: Props = $props();
 
   let working = $state<"finish" | "put-back" | null>(null);
 
@@ -28,7 +31,7 @@
 <!-- until Finish or Put back succeeds: the keyboard may hold part of the new order. The buttons stay (keeping the
      focus) while one runs; the bar goes once it is done, and the focus with it goes to the page's heading. -->
 <div class="bar" role="region" aria-label="Arranging the layers stopped">
-  <p>{stoppedText(unfinished)}</p>
+  <p>{stoppedText(unfinished, stop?.kind ?? null, stop?.cause)}</p>
   <div class="buttons">
     <Button aria-disabled={working !== null || !canEdit || undefined} onclick={() => void run("put-back", onputback)}>
       {working === "put-back" ? "Putting back…" : "Put back"}

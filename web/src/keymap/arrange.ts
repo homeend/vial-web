@@ -1,7 +1,8 @@
 // Arrange layers: the order the dialog shows, the server's preview of it in words, and asking for that preview
 // without flooding the server. An order lists, for each position, the layer that goes there (order[position] = layer
 // now): [0, 3, 1, 2] puts layer 3 at position 1. Layer 0 never moves.
-import type { ArrangePreview, ArrangeReferences, UnfinishedArrange } from "../api/types";
+import type { ArrangePreview, ArrangeReferences, LayerMove, UnfinishedArrange } from "../api/types";
+import type { ArrangeKind } from "../lib/keyboard.svelte";
 
 /** The fewest layers a keyboard needs for anything to be arranged: layer 0 stays first */
 export const ARRANGE_MIN_LAYERS = 3;
@@ -110,38 +111,75 @@ function andList(items: string[]): string {
   return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 }
 
+/** A layer as the warnings call it: by its position now, as the rows' "← was N" does, with its own name if it has one
+ * (ownName: null for none) */
+function layerCalled(layer: number, ownName: (layer: number) => string | null): string {
+  const name = ownName(layer);
+  return name ? `${layer} (“${name}”)` : `${layer}`;
+}
+
 /** The tri-layer warning: FN_MO13 and FN_MO23 turn on layers 1, 2 and 3 by number, which hold other layers after the
- * order. triLayer: the layers (by their position now) that end up at positions 1, 2 and 3. Layers are called by their
- * position now, as the rows' "← was N" does, with their own name if they have one (ownName: null for none).
- * protocol6: on Vial protocol 6 these layers are the firmware's tri-layer setting, 1, 2 and 3 unless the firmware's
- * code sets others (protocol 5 fixes them). */
+ * order. triLayer: the layers (by their position now) that end up at positions 1, 2 and 3. protocol6: on Vial
+ * protocol 6 these layers are the firmware's tri-layer setting, 1, 2 and 3 unless the firmware's code sets others
+ * (protocol 5 fixes them). null when the order changes none of them. */
 export function triLayerWarning(triLayer: (number | null)[], ownName: (layer: number) => string | null,
-  protocol6: boolean): string {
+  protocol6: boolean): string | null {
   const which = protocol6 ? "layers 1, 2 and 3 by number (the firmware's tri-layer layers, unless its code sets others)"
     : "layers 1, 2 and 3 by number";
   const keys = ["Fn1 turns on", "Fn2 turns on", "both held turn on"];
-  const was = (layer: number) => {
-    const name = ownName(layer);
-    return name ? `${layer} (“${name}”)` : `${layer}`;
-  };
+  const was = (layer: number) => layerCalled(layer, ownName);
   const changes = triLayer.flatMap((layer, i) => (layer === null || layer === i + 1 ? [] :
     [`${keys[i]} the layer that was ${was(layer)} instead of the one that was ${was(i + 1)}`]));
+  if (changes.length === 0) return null;
   return `Fn1 and Fn2 (FN_MO13, FN_MO23) don't follow their layers: they use ${which}. After this, ` +
     `${changes.join("; ")}.`;
 }
 
-/** What Apply's button says while it writes: "Writing 94 keys…", or with other writes, "Writing 96 changes…" */
-export function writingLabel(preview: ArrangePreview | null): string {
+/** The start-up layer warning: releasing PDF(n) saves layer n as the layer the keyboard starts on, in its memory,
+ * which Vial can neither read nor change. The PDF keys follow their layers, but a number saved earlier stays: after a
+ * restart the keyboard starts on the layer now at it. savedDefault: the layers PDF keys name that move, by their
+ * position now (layer) and after (to). Said with "if": a PDF key may never have been pressed. null for none. */
+export function savedDefaultWarning(savedDefault: LayerMove[], ownName: (layer: number) => string | null):
+  string | null {
+  if (savedDefault.length === 0) return null;
+  return savedDefault.map(({ layer, to }) =>
+    `If a PDF key saved layer ${layerCalled(layer, ownName)} as the start-up layer, the keyboard still starts on ` +
+    `layer ${layer} after a restart, which is now a different layer. Press the PDF key (now for layer ${to}) once ` +
+    "to save it again.").join(" ");
+}
+
+/** What Apply's button says while it writes: "Writing 94 keys…", or with other writes, "Writing 96 changes…".
+ * encoders: the keyboard has encoders, whose directions the keys count too: they aren't all keys. */
+export function writingLabel(preview: ArrangePreview | null, encoders = false): string {
   if (!preview || preview.writes === 0) return "Writing…";
-  if (preview.writes === preview.keys) return `Writing ${count(preview.keys, "key", "keys")}…`;
+  if (preview.writes === preview.keys && !encoders) return `Writing ${count(preview.keys, "key", "keys")}…`;
   return `Writing ${count(preview.writes, "change", "changes")}…`;
 }
 
-/** What an arrange stopped partway did, and what is left to do */
-export function stoppedText(unfinished: UnfinishedArrange): string {
-  const done = unfinished.done === 0 ? "at its first write" : `after ${unfinished.done} of ${unfinished.total} writes`;
-  return `Arranging the layers stopped ${done}. The keyboard may hold part of the new order: finish it, or put it ` +
-    "back as it was. Names move once it is finished.";
+/** "the keyboard didn't respond.": a cause ("The keyboard didn't respond.") to follow a colon */
+function asClause(cause: string): string {
+  return /^[A-Z][a-z']/.test(cause) ? cause[0].toLowerCase() + cause.slice(1) : cause;
+}
+
+/** What an arrange stopped partway did, and what is left to do. by: what of this tab's stopped it, its count its own
+ * (an arrange, a Finish, a Put back), or null when not known (the count is then the last try's, whatever it was);
+ * cause: why it stopped, when this tab saw it. Only the names left to save (namesOnly): no count, as every write went
+ * through. */
+export function stoppedText(unfinished: UnfinishedArrange, by: ArrangeKind | null = null, cause?: string): string {
+  if (unfinished.namesOnly) {
+    return "The layers are arranged; only the layer names still need saving. Finish saves them; Put back puts the " +
+      "layers back as they were.";
+  }
+  const writes = (its: string) => (unfinished.done === 0 ? "at its first write"
+    : `after ${unfinished.done} of ${its}${unfinished.total} writes`);
+  const stopped = by === "arrange" ? `Arranging the layers stopped ${writes("")}`
+    : by === "finish" ? `Finishing the arrange stopped ${writes("its ")}`
+    : by === "put-back" ? `Putting the layers back stopped ${writes("its ")}`
+    : `Arranging the layers stopped partway: the last try stopped ${writes("its ")}`;
+  // "…: can't reach Vial. Is it still running?" ends as it is
+  const first = cause ? `${stopped}: ${asClause(cause)}` : stopped;
+  return `${first}${/[.?!]$/.test(first) ? "" : "."} The keyboard may hold part of the new order: finish it, or put ` +
+    "it back as it was. Names move once it is finished.";
 }
 
 /** Why an order chosen earlier wasn't written, or Undo wasn't done: the layout version moved on since (the server's
