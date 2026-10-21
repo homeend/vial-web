@@ -4,7 +4,7 @@ Every tab, menu and dialog of the Qt app (`src/main/python/main_window.py`, `edi
 `about_keyboard.py`, removed from this fork in phase 6: see the history, or upstream vial-gui) and where it lives in
 the web UI (`web/src/`), or why it is left out. Phase 5's contract: once
 phase 5b is done, the web UI does all of this except what is marked **dropped** or **later**. Checked against the code
-on 2026-10-20.
+on 2026-10-21.
 
 Addresses are the web UI's (`#lighting`); a section the keyboard's firmware doesn't have is left out of the
 navigation, as Qt hides the tabs whose `valid()` is false.

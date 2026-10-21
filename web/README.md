@@ -76,7 +76,7 @@ starts the countdown at N instead, as firmware built with another `VIAL_UNLOCK_C
 | `npm run dev` | Build, then rebuild on every change |
 | `npm run check` | `svelte-check` (types, Svelte 5 runes-only syntax; fails on warnings), then `tsc` for the configs, e2e tests and scripts |
 | `npm test` | Vitest unit tests (`src/**/*.test.ts`) |
-| `npm run e2e` | Build, then run the Playwright tests (`e2e/`) against `vial_web.py --fake` (or the executable `$E2E_VIAL_CMD` names) |
+| `npm run e2e` | Build, then run the Playwright tests (`e2e/`) against `vial_web.py --fake`. With `$E2E_VIAL_CMD`, they run against that executable, which serves the web UI it was built with, not this build. |
 | `npm run gen:api` | Regenerate `src/api/schema.d.ts` from the server's OpenAPI schema |
 | `npm run check:api` | Fail if `src/api/schema.d.ts` is out of date |
 
@@ -94,16 +94,19 @@ default Corne, with VialRGB; `e2e/fixtures/macropad.vial.json` with encoders, a 
 lighting; the Corne with `--layers 8`, as the owner's keyboard has; the Corne with
 `--lighting qmk_backlight_rgblight`; and the Corne with the macropad as its second keyboard,
 `--second-definition`), reads the links with the session token from their output, and at the end asks each to quit
-(`POST /api/shutdown`, as Quit Vial does; one that takes it and doesn't exit within 5 s fails the run), ending it
-only if it can't be asked. Each Playwright worker starts the ones its tests use (fixtures in `e2e/fixtures.ts`) and
-stops them when it ends; a test that ends its server (Quit Vial) gets one of its own (`ownServer`).
+(`POST /api/shutdown`, as Quit Vial does), ending it if it is still running afterwards. One that refuses it, doesn't
+answer it within 5 s, or takes it and doesn't exit within 10 s (or exits with a code other than 0) fails the run.
+Each Playwright worker starts the ones its tests use (fixtures in `e2e/fixtures.ts`) and stops them when it ends; a
+test that ends its server (Quit Vial) gets one of its own (`ownServer`).
 
 `E2E_VIAL_CMD=dist/Vial.exe npx playwright test` runs the same tests against a built executable (a path relative to
-the repository, or absolute) instead of `python vial_web.py`, with the same arguments; CI does so on Windows and
-Linux. Screenshots, each in the
-light and the dark theme (`*-light.png`, `*-dark.png`), go to `e2e/screenshots/` (not committed); a
-full-page one is taken from the top, with the sticky top bar and macro editor footer drawn where they are in the
-page.
+the repository, or absolute) instead of `python vial_web.py`, with the same arguments, and runs it from the system's
+temp folder, outside the repository; CI does so on Windows and Linux. The executable serves the web UI it was built
+with: rebuild it (`python -m PyInstaller vial.spec`) after changes to `web/`.
+
+Screenshots, each in the light and the dark theme (`*-light.png`, `*-dark.png`), go to `e2e/screenshots/` (not
+committed); a full-page one is taken from the top, with the sticky top bar and macro editor footer drawn where they are
+in the page.
 
 | Spec | What it tests |
 |---|---|
@@ -114,7 +117,7 @@ page.
 | `tapdance`, `combos`, `macros` | Editing on those pages: where the focus goes, saves that are slow or fail, recording keys (adding to the end, or replacing the steps: undone by Cancel); removing a macro: at once when nothing uses it, else asked first, Cancel keeping it |
 | `macro-text` | The macro text editor: Qt's JSON shown, Esc and Cancel changing nothing, what can't be read said and not applied, Apply then the page's Save, a `.vim` file saved and loaded; steps not finished going and coming as text; a text too long refused before it is sent; a text being applied dropped when the dialog closes; Ctrl+S on a layout whose letters aren't Latin; the dialog and the record buttons at 1920 and 375 px |
 | `unlock` | The unlock dialog |
-| `quit` | Quit Vial: every tab showing that Vial stopped (the heading taking the focus) and reconnecting no more, the server exiting by itself; asked first with work not saved (Cancel keeping Vial running); the button and the stopped page from 375 px to 1080p, in both themes |
+| `quit` | Quit Vial: every tab showing that Vial stopped (the heading taking the focus) and reconnecting no more, the server exiting by itself; asked first with work not saved (Cancel keeping Vial running); a write or an Undo ending after Vial stopped showing no toast and raising no error; the button and the stopped page from 375 px to 1080p, in both themes |
 | `overrides` | The Key overrides and Alt-repeat pages: a new key override built and saved, switched off, removed; an alt-repeat key edited |
 | `settings` | The QMK settings form: a change undone, a number out of range, Save, Reset to defaults with its confirmation |
 | `layoutfile` | Saving the layout, loading it back with its preview; another keyboard's file and a broken one; a file with macros on a locked keyboard |
