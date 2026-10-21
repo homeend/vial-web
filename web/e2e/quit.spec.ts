@@ -103,7 +103,8 @@ test("a write that fails after Quit Vial shows no toast: the page only says that
 
   await quitButton(page).click();
   await expect(stoppedHeading(page)).toBeFocused();
-  expect(await ownServer.exited, ownServer.output()).toBe(0);
+  // the write fails once Vial has gone (its exit code is the first test's to check)
+  await ownServer.exited;
 
   await write.fail();
   // the page has had time to take the failure in
@@ -140,7 +141,8 @@ test("an Undo still being saved when Vial stops ends without an error, its toast
 
   await quitButton(page).click();
   await expect(stoppedHeading(page)).toBeFocused();
-  expect(await ownServer.exited, ownServer.output()).toBe(0);
+  // the write fails once Vial has gone (its exit code is the first test's to check)
+  await ownServer.exited;
 
   await write.fail();
   // the page has had time to take the failure in
