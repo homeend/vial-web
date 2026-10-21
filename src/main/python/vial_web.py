@@ -20,6 +20,7 @@ from logging.handlers import RotatingFileHandler
 
 import platformdirs
 
+import console
 import resources
 
 APP_NAME = "Vial"
@@ -46,7 +47,8 @@ loads the simulator) """
 SHUTDOWN_GRACE = 2
 """ seconds the server waits, once stopping, for the tabs' connections to close. A connection the browser reset (a tab
 or a browser killed) may never be let go of on Windows: asyncio's proactor transport fails to shut such a socket down
-before it tells the server the connection is gone, and the server would wait for it forever. """
+before it tells the server the connection is gone, and the server would wait for it forever. Less than
+console.CLOSE_WAIT, so that a console window closed still lets Vial close the keyboard. """
 UVICORN_LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -56,11 +58,11 @@ UVICORN_LOGGING = {
 
 STARTED_MESSAGE = """Vial is running{fake}. Open it at:
   {url}
-Press Ctrl+C to stop."""
+To stop it, press Ctrl+C or close this window."""
 
 REOPEN_MESSAGE = """Browser window closed. Vial is still running. Reopen it at:
   {url}
-Press Ctrl+C to stop."""
+To stop it, press Ctrl+C or close this window."""
 
 QUIT_MESSAGE = "Quit Vial was used on the page: Vial is stopping."
 
@@ -507,7 +509,8 @@ def load_layout_file(manager, path):
 
 
 def serve(args, manager, sock):
-    """ Serve the UI on the bound socket until Quit Vial on the page (POST /api/shutdown) or Ctrl+C """
+    """ Serve the UI on the bound socket until Quit Vial on the page, Ctrl+C or the console window closed. The keyboard
+    is let go of before it returns. """
     import uvicorn
     from server.app import create_app
     from server.names import NamesStore
@@ -546,17 +549,21 @@ def serve(args, manager, sock):
                                            timeout_graceful_shutdown=SHUTDOWN_GRACE))
 
     write_session({"port": port, "url": url, "instance": instance, "fake": bool(args.fake)})
-    try:
-        # the socket is already listening: the URL works from now on
-        print(STARTED_MESSAGE.format(url=url, fake=" with a simulated keyboard" if args.fake else ""), flush=True)
-        logging.info("serving on port %d", port)
-        if not args.no_browser:
-            threading.Thread(target=webbrowser.open, args=[url], daemon=True).start()
-        server.run(sockets=[sock])
-    except KeyboardInterrupt:
-        pass  # uvicorn shuts down cleanly on Ctrl+C, then raises it again
-    finally:
-        remove_session(instance, bool(args.fake))
+    with console.StopOnConsoleClose(stop_server):
+        try:
+            # the socket is already listening: the URL works from now on
+            print(STARTED_MESSAGE.format(url=url, fake=" with a simulated keyboard" if args.fake else ""), flush=True)
+            logging.info("serving on port %d", port)
+            if not args.no_browser:
+                threading.Thread(target=webbrowser.open, args=[url], daemon=True).start()
+            server.run(sockets=[sock])
+        except KeyboardInterrupt:
+            pass  # uvicorn shuts down cleanly on Ctrl+C, then raises it again
+        finally:
+            remove_session(instance, bool(args.fake))
+            # here, not only when run() returns: a console window closed ends the process once this block is left
+            manager.close()
+            logging.info("stopped, the keyboard let go of")
     return 0
 
 

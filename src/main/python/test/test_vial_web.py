@@ -11,6 +11,7 @@ import threading
 import pytest
 import uvicorn
 
+import console
 import resources
 import vial_web
 from protocol.unlock_hook import set_unlock_handler
@@ -536,9 +537,10 @@ def test_serving_without_the_web_ui_built_says_how_to_build_it(home, fake_server
 
 
 def test_stopping_waits_for_the_tabs_only_so_long(home, fake_server):
-    """ a tab's connection reset by the browser may never close (see SHUTDOWN_GRACE) """
+    """ a tab's connection reset by the browser may never close (see SHUTDOWN_GRACE); a console window closed gives
+    Vial CLOSE_WAIT seconds in all """
     assert vial_web.main(["--fake", "--no-browser"]) == 0
-    assert fake_server.seen["config"].timeout_graceful_shutdown == vial_web.SHUTDOWN_GRACE
+    assert fake_server.seen["config"].timeout_graceful_shutdown == vial_web.SHUTDOWN_GRACE < console.CLOSE_WAIT
 
 
 def test_instance_is_claimed_before_connecting_and_released_at_exit(home, fake_server, monkeypatch):
