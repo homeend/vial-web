@@ -66,6 +66,19 @@ class SimulatorError(RuntimeError):
     pass
 
 
+class SimulatedWriteFailure(ValueError):
+    """ A write the simulated keyboard was told to fail (fail_writes): a ValueError, as hidapi raises for a handle that
+    no longer works, so that the protocol's retries don't repeat it """
+
+
+WRITE_COMMANDS = {CMD_VIA_SET_KEYCODE, CMD_VIA_SET_KEYBOARD_VALUE, CMD_VIA_LIGHTING_SET_VALUE, CMD_VIA_MACRO_SET_BUFFER}
+""" VIA commands that change the keyboard """
+VIAL_WRITE_COMMANDS = {CMD_VIAL_SET_ENCODER, CMD_VIAL_QMK_SETTINGS_SET, CMD_VIAL_QMK_SETTINGS_RESET}
+""" Vial commands that change the keyboard (and the dynamic entry sets, DYNAMIC_SETS) """
+DYNAMIC_SETS = {DYNAMIC_VIAL_TAP_DANCE_SET, DYNAMIC_VIAL_COMBO_SET, DYNAMIC_VIAL_KEY_OVERRIDE_SET,
+                DYNAMIC_VIAL_ALT_REPEAT_KEY_SET}
+
+
 class VirtualKeyboard:
 
     def __init__(self, definition, layers=4, keymap=None, uid=0xF00DFACEDEADBEEF, vial_protocol=6,
@@ -175,6 +188,9 @@ class VirtualKeyboard:
         self.connected = True
         self.bootloader_requested = False
         self.writes = []
+        self.fail_write_in = None
+        """ fail_writes(): the writes left before the one that fails (1: the next one), or None """
+        self.fail_unplugs = False
 
     # --- helpers for tests and the fake server ---
 
@@ -183,6 +199,33 @@ class VirtualKeyboard:
 
     def release(self, row, col):
         self.pressed.discard((row, col))
+
+    def fail_writes(self, after, unplug=False):
+        """ The `after`th write from now (1: the next one) fails, without changing anything; None: none does. A write is
+        a request that changes the keyboard (one packet: a macro buffer takes several). unplug: the keyboard drops off
+        the bus at that write, as if unplugged; else it stays plugged in and only that write fails, as on a handle that
+        stopped working. """
+        self.fail_write_in = after
+        self.fail_unplugs = unplug
+
+    @staticmethod
+    def is_write(msg):
+        """ Whether a request changes the keyboard """
+        if msg[0] == CMD_VIA_VIAL_PREFIX:
+            return msg[1] in VIAL_WRITE_COMMANDS or (msg[1] == CMD_VIAL_DYNAMIC_ENTRY_OP and msg[2] in DYNAMIC_SETS)
+        return msg[0] in WRITE_COMMANDS
+
+    def _check_failure(self, msg):
+        """ Fail this request, if it is the write fail_writes() named """
+        if self.fail_write_in is None or not self.is_write(msg):
+            return
+        self.fail_write_in -= 1
+        if self.fail_write_in > 0:
+            return
+        self.fail_write_in = None
+        if self.fail_unplugs:
+            self.connected = False
+        raise SimulatedWriteFailure("the simulated keyboard failed this write, as it was told to")
 
     def hold_unlock_keys(self, held):
         """ The user presses (True) or lets go of (False) every unlock key """
@@ -213,6 +256,7 @@ class VirtualKeyboard:
         cmd = msg[0]
         if self.unlock_in_progress and not (cmd == CMD_VIA_VIAL_PREFIX and msg[1] in ALLOWED_DURING_UNLOCK):
             return msg
+        self._check_failure(msg)
         if cmd == CMD_VIA_VIAL_PREFIX:
             return self._vial(msg)
         handler = {

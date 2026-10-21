@@ -333,6 +333,11 @@ class FakeBackend:
                 virtual.plug_in()
             virtual.connected = connected
 
+    def fail_writes(self, after, unplug=False):
+        """ The `after`th write from now to the first keyboard fails (VirtualKeyboard.fail_writes); None: none does """
+        with self.lock:
+            self._first().fail_writes(after, unplug=unplug)
+
     def set_second_connected(self, connected, unreadable=False):
         """ Simulate plugging the second keyboard in (True) or unplugging it (False); the hot-plug poll notices.
         unreadable: plugged in with firmware of a Vial protocol this Vial doesn't know, so it is listed but fails to
