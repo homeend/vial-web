@@ -523,14 +523,6 @@ class Keyboard(ProtocolMacro, ProtocolDynamic, ProtocolTapDance, ProtocolCombo, 
                                             self.rgb_mode, self.rgb_speed,
                                             self.rgb_hsv[0], self.rgb_hsv[1], self.rgb_hsv[2]))
 
-    def set_vialrgb_brightness(self, value):
-        self.rgb_hsv = (self.rgb_hsv[0], self.rgb_hsv[1], value)
-        self._vialrgb_set_mode()
-
-    def set_vialrgb_speed(self, value):
-        self.rgb_speed = value
-        self._vialrgb_set_mode()
-
     def set_vialrgb_mode(self, value):
         self.rgb_mode = value
         self._vialrgb_set_mode()

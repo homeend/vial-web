@@ -18,9 +18,6 @@ class ProtocolTapDance(BaseProtocol):
                                          Keycode.serialize(entry[2]), Keycode.serialize(entry[3]),
                                          entry[4])
 
-    def tap_dance_get(self, idx):
-        return self.tap_dance_entries[idx]
-
     def tap_dance_set(self, idx, entry):
         if self.tap_dance_entries[idx] == entry:
             return

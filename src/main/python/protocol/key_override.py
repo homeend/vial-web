@@ -90,9 +90,6 @@ class ProtocolKeyOverride(BaseProtocol):
             e = (Keycode.serialize(e[0]), Keycode.serialize(e[1]), e[2], e[3], e[4], e[5], e[6])
             self.key_override_entries.append(KeyOverrideEntry(e))
 
-    def key_override_get(self, idx):
-        return self.key_override_entries[idx]
-
     def key_override_set(self, idx, entry):
         if entry != self.key_override_entries[idx]:
             if entry.replacement == RESET_KEYCODE:

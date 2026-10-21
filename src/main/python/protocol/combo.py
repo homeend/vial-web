@@ -18,9 +18,6 @@ class ProtocolCombo(BaseProtocol):
                                      Keycode.serialize(entry[2]), Keycode.serialize(entry[3]),
                                      Keycode.serialize(entry[4]))
 
-    def combo_get(self, idx):
-        return self.combo_entries[idx]
-
     def combo_set(self, idx, entry):
         if self.combo_entries[idx] == entry:
             return

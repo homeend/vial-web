@@ -159,11 +159,6 @@ class ProtocolMacro(BaseProtocol):
             macros = self.macro.split(b"\x00") + [b""] * self.macro_count
             self.macro = b"\x00".join(macros[:self.macro_count]) + b"\x00"
 
-    def reload_macros(self):
-        """ Loads macro information from the keyboard """
-        self.reload_macros_early()
-        self.reload_macros_late()
-
     def set_macro(self, data):
         if len(data) > self.macro_memory:
             raise RuntimeError("the macro is too big: got {} max {}".format(len(data), self.macro_memory))

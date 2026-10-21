@@ -1,13 +1,9 @@
-certifi
 fastapi==0.143.1
 hidapi==0.15.0
-keyboard==0.13.5
 platformdirs==4.13.0
 pydantic==2.14.1
 pydantic-core==2.50.1
 PyInstaller==6.22.3
-PyQt5==5.15.11
-pywin32==312; sys_platform == 'win32'
 simpleeval==1.0.8
 starlette==1.8.0
 uvicorn==0.54.0

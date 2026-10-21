@@ -2,8 +2,6 @@
 
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import sys
-
 from keycodes.keycodes_v5 import keycodes_v5
 from keycodes.keycodes_v6 import keycodes_v6
 
@@ -11,19 +9,15 @@ from keycodes.keycodes_v6 import keycodes_v6
 class Keycode:
 
     masked_keycodes = set()
-    recorder_alias_to_keycode = dict()
     qmk_id_to_keycode = dict()
     protocol = 0
     hidden = False
 
-    def __init__(self, qmk_id, label, tooltip=None, masked=False, printable=None, recorder_alias=None, alias=None, requires_feature=None):
+    def __init__(self, qmk_id, label, tooltip=None, masked=False, printable=None, alias=None, requires_feature=None):
         self.qmk_id = qmk_id
         self.qmk_id_to_keycode[qmk_id] = self
         self.requires_feature = requires_feature
         self.label = label
-        # we cannot embed full CJK fonts due to large size, workaround like this for now
-        if sys.platform == "emscripten" and not label.isascii() and qmk_id != "KC_TRNS":
-            self.label = qmk_id.replace("KC_", "")
 
         self.tooltip = tooltip
         # whether this keycode requires another sub-keycode
@@ -35,12 +29,6 @@ class Keycode:
         self.alias = [self.qmk_id]
         if alias:
             self.alias += alias
-
-        if recorder_alias:
-            for alias in recorder_alias:
-                if alias in self.recorder_alias_to_keycode:
-                    raise RuntimeError("Misconfigured: two keycodes claim the same alias {}".format(alias))
-                self.recorder_alias_to_keycode[alias] = self
 
         if masked:
             assert qmk_id.endswith("(kc)")
@@ -70,10 +58,6 @@ class Keycode:
         if cls.is_mask(qmk_id):
             qmk_id = qmk_id[qmk_id.find("(")+1:-1]
         return cls.find(qmk_id)
-
-    @classmethod
-    def find_by_recorder_alias(cls, alias):
-        return cls.recorder_alias_to_keycode.get(alias)
 
     @classmethod
     def find_by_qmk_id(cls, qmk_id):
@@ -174,7 +158,7 @@ KEYCODES_SPECIAL = [
 ]
 
 KEYCODES_BASIC_NUMPAD = [
-    K("KC_NUMLOCK", "Num\nLock", recorder_alias=["num lock"], alias=["KC_NLCK"]),
+    K("KC_NUMLOCK", "Num\nLock", alias=["KC_NLCK"]),
     K("KC_KP_SLASH", "/", alias=["KC_PSLS"]),
     K("KC_KP_ASTERISK", "*", alias=["KC_PAST"]),
     K("KC_KP_MINUS", "-", alias=["KC_PMNS"]),
@@ -197,96 +181,96 @@ KEYCODES_BASIC_NUMPAD = [
 
 KEYCODES_BASIC_NAV = [
     K("KC_PSCREEN", "Print\nScreen", alias=["KC_PSCR"]),
-    K("KC_SCROLLLOCK", "Scroll\nLock", recorder_alias=["scroll lock"], alias=["KC_SLCK", "KC_BRMD"]),
-    K("KC_PAUSE", "Pause", recorder_alias=["pause", "break"], alias=["KC_PAUS", "KC_BRK", "KC_BRMU"]),
-    K("KC_INSERT", "Insert", recorder_alias=["insert"], alias=["KC_INS"]),
-    K("KC_HOME", "Home", recorder_alias=["home"]),
-    K("KC_PGUP", "Page\nUp", recorder_alias=["page up"]),
-    K("KC_DELETE", "Del", recorder_alias=["delete"], alias=["KC_DEL"]),
-    K("KC_END", "End", recorder_alias=["end"]),
-    K("KC_PGDOWN", "Page\nDown", recorder_alias=["page down"], alias=["KC_PGDN"]),
-    K("KC_RIGHT", "Right", recorder_alias=["right"], alias=["KC_RGHT"]),
-    K("KC_LEFT", "Left", recorder_alias=["left"]),
-    K("KC_DOWN", "Down", recorder_alias=["down"]),
-    K("KC_UP", "Up", recorder_alias=["up"]),
+    K("KC_SCROLLLOCK", "Scroll\nLock", alias=["KC_SLCK", "KC_BRMD"]),
+    K("KC_PAUSE", "Pause", alias=["KC_PAUS", "KC_BRK", "KC_BRMU"]),
+    K("KC_INSERT", "Insert", alias=["KC_INS"]),
+    K("KC_HOME", "Home"),
+    K("KC_PGUP", "Page\nUp"),
+    K("KC_DELETE", "Del", alias=["KC_DEL"]),
+    K("KC_END", "End"),
+    K("KC_PGDOWN", "Page\nDown", alias=["KC_PGDN"]),
+    K("KC_RIGHT", "Right", alias=["KC_RGHT"]),
+    K("KC_LEFT", "Left"),
+    K("KC_DOWN", "Down"),
+    K("KC_UP", "Up"),
 ]
 
 KEYCODES_BASIC = [
-    K("KC_A", "A", printable="a", recorder_alias=["a"]),
-    K("KC_B", "B", printable="b", recorder_alias=["b"]),
-    K("KC_C", "C", printable="c", recorder_alias=["c"]),
-    K("KC_D", "D", printable="d", recorder_alias=["d"]),
-    K("KC_E", "E", printable="e", recorder_alias=["e"]),
-    K("KC_F", "F", printable="f", recorder_alias=["f"]),
-    K("KC_G", "G", printable="g", recorder_alias=["g"]),
-    K("KC_H", "H", printable="h", recorder_alias=["h"]),
-    K("KC_I", "I", printable="i", recorder_alias=["i"]),
-    K("KC_J", "J", printable="j", recorder_alias=["j"]),
-    K("KC_K", "K", printable="k", recorder_alias=["k"]),
-    K("KC_L", "L", printable="l", recorder_alias=["l"]),
-    K("KC_M", "M", printable="m", recorder_alias=["m"]),
-    K("KC_N", "N", printable="n", recorder_alias=["n"]),
-    K("KC_O", "O", printable="o", recorder_alias=["o"]),
-    K("KC_P", "P", printable="p", recorder_alias=["p"]),
-    K("KC_Q", "Q", printable="q", recorder_alias=["q"]),
-    K("KC_R", "R", printable="r", recorder_alias=["r"]),
-    K("KC_S", "S", printable="s", recorder_alias=["s"]),
-    K("KC_T", "T", printable="t", recorder_alias=["t"]),
-    K("KC_U", "U", printable="u", recorder_alias=["u"]),
-    K("KC_V", "V", printable="v", recorder_alias=["v"]),
-    K("KC_W", "W", printable="w", recorder_alias=["w"]),
-    K("KC_X", "X", printable="x", recorder_alias=["x"]),
-    K("KC_Y", "Y", printable="y", recorder_alias=["y"]),
-    K("KC_Z", "Z", printable="z", recorder_alias=["z"]),
-    K("KC_1", "!\n1", printable="1", recorder_alias=["1"]),
-    K("KC_2", "@\n2", printable="2", recorder_alias=["2"]),
-    K("KC_3", "#\n3", printable="3", recorder_alias=["3"]),
-    K("KC_4", "$\n4", printable="4", recorder_alias=["4"]),
-    K("KC_5", "%\n5", printable="5", recorder_alias=["5"]),
-    K("KC_6", "^\n6", printable="6", recorder_alias=["6"]),
-    K("KC_7", "&\n7", printable="7", recorder_alias=["7"]),
-    K("KC_8", "*\n8", printable="8", recorder_alias=["8"]),
-    K("KC_9", "(\n9", printable="9", recorder_alias=["9"]),
-    K("KC_0", ")\n0", printable="0", recorder_alias=["0"]),
-    K("KC_ENTER", "Enter", recorder_alias=["enter"], alias=["KC_ENT"]),
-    K("KC_ESCAPE", "Esc", recorder_alias=["esc"], alias=["KC_ESC"]),
-    K("KC_BSPACE", "Bksp", recorder_alias=["backspace"], alias=["KC_BSPC"]),
-    K("KC_TAB", "Tab", recorder_alias=["tab"]),
-    K("KC_SPACE", "Space", recorder_alias=["space"], alias=["KC_SPC"]),
-    K("KC_MINUS", "_\n-", printable="-", recorder_alias=["-"], alias=["KC_MINS"]),
-    K("KC_EQUAL", "+\n=", printable="=", recorder_alias=["="], alias=["KC_EQL"]),
-    K("KC_LBRACKET", "{\n[", printable="[", recorder_alias=["["], alias=["KC_LBRC"]),
-    K("KC_RBRACKET", "}\n]", printable="]", recorder_alias=["]"], alias=["KC_RBRC"]),
-    K("KC_BSLASH", "|\n\\", printable="\\", recorder_alias=["\\"], alias=["KC_BSLS"]),
-    K("KC_SCOLON", ":\n;", printable=";", recorder_alias=[";"], alias=["KC_SCLN"]),
-    K("KC_QUOTE", "\"\n'", printable="'", recorder_alias=["'"], alias=["KC_QUOT"]),
-    K("KC_GRAVE", "~\n`", printable="`", recorder_alias=["`"], alias=["KC_GRV", "KC_ZKHK"]),
-    K("KC_COMMA", "<\n,", printable=",", recorder_alias=[","], alias=["KC_COMM"]),
-    K("KC_DOT", ">\n.", printable=".", recorder_alias=["."]),
-    K("KC_SLASH", "?\n/", printable="/", recorder_alias=["/"], alias=["KC_SLSH"]),
-    K("KC_CAPSLOCK", "Caps\nLock", recorder_alias=["caps lock"], alias=["KC_CLCK", "KC_CAPS"]),
-    K("KC_F1", "F1", recorder_alias=["f1"]),
-    K("KC_F2", "F2", recorder_alias=["f2"]),
-    K("KC_F3", "F3", recorder_alias=["f3"]),
-    K("KC_F4", "F4", recorder_alias=["f4"]),
-    K("KC_F5", "F5", recorder_alias=["f5"]),
-    K("KC_F6", "F6", recorder_alias=["f6"]),
-    K("KC_F7", "F7", recorder_alias=["f7"]),
-    K("KC_F8", "F8", recorder_alias=["f8"]),
-    K("KC_F9", "F9", recorder_alias=["f9"]),
-    K("KC_F10", "F10", recorder_alias=["f10"]),
-    K("KC_F11", "F11", recorder_alias=["f11"]),
-    K("KC_F12", "F12", recorder_alias=["f12"]),
+    K("KC_A", "A", printable="a"),
+    K("KC_B", "B", printable="b"),
+    K("KC_C", "C", printable="c"),
+    K("KC_D", "D", printable="d"),
+    K("KC_E", "E", printable="e"),
+    K("KC_F", "F", printable="f"),
+    K("KC_G", "G", printable="g"),
+    K("KC_H", "H", printable="h"),
+    K("KC_I", "I", printable="i"),
+    K("KC_J", "J", printable="j"),
+    K("KC_K", "K", printable="k"),
+    K("KC_L", "L", printable="l"),
+    K("KC_M", "M", printable="m"),
+    K("KC_N", "N", printable="n"),
+    K("KC_O", "O", printable="o"),
+    K("KC_P", "P", printable="p"),
+    K("KC_Q", "Q", printable="q"),
+    K("KC_R", "R", printable="r"),
+    K("KC_S", "S", printable="s"),
+    K("KC_T", "T", printable="t"),
+    K("KC_U", "U", printable="u"),
+    K("KC_V", "V", printable="v"),
+    K("KC_W", "W", printable="w"),
+    K("KC_X", "X", printable="x"),
+    K("KC_Y", "Y", printable="y"),
+    K("KC_Z", "Z", printable="z"),
+    K("KC_1", "!\n1", printable="1"),
+    K("KC_2", "@\n2", printable="2"),
+    K("KC_3", "#\n3", printable="3"),
+    K("KC_4", "$\n4", printable="4"),
+    K("KC_5", "%\n5", printable="5"),
+    K("KC_6", "^\n6", printable="6"),
+    K("KC_7", "&\n7", printable="7"),
+    K("KC_8", "*\n8", printable="8"),
+    K("KC_9", "(\n9", printable="9"),
+    K("KC_0", ")\n0", printable="0"),
+    K("KC_ENTER", "Enter", alias=["KC_ENT"]),
+    K("KC_ESCAPE", "Esc", alias=["KC_ESC"]),
+    K("KC_BSPACE", "Bksp", alias=["KC_BSPC"]),
+    K("KC_TAB", "Tab"),
+    K("KC_SPACE", "Space", alias=["KC_SPC"]),
+    K("KC_MINUS", "_\n-", printable="-", alias=["KC_MINS"]),
+    K("KC_EQUAL", "+\n=", printable="=", alias=["KC_EQL"]),
+    K("KC_LBRACKET", "{\n[", printable="[", alias=["KC_LBRC"]),
+    K("KC_RBRACKET", "}\n]", printable="]", alias=["KC_RBRC"]),
+    K("KC_BSLASH", "|\n\\", printable="\\", alias=["KC_BSLS"]),
+    K("KC_SCOLON", ":\n;", printable=";", alias=["KC_SCLN"]),
+    K("KC_QUOTE", "\"\n'", printable="'", alias=["KC_QUOT"]),
+    K("KC_GRAVE", "~\n`", printable="`", alias=["KC_GRV", "KC_ZKHK"]),
+    K("KC_COMMA", "<\n,", printable=",", alias=["KC_COMM"]),
+    K("KC_DOT", ">\n.", printable="."),
+    K("KC_SLASH", "?\n/", printable="/", alias=["KC_SLSH"]),
+    K("KC_CAPSLOCK", "Caps\nLock", alias=["KC_CLCK", "KC_CAPS"]),
+    K("KC_F1", "F1"),
+    K("KC_F2", "F2"),
+    K("KC_F3", "F3"),
+    K("KC_F4", "F4"),
+    K("KC_F5", "F5"),
+    K("KC_F6", "F6"),
+    K("KC_F7", "F7"),
+    K("KC_F8", "F8"),
+    K("KC_F9", "F9"),
+    K("KC_F10", "F10"),
+    K("KC_F11", "F11"),
+    K("KC_F12", "F12"),
 
-    K("KC_APPLICATION", "Menu", recorder_alias=["menu", "left menu", "right menu"], alias=["KC_APP"]),
-    K("KC_LCTRL", "LCtrl", recorder_alias=["left ctrl", "ctrl"], alias=["KC_LCTL"]),
-    K("KC_LSHIFT", "LShift", recorder_alias=["left shift", "shift"], alias=["KC_LSFT"]),
-    K("KC_LALT", "LAlt", recorder_alias=["alt"], alias=["KC_LOPT"]),
-    K("KC_LGUI", "LGui", recorder_alias=["left windows", "windows"], alias=["KC_LCMD", "KC_LWIN"]),
-    K("KC_RCTRL", "RCtrl", recorder_alias=["right ctrl"], alias=["KC_RCTL"]),
-    K("KC_RSHIFT", "RShift", recorder_alias=["right shift"], alias=["KC_RSFT"]),
+    K("KC_APPLICATION", "Menu", alias=["KC_APP"]),
+    K("KC_LCTRL", "LCtrl", alias=["KC_LCTL"]),
+    K("KC_LSHIFT", "LShift", alias=["KC_LSFT"]),
+    K("KC_LALT", "LAlt", alias=["KC_LOPT"]),
+    K("KC_LGUI", "LGui", alias=["KC_LCMD", "KC_LWIN"]),
+    K("KC_RCTRL", "RCtrl", alias=["KC_RCTL"]),
+    K("KC_RSHIFT", "RShift", alias=["KC_RSFT"]),
     K("KC_RALT", "RAlt", alias=["KC_ALGR", "KC_ROPT"]),
-    K("KC_RGUI", "RGui", recorder_alias=["right windows"], alias=["KC_RCMD", "KC_RWIN"]),
+    K("KC_RGUI", "RGui", alias=["KC_RCMD", "KC_RWIN"]),
 ]
 
 KEYCODES_BASIC.extend(KEYCODES_BASIC_NUMPAD)

@@ -77,9 +77,6 @@ class ProtocolAltRepeatKey(BaseProtocol):
             e = (Keycode.serialize(e[0]), Keycode.serialize(e[1]), e[2], e[3])
             self.alt_repeat_key_entries.append(AltRepeatKeyEntry(e))
 
-    def alt_repeat_key_get(self, idx):
-        return self.alt_repeat_key_entries[idx]
-
     def alt_repeat_key_set(self, idx, entry):
         if entry != self.alt_repeat_key_entries[idx]:
             if entry.keycode == RESET_KEYCODE or entry.alt_keycode == RESET_KEYCODE:

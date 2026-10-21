@@ -1,36 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 import unittest
 
-from protocol.dummy_keyboard import DummyKeyboard
 from keycodes.keycodes import Keycode, recreate_keyboard_keycodes
 from macro.macro_action import ActionTap, ActionDown, ActionText, ActionDelay, ActionUp
-from macro.macro_key import KeyDown, KeyTap, KeyUp, KeyString
-from macro.macro_optimizer import remove_repeats, replace_with_tap, replace_with_string
-
-KC_A = Keycode.find_by_qmk_id("KC_A")
-KC_B = Keycode.find_by_qmk_id("KC_B")
-KC_C = Keycode.find_by_qmk_id("KC_C")
-
-CMB_TOG = Keycode.find_by_qmk_id("CMB_TOG")
+from test.dummy_keyboard import DummyKeyboard
 
 
 class TestMacro(unittest.TestCase):
-
-    def test_remove_repeats(self):
-        self.assertEqual(remove_repeats([KeyDown(KC_A), KeyDown(KC_A)]), [KeyDown(KC_A)])
-        self.assertEqual(remove_repeats([KeyDown(KC_A), KeyDown(KC_B), KeyDown(KC_B), KeyDown(KC_C), KeyDown(KC_C)]),
-                         [KeyDown(KC_A), KeyDown(KC_B), KeyDown(KC_C)])
-
-        # don't remove repeated taps
-        self.assertEqual(remove_repeats([KeyTap(KC_A), KeyTap(KC_A)]), [KeyTap(KC_A), KeyTap(KC_A)])
-
-    def test_replace_tap(self):
-        self.assertEqual(replace_with_tap([KeyDown(KC_A)]), [KeyDown(KC_A)])
-        self.assertEqual(replace_with_tap([KeyDown(KC_A), KeyUp(KC_A)]), [KeyTap(KC_A)])
-        self.assertEqual(replace_with_tap([KeyUp(KC_A), KeyDown(KC_A)]), [KeyUp(KC_A), KeyDown(KC_A)])
-
-    def test_replace_string(self):
-        self.assertEqual(replace_with_string([KeyTap(KC_A), KeyTap(KC_B)]), [KeyString("ab")])
 
     def test_serialize_v1(self):
         kb = DummyKeyboard(None)
