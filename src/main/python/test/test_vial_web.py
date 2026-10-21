@@ -13,6 +13,7 @@ import uvicorn
 
 import console
 import resources
+import version
 import vial_web
 from protocol.unlock_hook import set_unlock_handler
 from server import device as device_module
@@ -111,6 +112,15 @@ def test_dry_run_says_a_keyboard_waits_for_its_unlock_and_leaves_it_waiting(monk
     assert "no keyboard found" not in out
     assert starts == []
     assert vk.unlock_in_progress and vk.unlock_counter == counter
+
+
+def test_version_is_printed(capsys):
+    with pytest.raises(SystemExit) as stopped:
+        vial_web.parse_args(["--version"])
+    assert stopped.value.code == 0
+    assert capsys.readouterr().out.strip() == "Vial (web) " + version.VERSION
+    # vial.spec makes Windows' four-number version of it
+    assert all(part.isdigit() for part in version.VERSION.split(".")) and len(version.VERSION.split(".")) == 3
 
 
 def test_definition_requires_fake():

@@ -22,6 +22,7 @@ import platformdirs
 
 import console
 import resources
+import version
 
 APP_NAME = "Vial"
 FAKE_SUBDIR = "fake"
@@ -364,6 +365,7 @@ def port_number(text):
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description="Vial keyboard configurator (web UI)")
+    parser.add_argument("--version", action="version", version="{} {}".format(version.PRODUCT, version.VERSION))
     parser.add_argument("--fake", action="store_true", help="use a simulated keyboard instead of real hardware")
     parser.add_argument("--definition", help="with --fake: vial.json of the keyboard to simulate")
     parser.add_argument("--layout", help="with --fake: .vil layout file to load into the simulated keyboard")
@@ -384,6 +386,9 @@ def parse_args(argv):
     parser.add_argument("--port", type=port_number, default=0, help="port to listen on (default: any free port)")
     parser.add_argument("--no-browser", action="store_true", help="don't open the browser")
     parser.add_argument("--dry-run", action="store_true", help="connect, print a summary and exit without serving")
+    parser.add_argument("--self-check", action="store_true",
+                        help="check that this build has everything it needs (hidapi, the server, the web UI) and exit, "
+                             "without looking for any keyboard")
     parser.add_argument("--data-dir", type=os.path.abspath,
                         help="keep the instance lock, session file, log and names in this folder instead of the "
                              "user's data and config folders (for tests and development)")
@@ -397,6 +402,9 @@ def parse_args(argv):
 
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.self_check:
+        import selfcheck
+        return selfcheck.main()
     use_data_dir(args.data_dir)
 
     # Claim the instance before touching any keyboard: a second instance opening the keyboard and reading
