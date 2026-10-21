@@ -5,7 +5,8 @@
 
 /* Segoe UI (Windows) with its capitals nearer the middle of the line: as it is, it draws them low, by about 1 px in
    Firefox's 12-13 px buttons. 104% + 29.01% keeps the font's own line height (107.91% + 25.10%); measured centred in
-   Firefox and Chromium at 12 and 13 px. Without Segoe UI (Linux, macOS) the next font in --font is used, unchanged. */
+   Firefox and Chromium at 12 and 13 px. Used on Windows only (data-os="windows", set by index.html): on Linux,
+   fontconfig answers local("Segoe UI") with a stand-in (the wide DejaVu Sans), which would push pages sideways. */
 @font-face {
   font-family: "Vial Segoe UI";
   font-weight: 300;
@@ -119,8 +120,13 @@
   --shadow-lg: 0 12px 32px rgb(16 24 40 / 18%);
   /* named fonts before system-ui: Linux's default (often DejaVu Sans) is so wide that small keyboard legends shrink
      below 8 px, while Liberation Sans has Arial's widths */
-  --font: -apple-system, "Vial Segoe UI", "Segoe UI", Roboto, "Helvetica Neue", Arial, "Liberation Sans", system-ui, sans-serif;
+  --font: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Liberation Sans", system-ui, sans-serif;
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+}
+
+/* on Windows, Segoe UI with its capitals centred (the @font-face rules above) */
+:root[data-os="windows"] {
+  --font: "Vial Segoe UI", "Segoe UI", Roboto, "Helvetica Neue", Arial, "Liberation Sans", system-ui, sans-serif;
 }
 
 /* a narrower gutter on a narrow screen, for the top bar, the pages and the stopped page alike */
