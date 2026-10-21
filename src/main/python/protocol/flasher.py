@@ -10,7 +10,9 @@ A firmware file: "VIALFW00" or "VIALFW01", the keyboard's UID (8 bytes), the bui
 since 1970, UTC), 8 bytes unused, the SHA-256 of the payload (32 bytes), then the payload.
 
 The bootloader takes 64-byte messages: "VC" and a command byte (CMD_*), padded with zeros; then, for CMD_FLASH, the
-payload in 64-byte chunks.
+payload in 64-byte chunks. After CMD_FLASH with a count of N, the bootloader takes the next N messages as the payload,
+whatever they hold: until it has them all, a command is written into the flash and never answered. Only unplugging the
+keyboard and starting it in its bootloader again ends that.
 """
 import datetime
 import hashlib
@@ -37,6 +39,10 @@ RETRY_PAUSE = 0.01
 """ seconds between two tries of a message the bootloader didn't take yet """
 UID_TIMEOUT_MS = 500
 """ how long a device found is given to say its UID """
+ANSWER_TIMEOUT_MS = 1000
+""" how long the bootloader is given to answer a command; a read without a timeout would wait forever """
+MAX_CHUNKS = 0xFFFF
+""" CMD_FLASH gives the number of chunks in 2 bytes """
 
 CMD_VERSION = b"VC\x00"
 CMD_UID = b"VC\x01"
@@ -45,6 +51,9 @@ CMD_FLASH = b"VC\x02"
 CMD_REBOOT = b"VC\x03"
 CMD_INSECURE = b"VC\x04"
 """ the keyboard starts unlocked once, so that the layout saved before flashing can be written back """
+COMMAND_NAMES = {CMD_VERSION: "version", CMD_UID: "UID", CMD_FLASH: "flash", CMD_REBOOT: "reboot",
+                 CMD_INSECURE: "insecure"}
+RESTART_BOOTLOADER = "unplug the keyboard, start it in its bootloader again, then flash it again"
 
 
 class FirmwareError(ValueError):
@@ -64,19 +73,39 @@ class Firmware:
     payload: bytes
 
 
+def chunk_count(payload):
+    """ How many chunks the payload is sent in (the last one padded with zeros) """
+    return -(-len(payload) // MESSAGE_LEN)
+
+
+def check_payload(payload):
+    """ FirmwareError unless the bootloader can be told to take the payload: not empty, at most MAX_CHUNKS chunks """
+    if not payload:
+        raise FirmwareError("the firmware is empty")
+    if chunk_count(payload) > MAX_CHUNKS:
+        raise FirmwareError("the firmware is too large for the bootloader ({} bytes, at most {})".format(
+            len(payload), MAX_CHUNKS * MESSAGE_LEN))
+
+
 def read_firmware(data):
-    """ The firmware in a .vfw file's bytes; FirmwareError when it isn't one, or is damaged """
+    """ The firmware in a .vfw file's bytes; FirmwareError when it isn't one, is damaged, or can't be flashed """
     if len(data) > MAX_FIRMWARE_SIZE:
         raise FirmwareError("the firmware is too large ({} bytes, at most {}): check that it is the right file".format(
             len(data), MAX_FIRMWARE_SIZE))
     if len(data) < HEADER_LEN or data[0:8] not in FIRMWARE_SIGNATURES:
         raise FirmwareError("this isn't a Vial firmware file (.vfw)")
     expected, payload = data[32:64], data[HEADER_LEN:]
+    check_payload(payload)
     actual = hashlib.sha256(payload).digest()
     if actual != expected:
         raise FirmwareError("the firmware is damaged: its checksum is {}, it should be {}".format(
             actual.hex(), expected.hex()))
-    built = datetime.datetime.fromtimestamp(struct.unpack("<Q", data[16:24])[0], datetime.timezone.utc)
+    seconds = struct.unpack("<Q", data[16:24])[0]
+    try:
+        built = datetime.datetime.fromtimestamp(seconds, datetime.timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        raise FirmwareError("the firmware's build time ({} seconds since 1970) is impossible: check that it is the "
+                            "right file".format(seconds)) from None
     return Firmware(uid=data[8:16], built=built, payload=payload)
 
 
@@ -92,6 +121,11 @@ def pad(message):
     if len(message) > MESSAGE_LEN:
         raise ValueError("a bootloader message is at most {} bytes".format(MESSAGE_LEN))
     return message + b"\x00" * (MESSAGE_LEN - len(message))
+
+
+def command_name(command):
+    """ A command as an error tells it, e.g. "flash (VC 02)" """
+    return "{} (VC {:02X})".format(COMMAND_NAMES.get(command, "unknown"), command[2])
 
 
 def is_bootloader(desc):
@@ -127,22 +161,29 @@ class Bootloader:
     def command(self, command, argument=b""):
         """ Send a command; FlashError when the bootloader doesn't take it """
         if not self.send(pad(command + argument)):
-            raise FlashError("the bootloader didn't take the command {}".format(command[2]))
+            raise FlashError("the bootloader didn't take the command {}".format(command_name(command)))
 
-    def recv(self, length, timeout_ms=0):
-        """ The bootloader's answer (0: wait for it) """
+    def recv(self, length, timeout_ms=ANSWER_TIMEOUT_MS):
+        """ The bootloader's answer, b"" when it doesn't come within timeout_ms (hidapi waits forever for 0) """
+        if timeout_ms <= 0:
+            raise ValueError("a read from the bootloader needs a timeout: without one it can wait forever")
         return bytes(self.dev.read(length, timeout_ms=timeout_ms))
 
-    def version(self):
-        self.command(CMD_VERSION)
-        answer = self.recv(8)
+    def ask(self, command, timeout_ms=ANSWER_TIMEOUT_MS):
+        """ The answer (8 bytes) to a command; FlashError when it isn't taken or answered in time """
+        self.command(command)
+        answer = self.recv(8, timeout_ms)
         if not answer:
-            raise FlashError("the bootloader didn't say its version")
-        return answer[0]
+            raise FlashError("the bootloader didn't answer the command {} within {} ms. If a flash failed before, it "
+                             "is still waiting for that firmware: {}".format(command_name(command), timeout_ms,
+                                                                             RESTART_BOOTLOADER))
+        return answer
 
-    def uid(self, timeout_ms=0):
-        self.command(CMD_UID)
-        return self.recv(8, timeout_ms)
+    def version(self):
+        return self.ask(CMD_VERSION)[0]
+
+    def uid(self, timeout_ms=ANSWER_TIMEOUT_MS):
+        return self.ask(CMD_UID, timeout_ms)
 
 
 def bootloader_uid(dev):
@@ -173,10 +214,17 @@ def flash(bootloader, firmware, restore_layout=False, log=lambda line: None, pro
     """ Flash the firmware (read_firmware()) through the bootloader (Bootloader), then reboot the keyboard into it.
 
     restore_layout: the keyboard starts unlocked once (CMD_INSECURE), so that a layout saved before flashing can be
-    written back. log(line) tells what is done, progress(fraction) how much of the payload is sent. FirmwareError when
-    the firmware is for another keyboard; FlashError when the bootloader can't flash it: nothing is written before
-    every check has passed.
+    written back. log(line) tells what is done, progress(fraction) how much of the payload is sent.
+
+    Raises, and nothing is written into the flash before every check has passed:
+    - FirmwareError when the payload is empty or has more than MAX_CHUNKS chunks (before the bootloader is asked
+      anything), or the firmware is for another keyboard;
+    - FlashError when the bootloader doesn't take a command, doesn't answer one within ANSWER_TIMEOUT_MS, or has a
+      version this flasher doesn't speak; and when it stops taking the payload, which leaves the keyboard's firmware
+      incomplete;
+    - OSError when the device fails (as hidapi raises it).
     """
+    check_payload(firmware.payload)
     log("Firmware built on {} (UTC)".format(firmware.built.strftime("%Y-%m-%d %H:%M:%S")))
     version = bootloader.version()
     log("Bootloader version: {}".format(version))
@@ -189,14 +237,14 @@ def flash(bootloader, firmware, restore_layout=False, log=lambda line: None, pro
     check_firmware_for(firmware, uid)
 
     payload = firmware.payload + b"\x00" * (-len(firmware.payload) % MESSAGE_LEN)
-    if len(payload) // MESSAGE_LEN > 0xFFFF:
-        raise FirmwareError("the firmware is too large for the bootloader ({} bytes)".format(len(payload)))
     log("Flashing...")
-    bootloader.command(CMD_FLASH, struct.pack("<H", len(payload) // MESSAGE_LEN))
+    bootloader.command(CMD_FLASH, struct.pack("<H", chunk_count(payload)))
     sent = 0
     for chunk in chunks(payload, MESSAGE_LEN):
         if not bootloader.send(chunk):
-            raise FlashError("sending the firmware failed: the keyboard's firmware is now incomplete, flash it again")
+            raise FlashError("sending the firmware failed after {} of {} bytes: the keyboard's firmware is now "
+                             "incomplete, and the bootloader still waits for the rest. To try again, {}".format(
+                                 sent, len(payload), RESTART_BOOTLOADER))
         sent += len(chunk)
         progress(sent / len(payload))
 
