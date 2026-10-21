@@ -1,7 +1,8 @@
-// Work not saved yet, which opening another keyboard would drop: asked about before the keyboard selector switches
-// (App.svelte asks for a confirmation then). The editors open on the pages that show (a combo, a macro, a key override,
-// an alt-repeat key being edited) say what they have while they track it; the Settings page's changes and the lighting
-// not saved are kept while another page shows, so they are asked about wherever they were made.
+// Work not saved yet, which opening another keyboard or quitting Vial would drop: asked about before the keyboard
+// selector switches and before Quit Vial stops Vial (App.svelte asks for a confirmation then). The editors open on the
+// pages that show (a combo, a macro, a key override, an alt-repeat key being edited) say what they have while they
+// track it; the Settings page's changes and the lighting not saved are kept while another page shows, so they are
+// asked about wherever they were made. Only this tab's work is known here: Quit Vial drops other tabs' too.
 import type { KeyboardModel } from "../api/types";
 import { lightingBaseline } from "../lighting/state.svelte";
 import { matrixTest } from "../matrix/state.svelte";

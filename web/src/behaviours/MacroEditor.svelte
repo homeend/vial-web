@@ -4,6 +4,7 @@
   import { ApiError, failureMessage } from "../api/errors";
   import { keyboard } from "../lib/keyboard.svelte";
   import { asSentence } from "../lib/text";
+  import { DIALOG_TAKING_KEYS } from "../matrix/run.svelte";
   import Button from "../ui/Button.svelte";
   import {
     changeKind, macroBytes, moveStep, newStep, parseDelay, STEP_KINDS, stepBytes, stepProblem, STEPS_MAX, type Step,
@@ -256,6 +257,16 @@
     }
   });
 
+  /** The focus went into a dialog whose keys must work (Quit Vial's confirmation, the keyboard selector's, a rename):
+   * recording would take them (Enter, and Esc only stopping it), so it stops. The unlock dialog keeps the keys from
+   * the page itself: see the unlock's $effect above. */
+  function stopForDialog(event: FocusEvent) {
+    const target = event.target as { closest?: (selector: string) => unknown } | null;
+    if (recording && target?.closest?.(DIALOG_TAKING_KEYS)) {
+      void stopRecording("Recording stopped for the dialog that opened, whose keys must work. ");
+    }
+  }
+
   // while recording, every key typed into the window is the macro's (before anything else on the page sees it)
   $effect(() => {
     if (!recording) return;
@@ -263,11 +274,13 @@
     window.addEventListener("keyup", onkeyup, true);
     window.addEventListener("blur", forgetHeld);
     document.addEventListener("visibilitychange", forgetHeld);
+    document.addEventListener("focusin", stopForDialog);
     return () => {
       window.removeEventListener("keydown", onkeydown, true);
       window.removeEventListener("keyup", onkeyup, true);
       window.removeEventListener("blur", forgetHeld);
       document.removeEventListener("visibilitychange", forgetHeld);
+      document.removeEventListener("focusin", stopForDialog);
     };
   });
 </script>

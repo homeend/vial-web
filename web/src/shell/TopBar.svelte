@@ -370,7 +370,7 @@
     cursor: pointer;
   }
 
-  .quit:hover {
+  .quit:hover:not([aria-disabled="true"]) {
     border-color: color-mix(in srgb, var(--danger) 55%, transparent);
     color: var(--danger);
   }

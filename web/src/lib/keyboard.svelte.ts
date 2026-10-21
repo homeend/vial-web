@@ -108,8 +108,10 @@ export class KeyboardStore {
    * lighting. Finding keys and describing keycodes still use the whole catalogue. */
   pickerCatalogue = $derived(offeredCategories(this.catalogue, this.#lit));
 
+  /** whether the keyboard shown can be changed: not while Quit Vial is on its way, nor once Vial has stopped */
   canEdit = $derived(
-    this.model !== null && !this.stale && this.connected && this.link === "open" && this.switching === null,
+    this.model !== null && !this.stale && this.connected && this.link === "open" && this.switching === null &&
+      !this.stopped && !this.quitting,
   );
 
   #loads = 0;

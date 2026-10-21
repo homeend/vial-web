@@ -1429,6 +1429,21 @@ describe("quitting Vial", () => {
     expect(eventsLink().close).toHaveBeenCalled();
   });
 
+  it("edits nothing while Quit is on its way or once Vial has stopped; a Quit that failed gives editing back", async () => {
+    const { store, emit } = await loaded();
+    expect(store.canEdit).toBe(true);
+    const reply = deferred<null>();
+    mocked.shutdown.mockReturnValueOnce(reply.promise);
+    const quitting = store.quit();
+    expect(store.canEdit).toBe(false);
+    reply.reject(new ApiError(0));
+    expect(await quitting).toBe(false);
+    expect(store.canEdit).toBe(true);
+    emit("stopped");
+    expect(store.stopped).toBe(true);
+    expect(store.canEdit).toBe(false);
+  });
+
   it("says why Vial couldn't be quit, and goes on as before", async () => {
     const { store } = await loaded();
     mocked.shutdown.mockRejectedValueOnce(new ApiError(0));
