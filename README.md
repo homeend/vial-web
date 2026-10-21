@@ -163,20 +163,40 @@ changes to `web/`. See [`web/README.md`](web/README.md).
 
 ### Building the executable
 
-From the repository root, with the venv active:
+Run these from the repository root, with the venv active (see above: its Python has PyInstaller and the other
+packages of `requirements.txt`). Each system builds only its own executable: build the Linux one on Linux.
 
-```sh
-cd web && npm ci && npm run build && cd ..
-python -m PyInstaller vial.spec
-python util/smoke_test.py dist/Vial.exe      # Linux, macOS: dist/vial
-```
+1. Build the web UI. The executable carries it inside, so build it again after changes to `web/`:
 
-`vial.spec` builds one file, `dist/Vial.exe` on Windows (a console app with Vial's icon and version info) and
-`dist/vial` on Linux and macOS, with the Python runtime, hidapi, the web UI and `qmk_settings.json` inside; it
-refuses to build without the web UI. The version is set in `src/main/python/version.py`. The smoke test runs
-`--self-check`, then the executable with `--fake --no-browser` and a temporary data dir, reads `/api/session` and
-quits it through `/api/shutdown`. CI (`.github/workflows/main.yml`) does the same on Windows, Linux and macOS, and runs
-the end-to-end tests against the executable on Windows and Linux.
+   ```sh
+   cd web && npm ci && npm run build && cd ..
+   ```
+
+2. Build the executable. **When this step ends, the executable is ready:** `dist/Vial.exe` on Windows, `dist/vial`
+   on Linux and macOS.
+
+   ```sh
+   python -m PyInstaller vial.spec
+   ```
+
+   It is one file that you can copy anywhere and run: the Python runtime, hidapi, the web UI and
+   `qmk_settings.json` are inside it (on Windows, it is a console app with Vial's icon and version info).
+   `vial.spec` refuses to build without the web UI of step 1. PyInstaller also leaves its working files in `build/`;
+   you can delete that folder. The version is set in `src/main/python/version.py`.
+
+3. Optional: check that the new file runs.
+
+   ```sh
+   python util/smoke_test.py dist/Vial.exe      # Linux, macOS: dist/vial
+   ```
+
+   The smoke test changes nothing in the executable and never uses a real keyboard. It runs `--self-check` (the
+   executable checks that it has everything it needs), then starts it with `--fake --no-browser` and a temporary
+   data dir, reads `/api/session`, quits it through `/api/shutdown` as **Quit Vial** does, and checks that it exits
+   with 0. It prints `smoke test passed: …`, or `smoke test FAILED: …` with the executable's output.
+
+CI (`.github/workflows/main.yml`) does steps 1–3 on Windows, Linux and macOS, and runs the end-to-end tests against
+the executable on Windows and Linux.
 
 ## License
 
