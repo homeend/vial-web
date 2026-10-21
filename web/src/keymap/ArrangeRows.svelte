@@ -157,7 +157,7 @@
       <span class="line">
         <span class="name" title={nameAfter(model.layers[0], 0)}>{nameAfter(model.layers[0], 0)}</span>
       </span>
-      <span class="reach">always first: the keyboard starts on it</span>
+      <span class="reach">always first: the usual start-up layer</span>
     </span>
   </li>
   {#each shown.slice(1) as layer, i (layer)}

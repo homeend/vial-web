@@ -3,7 +3,8 @@
 no I/O (server.arranger reads the keyboard into one and writes one back).
 
 An order lists, for each new position, the layer that goes there: order[new position] = old layer. [0, 3, 1, 2] puts
-layer 3 at position 1, and layers 1 and 2 after it. Layer 0 never moves: the keyboard starts on it.
+layer 3 at position 1, and layers 1 and 2 after it. Layer 0 never moves: the keyboard starts on it
+unless a PDF key saved another start-up layer.
 """
 import dataclasses
 import types
@@ -88,7 +89,7 @@ def check_order(order, layers):
     if len(order) != layers or sorted(order) != list(range(layers)):
         raise BadOrder("the order must list each of the {} layers (0 to {}) once".format(layers, layers - 1))
     if order[0] != 0:
-        raise BadOrder("layer 0 stays first: the keyboard starts on it")
+        raise BadOrder("layer 0 stays first: it is the usual start-up layer")
     return order
 
 
