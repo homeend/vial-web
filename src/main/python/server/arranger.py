@@ -201,6 +201,12 @@ class NothingUnfinished(LookupError):
     """ Finish or Put back with no arrange of this keyboard left unfinished """
 
 
+class NamesNotSaved(Exception):
+    """ Every write of an arrange went through, but its layer names couldn't be saved (another program holding the
+    names file, say): it is kept unfinished, for Finish to save them (it writes nothing else) or Put back. Not an OSError
+    or RuntimeError, which would read as the keyboard failing. """
+
+
 @dataclasses.dataclass
 class Unfinished:
     """ An arrange that stopped partway: the keyboard holds part of `target`, and of `start` """
@@ -252,12 +258,17 @@ class Job:
     def run(self):
         try:
             write(self.kb, self.todo, self.written)
+            try:
+                self.done()
+            except Exception as e:
+                raise NamesNotSaved("The layers were arranged, but the layer names couldn't be saved: {}"
+                                    .format(e)) from e
         except Exception:
-            # even the first write may have reached the keyboard, its answer lost: it may hold part of either state
+            # even the first write may have reached the keyboard, its answer lost: it may hold part of either state.
+            # After every write, it holds `writing` (done == total): Finish then only saves the names.
             self.arrangements.keep(self.uid, Unfinished(self.start, self.target, self.order, len(self.written),
                                                         self.todo.writes))
             raise
-        self.done()
 
 
 def begin(kb, order, arrangements, names):

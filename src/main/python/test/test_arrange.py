@@ -297,6 +297,63 @@ def test_a_failure_at_the_first_write_can_be_put_back(setup):
     assert virtual.writes == [] and snapshot(virtual) == start
 
 
+def names_held_by_another_program(monkeypatch, names):
+    """ names.move_layers fails, as when another program holds names.json; returns the real one """
+    move_layers = names.move_layers
+
+    def held(uid, order):
+        raise PermissionError(13, "held by another program")
+    monkeypatch.setattr(names, "move_layers", held)
+    return move_layers
+
+
+NAMES_NOT_SAVED = "The layers were arranged, but the layer names couldn't be saved: "
+
+
+def test_names_not_saved_after_every_write_then_finish(setup, tmp_path, monkeypatch):
+    """ Every write went through, then the names couldn't be saved: the arrange stays unfinished at its end; Finish
+    writes nothing and saves the names only """
+    client, manager, names = setup
+    name_layers(client, {3: "Num"})
+    target = arranged_elsewhere(tmp_path, monkeypatch, lambda c: None, ORDER)
+    virtual = manager.backend.virtual
+    total = preview(client)["writes"]
+    move_layers = names_held_by_another_program(monkeypatch, names)
+    response = arrange(client)
+    assert response.status_code == 507
+    assert response.json()["detail"].startswith(NAMES_NOT_SAVED)
+    assert manager.connected and snapshot(virtual) == target
+    assert client.get("/api/session").json()["arrange"] == {"order": ORDER, "done": total, "total": total}
+    assert client.get("/api/names").json()["layers"] == {"3": "Num"}
+    # Finish fails the same way while the file is held, and writes nothing to the keyboard
+    virtual.writes.clear()
+    response = client.post("/api/layers/arrange/finish")
+    assert response.status_code == 507 and response.json()["detail"].startswith(NAMES_NOT_SAVED)
+    assert virtual.writes == []
+    assert client.get("/api/session").json()["arrange"] == {"order": ORDER, "done": 0, "total": 0}
+    monkeypatch.setattr(names, "move_layers", move_layers)
+    response = client.post("/api/layers/arrange/finish")
+    assert response.status_code == 200, response.text
+    assert virtual.writes == [] and snapshot(virtual) == target
+    assert client.get("/api/names").json()["layers"] == {"1": "Num"}
+    assert client.get("/api/session").json()["arrange"] is None
+
+
+def test_names_not_saved_after_every_write_then_put_back(setup, monkeypatch):
+    """ Put back writes the start back; the names, never moved, need no saving """
+    client, manager, names = setup
+    name_layers(client, {3: "Num"})
+    virtual = manager.backend.virtual
+    start = snapshot(virtual)
+    names_held_by_another_program(monkeypatch, names)
+    assert arrange(client).status_code == 507
+    response = client.post("/api/layers/arrange/put-back")
+    assert response.status_code == 200, response.text
+    assert snapshot(virtual) == start
+    assert client.get("/api/names").json()["layers"] == {"3": "Num"}
+    assert client.get("/api/session").json()["arrange"] is None
+
+
 def test_the_fail_write_hook_is_fake_only_and_not_in_the_schema(setup):
     client, manager, _ = setup
     assert "/api/simulator/fail-write" not in client.get("/openapi.json").json()["paths"]

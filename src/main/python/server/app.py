@@ -512,6 +512,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     async def nothing_unfinished(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=404)
 
+    @app.exception_handler(arranger.NamesNotSaved)
+    async def names_not_saved(request, exc):
+        # the keyboard took every write: the names file couldn't be written (507 Insufficient Storage: the server
+        # couldn't store what the request needed), not the keyboard failing (502) nor gone (503)
+        log.error("%s", exc, exc_info=exc.__cause__)
+        return JSONResponse({"detail": str(exc)}, status_code=507)
+
     @app.exception_handler(KeyboardRefused)
     async def refused(request, exc):
         # it answered, and can't take the change: the page shows the message (a 502 would read "didn't respond")
