@@ -38,9 +38,10 @@ export class Toasts {
     this.#add({ message, tone: "error" });
   }
 
-  /** What was done, maybe with an action (Undo) */
-  info(message: string, action?: ToastAction): void {
-    this.#add({ message, tone: "info", action });
+  /** What was done, maybe with an action (Undo). Returns the toast's id (to dismiss it once its action no longer
+   * applies). */
+  info(message: string, action?: ToastAction): number {
+    return this.#add({ message, tone: "info", action });
   }
 
   /** Runs a toast's action, unless the toast has gone or its action is running already */
@@ -55,11 +56,12 @@ export class Toasts {
     }
   }
 
-  #add(toast: Omit<Toast, "id">): void {
+  #add(toast: Omit<Toast, "id">): number {
     const id = this.#next++;
     this.items.push({ id, ...toast });
     this.#holds.set(id, new Set());
     this.#countDown(id);
+    return id;
   }
 
   dismiss(id: number): void {

@@ -7,7 +7,7 @@ import { ApiError, causeMessage, failureMessage } from "../api/errors";
 import { connectEvents, type EventsLink, type LinkState, type ServerEvent } from "../api/events";
 import type {
   AltRepeatKeyIn, KeyboardLanguage, KeyboardList, KeyboardModel, KeycodeCategory, KeyOverrideIn, LightingIn,
-  MacroActionIn, MatrixState, Named, QmkSetting, Session, TapDanceIn,
+  MacroActionIn, MatrixState, Named, QmkSetting, Session, TapDanceIn, UnfinishedArrange,
 } from "../api/types";
 import { keyTitle, namesOf } from "../keyboard/labels";
 import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
@@ -141,6 +141,11 @@ export class KeyboardStore {
   /** the keyboard (KeyboardEntry.id) the model shown was read from; null while none is */
   get modelKeyboard(): string | null {
     return this.#modelKeyboard;
+  }
+
+  /** arranging the layers of the keyboard loaded stopped partway, as the session last said; null for none */
+  get unfinishedArrange(): UnfinishedArrange | null {
+    return this.session?.arrange ?? null;
   }
 
   /** Load the language list, then follow the server's events (which start with the keyboard's state) */
@@ -698,6 +703,48 @@ export class KeyboardStore {
     });
   }
 
+  /** Move the layers to `order` (order[position] = layer now): the server renumbers every layer reference and moves
+   * the names, writing only what differs. A keyboard that must be unlocked for it (QK_BOOT moves, or the macros change)
+   * is unlocked first, as nothing was written. A write that fails leaves the arrange unfinished (unfinishedArrange).
+   * report: says why it wasn't done, instead of a toast. Returns whether it was done. */
+  arrangeLayers(order: number[], report?: (message: string) => void, action = "Arranging the layers"):
+    Promise<boolean> {
+    return this.#arrange(action, () => api.arrangeLayers(order), report);
+  }
+
+  /** Write the rest of an arrange that stopped partway, then move the names */
+  finishArrange(report?: (message: string) => void): Promise<boolean> {
+    return this.#arrange("Finishing the arrange", () => api.finishArrange(), report);
+  }
+
+  /** Write back what an arrange that stopped partway changed */
+  putBackArrange(report?: (message: string) => void): Promise<boolean> {
+    return this.#arrange("Putting the layers back", () => api.putBackArrange(), report);
+  }
+
+  /** An arrange's request; the session (which says whether one is unfinished) is read again afterwards, done or not */
+  async #arrange(action: string, send: () => Promise<KeyboardModel>, report?: (message: string) => void):
+    Promise<boolean> {
+    const model = this.model;
+    if (!model || !this.canEdit) return false;
+    const done = await this.#edit(action, model, async () => {
+      const arranged = await send();
+      if (this.model === model) this.model = arranged;
+    }, undefined, report);
+    await this.refreshSession();
+    return done;
+  }
+
+  /** Read the session again (whether an arrange is unfinished, the unlock state) */
+  async refreshSession(): Promise<void> {
+    const at = ++this.#sessionReads;
+    try {
+      this.#useSession(await api.session(), at);
+    } catch {
+      // read again with the next load
+    }
+  }
+
   /** Name a layer, tap dance or macro; an empty name gives it its default one back */
   rename(kind: Named["kind"], index: number, name: string): Promise<boolean> {
     const model = this.model;
@@ -718,10 +765,11 @@ export class KeyboardStore {
    * it (the user holds its unlock keys) and is sent again, once, unless the keyboard was unplugged or another one
    * plugged in meanwhile: the change was for the one that went. When it fails, putBack (if given) undoes what write
    * got done, unless the keyboard was unplugged or replaced meanwhile (sameKeyboard), and says what it did or why it
-   * didn't: that follows the failure's message. */
+   * didn't: that follows the failure's message. report: where the failure's message goes, instead of a toast (a dialog
+   * that shows it). */
   async #edit(
     action: string, model: KeyboardModel, write: () => Promise<void>,
-    putBack?: (sameKeyboard: boolean) => Promise<string>,
+    putBack?: (sameKeyboard: boolean) => Promise<string>, report?: (message: string) => void,
   ): Promise<boolean> {
     this.pending++;
     const loads = this.#loads;
@@ -730,7 +778,7 @@ export class KeyboardStore {
     let changed = false;
     const fail = async (message: string) => {
       const note = putBack ? await putBack(this.#plugs === plugs && !changed) : "";
-      toasts.error(note ? `${message} ${note}` : message);
+      (report ?? ((text: string) => toasts.error(text)))(note ? `${message} ${note}` : message);
       return false;
     };
     try {

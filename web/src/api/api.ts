@@ -44,6 +44,14 @@ export const api = {
   previewLayoutFile: (text: string) => request("post", "/api/layout-file/preview", { raw: text }),
   /** writes a .vil file to the keyboard: the whole file, or nothing when it doesn't fit */
   loadLayoutFile: (text: string) => request("post", "/api/layout-file", { raw: text }),
+  /** what arranging the layers in this order would change (order[position] = layer now); nothing is written */
+  previewArrange: (order: number[]) => request("post", "/api/layers/arrange/preview", { body: { order } }),
+  /** moves the layers to this order, every layer reference following, and their names; answers the new model */
+  arrangeLayers: (order: number[]) => request("post", "/api/layers/arrange", { body: { order } }),
+  /** writes the rest of an arrange that stopped partway, then moves the names */
+  finishArrange: () => request("post", "/api/layers/arrange/finish"),
+  /** writes back what an arrange that stopped partway changed */
+  putBackArrange: () => request("post", "/api/layers/arrange/put-back"),
   setName: (kind: Named["kind"], index: number, name: string) =>
     request("put", "/api/names/{kind}/{index}", { params: { kind, index }, body: { name } }),
   unlockStart: () => request("post", "/api/unlock/start"),
