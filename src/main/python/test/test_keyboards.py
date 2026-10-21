@@ -15,6 +15,7 @@ from server.device import DeviceManager, FakeBackend, UnknownKeyboard, keyboard_
 from server.names import NamesStore
 from simulator.corne import make_corne
 from simulator.virtual_keyboard import VirtualKeyboard
+from test.test_api_server import wait_until
 
 TOKEN = "test-token"
 PORT = 8765
@@ -606,32 +607,56 @@ def wait_for(ws, wanted, timeout=3.0):
 
 
 def test_the_poll_tells_when_a_keyboard_is_plugged_in_or_the_error_changes(tmp_path):
+    """ The hot-plug poll runs every 10 ms, alongside the requests: what each change tells the tabs is taken from the
+    events broadcast since it, whichever of the poll and the request sends them, and in whatever order """
     manager = DeviceManager(FakeBackend(make_corne, make_pad))
     manager.connect()
     app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0.01)
+    told = []
+    """ the type of every event broadcast to the tabs, in order """
+    broadcast = app.state.hub.broadcast
+
+    async def recording(event):
+        told.append(event["type"])
+        await broadcast(event)
+    app.state.hub.broadcast = recording
+
+    def told_since(mark, wanted):
+        """ The events broadcast since told[mark], up to the first `wanted` one (waited for) """
+        assert wait_until(lambda: wanted in told[mark:], 5), told[mark:]
+        since = told[mark:]
+        return since[:since.index(wanted) + 1]
     with TestClient(app, base_url=BASE) as client:
         client.get("/?token=" + TOKEN)
         with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
             assert ws.receive_json() == {"type": "connected"}
+            mark = len(told)
             assert client.put("/api/simulator/second-keyboard", json={"connected": True}).json() == \
                 {"connected": True}
             # a keyboard plugged in is no plug of the open one: only the list changed
-            assert wait_for(ws, "keyboards") == ["keyboards"]
+            assert told_since(mark, "keyboards") == ["keyboards"]
             assert len(client.get("/api/keyboards").json()["keyboards"]) == 2
             pad = second_id(manager)
+            mark = len(told)
             client.put("/api/simulator/second-keyboard", json={"connected": False})
-            wait_for(ws, "keyboards")
+            assert told_since(mark, "keyboards") == ["keyboards"]
+            mark = len(told)
             client.put("/api/simulator/second-keyboard", json={"connected": True, "unreadable": True})
-            wait_for(ws, "keyboards")
+            assert told_since(mark, "keyboards") == ["keyboards"]
+            mark = len(told)
             client.post("/api/keyboards/select", json={"id": pad})
-            assert "disconnected" in wait_for(ws, "keyboards")
+            # the open keyboard is gone, and the list's choice changed (told by the request or by the poll)
+            assert wait_until(lambda: {"disconnected", "keyboards"} <= set(told[mark:]), 5), told[mark:]
             session = client.get("/api/session").json()
             assert session["status"] == "disconnected" and session["errorKind"] == "read"
             assert session["error"].startswith("its firmware speaks a protocol")
             # unplugged, it no longer has an error: the tabs are told, though nothing was loaded
+            mark = len(told)
             client.put("/api/simulator/second-keyboard", json={"connected": False})
-            assert wait_for(ws, "keyboards") == ["keyboards"]
+            assert told_since(mark, "keyboards") == ["keyboards"]
             assert client.get("/api/session").json()["error"] is None
+            # and the tab got every one of them
+            assert sorted(ws.receive_json()["type"] for _ in told) == sorted(told)
 
 
 def test_choosing_another_keyboard_stops_the_matrix_tester(setup):

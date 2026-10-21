@@ -357,29 +357,44 @@ def test_readings_leave_the_keyboard_alone_for_a_while_even_when_slow(tmp_path):
 
 
 def test_edits_are_not_held_up_while_the_matrix_is_read(served):
+    """ Each reading of the matrix holds the device lock, and the keyboard is left alone for a while after it: an edit
+    waits at most for the reading under way. Counted in readings, not in seconds, which a busy machine stretches. """
     client, manager = served
     readings = []
+    """ one for each reading done (the device lock let go of) """
     poll = manager.poll_matrix
 
     def counting_poll():
+        reading = poll()
         readings.append(True)
-        return poll()
+        return reading
     manager.poll_matrix = counting_poll
-    slowest = 0
+    waited = []
+    """ for each edit: the readings done while it waited for the device lock """
+    run = manager.run
+
+    def edit_run(fn):
+        asked = len(readings)
+
+        def counted(kb):
+            waited.append(len(readings) - asked)
+            return fn(kb)
+        return run(counted)
+    manager.run = edit_run
     edits = 0
     with client.websocket_connect(EVENTS, headers=ORIGIN) as ws:
         ws.receive_json()
         ws.send_json({"type": "matrix", "watch": True})
         matrix_events(ws, lambda m: True)
-        until = time.monotonic() + INTERVAL * 10
-        while time.monotonic() < until:
-            started = time.monotonic()
+        first = len(readings)
+        deadline = time.monotonic() + 30
+        while len(readings) - first < 5 or edits < 10:  # the matrix is read all along
+            assert time.monotonic() < deadline, (len(readings) - first, edits)
             assert client.put("/api/keymap/0/0/0", json={"code": ["KC_A", "KC_TAB"][edits % 2]}).status_code == 200
-            slowest = max(slowest, time.monotonic() - started)
             edits += 1
-    assert len(readings) >= 5 and edits >= 10
-    # an edit waits at most for one reading to end
-    assert slowest < 0.5, slowest
+    assert len(waited) >= edits
+    # the reading under way when the edit asked; on a busy machine, the next one may get in before the edit wakes up
+    assert max(waited) <= 2, waited
 
 
 def test_a_locked_keyboard_says_so_then_shows_the_keys_once_unlocked(tmp_path):
