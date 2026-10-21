@@ -2,7 +2,7 @@
 """ Shapes of everything the API sends and accepts. The UI's TypeScript types are generated from these. """
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 # ---------- responses ----------
 
@@ -620,7 +620,7 @@ class SimulatorFailWrite(Request):
     """ Fake mode only: the `after`th write from now to the simulated keyboard fails (1: the next one); null: none does.
     unplug: the keyboard drops off the bus at that write (plugged back in with SimulatorConnection), else it stays
     plugged in and its connection stops working (the server opens it again, as after a USB reset) """
-    after: Optional[int] = Field(default=None, ge=1, le=100_000)
+    after: Optional[StrictInt] = Field(default=None, ge=1, le=100_000)
     unplug: bool = False
 
 

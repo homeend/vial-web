@@ -440,6 +440,9 @@ def test_the_fail_write_hook_is_fake_only_and_not_in_the_schema(setup):
     assert manager.backend.virtual.fail_write_in == 2
     assert client.put("/api/simulator/fail-write", json={"after": None}).status_code == 200
     assert manager.backend.virtual.fail_write_in is None
+    for after in (True, "3", 2.0, 0):
+        assert client.put("/api/simulator/fail-write", json={"after": after}).status_code == 422
+    assert manager.backend.virtual.fail_write_in is None
 
 
 # ---------- encoders ----------

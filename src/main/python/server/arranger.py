@@ -9,6 +9,7 @@ The functions that take the loaded Keyboard are called by DeviceManager.run, whi
 import dataclasses
 import logging
 import threading
+from typing import Optional
 
 from keycodes.keycodes import Keycode, RESET_KEYCODE
 from macro.macro_action import ActionDelay, ActionSequence, ActionText, tag_to_action
@@ -97,7 +98,7 @@ class Plan:
     combos: list
     key_overrides: list
     alt_repeat_keys: list
-    macro: bytes = None
+    macro: Optional[bytes] = None
     """ the macro buffer, when it changes """
     kept: int = 0
     """ keys, encoder directions and entries (the macros as one) left as they are: changed since an arrange stopped
@@ -193,9 +194,17 @@ def write(kb, todo, written):
             setter(index, entry)
             written.append(1)
     if todo.macro is not None:
+        # deliberate, though the Job asked for the unlock before the first write: the protocol layer writes the macros
+        # only right after request_unlock (as Keyboard.save_macro and a layout file's apply do), and the keyboard may
+        # have been locked since (by another program). The server's handler only reads the unlock status: no write.
         request_unlock(kb)
         kb.set_macro(todo.macro)
         written.append(1)
+
+
+def _problem_text(problem):
+    """ A layers.Problem as the API says it: "where: what" """
+    return "{}: {}".format(problem.where, problem.text)
 
 
 def preview(kb, order):
@@ -216,7 +225,7 @@ def preview(kb, order):
         references=schemas.ArrangeReferences(**result.references),
         keyOverrides=result.key_overrides,
         triLayer=None if result.tri_layer is None else list(result.tri_layer),
-        problems=["{}: {}".format(p.where, p.text) for p in result.problems] + problems,
+        problems=[_problem_text(p) for p in result.problems] + problems,
         writes=0 if todo is None else todo.writes,
         needsUnlock=False if todo is None else todo.needs_unlock(),
     )
@@ -278,7 +287,8 @@ def key_of(kb, keyboard_id):
 class Job:
     """ Writing a state to the keyboard as part of an arrange (start -> target, by order), under the device lock.
     Planned and unlocked for when made: nothing is written before run(), which writes `writing`, then calls done(). Any
-    failure (of a write, or of done(), which saves the names) keeps the arrange as Unfinished, for Finish or Put back.
+    failure in run() (of any write, even the first, or of done(), which saves the names) keeps the arrange as
+    Unfinished, for Finish or Put back.
 
     Only what holds the value of start or target is written: anything else was changed since an arrange stopped (an
     edit, a layout file loaded) and is left as it is (plan's known), and logged. """
@@ -323,8 +333,7 @@ def begin(kb, keyboard_id, order, arrangements, names):
     start = read_state(kb)
     result = layers.arrange(start, order, keycode_protocol())
     if result.problems:
-        raise ArrangeRefused("the layers can't be arranged so: " + "; ".join(
-            "{}: {}".format(p.where, p.text) for p in result.problems))
+        raise ArrangeRefused("the layers can't be arranged so: " + "; ".join(_problem_text(p) for p in result.problems))
     uid = model.uid_of(kb)
     return Job(kb, key, result.target, start, result.target, order, arrangements,
                lambda: names.move_layers(uid, order))
