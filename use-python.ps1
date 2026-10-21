@@ -23,7 +23,7 @@ if (-not (Test-Path $venvPy)) {
 # .venv\.vial-installed holds a hash of the requirement files as last installed: when they change, install again.
 # The same Python one-liner computes it in use-python.sh, .ps1 and .cmd, so the three agree.
 $hashCode = 'import hashlib,pathlib,sys;d=pathlib.Path(sys.argv[1]);print(hashlib.sha256(bytes().join(hashlib.sha256((d/f).read_bytes()).digest() for f in sys.argv[2:])).hexdigest())'
-$reqHash = "$(& $venvPy -c $hashCode $PSScriptRoot requirements.txt test-requirements.txt requirements-fbs.txt)".Trim()
+$reqHash = "$(& $venvPy -c $hashCode $PSScriptRoot requirements.txt test-requirements.txt)".Trim()
 if ($LASTEXITCODE -ne 0 -or -not $reqHash) { Write-Error "could not read the requirement files"; return }
 $installed = if (Test-Path $marker) { "$(Get-Content $marker -Raw)".Trim() } else { '' }
 
@@ -33,8 +33,6 @@ if ($installed -ne $reqHash) {
     if ($LASTEXITCODE -ne 0) { Write-Error "pip upgrade failed; rerun to retry"; return }
     & $venvPy -m pip install --quiet -r (Join-Path $PSScriptRoot 'test-requirements.txt')
     if ($LASTEXITCODE -ne 0) { Write-Error "installing test-requirements.txt failed; rerun to retry"; return }
-    & $venvPy -m pip install --quiet --no-deps -r (Join-Path $PSScriptRoot 'requirements-fbs.txt')
-    if ($LASTEXITCODE -ne 0) { Write-Error "installing requirements-fbs.txt failed; rerun to retry"; return }
     Set-Content -Path $marker -Value $reqHash
 }
 
