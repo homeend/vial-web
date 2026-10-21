@@ -140,9 +140,15 @@ class EventHub:
         except Exception as e:
             log.info("closing a dropped UI tab failed: %s", e.__class__.__name__)
 
-    async def close_all(self, code):
-        """ Close every tab's link (the server is stopping) """
-        await asyncio.gather(*(self._close(ws, code) for ws in list(self.clients)))
+    async def tell_and_close(self, event, code):
+        """ Send every tab a last event and close its link with `code` right after it (the server is stopping). The two
+        are written one after the other, as a rule without the loop reading what the tab sends in between: the server's
+        close goes out before the tab, told, closes the link itself. """
+        async def one(ws):
+            await self.send(ws, event)
+            if ws in self.clients:  # else dropped, and closed already
+                await self._close(ws, code)
+        await asyncio.gather(*(one(ws) for ws in list(self.clients)))
 
     async def broadcast(self, event):
         await asyncio.gather(*(self.send(ws, event) for ws in list(self.clients)))
@@ -822,10 +828,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         finally:
             told_stopped.append(True)
             try:
-                await hub.broadcast({"type": "stopped"})
-                # closed by the server before it stops, not by the tabs as they are told: uvicorn 0.54, stopping,
-                # sends its own close to each link still open, and fails on one a tab has started to close meanwhile
-                await hub.close_all(STOPPED_CLOSE_CODE)
+                # each link closed by the server right after it, not by the tab as it is told: uvicorn 0.54, stopping,
+                # sends a close of its own to each link still open, and fails on one a tab has started to close
+                await hub.tell_and_close({"type": "stopped"}, STOPPED_CLOSE_CODE)
             except Exception:
                 log.exception("quit: telling the tabs that Vial stopped failed")
 
