@@ -238,7 +238,7 @@ def write(kb, todo, written):
             written.append(1)
     if todo.macro is not None:
         # deliberate, though the Job asked for the unlock before the first write: the protocol layer writes the macros
-        # only right after request_unlock (as Keyboard.save_macro and a layout file's apply do), and the keyboard may
+        # only right after request_unlock (as Keyboard.restore_macros and a layout file's apply do), and the keyboard may
         # have been locked since (by another program). The server's handler only reads the unlock status: no write.
         request_unlock(kb)
         kb.set_macro(todo.macro)
