@@ -7,14 +7,15 @@ from protocol.constants import CMD_VIA_SET_KEYCODE, CMD_VIA_MACRO_SET_BUFFER, CM
     CMD_VIA_KEYMAP_GET_BUFFER, CMD_VIA_GET_KEYBOARD_VALUE, VIA_SWITCH_MATRIX_STATE, CMD_VIA_VIAL_PREFIX, \
     CMD_VIAL_SET_ENCODER, CMD_VIAL_GET_ENCODER, CMD_VIAL_QMK_SETTINGS_GET, CMD_VIAL_QMK_SETTINGS_SET, \
     CMD_VIAL_DYNAMIC_ENTRY_OP, DYNAMIC_VIAL_TAP_DANCE_SET, DYNAMIC_VIAL_COMBO_SET, DYNAMIC_VIAL_KEY_OVERRIDE_SET, \
-    DYNAMIC_VIAL_ALT_REPEAT_KEY_SET
+    DYNAMIC_VIAL_ALT_REPEAT_KEY_SET, CMD_VIAL_QMK_SETTINGS_RESET, CMD_VIA_SET_KEYBOARD_VALUE, VIA_LAYOUT_OPTIONS
+from protocol.alt_repeat_key import AltRepeatKeyEntry
 from protocol.key_override import KeyOverrideEntry
 from protocol.keyboard_comm import Keyboard
 from protocol.qmk_settings_codec import QmkSettingsCodec
 from simulator.corne import make_corne, encode
 from simulator.device import SimulatedHidDevice
 from simulator.virtual_keyboard import VirtualKeyboard, SimulatorError, CMD_VIA_BOOTLOADER_JUMP, UNLOCK_COUNTER_MAX, \
-    FIRMWARE_UNLOCK_POLL_GAP
+    FIRMWARE_UNLOCK_POLL_GAP, WRITE_COMMANDS, VIAL_WRITE_COMMANDS, DYNAMIC_SETS
 from transport import MSG_LEN
 
 QK_BOOT = 0x7C00  # protocol 6
@@ -135,6 +136,66 @@ def test_writes_reach_the_simulator(corne):
     assert kb.key_override_entries[1].save() == KeyOverrideEntry(("KC_A", "KC_B", 1, 0, 0, 0, 0x80)).save()
     assert kb.settings[7] == 175
     assert kb.rgb_mode == 5
+
+
+def command_of(msg):
+    """ What a request asks: ("via", command), ("vial", command) or ("dynamic", operation) """
+    if msg[0] == CMD_VIA_VIAL_PREFIX:
+        return ("dynamic", msg[2]) if msg[1] == CMD_VIAL_DYNAMIC_ENTRY_OP else ("vial", msg[1])
+    return "via", msg[0]
+
+
+def test_the_requests_counted_as_writes_are_those_the_simulator_logs():
+    """ fail_writes() counts the requests is_write() names (WRITE_COMMANDS, VIAL_WRITE_COMMANDS, DYNAMIC_SETS): each
+    request the simulator logs in `writes`, and the QMK settings reset, which logs nothing; no read, nor the lighting
+    save, which changes nothing Vial reads back """
+    seen = []
+    for vk in (make_corne(), VirtualKeyboard(TINY, settings={7: 200})):
+        process = vk.process
+
+        def recording(msg, vk=vk, process=process):
+            before = len(vk.writes)
+            reply = process(msg)
+            seen.append((command_of(bytes(msg)), VirtualKeyboard.is_write(bytes(msg)), len(vk.writes) > before))
+            return reply
+        vk.process = recording
+        kb = Keyboard(SimulatedHidDevice(vk))
+        kb.reload()
+        kb.set_key(0, 0, 0, "KC_A")
+        if kb.encoder_count:
+            kb.set_encoder(0, 0, 1, "KC_B")
+        else:
+            kb.tap_dance_set(1, ("KC_A", "KC_B", "KC_C", "KC_D", 250))
+            kb.combo_set(1, ("KC_Q", "KC_W", "KC_NO", "KC_NO", "KC_TAB"))
+            kb.key_override_set(1, KeyOverrideEntry(("KC_A", "KC_B", 1, 0, 0, 0, 0x80)))
+            kb.alt_repeat_key_set(1, AltRepeatKeyEntry(("KC_A", "KC_B", 0, 0x08)))
+            kb.set_macro(b"hi\x00")
+            kb.set_vialrgb_mode(5)
+            kb.save_rgb()
+            kb.matrix_poll()
+        kb.qmk_settings_set(7, 175)
+        kb.qmk_settings_reset()
+        send_through_device(vk, struct.pack(">BBI", CMD_VIA_SET_KEYBOARD_VALUE, VIA_LAYOUT_OPTIONS, 1))
+    logged = {command for command, _, wrote in seen if wrote}
+    counted = {command for command, write, _ in seen if write}
+    assert all(write for _, write, wrote in seen if wrote)
+    assert counted - logged == {("vial", CMD_VIAL_QMK_SETTINGS_RESET)}
+    assert counted == ({("via", c) for c in WRITE_COMMANDS} | {("vial", c) for c in VIAL_WRITE_COMMANDS}
+                       | {("dynamic", op) for op in DYNAMIC_SETS})
+
+
+def test_fail_writes_sets_how_before_when():
+    # a write counted down on another thread (the device lock, not the backend's) sees `unplug` already set
+    class Watched(VirtualKeyboard):
+        def __setattr__(self, name, value):
+            if name == "fail_write_in" and value is not None:
+                armed.append(self.fail_unplugs)
+            super().__setattr__(name, value)
+    armed = []
+    vk = Watched(TINY)
+    vk.fail_writes(3, unplug=True)
+    vk.fail_writes(2)
+    assert armed == [True, False]
 
 
 def test_macro_write_round_trips(corne):

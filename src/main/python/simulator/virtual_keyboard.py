@@ -72,9 +72,12 @@ class SimulatedWriteFailure(ValueError):
 
 
 WRITE_COMMANDS = {CMD_VIA_SET_KEYCODE, CMD_VIA_SET_KEYBOARD_VALUE, CMD_VIA_LIGHTING_SET_VALUE, CMD_VIA_MACRO_SET_BUFFER}
-""" VIA commands that change the keyboard """
+""" The VIA commands that are writes (is_write, which fail_writes counts): those that change what Vial reads back from
+the keyboard, each logged in VirtualKeyboard.writes. Not CMD_VIA_LIGHTING_SAVE, which keeps the lighting the keyboard
+shows when it is unplugged (its EEPROM copy) and changes nothing Vial reads. """
 VIAL_WRITE_COMMANDS = {CMD_VIAL_SET_ENCODER, CMD_VIAL_QMK_SETTINGS_SET, CMD_VIAL_QMK_SETTINGS_RESET}
-""" Vial commands that change the keyboard (and the dynamic entry sets, DYNAMIC_SETS) """
+""" The Vial commands that are writes (and the dynamic entry sets, DYNAMIC_SETS), each logged in writes but the QMK
+settings reset """
 DYNAMIC_SETS = {DYNAMIC_VIAL_TAP_DANCE_SET, DYNAMIC_VIAL_COMBO_SET, DYNAMIC_VIAL_KEY_OVERRIDE_SET,
                 DYNAMIC_VIAL_ALT_REPEAT_KEY_SET}
 
@@ -205,8 +208,10 @@ class VirtualKeyboard:
         a request that changes the keyboard (one packet: a macro buffer takes several). unplug: the keyboard drops off
         the bus at that write, as if unplugged; else it stays plugged in and only that write fails, as on a handle that
         stopped working. """
-        self.fail_write_in = after
+        # how before when: a write counted down on another thread (process() runs under the server's device lock, not
+        # its backend lock) never fails with the `unplug` of the time before
         self.fail_unplugs = unplug
+        self.fail_write_in = after
 
     @staticmethod
     def is_write(msg):
