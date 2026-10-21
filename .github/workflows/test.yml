@@ -2,9 +2,17 @@ name: Test
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # the Python tests: the simulator and the server, never a real keyboard
   pytest:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -17,10 +25,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.13'
+        python-version-file: .python-version
+        cache: pip
+        cache-dependency-path: test-requirements.txt
 
     - name: hidapi's libraries
       if: runner.os == 'Linux'
@@ -36,6 +48,7 @@ jobs:
 
   # the web UI: checks, unit tests, the build, the API types, and the end-to-end tests against vial_web.py --fake
   web:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -54,10 +67,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.13'
+        python-version-file: .python-version
+        cache: pip
+        cache-dependency-path: requirements.txt
 
     - uses: actions/setup-node@v4
       with:
@@ -97,7 +114,7 @@ jobs:
 
     - name: End-to-end tests
       run: |
-        npx playwright install --with-deps chromium
+        npx --no-install playwright install --with-deps chromium
         npx playwright test
 
     - uses: actions/upload-artifact@v4
@@ -108,3 +125,4 @@ jobs:
           web/e2e/screenshots/
           web/test-results/
         if-no-files-found: ignore
+        retention-days: 7

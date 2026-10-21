@@ -6,8 +6,16 @@ name: Build
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -35,10 +43,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
 
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.13'
+        python-version-file: .python-version
+        cache: pip
+        cache-dependency-path: requirements.txt
 
     - uses: actions/setup-node@v4
       with:
@@ -66,13 +78,14 @@ jobs:
       run: python -m PyInstaller vial.spec
 
     - name: Smoke test (simulated keyboard)
-      run: python util/smoke_test.py ${{ matrix.executable }}
+      run: python util/smoke_test.py "${{ matrix.executable }}"
 
     - uses: actions/upload-artifact@v4
       with:
         name: vial-${{ matrix.system }}
         path: ${{ matrix.executable }}
         if-no-files-found: error
+        retention-days: 30
 
     - name: End-to-end tests against the executable
       if: matrix.e2e
@@ -80,7 +93,7 @@ jobs:
       env:
         E2E_VIAL_CMD: ${{ matrix.executable }}
       run: |
-        npx playwright install --with-deps chromium
+        npx --no-install playwright install --with-deps chromium
         npx playwright test
 
     - uses: actions/upload-artifact@v4
@@ -89,3 +102,4 @@ jobs:
         name: e2e-results-${{ matrix.system }}
         path: web/test-results/
         if-no-files-found: ignore
+        retention-days: 7
