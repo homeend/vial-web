@@ -460,7 +460,11 @@ export interface paths {
         /** Download Layout */
         get: operations["download_layout_api_layout_file_get"];
         put?: never;
-        /** Upload Layout */
+        /**
+         * Upload Layout
+         * @description Write a layout file (.vil) to the keyboard: checked whole first (nothing is written if it fails), then what
+         *     differs. The keyboard's layout version (Session.layoutVersion) counts it, even when it stops partway.
+         */
         post: operations["upload_layout_api_layout_file_post"];
         delete?: never;
         options?: never;
@@ -500,7 +504,8 @@ export interface paths {
         /**
          * Preview Arrange
          * @description What POST /api/layers/arrange would change with this order, checked the same way; nothing is written. It
-         *     works on a locked keyboard too: needsUnlock says whether writing it needs the keyboard unlocked.
+         *     works on a locked keyboard too: needsUnlock says whether writing it needs the keyboard unlocked. layoutVersion:
+         *     the keyboard's layout version it was made from, for Apply's expect.
          */
         post: operations["preview_arrange_api_layers_arrange_preview_post"];
         delete?: never;
@@ -522,9 +527,14 @@ export interface paths {
          * Arrange Layers
          * @description Move the layers to this order: every layer reference renumbered (keymap, encoders, tap dance, combos, key
          *     overrides and their layers, alt-repeat keys, macros), the layer names moved once everything was written.
-         *     Computed again from what the keyboard holds now; only what differs is written, under one device lock. 409 when
+         *     Computed again from what the keyboard holds now; only what differs is written, under one device lock. Returns
+         *     the keyboard's model with its new layout version (layoutVersion) and kept (0).
+         *
+         *     409 with code "layoutChanged" when `expect` isn't the keyboard's layout version (nothing was written); 409 when
          *     the order has problems, or an arrange of this keyboard is unfinished; 423 when it needs the keyboard unlocked
-         *     (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange).
+         *     (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange), as does 507: every
+         *     write went through but the layer names couldn't be saved (Session.arrange.namesOnly). Either way the layout
+         *     version was counted up.
          */
         post: operations["arrange_layers_api_layers_arrange_post"];
         delete?: never;
@@ -545,7 +555,9 @@ export interface paths {
         /**
          * Finish Arrange
          * @description Write what the unfinished arrange of this keyboard still has to (what differs from its new order), then move
-         *     the names. 404 when none is unfinished. It can be asked again after a failure.
+         *     the names. kept: what was left as it is, changed since the stop; layoutVersion: the new layout version. 404
+         *     when none is unfinished; 507 when only the names couldn't be saved (asked again, it writes nothing else). It
+         *     can be asked again after a failure.
          */
         post: operations["finish_arrange_api_layers_arrange_finish_post"];
         delete?: never;
@@ -566,7 +578,8 @@ export interface paths {
         /**
          * Put Back Arrange
          * @description Write back what the unfinished arrange of this keyboard changed (what differs from the state before it); the
-         *     names never moved. 404 when none is unfinished. It can be asked again after a failure.
+         *     names never moved. kept: what was left as it is, changed since the stop; layoutVersion: the new layout version.
+         *     404 when none is unfinished. It can be asked again after a failure.
          */
         post: operations["put_back_arrange_api_layers_arrange_put_back_post"];
         delete?: never;
@@ -720,6 +733,8 @@ export interface components {
         ArrangeIn: {
             /** Order */
             order: number[];
+            /** Expect */
+            expect?: number | null;
         };
         /**
          * ArrangePreview
@@ -735,12 +750,16 @@ export interface components {
             keyOverrides: number;
             /** Trilayer */
             triLayer?: (number | null)[] | null;
+            /** Saveddefault */
+            savedDefault: components["schemas"]["LayerMove"][];
             /** Problems */
             problems: string[];
             /** Writes */
             writes: number;
             /** Needsunlock */
             needsUnlock: boolean;
+            /** Layoutversion */
+            layoutVersion: number;
         };
         /**
          * ArrangeReferences
@@ -761,6 +780,54 @@ export interface components {
             altRepeatKeys: number;
             /** Macros */
             macros: number;
+        };
+        /**
+         * ArrangedModel
+         * @description The keyboard's model after an arrange, Finish or Put back (POST /api/layers/arrange, /finish, /put-back): a
+         *     KeyboardModel with what the write left
+         */
+        ArrangedModel: {
+            /** Name */
+            name: string;
+            /** Uid */
+            uid: string;
+            /** Viaprotocol */
+            viaProtocol: number;
+            /** Vialprotocol */
+            vialProtocol: number;
+            /** Rows */
+            rows: number;
+            /** Cols */
+            cols: number;
+            /** Keys */
+            keys: components["schemas"]["KeyGeometry"][];
+            /** Encoders */
+            encoders: components["schemas"]["KeyGeometry"][];
+            layoutOptions?: components["schemas"]["LayoutOptions"] | null;
+            /** Layers */
+            layers: components["schemas"]["Layer"][];
+            /** Tapdance */
+            tapDance: components["schemas"]["TapDance"][];
+            /** Combos */
+            combos: components["schemas"]["Combo"][];
+            /** Keyoverrides */
+            keyOverrides: components["schemas"]["KeyOverride"][];
+            /** Altrepeatkeys */
+            altRepeatKeys: components["schemas"]["AltRepeatKey"][];
+            macros: components["schemas"]["Macros"];
+            /** Settings */
+            settings: components["schemas"]["QmkSetting"][];
+            lighting: components["schemas"]["Lighting"];
+            /** Features */
+            features: string[];
+            /** Unlocked */
+            unlocked: boolean;
+            /** Matrixtester */
+            matrixTester: boolean;
+            /** Layoutversion */
+            layoutVersion: number;
+            /** Kept */
+            kept: number;
         };
         /** Backlight */
         Backlight: {
@@ -1377,6 +1444,8 @@ export interface components {
             platform: string;
             unlock: components["schemas"]["UnlockState"];
             arrange?: components["schemas"]["UnfinishedArrange"] | null;
+            /** Layoutversion */
+            layoutVersion?: number | null;
         };
         /** SetKeycode */
         SetKeycode: {
@@ -1486,6 +1555,8 @@ export interface components {
             done: number;
             /** Total */
             total: number;
+            /** Namesonly */
+            namesOnly: boolean;
         };
         /**
          * UnlockState
@@ -2487,7 +2558,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KeyboardModel"];
+                    "application/json": components["schemas"]["ArrangedModel"];
                 };
             };
             /** @description Validation Error */
@@ -2519,7 +2590,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KeyboardModel"];
+                    "application/json": components["schemas"]["ArrangedModel"];
                 };
             };
             /** @description Validation Error */
@@ -2551,7 +2622,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KeyboardModel"];
+                    "application/json": components["schemas"]["ArrangedModel"];
                 };
             };
             /** @description Validation Error */

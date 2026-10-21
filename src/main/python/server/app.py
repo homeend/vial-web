@@ -508,6 +508,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     async def arrange_refused(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=409)
 
+    @app.exception_handler(arranger.LayoutChanged)
+    async def layout_changed(request, exc):
+        # a code of its own: the page tells it from the other 409s (another keyboard open, an arrange refused)
+        return JSONResponse({"detail": str(exc), "code": "layoutChanged"}, status_code=409)
+
     @app.exception_handler(arranger.NothingUnfinished)
     async def nothing_unfinished(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=404)
@@ -585,7 +590,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         unfinished = None if kb is None else arranger.unfinished_of(kb, manager.open_id, arrangements)
         if unfinished is None:
             return None
-        return schemas.UnfinishedArrange(order=unfinished.order, done=unfinished.done, total=unfinished.total)
+        return schemas.UnfinishedArrange(order=unfinished.order, done=unfinished.done, total=unfinished.total,
+                                         namesOnly=unfinished.names_only)
+
+    def layout_version():
+        """ The layout version of the keyboard loaded, or None; the device lock held """
+        kb = manager.keyboard
+        return None if kb is None else arranger.layout_version(kb, manager.open_id, arrangements)
 
     @app.get("/api/session", response_model=schemas.Session)
     def session():
@@ -594,9 +605,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             unlock = unlock_model(manager.unlock_state())
             error_kind, open_id = manager.error_kind, manager.open_id
             arrange = unfinished_arrange()
+            version = layout_version()
         return schemas.Session(status="connected" if status.connected else "disconnected",
                                fake=manager.backend.fake, device=status.title, error=status.error, errorKind=error_kind,
-                               keyboard=open_id, platform=sys.platform, unlock=unlock, arrange=arrange)
+                               keyboard=open_id, platform=sys.platform, unlock=unlock, arrange=arrange,
+                               layoutVersion=version)
 
     def keyboard_list():
         listed = manager.keyboard_list()
@@ -762,6 +775,8 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.post("/api/layout-file", response_model=schemas.KeyboardModel)
     async def upload_layout(request: Request, lang: Lang = languages.DEFAULT):
+        """ Write a layout file (.vil) to the keyboard: checked whole first (nothing is written if it fails), then what
+        differs. The keyboard's layout version (Session.layoutVersion) counts it, even when it stops partway. """
         languages.overrides(lang)  # an unknown language is refused before anything is written
         data = await read_limited(request, MAX_LAYOUT_FILE)
         writing = []
@@ -769,7 +784,10 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         def restore(kb):
             apply = edits.prepare_layout_file(kb, data)  # checks the whole file; nothing is written if it fails
             writing.append(True)
-            apply()
+            try:
+                apply()
+            finally:
+                arrangements.changed(arranger.key_of(kb, manager.open_id))
             return model.build(kb, names_for(kb), manager.unlocked)
 
         try:
@@ -792,21 +810,30 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     @app.post("/api/layers/arrange/preview", response_model=schemas.ArrangePreview)
     def preview_arrange(body: schemas.ArrangeIn):
         """ What POST /api/layers/arrange would change with this order, checked the same way; nothing is written. It
-        works on a locked keyboard too: needsUnlock says whether writing it needs the keyboard unlocked. """
-        return read(lambda kb: arranger.preview(kb, body.order))
+        works on a locked keyboard too: needsUnlock says whether writing it needs the keyboard unlocked. layoutVersion:
+        the keyboard's layout version it was made from, for Apply's expect. """
+        return read(lambda kb: arranger.preview(kb, body.order,
+                                                arranger.layout_version(kb, manager.open_id, arrangements)))
 
     async def arranging(begin, lang):
-        """ begin(kb) -> arranger.Job, checked and unlocked for (nothing written yet), run under the device lock. A
-        failure while it writes leaves the arrange unfinished (the Job keeps it): the keyboard is read again, every tab
-        told. On success, every tab is told the keyboard changed; returns its new model. """
+        """ begin(kb) -> arranger.Job, checked and unlocked for (nothing written yet), run under the device lock. Once
+        it starts writing, the keyboard's layout version is counted up, whether it succeeds or not. A failure while it
+        writes leaves the arrange unfinished (the Job keeps it): the keyboard is read again, every tab told. On
+        success, every tab is told the keyboard changed; returns its new model, with the layout version and what was
+        kept (schemas.ArrangedModel). """
         languages.overrides(lang)  # an unknown language is refused before anything is written
         writing = []
 
         def go(kb):
             job = begin(kb)
             writing.append(True)
-            job.run()
-            return model.build(kb, names_for(kb), manager.unlocked)
+            try:
+                job.run()
+            finally:
+                version = arrangements.changed(job.key)
+            built = model.build(kb, names_for(kb), manager.unlocked)
+            # its fields as they are (not dict(built): KeyboardModel has a field named keys)
+            return schemas.ArrangedModel(**built.__dict__, layoutVersion=version, kept=job.todo.kept)
         try:
             result = await asyncio.to_thread(run, go, lang)
         except Exception:
@@ -816,25 +843,34 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         await hub.broadcast({"type": "reloaded"})
         return result
 
-    @app.post("/api/layers/arrange", response_model=schemas.KeyboardModel)
+    @app.post("/api/layers/arrange", response_model=schemas.ArrangedModel)
     async def arrange_layers(body: schemas.ArrangeIn, lang: Lang = languages.DEFAULT):
         """ Move the layers to this order: every layer reference renumbered (keymap, encoders, tap dance, combos, key
         overrides and their layers, alt-repeat keys, macros), the layer names moved once everything was written.
-        Computed again from what the keyboard holds now; only what differs is written, under one device lock. 409 when
-        the order has problems, or an arrange of this keyboard is unfinished; 423 when it needs the keyboard unlocked
-        (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange). """
-        return await arranging(lambda kb: arranger.begin(kb, manager.open_id, body.order, arrangements, names), lang)
+        Computed again from what the keyboard holds now; only what differs is written, under one device lock. Returns
+        the keyboard's model with its new layout version (layoutVersion) and kept (0).
 
-    @app.post("/api/layers/arrange/finish", response_model=schemas.KeyboardModel)
+        409 with code "layoutChanged" when `expect` isn't the keyboard's layout version (nothing was written); 409 when
+        the order has problems, or an arrange of this keyboard is unfinished; 423 when it needs the keyboard unlocked
+        (nothing was written). A write that fails leaves the arrange unfinished (Session.arrange), as does 507: every
+        write went through but the layer names couldn't be saved (Session.arrange.namesOnly). Either way the layout
+        version was counted up. """
+        return await arranging(lambda kb: arranger.begin(kb, manager.open_id, body.order, arrangements, names,
+                                                         body.expect), lang)
+
+    @app.post("/api/layers/arrange/finish", response_model=schemas.ArrangedModel)
     async def finish_arrange(lang: Lang = languages.DEFAULT):
         """ Write what the unfinished arrange of this keyboard still has to (what differs from its new order), then move
-        the names. 404 when none is unfinished. It can be asked again after a failure. """
+        the names. kept: what was left as it is, changed since the stop; layoutVersion: the new layout version. 404
+        when none is unfinished; 507 when only the names couldn't be saved (asked again, it writes nothing else). It
+        can be asked again after a failure. """
         return await arranging(lambda kb: arranger.resume(kb, manager.open_id, arrangements, names, finish=True), lang)
 
-    @app.post("/api/layers/arrange/put-back", response_model=schemas.KeyboardModel)
+    @app.post("/api/layers/arrange/put-back", response_model=schemas.ArrangedModel)
     async def put_back_arrange(lang: Lang = languages.DEFAULT):
         """ Write back what the unfinished arrange of this keyboard changed (what differs from the state before it); the
-        names never moved. 404 when none is unfinished. It can be asked again after a failure. """
+        names never moved. kept: what was left as it is, changed since the stop; layoutVersion: the new layout version.
+        404 when none is unfinished. It can be asked again after a failure. """
         return await arranging(lambda kb: arranger.resume(kb, manager.open_id, arrangements, names, finish=False),
                                lang)
 

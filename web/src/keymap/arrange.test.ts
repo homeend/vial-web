@@ -11,7 +11,8 @@ const NONE = { keymap: 0, encoders: 0, tapDance: 0, combos: 0, keyOverrides: 0, 
 function preview(fields: Partial<ArrangePreview> = {}): ArrangePreview {
   return {
     moves: [{ layer: 3, to: 1 }, { layer: 1, to: 2 }, { layer: 2, to: 3 }], keys: 94, references: { ...NONE },
-    keyOverrides: 0, triLayer: null, problems: [], writes: 94, needsUnlock: false, ...fields,
+    keyOverrides: 0, triLayer: null, savedDefault: [], problems: [], writes: 94, needsUnlock: false, layoutVersion: 0,
+    ...fields,
   };
 }
 
@@ -106,9 +107,10 @@ describe("the summary", () => {
   });
 
   it("says how far an arrange got before it stopped", () => {
-    expect(stoppedText({ order: [0, 3, 1, 2], done: 40, total: 96 })).toMatch(
+    expect(stoppedText({ order: [0, 3, 1, 2], done: 40, total: 96, namesOnly: false })).toMatch(
       /^Arranging the layers stopped after 40 of 96 writes\. The keyboard may hold part of the new order/);
-    expect(stoppedText({ order: [0, 3, 1, 2], done: 0, total: 96 })).toMatch(/stopped at its first write\./);
+    expect(stoppedText({ order: [0, 3, 1, 2], done: 0, total: 96, namesOnly: false })).toMatch(
+      /stopped at its first write\./);
   });
 });
 

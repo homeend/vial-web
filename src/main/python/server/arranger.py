@@ -2,7 +2,8 @@
 """ Arranging a keyboard's layers (server.layers) on the keyboard itself: its loaded state read into a KeyboardState,
 and a KeyboardState written back, only what differs, in a fixed order. An arrange stopped partway is kept, by keyboard
 (key_of), while the server runs: Finish writes the rest of it, Put back writes the state from before; neither writes
-over what was changed since.
+over what was changed since. Each keyboard's layout version (Arrangements.version) counts what changed its layers'
+order or its whole layout, for an arrange shown before to be refused (begin's expect).
 
 The functions that take the loaded Keyboard are called by DeviceManager.run, which holds the device lock.
 """
@@ -250,10 +251,10 @@ def _problem_text(problem):
     return "{}: {}".format(problem.where, problem.text)
 
 
-def preview(kb, order):
-    """ What arranging the layers to `order` would change -> schemas.ArrangePreview. Nothing is written; it works on a
-    locked keyboard too (needsUnlock says whether writing it needs the keyboard unlocked). ValueError for an order
-    that isn't the keyboard's layers with layer 0 first. """
+def preview(kb, order, layout_version=0):
+    """ What arranging the layers to `order` would change -> schemas.ArrangePreview, of the layout version given.
+    Nothing is written; it works on a locked keyboard too (needsUnlock says whether writing it needs the keyboard
+    unlocked). ValueError for an order that isn't the keyboard's layers with layer 0 first. """
     result = layers.arrange(read_state(kb), order, keycode_protocol())
     try:
         todo = plan(kb, result.target)
@@ -268,14 +269,21 @@ def preview(kb, order):
         references=schemas.ArrangeReferences(**result.references),
         keyOverrides=result.key_overrides,
         triLayer=None if result.tri_layer is None else list(result.tri_layer),
+        savedDefault=[schemas.LayerMove(layer=old, to=new) for old, new in result.saved_default],
         problems=[_problem_text(p) for p in result.problems] + problems,
         writes=0 if todo is None else todo.writes,
         needsUnlock=False if todo is None else todo.needs_unlock(),
+        layoutVersion=layout_version,
     )
 
 
 class ArrangeRefused(Exception):
     """ An arrange that can't be written now: one of this keyboard is unfinished, or the order has problems """
+
+
+class LayoutChanged(Exception):
+    """ An arrange asked for a layout version (begin's expect) that isn't the keyboard's any more: its layers were
+    arranged, finished, put back or a layout file loaded since it was shown. Nothing is written. """
 
 
 class NothingUnfinished(LookupError):
@@ -302,14 +310,32 @@ class Unfinished:
     """ the macro buffer of start, as the keyboard held it """
     target_macro: bytes
     """ the macro buffer of target, as it is written """
+    names_only: bool = False
+    """ every write of the last attempt went through (done == total): only the names couldn't be saved (NamesNotSaved)
+    """
 
 
 class Arrangements:
-    """ The arranges left unfinished, by keyboard (key_of), while the server runs; safe across threads """
+    """ The arranges left unfinished, and each keyboard's layout version, by keyboard (key_of), while the server runs;
+    safe across threads """
 
     def __init__(self):
         self._unfinished = {}
+        self._versions = {}
         self._lock = threading.Lock()
+
+    def version(self, key):
+        """ The keyboard's layout version: how many times its layers' order or its whole layout was written (an
+        arrange, Finish, Put back, a layout file loaded; also one that stopped partway) while the server runs. 0 at
+        first. Edits of keys, macros and the like don't count: they leave an Undo of an arrange right. """
+        with self._lock:
+            return self._versions.get(key, 0)
+
+    def changed(self, key):
+        """ The keyboard's layers' order or its whole layout was written (or partly): its next layout version """
+        with self._lock:
+            self._versions[key] = self._versions.get(key, 0) + 1
+            return self._versions[key]
 
     def get(self, key):
         with self._lock:
@@ -371,27 +397,39 @@ class Job:
     def run(self):
         try:
             write(self.kb, self.todo, self.written)
-            try:
-                self.done()
-            except Exception as e:
-                raise NamesNotSaved("The layers were arranged, but the layer names couldn't be saved: {}"
-                                    .format(e)) from e
         except Exception:
-            # even the first write may have reached the keyboard, its answer lost: it may hold part of either state.
-            # After every write, it holds `writing` (done == total): Finish then only saves the names.
-            self.arrangements.keep(self.key, Unfinished(self.start, self.target, self.order, len(self.written),
-                                                        self.todo.writes, *self.macros))
+            # even the first write may have reached the keyboard, its answer lost: it may hold part of either state
+            self._keep(names_only=False)
             raise
+        try:
+            self.done()
+        except Exception as e:
+            # after every write, it holds `writing` (done == total): Finish then only saves the names
+            self._keep(names_only=True)
+            raise NamesNotSaved("The layers were arranged, but the layer names couldn't be saved: {}"
+                                .format(e)) from e
         if self.todo.kept:
             log.warning("arranging the layers: %d changed since the stop were kept as they are (keys, encoder "
                         "directions, entries and macros)", self.todo.kept)
 
+    def _keep(self, names_only):
+        self.arrangements.keep(self.key, Unfinished(self.start, self.target, self.order, len(self.written),
+                                                    self.todo.writes, *self.macros, names_only=names_only))
 
-def begin(kb, keyboard_id, order, arrangements, names):
-    """ A Job arranging the keyboard's layers to `order`, computed from what it holds now. ArrangeRefused while an
-    arrange of it is unfinished, or when the order has problems; ValueError for a bad order. The names move once every
-    write has succeeded. keyboard_id: see key_of. """
+
+def layout_version(kb, keyboard_id, arrangements):
+    """ The keyboard's layout version (Arrangements.version). keyboard_id: see key_of. """
+    return arrangements.version(key_of(kb, keyboard_id))
+
+
+def begin(kb, keyboard_id, order, arrangements, names, expect=None):
+    """ A Job arranging the keyboard's layers to `order`, computed from what it holds now. LayoutChanged when `expect`
+    (a layout version, None: any) isn't the keyboard's; ArrangeRefused while an arrange of it is unfinished, or when
+    the order has problems; ValueError for a bad order. The names move once every write has succeeded. keyboard_id:
+    see key_of. """
     key = key_of(kb, keyboard_id)
+    if expect is not None and expect != arrangements.version(key):
+        raise LayoutChanged("The layers changed since this was shown.")
     if unfinished_of(kb, keyboard_id, arrangements) is not None:
         raise ArrangeRefused("arranging this keyboard's layers stopped partway: finish it or put it back first")
     start = read_state(kb)

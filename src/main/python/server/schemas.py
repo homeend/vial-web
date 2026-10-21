@@ -280,6 +280,17 @@ class KeyboardModel(BaseModel):
     """ the keyboard tells which of its keys are held (Vial protocol 3 and later, and a matrix small enough) """
 
 
+class ArrangedModel(KeyboardModel):
+    """ The keyboard's model after an arrange, Finish or Put back (POST /api/layers/arrange, /finish, /put-back): a
+    KeyboardModel with what the write left """
+    layoutVersion: int
+    """ the keyboard's layout version now (Session.layoutVersion): what an Undo of this arrange sends as
+    ArrangeIn.expect """
+    kept: int
+    """ keys, encoder directions, entries and macros left as they are because they were changed since the arrange
+    stopped (Finish, Put back); 0 for an arrange """
+
+
 class KeyChange(BaseModel):
     layer: int
     row: int
@@ -380,13 +391,23 @@ class ArrangePreview(BaseModel):
     """ key overrides whose "active on layers" changes """
     triLayer: Optional[list[Optional[int]]] = None
     """ a tri-layer key (FN_MO13, FN_MO23) is set and layers 1 to 3 change: they use layers 1, 2 and 3 by number,
-    which then hold the layers that are now at these positions (null for one the keyboard doesn't have) """
+    which then hold the layers that are now at these positions (null for one the keyboard doesn't have: a keyboard with
+    fewer than 4 layers) """
+    savedDefault: list[LayerMove]
+    """ the layers that a PDF key (anywhere a keycode can be) points at and that move, as in `moves`. A warning, like
+    triLayer: PDF(n) saves layer n in the keyboard as the layer it starts on, which Vial can't read or write, so one
+    saved before still names the old position until a PDF key is pressed again. Protocol 6 only (protocol 5 firmware
+    has no PDF) """
     problems: list[str]
-    """ why the order can't be written (a layer number that doesn't fit where it must go); none: it can """
+    """ why the order can't be written (a layer number that doesn't fit where it must go), each "where: what", e.g.
+    "layer 2, row 0, column 4: ...", "tap dance 3, hold: ...", "key override 1, replacement: ...", "alt-repeat key 0,
+    alt keycode: ..."; none: it can """
     writes: int
     """ the writes it takes: one per key, encoder direction and entry, and one for the macros """
     needsUnlock: bool
     """ writing it needs an unlocked keyboard (it moves QK_BOOT, or changes the macros) """
+    layoutVersion: int
+    """ the keyboard's layout version this preview was made from (Session.layoutVersion) """
 
 
 class UnfinishedArrange(BaseModel):
@@ -398,6 +419,10 @@ class UnfinishedArrange(BaseModel):
     """ the writes the last attempt did before it stopped """
     total: int
     """ the writes it had to do """
+    namesOnly: bool
+    """ every write went through (done == total; 0 of 0 after a Finish that only had the names left): the layers are
+    arranged, and only the layer names couldn't be saved (the 507 of POST /api/layers/arrange or /finish). Finish
+    saves them; Put back writes the layers back. """
 
 
 class Session(BaseModel):
@@ -416,6 +441,10 @@ class Session(BaseModel):
     """ a keyboard that is unlocking while not connected waits for an unlock started earlier, before it is read """
     arrange: Optional[UnfinishedArrange] = None
     """ arranging the layers of the keyboard loaded stopped partway, and hasn't been finished or put back """
+    layoutVersion: Optional[int] = None
+    """ the layout version of the keyboard loaded (none loaded: null): a number, 0 when Vial starts, counted up each
+    time its layers' order or its whole layout is written, even partly: an arrange, Finish, Put back, a layout file
+    loaded (POST /api/layout-file). Edits of keys, macros and the like leave it. Kept in memory only. """
 
 
 class KeyboardEntry(BaseModel):
@@ -628,6 +657,10 @@ class ArrangeIn(Request):
     order: list[Byte] = Field(min_length=1, max_length=256)
     """ for each new position, the layer that goes there: [0, 3, 1, 2] puts layer 3 at position 1. Every layer once,
     layer 0 first. """
+    expect: Optional[StrictInt] = Field(default=None, ge=0)
+    """ POST /api/layers/arrange: the layout version the order was made for (ArrangePreview.layoutVersion,
+    ArrangedModel.layoutVersion, Session.layoutVersion); another one is refused with 409 and code "layoutChanged".
+    Null or left out: any. The preview ignores it. """
 
 
 class SelectKeyboard(Request):

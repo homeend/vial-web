@@ -1,6 +1,7 @@
 """ Arranging the layers through the API, against the simulator: the preview, Apply, the unlock, a keyboard switch, a
 write that fails partway with Finish and Put back, and a keyboard with encoders """
 import copy
+import json
 import random
 import urllib.parse
 
@@ -124,6 +125,19 @@ def test_the_tri_layer_warning(setup):
     assert preview(client, [0, 1, 2, 3])["triLayer"] is None
 
 
+def test_the_saved_default_layer_warning(setup):
+    # PDF(n) saves layer n as the one the keyboard starts on, where Vial can't change it: the layers that move say so
+    client, _, _ = setup
+    assert preview(client)["savedDefault"] == []
+    assert client.put("/api/keymap/1/0/0", json={"code": "PDF(2)"}).status_code == 200
+    assert client.put("/api/macros", json={"items": [[{"type": "tap", "keys": ["PDF(3)"]}]] + [[]] * 15}) \
+        .status_code == 200
+    result = preview(client)
+    assert result["savedDefault"] == [{"layer": 2, "to": 3}, {"layer": 3, "to": 1}]
+    assert result["problems"] == []
+    assert arrange(client).status_code == 200  # a warning: it doesn't stop the arrange
+
+
 # ---------- Apply ----------
 
 def test_apply_writes_only_the_differences_and_moves_the_names(setup):
@@ -229,6 +243,84 @@ def test_problems_refuse_apply(tmp_path, monkeypatch):
         assert virtual.writes == []
 
 
+# ---------- the layout version ----------
+
+def version(client):
+    return client.get("/api/session").json()["layoutVersion"]
+
+
+def test_the_layout_version_counts_what_moves_the_layers_or_replaces_the_layout(setup):
+    client, manager, _ = setup
+    virtual = manager.backend.virtual
+    assert version(client) == 0 and preview(client)["layoutVersion"] == 0
+    # edits leave it: an Undo still applies after them
+    assert client.put("/api/keymap/0/0/0", json={"code": "KC_Q"}).status_code == 200
+    assert client.put("/api/names/layers/1", json={"name": "Nav"}).status_code == 200
+    assert version(client) == 0
+    response = arrange(client)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["layoutVersion"], body["kept"]) == (1, 0)
+    assert len(body["layers"]) == 4 and "keyOverrides" in body  # the keyboard's model, as before
+    assert version(client) == 1 and preview(client)["layoutVersion"] == 1
+    # a layout file loaded, as is
+    original = client.get("/api/layout-file").content
+    assert client.post("/api/layout-file", content=original).status_code == 200
+    assert version(client) == 2
+    # a layout file loaded partway counts too
+    changed = json.loads(original)
+    changed["layout"][1][0] = ["KC_A"] * 6
+    virtual.fail_writes(3)
+    assert client.post("/api/layout-file", content=json.dumps(changed)).status_code == 502
+    manager.check()
+    assert version(client) == 3
+
+
+def test_apply_expecting_another_version_is_refused(setup):
+    client, manager, _ = setup
+    virtual = manager.backend.virtual
+    assert arrange(client).status_code == 200
+    virtual.writes.clear()
+    # an Undo shown before another tab's arrange: refused, with a code of its own among the 409s
+    response = client.post("/api/layers/arrange", json={"order": reverse(ORDER), "expect": 0})
+    assert response.status_code == 409
+    assert response.json() == {"detail": "The layers changed since this was shown.", "code": "layoutChanged"}
+    assert virtual.writes == []
+    response = client.post("/api/layers/arrange", json={"order": reverse(ORDER), "expect": 1})
+    assert response.status_code == 200, response.text
+    assert response.json()["layoutVersion"] == 2
+    # without expect, as before
+    assert arrange(client).status_code == 200 and version(client) == 3
+    for expect in (-1, True, "1", 1.5):
+        assert client.post("/api/layers/arrange", json={"order": ORDER, "expect": expect}).status_code == 422
+
+
+def test_a_stopped_arrange_finish_and_put_back_each_count(setup):
+    client, manager, _ = setup
+    virtual = manager.backend.virtual
+    virtual.fail_writes(10)
+    assert arrange(client).status_code == 502
+    manager.check()
+    assert version(client) == 1
+    virtual.fail_writes(3)
+    assert client.post("/api/layers/arrange/finish").status_code == 502
+    manager.check()
+    assert version(client) == 2
+    response = client.post("/api/layers/arrange/finish")
+    assert response.status_code == 200
+    assert (response.json()["layoutVersion"], response.json()["kept"]) == (3, 0)
+    virtual.fail_writes(10)
+    assert arrange(client, reverse(ORDER)).status_code == 502
+    manager.check()
+    response = client.post("/api/layers/arrange/put-back")
+    assert response.status_code == 200
+    assert (response.json()["layoutVersion"], response.json()["kept"]) == (5, 0)
+    # nothing is counted for what is refused before a write
+    assert client.post("/api/layers/arrange/finish").status_code == 404
+    assert arrange(client, [0, 1, 1, 2]).status_code == 422
+    assert version(client) == 5
+
+
 # ---------- a write that fails partway ----------
 
 def test_a_failure_partway_then_finish(setup, tmp_path, monkeypatch):
@@ -244,7 +336,8 @@ def test_a_failure_partway_then_finish(setup, tmp_path, monkeypatch):
     assert snapshot(virtual) not in (start, target)
     # the handle stopped working: the hot-plug poll opens the keyboard again
     manager.check()
-    assert client.get("/api/session").json()["arrange"] == {"order": ORDER, "done": 9, "total": total}
+    assert client.get("/api/session").json()["arrange"] == {"order": ORDER, "done": 9, "total": total,
+                                                            "namesOnly": False}
     # names don't move until it is finished; nothing else is arranged meanwhile
     assert client.get("/api/names").json()["layers"] == {"3": "Num"}
     assert arrange(client, [0, 2, 1, 3]).status_code == 409
@@ -343,6 +436,7 @@ def test_finish_and_put_back_keep_what_was_changed_since_the_stop(setup, tmp_pat
     with caplog.at_level("INFO", logger="server.arranger"):
         response = client.post("/api/layers/arrange/" + ("finish" if finish else "put-back"))
     assert response.status_code == 200, response.text
+    assert response.json()["kept"] == 3
     assert snapshot(virtual) == expected
     assert manager.run(lambda kb: kb.layout[(3, 1, 1)]) == "KC_F13"
     assert KEPT in caplog.text
@@ -509,14 +603,17 @@ def test_names_not_saved_after_every_write_then_finish(setup, tmp_path, monkeypa
     assert response.status_code == 507
     assert response.json()["detail"].startswith(NAMES_NOT_SAVED)
     assert manager.connected and snapshot(virtual) == target
-    assert client.get("/api/session").json()["arrange"] == {"order": ORDER, "done": total, "total": total}
+    # the layers are arranged: only the names are left to save
+    assert client.get("/api/session").json()["arrange"] == {"order": ORDER, "done": total, "total": total,
+                                                            "namesOnly": True}
     assert client.get("/api/names").json()["layers"] == {"3": "Num"}
     # Finish fails the same way while the file is held, and writes nothing to the keyboard
     virtual.writes.clear()
     response = client.post("/api/layers/arrange/finish")
     assert response.status_code == 507 and response.json()["detail"].startswith(NAMES_NOT_SAVED)
     assert virtual.writes == []
-    assert client.get("/api/session").json()["arrange"] == {"order": ORDER, "done": 0, "total": 0}
+    assert client.get("/api/session").json()["arrange"] == {"order": ORDER, "done": 0, "total": 0,
+                                                            "namesOnly": True}
     monkeypatch.setattr(names, "move_layers", move_layers)
     response = client.post("/api/layers/arrange/finish")
     assert response.status_code == 200, response.text
@@ -580,3 +677,16 @@ def test_encoders_move_and_follow(tmp_path, monkeypatch):
         virtual = manager.backend.virtual
         assert Keycode.serialize(virtual.encoders[(1, 0, 1)]) == "TO(1)"
         assert copy.deepcopy(virtual.keymap[1][0]) == [0, encode("KC_A")]
+
+
+def test_the_tri_layer_warning_with_three_layers(tmp_path, monkeypatch):
+    # the firmware may hold a tri-layer key with fewer than 4 layers (Vial refuses to put one there): layer 3, which
+    # it turns on, isn't there, which null says
+    def tri_knob():
+        virtual = knob()
+        virtual.keymap[0][0][1] = encode("FN_MO13")
+        return virtual
+    _, _, app = make_app(tmp_path, monkeypatch, factory=tri_knob)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN, follow_redirects=False)
+        assert preview(client, [0, 2, 1])["triLayer"] == [2, 1, None]
