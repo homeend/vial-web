@@ -80,6 +80,15 @@ class Report:
     def warnings(self):
         return self._listed("warnings", self._warnings)
 
+    @property
+    def error_count(self):
+        """ every error found, the ones past MAX_REPORTED included """
+        return len(self._errors) + self._more["errors"]
+
+    @property
+    def warning_count(self):
+        return len(self._warnings) + self._more["warnings"]
+
 
 def load(path, report, what):
     """ The JSON in path, or None with an error in the report saying why it couldn't be read """

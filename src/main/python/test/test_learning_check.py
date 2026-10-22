@@ -213,6 +213,8 @@ def test_a_report_lists_two_hundred_lines_at_most_then_counts_the_rest():
     assert report.warnings == ["w: y"]
     report.error("one more", "x")
     assert len(report.errors) == 201 and report.errors[-1] == "... and 1 more"
+    # the counts say how many were found, not how many lines are listed (the CLI's summary line uses them)
+    assert report.error_count == 201 and report.warning_count == 1
 
 
 def mutated(path, value):
@@ -348,7 +350,7 @@ def test_a_huge_flat_list_is_walked_in_bounded_memory():
     learning_check.check_strings(data, report)
     elapsed = time.perf_counter() - started
     assert report.errors == ["lessons[0]/big[1999999]: not valid UTF-8 (a lone surrogate)"]
-    assert elapsed < 3, elapsed
+    assert elapsed < 15, elapsed  # about a second alone; wide, so that a loaded machine (the e2e suite beside) passes
     # the whole check returns too
     data["lessons"][0]["big"][-1] = "ab"
     assert check_set(data, EXPORT) == ([], [])
