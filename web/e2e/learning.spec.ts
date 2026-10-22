@@ -89,6 +89,32 @@ test("the example imports, lists its lessons with empty states, and isn't out of
   }
 });
 
+test("an import while the page's first read is still under way is listed and opened", async ({ app }) => {
+  // the listing asked before the import doesn't know the set: its late answer must not put the list back as it was
+  // (on a slow machine the page's read is still running when the file is chosen)
+  await app.route(/\/api\/learning\/sets(\?.*)?$/, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch(); // asked now (before the import), answered late
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.fulfill({ response });
+  });
+  try {
+    const listing = app.waitForResponse((r) => /\/api\/learning\/sets(\?.*)?$/.test(r.url()) && r.request().method() === "GET");
+    await openSection(app, "Learning");
+    await expect(app.getByText("Reading the lessons…")).toBeVisible(); // the first read is under way
+    await app.locator('input[type="file"]').setInputFiles(EXAMPLE);
+    await listing; // the late answer, listing nothing, has landed
+    await expect(app.getByRole("combobox", { name: "Lesson set" })).toHaveValue(SET, { timeout: 15_000 });
+    await expect(app.getByRole("list", { name: `Lessons of ${example.title}` }).getByRole("button")).toHaveCount(
+      example.lessons.length,
+    );
+    await expect(app.getByText("Reading the lessons…")).toHaveCount(0);
+  } finally {
+    await app.unrouteAll({ behavior: "ignoreErrors" });
+    await putBack(app);
+  }
+});
+
 test("typing lesson 1's first exercise passes it, records the attempt, and the lesson row says so", async ({ app }) => {
   const exercise = lesson1.exercises[0];
   try {
@@ -193,7 +219,7 @@ test("the Fingers view rings every key by finger, and the export downloads the l
     await expect(app.getByRole("heading", { level: 1, name: "Fingers" })).toBeVisible();
     const keys = app.locator(".board .key");
     await expect(keys.first()).toBeVisible();
-    expect(await app.locator(".board .key.ringed").count()).toBe(await keys.count());
+    await expect(app.locator(".board .key.ringed")).toHaveCount(await keys.count()); // once the fingers are read
     expect(await app.locator('.board .key[aria-pressed="true"]').count()).toBeGreaterThan(0);
 
     // a key's finger changed, saved; back to the proposal

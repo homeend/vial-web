@@ -76,10 +76,28 @@ export class LearningState {
     this.error = null;
   }
 
+  /** the listing read under way (load or refresh), for a change made meanwhile: its answer lists the sets as they
+   * were when it was asked, so an import or a removal waits for it before changing the list, or the answer would
+   * put the list back as it was (an import during the page's first read: the set saved but not listed) */
+  #reading: Promise<void> | null = null;
+
+  async #listing(work: Promise<void>): Promise<void> {
+    this.#reading = work;
+    try {
+      await work;
+    } finally {
+      if (this.#reading === work) this.#reading = null;
+    }
+  }
+
   /** Reads the sets, the settings and the export, then opens the set chosen (or the first that can be read, or the
    * first listed when none can be: its error shows) */
   async load(): Promise<void> {
     if (this.loading) return;
+    await this.#listing(this.#load());
+  }
+
+  async #load(): Promise<void> {
     const read = ++this.#reads;
     this.loading = true;
     this.error = null;
@@ -103,6 +121,10 @@ export class LearningState {
   /** Reads the sets and the export again (after Fingers changes, or the keymap: the export, and so what is out of date
    * and where the characters are). The set open and its progress stay as they are. */
   async refresh(): Promise<void> {
+    await this.#listing(this.#refresh());
+  }
+
+  async #refresh(): Promise<void> {
     const read = this.#reads;
     try {
       const [sets, layout] = await Promise.all([api.learningSets(), api.learningExport()]);
@@ -150,6 +172,7 @@ export class LearningState {
     const read = this.#reads;
     try {
       const entry = await api.importLearningSet(text);
+      if (this.#reading) await this.#reading; // a listing asked before the import doesn't know the set
       if (read !== this.#reads) return null;
       this.sets = [...this.sets.filter((s) => s.id !== entry.id), entry].sort((a, b) => a.id.localeCompare(b.id));
       await this.open(entry.id);
@@ -169,6 +192,7 @@ export class LearningState {
     const read = this.#reads;
     try {
       await api.deleteLearningSet(id);
+      if (this.#reading) await this.#reading; // a listing asked before the removal still has the set
       if (read !== this.#reads) return true;
       this.sets = this.sets.filter((s) => s.id !== id);
       if (this.chosen === id) await this.open(setToOpen(this.sets, null));

@@ -156,7 +156,8 @@ def test_schema_check_without_jsonschema_only_says_so(monkeypatch):
 def test_the_schema_path_is_none_where_the_source_tree_is_too_shallow(tmp_path):
     """ PyInstaller unpacks the Linux one-file build to /tmp/_MEIxxxxxx: this file has four parents there, no docs
     folder above them. The path is found lazily and is None then, so that the checker (and the app) still import. """
-    assert learning_check.schema_path("/tmp/_MEI123456/server/learning_check.py") is None
+    # not /tmp itself: on macOS it is a link to /private/tmp, and resolve() counts one parent more there
+    assert learning_check.schema_path("/mei/_MEI123456/server/learning_check.py") is None
     assert learning_check.schema_path("/opt/vial/server/learning_check.py") is None
     assert learning_check.schema_path("/a/b/c/d/learning_check.py") is not None  # five parents: counted up
     found = learning_check.schema_path()
