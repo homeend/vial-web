@@ -741,9 +741,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Learning Settings */
+        /**
+         * Learning Settings
+         * @description The pass accuracy, the target WPM and whether the picture shows in word exercises
+         */
         get: operations["learning_settings_api_learning_settings_get"];
-        /** Set Learning Settings */
+        /**
+         * Set Learning Settings
+         * @description Saves them; 422 outside their ranges
+         */
         put: operations["set_learning_settings_api_learning_settings_put"];
         post?: never;
         delete?: never;
