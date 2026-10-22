@@ -25,7 +25,8 @@ Design: [`2026-10-22-linux-tray-menu-design.md`](../specs/2026-10-22-linux-tray-
   released.
 - [x] 7. **Docs.** README: "What it does" (the tray bullet), Status row 11, Download and run (Linux), Quit (the
   notification), Building (dbus-fast). The design note.
-- [ ] 8. **Full suites and CI.** pytest on Windows and under WSL; `main` merged in; push; Build (the Linux
-  executable with dbus-fast, its smoke test's `--self-check`, e2e) and Test green on three systems.
+- [x] 8. **Full suites and CI.** pytest Windows 1302 passed / 15 skipped, WSL 1313 / 4; `main` merged in
+  (phase 9); pushed: Build (the Linux executable with dbus-fast, its smoke test's `--self-check`, e2e) and
+  Test green on three systems (`35379b5`; Linux artifact: run 39765183494).
 - [ ] 9. **Owner check** on GNOME with the AppIndicator extension: the icon, its menu (Open Vial, Quit Vial), the
   notification when the last tab closes. Then the merge and a release.
