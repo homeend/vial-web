@@ -77,12 +77,18 @@ export const api = {
   learningSet: (set: string) => request("get", "/api/learning/sets/{set}", { params: { set } }),
   /** removes the set; its progress stays */
   deleteLearningSet: (set: string) => request("delete", "/api/learning/sets/{set}", { params: { set } }),
+  /** re-fits the set to the layout as it is now: every `new` entry moved to the key that types its character, the
+   * export's hash taken; answers as importLearningSet does. 422 (ApiError.errors) when a character is typed by no key,
+   * or the set is listed with an error: the file stays as it was */
+  refitLearningSet: (set: string) => request("post", "/api/learning/sets/{set}/refit", { params: { set } }),
   /** the exercises typed so far in a set, each with its best and attempts; empty for a set never recorded, also for one
    * that doesn't exist */
   learningProgress: (set: string) => request("get", "/api/learning/progress/{set}", { params: { set } }),
   /** an exercise typed to the end; the server computes accuracy and WPM and keeps the best */
   recordAttempt: (set: string, exercise: string, body: AttemptIn) =>
     request("put", "/api/learning/progress/{set}/{exercise}", { params: { set, exercise }, body }),
+  /** forgets the set's progress, every attempt and best (204, also when nothing was recorded); the set stays */
+  resetLearningProgress: (set: string) => request("delete", "/api/learning/progress/{set}", { params: { set } }),
   /** the pass accuracy, the target speed and whether the picture names keys in words */
   learningSettings: () => request("get", "/api/learning/settings"),
   setLearningSettings: (body: LearningSettingsIn) => request("put", "/api/learning/settings", { body }),

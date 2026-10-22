@@ -9,9 +9,9 @@
   import ConfirmDialog from "../ui/ConfirmDialog.svelte";
   import SelectField from "../ui/SelectField.svelte";
   import { lessonStateText, listedErrors } from "./format";
-  import { learning } from "./learning.svelte";
+  import { learning, type ImportOutcome } from "./learning.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
-  import { lessonStatus, outOfDate } from "./state";
+  import { hasAnyProgress, lessonStatus, outOfDate } from "./state";
 
   interface Props {
     /** what the page has to say about the address it came back from, if anything */
@@ -33,6 +33,8 @@
     ? [{ value: "", label: "No lesson set yet" }]
     : sets.map((s) => ({ value: s.id, label: choiceLabel(s) })));
   const stale = $derived(set !== null && outOfDate(set, learning.export?.hash));
+  /** the set open has something to forget */
+  const hasProgress = $derived(set !== null && hasAnyProgress(learning.progress));
   const rows = $derived(set
     ? set.lessons.map((lesson, i) => ({ lesson, number: i + 1,
       state: lessonStateText(lessonStatus(lesson, learning.progress, learning.settings)) }))
@@ -41,40 +43,60 @@
   let fileInput = $state<HTMLInputElement>();
   /** a file is being read and checked */
   let importing = $state(false);
-  /** the checker's findings on the file refused; the warnings on the one taken */
-  let findings = $state<{ tone: "errors" | "warnings"; name: string; lines: string[] } | null>(null);
+  /** the checker's findings on a file refused, or a set that can't be re-fitted; the warnings on a file taken, or a set
+   * re-fitted: the heading says which */
+  let findings = $state<{ tone: "errors" | "warnings"; heading: string; lines: string[] } | null>(null);
   let removing = $state(false);
+  let resetting = $state(false);
+  let refitting = $state(false);
+  /** around the out-of-date banner, for its button to get the focus back */
+  let staleBanner = $state<HTMLDivElement>();
   let settingsOpen = $state(false);
+
+  /** What an outcome shows in the findings box: the errors, the warnings when there are any, or nothing */
+  function showOutcome(outcome: ImportOutcome, done: string, refused: string) {
+    if (!outcome.ok) findings = { tone: "errors", heading: refused, lines: listedErrors(outcome.errors) };
+    else if (outcome.warnings.length > 0) findings = { tone: "warnings", heading: done, lines: listedErrors(outcome.warnings) };
+  }
 
   async function importFile(file: File) {
     importing = true;
     findings = null;
     onnote(null);
+    const refused = `${file.name} wasn't imported:`;
     try {
       // the picker asks for .json, but any file can be chosen: say what a lesson set is before anything else
       if (!/\.json$/i.test(file.name)) {
-        findings = { tone: "errors", name: file.name,
+        findings = { tone: "errors", heading: refused,
                      lines: ["not a lesson set: a lesson set is a .json file, written by the generate-lessons skill from the layout export"] };
         return;
       }
       if (file.size > MAX_BYTES) {
-        findings = { tone: "errors", name: file.name,
+        findings = { tone: "errors", heading: refused,
                      lines: [`too large for a lesson set: ${(file.size / 1024 / 1024).toFixed(1)} MiB, at most ${MAX_BYTES / 1024 / 1024} MiB`] };
         return;
       }
       const outcome = await learning.importSet(await file.text());
-      if (!outcome) return;
-      if (outcome.ok) {
-        if (outcome.warnings.length > 0) findings = { tone: "warnings", name: file.name, lines: listedErrors(outcome.warnings) };
-      } else {
-        findings = { tone: "errors", name: file.name, lines: listedErrors(outcome.errors) };
-      }
+      if (outcome) showOutcome(outcome, `${file.name} was imported, with warnings:`, refused);
     } catch (error) {
       // reading the file fails when it was moved or changed since it was picked (importSet fails only into its outcome)
-      findings = { tone: "errors", name: file.name, lines: [`the file can't be read: ${causeMessage(error)}`] };
+      findings = { tone: "errors", heading: refused, lines: [`the file can't be read: ${causeMessage(error)}`] };
     } finally {
       importing = false;
     }
+  }
+
+  /** Re-fits the set open: the dialog closes once the server answered (the findings box says what it refused), and
+   * stays open, with a toast, when the request itself failed; closed with nothing to show when the keyboard switched
+   * meanwhile */
+  async function refit(): Promise<boolean> {
+    const title = set?.title ?? "The lesson set";
+    const outcome = await learning.refitSet();
+    if (outcome === null) return false;
+    if (outcome === "stale") return true;
+    findings = null;
+    showOutcome(outcome, `${title} was re-fitted, with warnings:`, `${title} can't be re-fitted:`);
+    return true;
   }
 
   function openLesson(lessonId: string) {
@@ -117,6 +139,9 @@
         e.currentTarget.value = "";
         if (file) void importFile(file);
       }} />
+    {#if hasProgress}
+      <Button id="reset-progress" onclick={() => (resetting = true)}>Reset progress</Button>
+    {/if}
     {#if chosenEntry}
       <Button variant="danger" onclick={() => (removing = true)}>Remove</Button>
     {/if}
@@ -125,7 +150,7 @@
 
 {#if findings}
   <div class="findings {findings.tone}" role={findings.tone === "errors" ? "alert" : "status"}>
-    <strong>{findings.tone === "errors" ? `${findings.name} wasn't imported:` : `${findings.name} was imported, with warnings:`}</strong>
+    <strong>{findings.heading}</strong>
     <ul>
       {#each findings.lines as line, i (i)}<li>{line}</li>{/each}
     </ul>
@@ -137,7 +162,11 @@
 {/if}
 
 {#if stale}
-  <Banner tone="warning" title="Built for another layout." message="Export again and regenerate, or carry on." />
+  <!-- in a block of its own, so that its button gets the focus back when the dialog closes with the set as it was -->
+  <div bind:this={staleBanner}>
+    <Banner tone="warning" title="Built for another layout." message="Re-fit it, export again and regenerate, or carry on."
+      actionLabel="Re-fit to this layout" onaction={() => (refitting = true)} />
+  </div>
 {/if}
 
 {#if learning.loading}
@@ -169,6 +198,24 @@
     removing = false;
     // the last set removed: the selector is disabled, so the focus goes to Import (never to the body)
     void tick().then(() => document.getElementById(learning.sets.length === 0 ? "import-lessons" : "lesson-set")?.focus());
+  }} />
+
+<ConfirmDialog open={resetting} title="Reset the progress of {chosenEntry?.title ?? 'the lesson set'}?"
+  message="Every attempt and best is forgotten; the lessons stay."
+  confirmLabel="Reset" danger onconfirm={() => learning.resetProgress()}
+  onclose={() => {
+    resetting = false;
+    // the progress reset, the button is gone with it (there is nothing left to reset): the selector takes the focus
+    void tick().then(() => (document.getElementById("reset-progress") ?? document.getElementById("lesson-set"))?.focus());
+  }} />
+
+<ConfirmDialog open={refitting} title="Re-fit {set?.title ?? 'the lesson set'} to the keyboard as it is now?"
+  message="The lessons and your progress stay; the keys they point at follow the layout."
+  confirmLabel="Re-fit" onconfirm={refit}
+  onclose={() => {
+    refitting = false;
+    // re-fitted, the banner is gone with its button: the selector takes the focus (never the body)
+    void tick().then(() => (staleBanner?.querySelector("button") ?? document.getElementById("lesson-set"))?.focus());
   }} />
 
 <SettingsDialog open={settingsOpen} settings={learning.settings} onsave={(s) => learning.saveSettings(s)}

@@ -64,7 +64,13 @@ the simulated Corne's. Example (two keys of it):
 - `chars.<layer>` has `tap`, and `shift` / `altGr` when those differ; a key with no printable result on a layer is
   left out of that layer. `hold` is a short label for what holding does (`"Shift"`, `"Ctrl"`, `"layer 2"`). A plain
   AltGr key (`KC_RALT`) types nothing but has `"0": { "hold": "AltGr" }`, so the picture can light it for an `altGr`
-  character.
+  character. A layer key on the layer it reaches: a **held** one (`MO`, `LT`, `TT`, `LM`, `FN_MO13` / `FN_MO23`, a
+  tap dance whose hold is one of those) can't be tapped while its layer is on, since holding it is what keeps the
+  layer on, so it is left out of that layer whatever lies under it there (the Space of the example above holds
+  layer 1, so it has no `"1"`); a **tapped** one (`OSL`, `TG`, `TO`, `DF` / `PDF`: one-shot, toggle, switch) is
+  tapped and released, so with its layer on the same position sends what that layer holds there: a real keycode
+  under it is typed and listed (tap `OSL(2)`, then a `KC_B` under it on layer 2 types `b`), only a transparent
+  position resolves back to the layer key itself and types nothing. Its `hold` and `layerKey` are as on any key.
 - Transparent keys are resolved: a layer-1 entry shows what the key does *when layer 1 is on*.
 - `x`, `y` are the key's centre in key units, for the generator's own sanity checks only.
 - The export, and so the hash, is made in the app's keyboard language (`language`): the legends differ between
@@ -125,6 +131,15 @@ Fields:
 | `lessons[].exercises[].kind` | `new-keys`, `keys`, `words`, `blind`, `text`, `extra-keys`, `extra-words` |
 | `exercises[].lines` | the text, one screen line per entry, no trailing spaces, no tabs, no empty lines |
 
+**Re-fit.** A set made from an earlier character map (out of date) can be re-fitted to the keyboard as it is now
+(`POST /api/learning/sets/<id>/refit`, "Re-fit" on the page): every `new` entry is pointed at where its `char` is
+typed now and `layout` becomes the current export's; the exercises and the progress stay. For each entry the
+candidates are every (key, layer, via) of the export that types the character; the one chosen is, in order: the
+entry's own key, layer and via when it still types it; else the same key on any layer (the lowest); else any key on
+the same layer (in the export's key order); else the first candidate (by layer, then key order). `path` becomes the
+label of the chosen layer's first `reachedBy` entry, and is dropped on layer 0. A character no key types any more
+refuses the re-fit, listing every such entry; the file is left as it was.
+
 How the app shows each kind:
 
 | kind | Picture | Next key lit | Typing | Lines |
@@ -176,4 +191,5 @@ size range, when a `new-keys` exercise has under 40 % new characters, when a gro
   file.
 - The file is per lesson set, so a regenerated set with a new `id` starts fresh and the old progress stays. A set
   imported again under the same `id` keeps its progress; entries for exercises the set no longer has are dropped
-  at the next recorded attempt. A hand-edited file is read for what is valid in it.
+  at the next recorded attempt. A hand-edited file is read for what is valid in it. Reset progress on the page
+  removes the file.

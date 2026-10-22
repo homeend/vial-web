@@ -54,6 +54,12 @@ export function lessonStatus(lesson: Lesson, progress: Progress | null | undefin
   };
 }
 
+/** Whether a progress has anything to forget: an exercise with a best, or an attempt (a `done` with neither is not
+ * one: nothing Reset progress would change); false with none */
+export function hasAnyProgress(progress: Progress | null): boolean {
+  return Object.values(progress?.exercises ?? {}).some((e) => !!e.best || e.attempts.length > 0);
+}
+
 /** The exercise after one: the next in its lesson, else the first of the next lesson that has an
  * exercise (an empty lesson is skipped), else null */
 export function nextExercise(set: LessonSet, lessonId: string, exerciseId: string): { lessonId: string; exerciseId: string } | null {

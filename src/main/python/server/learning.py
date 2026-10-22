@@ -332,6 +332,25 @@ class LearningStore:
             self._save(path, data)
         return {**self._summary(set_id, data), "warnings": warnings}
 
+    def refit_set(self, uid, set_id, export):
+        """ Re-fit the lesson set to the keyboard as the export has it (learning_layout.refit: every new key pointed
+        at where its character is typed now, layout the export's) and save it in place; its progress stays. NotFound
+        when there is none; ValueError when the file isn't a lesson set; LessonSetInvalid, the file untouched, when a
+        character of it is typed by no key, or when the re-fitted set fails the checker against the export. Returns
+        its listing entry with the warnings, as import_set does. """
+        with self.lock:
+            data, error = self._read_set_named(uid, set_id)
+            if error:
+                raise ValueError("lesson set {} can't be re-fitted: {}".format(set_id, error))
+            fitted, problems = learning_layout.refit(data, export)
+            if problems:
+                raise LessonSetInvalid(problems, [])
+            errors, warnings = learning_check.check_set(fitted, export)
+            if errors:
+                raise LessonSetInvalid(errors, warnings)
+            self._save(self._set_path(uid, set_id), fitted)
+        return {**self._summary(set_id, fitted), "warnings": warnings}
+
     def delete_set(self, uid, set_id):
         """ Remove the lesson set; its progress file stays (a set imported again under the id finds it). NotFound
         when there is none. """
@@ -404,6 +423,14 @@ class LearningStore:
             progress["layoutHash"] = lesson_set["layout"]["hash"]
             self._save(self._progress_path(uid, set_id), progress)
         return progress["exercises"][exercise_id]
+
+    def clear_progress(self, uid, set_id):
+        """ Reset the progress on a lesson set: its progress file (the one named exactly set_id) is removed; nothing
+        to remove (never recorded, no such set) is fine. NotFound only for an id that can't be a set's. """
+        with self.lock:
+            path = self._progress_path(uid, set_id)
+            if self._has_file(path):
+                self._remove(path)
 
     # ---------- settings ----------
 

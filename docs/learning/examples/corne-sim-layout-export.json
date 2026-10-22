@@ -4,8 +4,8 @@
   "name": "Simulated Corne",
   "uid": "5EEDC0DE00420042"
  },
- "hash": "sha256:e435c3da038f9048",
- "exportedAt": "2026-10-21T21:48:05Z",
+ "hash": "sha256:4bc5cc1ba5f8b710",
+ "exportedAt": "2026-10-22T10:49:34Z",
  "language": "en-us",
  "layers": [
   {
@@ -161,10 +161,6 @@
     },
     "1": {
      "tap": "$"
-    },
-    "2": {
-     "tap": "b",
-     "shift": "B"
     }
    },
    "layerKey": {
@@ -327,10 +323,6 @@
     "1": {
      "tap": "`",
      "shift": "~"
-    },
-    "2": {
-     "tap": "s",
-     "shift": "S"
     },
     "3": {
      "tap": "1",
@@ -826,9 +818,6 @@
     "0": {
      "tap": " ",
      "hold": "layer 1"
-    },
-    "1": {
-     "tap": " "
     },
     "2": {
      "tap": " "

@@ -28,13 +28,15 @@ async function importExample(page: Page) {
   await expect(page.getByRole("combobox", { name: "Lesson set" })).toHaveValue(SET, { timeout: 15_000 });
 }
 
-/** Removes the set, the fingers and the settings: what the tests change on the server */
+/** Removes the set and its progress, the fingers and the settings: what the tests change on the server (the progress
+ * outlives the set: left, it would show in the worker's next test) */
 async function putBack(page: Page) {
   await restoreAll(
     async () => {
       const response = await api(page).delete(`/api/learning/sets/${SET}`);
       if (response.status() !== 204 && response.status() !== 404) throw new Error(`delete: ${response.status()}`);
     },
+    () => api(page).delete(`/api/learning/progress/${SET}`),
     () => api(page).delete("/api/learning/fingers"),
     () => api(page).put("/api/learning/settings", DEFAULT_SETTINGS),
   );

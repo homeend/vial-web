@@ -113,7 +113,8 @@ describe("nextExercise", () => {
 
 describe("outOfDate", () => {
   it("is when the set was built from another character map", () => {
-    expect(outOfDate(set, "sha256:e435c3da038f9048")).toBe(false);
+    // the example's hash, whatever the export it was regenerated from has
+    expect(outOfDate(set, set.layout.hash)).toBe(false);
     expect(outOfDate(set, "sha256:0000000000000000")).toBe(true);
     // no export to compare with: nothing to say
     expect(outOfDate(set, null)).toBe(false);

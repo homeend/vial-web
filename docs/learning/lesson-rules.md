@@ -18,7 +18,7 @@ from key positions; the app does that, and the user corrects it in the UI before
 | `row` | `number` / `top` / `home` / `bottom` / `thumb` |
 | `reach` | `rest` (a resting key), `inner` (one column towards the middle), `outer` (one column away from the middle), `up`, `down` (the key above / below the resting key of that finger); thumb keys: `rest` for the thumb's main key, else `inner` / `outer` |
 | `home` | `true` for the eight (or so) resting keys |
-| `chars` | per layer, what the key types: `tap` (no modifier), `shift`, `altGr`; and `hold` when holding it does something else (a modifier or a layer) |
+| `chars` | per layer, what the key types: `tap` (no modifier), `shift`, `altGr`; and `hold` when holding it does something else (a modifier or a layer). A held layer key (`MO`, `LT`, `TT`, `LM`, `FN_MO13` / `FN_MO23`, a tap dance whose hold is one of those) types nothing on the layer it reaches, since holding it is what keeps the layer on, so it has no entry for that layer; a tapped one (`OSL`, `TG`, `TO`, `DF` / `PDF`) types what that layer holds under it, a real keycode, and nothing when that position is transparent (it resolves back to the layer key itself) |
 | `layerKey` | for a key that reaches another layer: `{ "layer": 1, "how": "hold" \| "toggle" \| "oneShot" \| "switch" }` |
 
 And per layer: its name, and the keys that reach it, as `[{ "key": "r3c4", "how": "hold", "label": "hold Space" }]`.

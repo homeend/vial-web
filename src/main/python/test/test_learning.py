@@ -225,6 +225,73 @@ def test_import_keeps_warnings_and_checks_the_keys_against_the_export(store):
     assert info.value.errors == ["lesson 01/new[0]: key r1c2 layer 0 tap types 'b', not 'a'"]
 
 
+def moved_corne(**codes):
+    """ The simulated Corne's model with layer-0 keys replaced: {"r0c2": "KC_R", ...} """
+    built = model_of(make_corne)
+    from server import describe
+    for g, k in zip(built["keys"], built["layers"][0]["keys"]):
+        code = codes.get(learning_layout.key_id(g))
+        if code:
+            k.clear()
+            k.update(describe.describe(code))
+    return built
+
+
+def test_refit_rewrites_the_set_for_the_keyboard_now_and_keeps_its_progress(store, root):
+    data = example("corne-sim-en.json")
+    store.import_set(UID, data, learning_layout.export(model_of(make_corne)))
+    store.record(UID, "corne-sim-en", "01-n1", attempt())
+    progress_path = root / UID / "progress" / "corne-sim-en.json"
+    progress_before = progress_path.read_bytes()
+    # L and R change places: r stays on layer 0, on r0c2 now
+    export = learning_layout.export(moved_corne(r0c2="KC_R", r0c3="KC_L"))
+    assert export["hash"] != data["layout"]["hash"]
+    entry = store.refit_set(UID, "corne-sim-en", export)
+    assert entry == {"id": "corne-sim-en", "title": data["title"], "language": "en", "lessons": 2,
+                     "layoutHash": export["hash"], "error": None, "warnings": []}
+    saved = store.set(UID, "corne-sim-en")
+    assert saved["layout"] == {"name": "Simulated Corne", "uid": UID, "hash": export["hash"]}
+    assert saved["lessons"][1]["new"][0] == {"char": "r", "key": "r0c2", "layer": 0, "via": "tap"}
+    assert saved["lessons"][0] == data["lessons"][0]  # the home row didn't move
+    assert {k: v for k, v in saved.items() if k not in ("layout", "lessons")} == \
+        {k: v for k, v in data.items() if k not in ("layout", "lessons")}
+    assert json.loads((root / UID / "sets" / "corne-sim-en.json").read_text(encoding="utf-8")) == saved
+    assert progress_path.read_bytes() == progress_before
+    assert store.sets(UID)[0]["layoutHash"] == export["hash"]
+    # fitted again to the same keyboard: nothing changes
+    assert store.refit_set(UID, "corne-sim-en", export)["warnings"] == []
+    assert store.set(UID, "corne-sim-en") == saved
+
+
+def test_refit_refuses_a_character_no_key_types_and_leaves_the_file(store, root):
+    data = example("corne-sim-en.json")
+    store.import_set(UID, data, learning_layout.export(model_of(make_corne)))
+    path = root / UID / "sets" / "corne-sim-en.json"
+    before = path.read_bytes()
+    export = learning_layout.export(moved_corne(r0c3="KC_X", r4c3="KC_X"))  # no R, no D
+    with pytest.raises(LessonSetInvalid) as info:
+        store.refit_set(UID, "corne-sim-en", export)
+    assert info.value.errors == ["lesson 02/new[0]: 'r' is typed by no key of this keyboard",
+                                 "lesson 02/new[1]: 'd' is typed by no key of this keyboard"]
+    assert info.value.warnings == []
+    assert path.read_bytes() == before
+    assert store.sets(UID)[0]["layoutHash"] == data["layout"]["hash"]
+
+
+def test_refit_of_a_file_that_isnt_a_lesson_set_or_isnt_there(store, root):
+    folder = root / UID / "sets"
+    folder.mkdir(parents=True)
+    (folder / "broken.json").write_text("{", encoding="utf-8")
+    export = learning_layout.export(model_of(make_corne))
+    with pytest.raises(ValueError, match="lesson set broken can't be re-fitted: not a JSON file"):
+        store.refit_set(UID, "broken", export)
+    assert (folder / "broken.json").read_text(encoding="utf-8") == "{"
+    with pytest.raises(NotFound):
+        store.refit_set(UID, "never", export)
+    with pytest.raises(NotFound):
+        store.refit_set(UID, "a/b", export)
+
+
 def test_files_dropped_in_by_hand_are_listed_with_their_error(store, root):
     folder = root / UID / "sets"
     folder.mkdir(parents=True)
@@ -415,6 +482,23 @@ def test_record_drops_the_progress_of_exercises_the_set_no_longer_has(store):
     assert set(store.progress(UID, "mini")["exercises"]) == {"01-n1", "01-k1"}  # reading changes nothing
     store.record(UID, "mini", "01-w1", attempt())
     assert set(store.progress(UID, "mini")["exercises"]) == {"01-n1", "01-w1"}
+
+
+def test_clear_progress_removes_the_file_named_exactly(store, root):
+    store.import_set(UID, minimal_set())
+    store.record(UID, "mini", "01-n1", attempt())
+    path = root / UID / "progress" / "mini.json"
+    assert path.exists()
+    store.clear_progress(UID, "MINI")  # another set's name on a case-insensitive file system: not this file
+    assert path.exists() and store.progress(UID, "mini")["exercises"]["01-n1"]["done"]
+    store.clear_progress(UID, "mini")
+    assert not path.exists()
+    assert store.progress(UID, "mini")["exercises"] == {}
+    store.clear_progress(UID, "mini")  # nothing to clear: fine
+    store.clear_progress(UID, "never")  # no set of that name either: fine
+    with pytest.raises(NotFound):
+        store.clear_progress(UID, "a/b")
+    assert store.set(UID, "mini")["id"] == "mini"  # the set itself stays
 
 
 def test_a_set_file_nested_too_deeply_is_listed_with_its_error(store, root):
@@ -678,6 +762,31 @@ def test_progress_over_the_api(client):
     assert worst.json()["attempts"][-1]["accuracy"] == 0 and worst.json()["best"]["at"] == "t2"
 
 
+def test_reset_progress_over_the_api(client, root):
+    data = example("corne-sim-en.json")
+    assert client.post("/api/learning/sets", json=data).status_code == 201
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt()).status_code == 200
+    path = root / UID / "progress" / "corne-sim-en.json"
+    assert path.exists()
+    # meant for another keyboard: refused, the file stays
+    other = {"x-vial-keyboard": "some-other-keyboard"}
+    assert client.delete("/api/learning/progress/corne-sim-en", headers=other).status_code == 409
+    assert path.exists() and client.get("/api/learning/progress/corne-sim-en").json()["exercises"] != {}
+    reset = client.delete("/api/learning/progress/corne-sim-en")
+    assert reset.status_code == 204, reset.text
+    assert not path.exists()
+    assert client.get("/api/learning/progress/corne-sim-en").json() == {
+        "format": "vial-web-progress/1", "lessonSet": "corne-sim-en", "layoutHash": None, "exercises": {}}
+    assert client.get("/api/learning/sets/corne-sim-en").json() == data  # the set itself stays
+    # nothing recorded, or no such set at all: nothing to remove, which is what was asked for
+    assert client.delete("/api/learning/progress/corne-sim-en").status_code == 204
+    assert client.delete("/api/learning/progress/never").status_code == 204
+    assert client.delete("/api/learning/progress/a.b").status_code == 404  # no set can be called that
+    # recording again starts afresh
+    again = client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(at="t2")).json()
+    assert [a["at"] for a in again["attempts"]] == ["t2"]
+
+
 def test_settings_over_the_api(client):
     assert client.get("/api/learning/settings").json() == {"passAccuracy": 95, "targetWpm": 30,
                                                            "pictureInWords": True}
@@ -799,6 +908,54 @@ def test_importing_the_same_id_again_replaces_the_file_even_a_broken_one(client,
     assert (path.parent / "corne-sim-en.json.corrupt").read_text(encoding="utf-8") == "{garbage"
     listed = client.get("/api/learning/sets").json()
     assert [(s["title"], s["error"]) for s in listed] == [(data["title"], None)]
+
+
+def test_refit_over_the_api(client, root):
+    data = example("corne-sim-en.json")
+    assert client.post("/api/learning/sets", json=data).status_code == 201
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt()).status_code == 200
+    progress = client.get("/api/learning/progress/corne-sim-en").json()
+    # L (r0c2) and R (r0c3) change places on the keyboard: the set is out of date
+    assert client.put("/api/keymap/0/0/2", json={"code": "KC_R"}).status_code == 200
+    assert client.put("/api/keymap/0/0/3", json={"code": "KC_L"}).status_code == 200
+    assert client.get("/api/learning/sets").json()[0]["outOfDate"] is True
+    current = client.get("/api/learning/export").json()["hash"]
+    # meant for another keyboard: refused, nothing written
+    other = {"x-vial-keyboard": "some-other-keyboard"}
+    assert client.post("/api/learning/sets/corne-sim-en/refit", headers=other).status_code == 409
+    assert client.get("/api/learning/sets/corne-sim-en").json() == data
+    response = client.post("/api/learning/sets/corne-sim-en/refit")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"id": "corne-sim-en", "title": data["title"], "language": "en", "lessons": 2,
+                               "layoutHash": current, "outOfDate": False, "error": None, "warnings": []}
+    fitted = client.get("/api/learning/sets/corne-sim-en").json()
+    assert fitted["layout"] == {"name": "Simulated Corne", "uid": UID, "hash": current}
+    assert fitted["lessons"][1]["new"][0] == {"char": "r", "key": "r0c2", "layer": 0, "via": "tap"}
+    assert fitted["lessons"][0] == data["lessons"][0]
+    assert client.get("/api/learning/sets").json()[0]["outOfDate"] is False
+    assert client.get("/api/learning/progress/corne-sim-en").json() == progress
+    # in another keyboard language the characters differ: the set is fitted to those, and out of date under en-us
+    german = client.post("/api/learning/sets/corne-sim-en/refit?lang=german-qwertz")
+    assert german.status_code == 200, german.text
+    assert german.json()["outOfDate"] is False and german.json()["layoutHash"] != current
+    assert client.get("/api/learning/sets").json()[0]["outOfDate"] is True
+    assert client.get("/api/learning/sets?lang=german-qwertz").json()[0]["outOfDate"] is False
+    assert client.post("/api/learning/sets/corne-sim-en/refit").json()["layoutHash"] == current
+    assert client.post("/api/learning/sets/corne-sim-en/refit?lang=klingon").status_code == 422
+    # a character no key types any more: refused with the list, the file untouched
+    assert client.put("/api/keymap/0/4/3", json={"code": "KC_X"}).status_code == 200  # D
+    refused = client.post("/api/learning/sets/corne-sim-en/refit")
+    assert refused.status_code == 422, refused.text
+    assert refused.json() == {"detail": "the lesson set has 1 error: lesson 02/new[1]: 'd' is typed by no key of "
+                                        "this keyboard",
+                              "errors": ["lesson 02/new[1]: 'd' is typed by no key of this keyboard"], "warnings": []}
+    assert client.get("/api/learning/sets/corne-sim-en").json() == fitted
+    assert client.get("/api/learning/sets").json()[0]["outOfDate"] is True
+    # no such set; a file that isn't a lesson set
+    assert client.post("/api/learning/sets/never/refit").status_code == 404
+    (root / UID / "sets" / "broken.json").write_text("{", encoding="utf-8")
+    broken = client.post("/api/learning/sets/broken/refit")
+    assert broken.status_code == 422 and broken.json()["detail"].startswith("lesson set broken can't be re-fitted: ")
 
 
 def test_a_set_goes_out_of_date_when_the_keymap_changes_and_back(client):
