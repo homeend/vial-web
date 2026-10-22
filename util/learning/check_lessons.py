@@ -16,7 +16,24 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src", "main", "python"))
 
-from server.learning_check import Report, check, export_keys, load, schema_check  # noqa: E402
+from server.learning_check import Report, check, export_keys, load, schema_check, short  # noqa: E402
+
+
+def known_before(course, first_id, path, report):
+    """ (the characters known, the lesson number) before the lesson first_id of the course (its earlier lessons' new
+    characters); (None, None) with an error when the course file can't be used """
+    lessons = course.get("lessons") if isinstance(course, dict) else None
+    if not isinstance(lessons, list):
+        report.error("course", "can't use {}: not a lesson set".format(path))
+        return None, None
+    ids = [l.get("id") for l in lessons if isinstance(l, dict)]
+    if first_id not in ids:
+        report.error("course", "lesson {} is not in {}".format(short(first_id), path))
+        return None, None
+    first = ids.index(first_id)
+    known = "".join(n["char"] for l in lessons[:first] if isinstance(l, dict) and isinstance(l.get("new"), list)
+                    for n in l["new"] if isinstance(n, dict) and isinstance(n.get("char"), str))
+    return known, first
 
 
 def main(argv=None):
@@ -39,15 +56,14 @@ def main(argv=None):
         if isinstance(export, dict):
             keys = export_keys(export, data, report)
     known, first = args.known, args.first_lesson
-    if args.course and isinstance(data, dict) and data.get("lessons"):
+    lessons = data.get("lessons") if isinstance(data, dict) else None
+    if args.course and isinstance(lessons, list) and lessons:
         course = load(args.course, report, "course")
-        first_id = (data["lessons"][0] or {}).get("id") if isinstance(data["lessons"][0], dict) else None
-        ids = [l.get("id") for l in (course or {}).get("lessons", []) if isinstance(l, dict)]
-        if first_id not in ids:
-            report.error("course", f"lesson {first_id!r} is not in {args.course}")
-        else:
-            first = ids.index(first_id)
-            known = "".join(n.get("char", "") for l in course["lessons"][:first] for n in (l.get("new") or []))
+        first_id = lessons[0].get("id") if isinstance(lessons[0], dict) else None
+        if course is not None:
+            found, number = known_before(course, first_id, args.course, report)
+            if found is not None:
+                known, first = found, number
     note = None
     if data is not None:
         note = schema_check(data, report)
@@ -59,8 +75,8 @@ def main(argv=None):
         print("error:", line)
     for line in report.warnings:
         print("warning:", line)
-    lessons = len(data.get("lessons", [])) if isinstance(data, dict) else 0
-    print(f"{args.lesson_set}: {lessons} lessons, {len(report.errors)} errors, {len(report.warnings)} warnings")
+    count = len(lessons) if isinstance(lessons, list) else 0
+    print(f"{args.lesson_set}: {count} lessons, {len(report.errors)} errors, {len(report.warnings)} warnings")
     return 1 if report.errors else 0
 
 
