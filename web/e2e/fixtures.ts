@@ -102,6 +102,7 @@ export function api(page: Page) {
     get: (path: string) => page.request.get(serverUrl(page, path), { headers }),
     put: (path: string, data: unknown) => page.request.put(serverUrl(page, path), { data, headers }),
     post: (path: string, data?: unknown) => page.request.post(serverUrl(page, path), { data, headers }),
+    delete: (path: string) => page.request.delete(serverUrl(page, path), { headers }),
   };
 }
 

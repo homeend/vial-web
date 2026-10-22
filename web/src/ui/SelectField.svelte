@@ -2,6 +2,8 @@
   interface Choice {
     value: string;
     label: string;
+    /** listed, but not to be chosen (a lesson set file that can't be read) */
+    disabled?: boolean;
   }
 
   interface Props {
@@ -43,7 +45,7 @@
     }}
   >
     {#each choices as choice (choice.value)}
-      <option value={choice.value}>{choice.label}</option>
+      <option value={choice.value} disabled={choice.disabled || undefined}>{choice.label}</option>
     {/each}
   </select>
 </div>
