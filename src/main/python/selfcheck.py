@@ -3,8 +3,10 @@
 or opened: no keyboard is looked for. The CI's smoke test runs it on every built executable. """
 import importlib
 import json
+import sys
 
 import resources
+import tray
 import version
 
 SERVER_MODULES = (
@@ -20,9 +22,12 @@ SERVER_MODULES = (
     "uvicorn.protocols.websockets.websockets_sansio_impl",
     "uvicorn.lifespan.on",
 )
+LINUX_TRAY_MODULES = ("PIL.Image", "Xlib.display")
+""" On Linux the tray's libraries are checked module by module: importing pystray itself opens the display, which a
+Linux without one (the CI's runners) can't. Elsewhere the tray is loaded as Vial loads it (tray.load). """
 
 
-def problems(import_module=importlib.import_module):
+def problems(import_module=importlib.import_module, platform=sys.platform, load_tray=tray.load):
     """ What this build lacks, one sentence each; empty when it has everything """
     found = []
     try:
@@ -34,6 +39,16 @@ def problems(import_module=importlib.import_module):
             import_module(name)
         except Exception as e:
             found.append("{} can't be imported: {}".format(name, e))
+    if platform.startswith("linux"):
+        for name in LINUX_TRAY_MODULES:
+            try:
+                import_module(name)
+            except Exception as e:
+                found.append("the tray icon's {} can't be imported: {}".format(name, e))
+    else:
+        loaded, problem = load_tray()
+        if loaded is None:
+            found.append("the tray icon's libraries can't be loaded: {}".format(problem))
     missing = resources.web_ui_missing()
     if missing:
         found.append(missing)
@@ -54,6 +69,6 @@ def main():
         for problem in found:
             print("  - " + problem)
         return 1
-    print("{}: this build has everything it needs (hidapi, the server, the web UI, the QMK settings). No keyboard was "
-          "looked for.".format(name))
+    print("{}: this build has everything it needs (hidapi, the server, the web UI, the QMK settings, the tray icon's "
+          "libraries). No keyboard was looked for.".format(name))
     return 0

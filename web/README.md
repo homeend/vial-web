@@ -95,7 +95,7 @@ CI runs `npm run check:api`.
 
 ## End-to-end tests
 
-`e2e/servers.ts` starts `vial_web.py --fake --no-browser --port 0 --data-dir <temp dir>` servers (the
+`e2e/servers.ts` starts `vial_web.py --fake --no-browser --no-tray --port 0 --data-dir <temp dir>` servers (the
 default Corne, with VialRGB; `e2e/fixtures/macropad.vial.json` with encoders, a layout option and no
 lighting; the Corne with `--layers 8`, as the owner's keyboard has; the Corne with `--layers 20`, more layers than
 LT and LM can reach; the Corne with

@@ -5,6 +5,7 @@
     python vial_web.py --fake     # simulated keyboard, never touches hardware
 """
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -22,6 +23,7 @@ import platformdirs
 
 import console
 import resources
+import tray
 import version
 
 APP_NAME = "Vial"
@@ -86,6 +88,13 @@ REOPEN_MESSAGE = """Browser window closed. Vial is still running. Reopen it at:
 To stop it, press Ctrl+C or close this window."""
 
 QUIT_MESSAGE = "Quit Vial was used on the page: Vial is stopping."
+TRAY_MESSAGE = "Vial has an icon in the notification area: Open Vial and Quit Vial are on its menu."
+TRAY_QUIT_MESSAGE = "Quit Vial was used on the tray icon: Vial is stopping."
+QUIT_WAIT = 5.0
+""" seconds Quit Vial on the tray icon gives the server to let go of the keyboard and tell the tabs (as Quit on the
+page does) before the server is stopped outright """
+TRAY_TITLE = "Vial{fake}"
+""" the icon's tooltip """
 
 log = logging.getLogger(__name__)
 
@@ -427,6 +436,9 @@ def parse_args(argv):
                              "VialRGB for the sample Corne)")
     parser.add_argument("--port", type=port_number, default=0, help="port to listen on (default: any free port)")
     parser.add_argument("--no-browser", action="store_true", help="don't open the browser")
+    parser.add_argument("--no-tray", action="store_true",
+                        help="don't show an icon in the notification area while Vial runs (the link is printed and "
+                             "in vial.log)")
     parser.add_argument("--dry-run", action="store_true", help="connect, print a summary and exit without serving")
     parser.add_argument("--self-check", action="store_true",
                         help="check that this build has everything it needs (hidapi, the server, the web UI) and exit, "
@@ -559,8 +571,9 @@ def load_layout_file(manager, path):
 
 
 def serve(args, manager, sock):
-    """ Serve the UI on the bound socket until Quit Vial on the page, Ctrl+C or the console window closed. The keyboard
-    is let go of before it returns. """
+    """ Serve the UI on the bound socket until Quit Vial on the page or on the tray icon, Ctrl+C or the console window
+    closed. The keyboard is let go of before it returns. With a tray icon (the default, where there can be one), the
+    icon's loop holds this thread and the server runs in a thread of its own (tray.run). """
     import uvicorn
     from server.app import create_app
     from server.learning import LearningStore
@@ -576,10 +589,19 @@ def serve(args, manager, sock):
         print("Vial: {}, then start Vial again. Until then the page only says so.".format(missing_ui), file=sys.stderr,
               flush=True)
     names = NamesStore(names_file(args.fake))
+    fake_text = " with a simulated keyboard" if args.fake else ""
+
+    def open_vial():
+        """ Open Vial in the browser (from any thread; the browser is started from a thread of its own) """
+        restore_library_path()
+        threading.Thread(target=webbrowser.open, args=[url], daemon=True).start()
+
+    icon = None
 
     def all_tabs_closed():
         print(REOPEN_MESSAGE.format(url=url), flush=True)
         logging.info("all browser tabs closed")
+        tray.notify(icon, tray.STILL_RUNNING)
 
     server = None
 
@@ -589,15 +611,46 @@ def serve(args, manager, sock):
             server.should_exit = True
 
     quit_used = []
+    tray_quit = []
+    """ [True] once Quit Vial on the tray icon was used: the page's message isn't printed on top of the icon's """
 
     def quit_from_page():
-        # POST /api/shutdown has answered, and closed the keyboard. Once: Quit asked again says nothing more.
+        # Quit (POST /api/shutdown, or the tray icon's Quit through the server: quit_from_tray) has let go of the
+        # keyboard and told the tabs. Once: Quit asked again says nothing more.
         if quit_used:
             return
         quit_used.append(True)
         stop_server()  # first: a console that is gone already must not keep Vial running
-        print(QUIT_MESSAGE, flush=True)
-        logging.info("Quit Vial was used on the page")
+        if not tray_quit:
+            print(QUIT_MESSAGE, flush=True)
+            logging.info("Quit Vial was used on the page")
+
+    def quit_from_tray():
+        """ Quit Vial on the icon's menu (called in the icon's thread): as Quit on the page, through the server's
+        loop (server.app's quit_from_outside), so that the keyboard is let go of and every tab is told that Vial
+        stopped before the server stops; otherwise the tabs would keep trying to reconnect. Without a server loop to
+        ask, or if that takes longer than QUIT_WAIT, the server is stopped outright, as Ctrl+C does. """
+        tray_quit.append(True)
+        print(TRAY_QUIT_MESSAGE, flush=True)
+        logging.info("Quit Vial was used on the tray icon")
+        loop, quit_server = getattr(app.state, "loop", None), getattr(app.state, "quit", None)
+        if loop is None or quit_server is None or loop.is_closed():
+            stop_server()
+            return
+        try:
+            future = asyncio.run_coroutine_threadsafe(quit_server(), loop)
+        except RuntimeError:  # the loop is gone
+            stop_server()
+            return
+
+        def stop_anyway():
+            try:
+                future.result(QUIT_WAIT)
+            except Exception as e:
+                log.warning("Quit Vial on the tray icon did not finish (%s): stopping the server outright",
+                            e.__class__.__name__)
+                stop_server()
+        threading.Thread(target=stop_anyway, name="tray quit", daemon=True).start()
 
     # the page says the web UI isn't built whenever the console does: also when web/dist is there without its page
     web_ui = None if missing_ui else resources.path(resources.WEB_DIST)
@@ -611,12 +664,19 @@ def serve(args, manager, sock):
     with console.StopOnConsoleClose(stop_server):
         try:
             # the socket is already listening: the URL works from now on
-            print(STARTED_MESSAGE.format(url=url, fake=" with a simulated keyboard" if args.fake else ""), flush=True)
+            print(STARTED_MESSAGE.format(url=url, fake=fake_text), flush=True)
             logging.info("serving on port %d", port)
+            if not args.no_tray:
+                icon = tray.make(TRAY_TITLE.format(fake=" (simulated keyboard)" if args.fake else ""), open_vial,
+                                 quit_from_tray)
+            if icon is not None:
+                print(TRAY_MESSAGE, flush=True)
             if not args.no_browser:
-                restore_library_path()
-                threading.Thread(target=webbrowser.open, args=[url], daemon=True).start()
-            server.run(sockets=[sock])
+                open_vial()
+            if icon is None:
+                server.run(sockets=[sock])
+            else:
+                tray.run(icon, lambda: server.run(sockets=[sock]), stop_server)
         except KeyboardInterrupt:
             pass  # uvicorn shuts down cleanly on Ctrl+C, then raises it again
         except Exception:

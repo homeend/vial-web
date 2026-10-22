@@ -31,6 +31,9 @@ def source_root(monkeypatch, tmp_path):
     settings = tmp_path / "src" / "main" / "resources" / "base"
     settings.mkdir(parents=True)
     (settings / "qmk_settings.json").write_text('{"tabs": []}', encoding="utf-8")
+    icons = tmp_path / "src" / "main" / "icons"
+    icons.mkdir(parents=True)
+    (icons / "Icon.ico").write_bytes(b"")
     return tmp_path
 
 
@@ -116,6 +119,7 @@ def test_pyinstaller_datas_put_each_resource_at_its_bundled_path(from_source, so
     assert resources.pyinstaller_datas() == [
         (os.path.join(str(source_root), "web", "dist"), "web"),
         (os.path.join(str(source_root), "src", "main", "resources", "base", "qmk_settings.json"), "."),
+        (os.path.join(str(source_root), "src", "main", "icons", "Icon.ico"), "."),
     ]
 
 

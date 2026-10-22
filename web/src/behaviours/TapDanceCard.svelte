@@ -8,6 +8,7 @@
   import { tapDanceIsSet } from "./entries";
   import { tapDanceSentence } from "./sentences";
   import UsedOn from "./UsedOn.svelte";
+  import Button from "../ui/Button.svelte";
 
   interface Props {
     td: TapDance;
@@ -26,6 +27,8 @@
     /** choose what a slot does (with the keycode picker) */
     onpickslot: (slot: SlotLabel) => void;
     onclearslot: (slot: SlotLabel) => void;
+    /** empty all four slots (the tapping term stays) */
+    onclear: () => void;
     /** resolves to whether the keyboard took it */
     onterm: (ms: number) => Promise<boolean>;
     onrename: () => void;
@@ -33,7 +36,8 @@
   }
 
   let {
-    td, model, names, positions, uses, canEdit, busy, target, editing, onpickslot, onclearslot, onterm, onrename, onopenuse,
+    td, model, names, positions, uses, canEdit, busy, target, editing, onpickslot, onclearslot, onclear, onterm, onrename,
+    onopenuse,
   }: Props = $props();
 
   /** the longest tapping term the server takes (schemas.TAPPING_TERM_MAX) */
@@ -161,7 +165,15 @@
     {#if termProblem}<p class="problem" id="tap-dance-{td.index}-term-problem" role="alert">{termProblem}</p>{/if}
   </div>
 
-  <UsedOn {uses} {names} {positions} keycode="TD({td.index})" onopen={onopenuse} />
+  <div class="end">
+    <UsedOn {uses} {names} {positions} keycode="TD({td.index})" onopen={onopenuse} />
+    {#if tapDanceIsSet(td)}
+      <Button id="tap-dance-{td.index}-clear" variant="danger" disabled={!canEdit} aria-disabled={busy || undefined}
+        title="Empties all four slots of tap dance {td.index}; the tapping term stays" onclick={() => !busy && onclear()}>
+        Clear
+      </Button>
+    {/if}
+  </div>
 </article>
 
 <style>
@@ -305,6 +317,22 @@
   .foot {
     display: grid;
     gap: 4px;
+  }
+
+  /* where it is used, and Clear at the right */
+  .end {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+  }
+
+  .end > :global(:first-child) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .end > :global(.btn) {
+    flex: none;
   }
 
   .term {

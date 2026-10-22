@@ -53,6 +53,28 @@ def test_quit_lets_go_of_the_keyboard_then_stops_the_server(quitting):
     assert stops == [{"keyboard": None, "stopped": True}]
 
 
+def test_quit_from_outside_does_what_quit_on_the_page_does(quitting):
+    """ Quit Vial on the tray icon: app.state.quit() on the server's loop, from another thread. The keyboard is let go
+    of, every tab is told and its link closed, then the server is stopped, once. """
+    client, manager, stops = quitting
+    device = manager.device
+    state = client.app.state
+    with client.websocket_connect(EVENTS, headers=ORIGIN) as tab:
+        assert tab.receive_json() == {"type": "connected"}
+        future = asyncio.run_coroutine_threadsafe(state.quit(), state.loop)
+        assert tab.receive_json() == {"type": "stopped"}
+        with pytest.raises(WebSocketDisconnect) as closed:
+            tab.receive_json()
+        assert closed.value.code == STOPPED_CLOSE_CODE
+        future.result(5)
+    assert device.closed
+    assert stops == [{"keyboard": None, "stopped": True}]
+    # asked again, from outside or from the page: the server is stopped once
+    asyncio.run_coroutine_threadsafe(state.quit(), state.loop).result(5)
+    assert client.post("/api/shutdown", headers=ORIGIN).status_code == 204
+    assert len(stops) == 1
+
+
 def test_quit_tells_every_tab_that_vial_stopped(quitting):
     client, manager, stops = quitting
     with client.websocket_connect(EVENTS, headers=ORIGIN) as first, \

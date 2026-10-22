@@ -208,3 +208,60 @@ test("a long layer name is renamed in a dialog that shows all of it, and cut sho
     await setLayerName(app, 2, before);
   }
 });
+
+test("the picker offers only the tap dances and macros set up, each with a card saying what it does", async ({ app }) => {
+  const model = await (await api(app).get("/api/keyboard")).json();
+  type Slot = { kind: string; code: string };
+  type TapDance = Record<"tap" | "hold" | "doubleTap" | "tapHold", Slot> & { index: number; tappingTerm: number };
+  const tapDances: TapDance[] = model.tapDance.filter((td: TapDance) =>
+    [td.tap, td.hold, td.doubleTap, td.tapHold].some((s) => s.kind !== "none"));
+  const macros = model.macros.items.filter((m: { actions: unknown[] }) => m.actions.length > 0)
+    .map((m: { index: number }) => m.index);
+  expect(tapDances.length).toBeGreaterThan(0);
+  expect(tapDances.length).toBeLessThan(model.tapDance.length);
+  expect(macros.length).toBeGreaterThan(0);
+  expect(macros.length).toBeLessThan(model.macros.items.length);
+
+  await app.locator(`[data-ref="key:${await keyIndex(app, 0, 1)}"]`).click();
+  await app.getByRole("button", { name: "Change key" }).click();
+  const picker = app.getByRole("dialog", { name: "Choose a keycode" });
+  await expect(picker).toBeVisible();
+  const card = picker.locator(".entry-card");
+
+  await picker.getByRole("tab", { name: "Tap dance" }).click();
+  const tdKeys = picker.locator(".grid .kc");
+  await expect(tdKeys).toHaveCount(tapDances.length);
+  await expect(picker.getByText("Only the tap dances set up are shown.")).toBeVisible();
+  // no browser tooltip, which comes late: a card at once, without the key's own TD(n)
+  await expect(tdKeys.first()).not.toHaveAttribute("title");
+  await tdKeys.first().hover();
+  await expect(card).toBeVisible({ timeout: 300 });
+  await expect(card).toContainText(`tapping term ${tapDances[0].tappingTerm} ms`);
+  await expect(card).toContainText("Tap, then hold");
+  await expect(card).not.toContainText(`TD(${tapDances[0].index})`);
+  await expect(card).toHaveAttribute("aria-hidden", "true");
+  // a screen reader hears the same from the key's description
+  await expect(tdKeys.first()).toHaveAccessibleDescription(/tapping term \d+ ms$/);
+  await screenshots(app, "picker-tap-dance-card");
+  await picker.getByRole("heading", { name: "Choose a keycode" }).hover();
+  await expect(card).toBeHidden();
+  // the keyboard's focus shows it too, and moving on hides it
+  await tdKeys.first().focus();
+  await expect(card).toBeVisible();
+  await picker.getByRole("searchbox", { name: "Search keycodes" }).focus();
+  await expect(card).toBeHidden();
+
+  await picker.getByRole("tab", { name: "Macros" }).click();
+  await expect(picker.locator(".grid .kc")).toHaveCount(macros.length + 5); // and the five dynamic macro keys
+  await expect(picker.getByRole("button", { name: /DYN_REC_START1/ })).toBeVisible();
+  await expect(picker.getByText("Only the macros set up are shown.")).toBeVisible();
+  await picker.locator(".grid .kc").first().hover();
+  await expect(card).toBeVisible({ timeout: 300 });
+  await expect(card.locator(".steps li").first()).toBeVisible();
+  await screenshots(app, "picker-macro-card");
+  // the dynamic macro keys keep the browser's tooltip, and get no card
+  await picker.getByRole("button", { name: /DYN_REC_START1/ }).hover();
+  await expect(card).toBeHidden();
+  await expect(picker.getByRole("button", { name: /DYN_REC_START1/ })).toHaveAttribute("title", /DYN_REC_START1/);
+  await picker.getByRole("button", { name: "Close" }).click();
+});

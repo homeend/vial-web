@@ -16,8 +16,10 @@ releases, see [get.vial.today](https://get.vial.today/).
 ## What it does
 
 - **Keymap:** every key on every layer. Click a key to see what it does on tap and on hold, and change it from a
-  picker. Find which keys type a character or send a key (`ą`, `@`, `Esc`, `MO(2)`). Drag a key onto another to swap
-  or copy it. Name your layers.
+  picker. The picker's Tap dance and Macros tabs list only the tap dances and macros that are set up. Pointing at one
+  (or moving to it with Tab) shows a card at once with what it does: a tap dance's four ways of pressing, or a
+  macro's steps, as coloured keycaps. Find which keys type a character or send a key (`ą`, `@`, `Esc`, `MO(2)`). Drag a key onto
+  another to swap or copy it. Name your layers.
 - **Overview:** all layers at once, how each one is reached (layer keys, tap dances, combos), and what is set up but
   never used.
 - **Arrange layers** (new in 0.9.0): move layers to other positions by dragging them or with ↑ and ↓. Every key that
@@ -26,6 +28,8 @@ releases, see [get.vial.today](https://get.vial.today/).
   before Apply; only what changes is written, and Undo puts the old order back. If writing stops partway (the keyboard
   unplugged, say), Vial offers to finish the arrange or put the layers back as they were.
 - **Tap dance, combos, macros, key overrides, alt-repeat:** a page each. Macros can be edited as text or recorded.
+  A tap dance's Clear empties its four slots at once (it asks first when keys use it); a combo, macro, key
+  override or alt-repeat key has Remove in its editor.
 - **QMK settings, lighting, layout options, matrix tester, reboot to bootloader.**
 - **Layout files:** save the whole layout to a `.vil` file and load one back, with a preview of what it changes.
 - **Learning:** a typing course for your own layout. The Fingers view proposes which finger rests on and
@@ -36,6 +40,11 @@ releases, see [get.vial.today](https://get.vial.today/).
   Nothing is written to the keyboard.
 - Several keyboards plugged in: choose which one to edit. Unlocking, when the keyboard asks for it.
 - Light and dark themes; key legends in your keyboard language.
+- **Tray icon** (new in 1.0.0): while Vial runs it shows an icon in the notification area (on Windows no console
+  window opens any more). Its menu has **Open Vial**, which opens the page in the browser, and **Quit Vial**, which
+  stops Vial. When the last tab closes, the icon says that Vial is still running. On Linux and macOS the icon
+  appears where the desktop has a tray or menu bar for it (see "Download and run"); without one, Vial runs as
+  before, from the terminal.
 
 ## Status
 
@@ -51,6 +60,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 | 7 | Firmware flasher (its logic is in `src/main/python/protocol/flasher.py`, without a UI yet) | optional |
 | 8 | Arrange layers: move layers, every layer reference and name follows ([design](docs/superpowers/specs/2026-10-21-arrange-layers-design.md)) | done (0.9.0) |
 | 9 | Learning: a typing course generated from the layout ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)) | done |
+| 10 | Tray icon instead of the console window: Open Vial and Quit Vial on its menu; Windows build without a console ([design](docs/superpowers/specs/2026-10-22-tray-icon-design.md)) | done |
 
 Design: [`docs/superpowers/specs/2026-10-15-vial-web-ui-design.md`](docs/superpowers/specs/2026-10-15-vial-web-ui-design.md).
 Roadmap: [`docs/superpowers/plans/2026-10-15-roadmap-phases-2-7.md`](docs/superpowers/plans/2026-10-15-roadmap-phases-2-7.md).
@@ -71,16 +81,25 @@ file's executable bit: `chmod +x vial` gives it back.
 Close Vial's Qt app or another configurator first: they would use the keyboard at the same time.
 
 - **Windows:** `Vial.exe` (in a release, `Vial-<version>-windows-x64.exe`). Put it in any folder and double-click it.
-  A console window opens and shows the link, and the browser opens it. The file isn't signed: if SmartScreen stops
-  it, choose *More info*, then *Run anyway*.
+  The browser opens Vial, and Vial's icon appears in the notification area (no console window). Windows 11 puts a
+  new icon in the hidden part of the notification area, behind the `^` at the right of the taskbar, until you drag it
+  onto the taskbar. The icon's menu has **Open Vial** and **Quit Vial**. The file isn't signed: if SmartScreen stops
+  it, choose *More info*, then *Run anyway*. Started from a terminal (`Vial.exe --fake`), it prints nothing there
+  and the prompt comes back at once, as with any windowed program: the link is in the browser, in `vial.log`, and
+  in the terminal only when the output is redirected (`Vial.exe --no-tray > out.txt`).
 - **Linux:** `vial`, built on Ubuntu 22.04 (it needs glibc 2.35 or newer). Unpack it and run it from a terminal:
   `tar -xzf vial-<version>-linux-x64.tar.gz && ./vial`. Vial needs a udev rule to see keyboards: add it as
   [get.vial.today's Linux instructions](https://get.vial.today/manual/linux-udev.html) say, then plug the keyboard in
-  again.
+  again. The terminal shows the link as before; on an X11 session whose panel takes tray icons (XFCE, MATE,
+  Cinnamon, KDE Plasma, among others), Vial also shows its icon, which opens Vial when clicked (the executable's
+  icon has no menu on Linux: Quit is on the page, or Ctrl+C). On Wayland, or on GNOME without its AppIndicator
+  extension, there is no icon and Vial runs as before. Run from source with the system's PyGObject installed, the
+  icon has its menu too.
 - **macOS** (Apple silicon): `vial`, built as is and not tested beyond the CI's smoke test. It isn't signed with a
   developer certificate or notarized. Run `tar -xzf vial-<version>-macos-arm64.tar.gz && ./vial` in Terminal (for an
   artifact: `chmod +x vial && ./vial`); if macOS refuses to open it, run
-  `xattr -d com.apple.quarantine vial`, then `./vial` again.
+  `xattr -d com.apple.quarantine vial`, then `./vial` again. Vial's icon appears in the menu bar, with Open Vial and
+  Quit Vial on its menu, and Vial stays out of the Dock.
 
 To try it without a keyboard, start it with `--fake`: it serves a simulated Corne and never looks for real hardware.
 
@@ -95,15 +114,19 @@ are kept apart: each has its own lock and session file).
 ### Quit
 
 **Quit Vial** at the right of the top bar stops Vial: it lets go of the keyboard, every open tab says that Vial has
-stopped and that you can close the tab, and Vial exits (a console window it opened closes). It asks first when there
-is work not saved (a combo being edited, the Settings page's changes, lighting not saved). It asks only about the tab
-Quit is used in: work not saved in other open tabs is lost too. Pressing Ctrl+C in the console window, or closing that
-window, stops Vial too, closing the keyboard first. On Linux and macOS, `kill` (SIGTERM) and closing the terminal
-(SIGHUP) stop it cleanly as well, unless it was started with `nohup`, which keeps it running when the terminal closes.
-At Windows log-off or shutdown, Windows ends Vial without its cleanup, and the system releases the keyboard.
+stopped and that you can close the tab, and Vial exits (its tray icon goes).
+It asks first when there is work not saved (a combo being edited, the Settings page's changes, lighting not saved).
+It asks only about the tab Quit is used in: work not saved in other open tabs is lost too. **Quit Vial** on the tray
+icon's menu stops Vial the same way, without asking about unsaved work. Pressing Ctrl+C in the terminal Vial was
+started from, or closing that window on Windows, stops Vial too, closing the keyboard first. On Linux and
+macOS, `kill` (SIGTERM) and closing the terminal (SIGHUP) stop it cleanly as well, unless it was started with
+`nohup`, which keeps it running when the terminal closes. At Windows log-off or shutdown, Windows ends Vial without
+its cleanup, and the system releases the keyboard.
 
-Closing the browser tabs doesn't stop Vial: once the last one has closed, the console says that Vial is still running
-and prints the link to reopen it.
+Closing the browser tabs doesn't stop Vial: once the last one has closed, the tray icon shows a notification that
+Vial is still running (on Windows and macOS, and on Linux when run from source with PyGObject), and a console or
+terminal says so and prints the link to reopen it. **Open Vial** on the icon's menu opens the page again (on Windows
+and Linux, a click on the icon does the same).
 
 ### Command-line options
 
@@ -118,9 +141,10 @@ and prints the link to reopen it.
 | `--second-definition FILE` | With `--fake`: the second simulated keyboard, plugged in by the tests' hook |
 | `--port PORT` | Port to listen on (default: any free port) |
 | `--no-browser` | Don't open the browser; the link with its session token is printed |
+| `--no-tray` | Don't show the tray icon; the link is printed and in `vial.log`. The tests and the smoke test use it |
 | `--dry-run` | Connect, print a summary of the keyboard and exit |
 | `--data-dir DIR` | Keep the lock, session file, log, names and Learning files in `DIR` instead of the user folders (below); a `--fake` Vial keeps them in `DIR/fake` |
-| `--self-check` | Check that this build has everything it needs (hidapi, the server, the web UI) and exit, without looking for any keyboard |
+| `--self-check` | Check that this build has everything it needs (hidapi, the server, the web UI, the tray icon's libraries) and exit, without looking for any keyboard |
 | `--version` | Print Vial's version and exit |
 
 The server listens on `127.0.0.1` only, and answers (apart from a health check) only pages opened through the
@@ -191,7 +215,22 @@ changes to `web/`. See [`web/README.md`](web/README.md).
 
 ### Building the executable
 
-Run these from the repository root, with the venv active (see above: its Python has PyInstaller and the other
+In one go, with Python 3.13 and Node 24 installed:
+
+```sh
+build-local.cmd       # Windows (cmd or PowerShell): dist\Vial.exe
+./build-local.sh      # Linux, macOS: dist/vial
+```
+
+Each script activates the venv `.venv`, creating it when there is none, and installs the Python requirements when
+they changed since they were last installed. On Windows `build-local.cmd` does this with `use-python.cmd` (scoop's
+Python 3.13, or the one `VIAL_PYTHON_HOME` names); `build-local.sh` uses `python3.13`, or the Python that `PYTHON`
+names (`PYTHON=/path/to/python3.13 ./build-local.sh`). It then runs `npm ci` in `web/` when `web/package-lock.json`
+changed since it last ran, and does steps 1–3 below. It stops at the first step that fails and says which one; on
+success it prints where the executable is. On Debian and Ubuntu, creating the venv needs the `python3.13-venv`
+package.
+
+The same steps by hand, from the repository root, with the venv active (see above: its Python has PyInstaller and the other
 packages of `requirements.txt`). Each system builds only its own executable: build the Linux one on Linux.
 
 1. Build the web UI. The executable carries it inside, so build it again after changes to `web/`:
@@ -207,8 +246,9 @@ packages of `requirements.txt`). Each system builds only its own executable: bui
    python -m PyInstaller vial.spec
    ```
 
-   It is one file that you can copy anywhere and run: the Python runtime, hidapi, the web UI and
-   `qmk_settings.json` are inside it (on Windows, it is a console app with Vial's icon and version info).
+   It is one file that you can copy anywhere and run: the Python runtime, hidapi, the web UI, `qmk_settings.json`
+   and the tray icon's libraries (pystray, Pillow) are inside it. On Windows it is a windowed app, without a
+   console, with Vial's icon and version info; on Linux and macOS a terminal program.
    `vial.spec` refuses to build without the web UI of step 1. PyInstaller also leaves its working files in `build/`;
    you can delete that folder. The version is set in `src/main/python/version.py`.
 
@@ -219,7 +259,7 @@ packages of `requirements.txt`). Each system builds only its own executable: bui
    ```
 
    The smoke test changes nothing in the executable and never uses a real keyboard. It runs `--self-check` (the
-   executable checks that it has everything it needs), then starts it with `--fake --no-browser` and a temporary
+   executable checks that it has everything it needs), then starts it with `--fake --no-browser --no-tray` and a temporary
    data dir, reads `/api/session`, quits it through `/api/shutdown` as **Quit Vial** does, and checks that it exits
    with 0. It prints `smoke test passed: …`, or `smoke test FAILED: …` with the executable's output.
 

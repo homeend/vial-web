@@ -12,6 +12,8 @@
           var theme = localStorage.getItem("vial.theme");
           if (theme === "light" || theme === "dark") document.documentElement.setAttribute("data-theme", theme);
         } catch (e) {}
+        // Windows: the UI font with its capitals centred (src/app.css, "Vial Segoe UI")
+        if (/Windows/.test(navigator.userAgent)) document.documentElement.setAttribute("data-os", "windows");
       })();
     </script>
   </head>
