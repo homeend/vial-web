@@ -940,9 +940,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         uid, built = keyboard_dict(lang)
         return store.export(uid, built, lang)
 
-    def summaries(store, uid, built, entries):
+    def summaries(store, uid, built, entries, lang):
         """ The listing entries with outOfDate: the keyboard's hash now, computed once, against each set's """
-        current = learning_layout.export(built, store.fingers(uid))["hash"]
+        current = learning_layout.export(built, store.fingers(uid), lang)["hash"]
         return [schemas.LessonSetSummary(**entry, outOfDate=entry["layoutHash"] is not None
                                          and entry["layoutHash"] != current) for entry in entries]
 
@@ -953,7 +953,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         a file that isn't a lesson set is listed with its error """
         store = learning_store()
         uid, built = keyboard_dict(lang)
-        return summaries(store, uid, built, store.sets(uid))
+        return summaries(store, uid, built, store.sets(uid), lang)
 
     @app.post("/api/learning/sets", response_model=schemas.LessonSetImported, status_code=201)
     async def import_lesson_set(request: Request, lang: Lang = languages.DEFAULT):
@@ -964,11 +964,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         languages.overrides(lang)  # an unknown language is refused before the file is read
         store = learning_store()
         raw = await read_limited(request, MAX_LESSON_SET)
-        data = json.loads(raw.decode("utf-8-sig"))  # ValueError (422) when it isn't JSON
-        if not isinstance(data, dict):
-            raise HTTPException(422, "the file isn't a JSON object")
 
         def do():
+            data = json.loads(raw.decode("utf-8-sig"))  # ValueError (422) when it isn't JSON
+            if not isinstance(data, dict):
+                raise HTTPException(422, "the file isn't a JSON object")
             uid, built = keyboard_dict(lang)
             export = learning_layout.export(built, store.fingers(uid), lang)
             entry = store.import_set(uid, data, export)
@@ -1011,12 +1011,14 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.get("/api/learning/settings", response_model=schemas.LearningSettings)
     def learning_settings():
+        """ The pass accuracy, the target WPM and whether the picture shows in word exercises """
         store = learning_store()
         uid = read(model.uid_of)
         return store.settings(uid)
 
     @app.put("/api/learning/settings", response_model=schemas.LearningSettings)
     def set_learning_settings(body: schemas.LearningSettingsIn):
+        """ Saves them; 422 outside their ranges """
         store = learning_store()
         uid = read(model.uid_of)
         return store.set_settings(uid, body.model_dump())

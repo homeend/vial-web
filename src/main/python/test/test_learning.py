@@ -587,3 +587,51 @@ def test_learning_routes_need_a_keyboard(client):
     assert client.get("/api/learning/sets").status_code == 503
     assert client.get("/api/learning/settings").status_code == 503
     assert client.post("/api/learning/sets", json=example("corne-sim-en.json")).status_code == 503
+
+
+def test_a_learning_write_meant_for_another_keyboard_is_refused_and_writes_nothing(client, root):
+    other = {"x-vial-keyboard": "some-other-keyboard"}
+    fingers = {"keys": {}, "home": []}
+    reply = client.put("/api/learning/fingers", json=fingers, headers=other)
+    assert reply.status_code == 409, reply.text
+    settings = {"passAccuracy": 90, "targetWpm": 40, "pictureInWords": False}
+    assert client.put("/api/learning/settings", json=settings, headers=other).status_code == 409
+    assert client.post("/api/learning/sets", json=example("corne-sim-en.json"), headers=other).status_code == 409
+    assert not root.exists() or not any(root.rglob("*"))
+    assert client.get("/api/learning/fingers").json()["proposal"] is True
+
+
+def test_an_oversized_lesson_set_is_refused(client, root):
+    from server import app as app_module
+    big = b" " * (app_module.MAX_LESSON_SET + 1)
+    assert client.post("/api/learning/sets", content=big).status_code == 413
+    assert client.post("/api/learning/sets", content=iter([big[:1000], big[1000:]])).status_code == 413
+    assert client.get("/api/learning/sets").json() == []
+
+
+def test_importing_the_same_id_again_replaces_the_file_even_a_broken_one(client, root):
+    data = example("corne-sim-en.json")
+    path = root / UID / "sets" / "corne-sim-en.json"
+    assert client.post("/api/learning/sets", json=data).status_code == 201
+    again = {**data, "title": "A new title"}
+    assert client.post("/api/learning/sets", json=again).status_code == 201
+    assert [s["title"] for s in client.get("/api/learning/sets").json()] == ["A new title"]
+    path.write_text("{garbage", encoding="utf-8")
+    assert client.get("/api/learning/sets").json()[0]["error"]
+    assert client.post("/api/learning/sets", json=data).status_code == 201
+    assert json.loads(path.read_text(encoding="utf-8")) == data
+    assert (path.parent / "corne-sim-en.json.corrupt").read_text(encoding="utf-8") == "{garbage"
+    listed = client.get("/api/learning/sets").json()
+    assert [(s["title"], s["error"]) for s in listed] == [(data["title"], None)]
+
+
+def test_a_set_goes_out_of_date_when_the_keymap_changes_and_back(client):
+    assert client.post("/api/learning/sets", json=example("corne-sim-en.json")).status_code == 201
+    assert client.get("/api/learning/sets").json()[0]["outOfDate"] is False
+    kb = client.get("/api/keyboard").json()
+    index = next(i for i, k in enumerate(kb["layers"][0]["keys"]) if k["tap"] == "S")  # whatever it is wrapped in
+    row, col, original = kb["keys"][index]["row"], kb["keys"][index]["col"], kb["layers"][0]["keys"][index]["code"]
+    assert client.put("/api/keymap/0/{}/{}".format(row, col), json={"code": "KC_X"}).status_code == 200
+    assert client.get("/api/learning/sets").json()[0]["outOfDate"] is True
+    assert client.put("/api/keymap/0/{}/{}".format(row, col), json={"code": original}).status_code == 200
+    assert client.get("/api/learning/sets").json()[0]["outOfDate"] is False

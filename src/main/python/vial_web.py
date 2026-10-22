@@ -110,7 +110,7 @@ def data_dir(fake):
 
 
 def config_dir(fake):
-    """ Holds names.json of real mode, or (fake=True) of fake mode """
+    """ Holds names.json and learning/ of real mode, or (fake=True) of fake mode """
     return _mode_dir(_data_root or platformdirs.user_config_dir(APP_NAME, appauthor=False), fake)
 
 
