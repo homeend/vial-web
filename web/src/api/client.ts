@@ -2,11 +2,12 @@
 import { ApiError } from "./errors";
 import type { paths } from "./schema";
 
-type Method = "get" | "put" | "post";
+type Method = "get" | "put" | "post" | "delete";
 type Operation<P extends keyof paths, M extends Method> = paths[P][M];
 type Json<T> = T extends { content: { "application/json": infer R } } ? R : never;
-/** the reply's JSON; null for a route that answers nothing (204) */
+/** the reply's JSON (200, or 201 for a route that makes something); null for a route that answers nothing (204) */
 type Reply<Op> = Op extends { responses: { 200: infer R } } ? Json<R>
+  : Op extends { responses: { 201: infer R } } ? Json<R>
   : Op extends { responses: { 204: unknown } } ? null : never;
 type Body<Op> = Op extends { requestBody: { content: { "application/json": infer B } } } ? B : undefined;
 type PathParams<Op> = Op extends { parameters: { path: infer P } } ? P : undefined;
@@ -48,6 +49,12 @@ function codeOf(body: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
+/** The refusal's findings, one by one, when the server lists them (a lesson set the checker refuses) */
+function errorsOf(body: unknown): string[] | undefined {
+  const errors = (body as { errors?: unknown } | null)?.errors;
+  return Array.isArray(errors) ? errors.filter((e): e is string => typeof e === "string") : undefined;
+}
+
 export async function request<P extends keyof paths, M extends Method>(
   method: M,
   path: P,
@@ -68,7 +75,7 @@ export async function request<P extends keyof paths, M extends Method>(
     body,
   });
   const reply: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiError(response.status, detailOf(reply), codeOf(reply));
+  if (!response.ok) throw new ApiError(response.status, detailOf(reply), codeOf(reply), errorsOf(reply));
   return reply as Reply<Operation<P, M>>;
 }
 

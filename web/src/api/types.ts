@@ -52,3 +52,12 @@ export type RgbLight = Schemas["RgbLight"];
 export type Backlight = Schemas["Backlight"];
 /** what /api/events sends */
 export type ServerEvent = Schemas["Event"];
+// the Learning feature's (docs/learning/lesson-format.md); the lesson set and the layout export come as the server
+// read them from their files, and learning/types.ts says their shape (readLessonSet, LayoutExport)
+export type FingersIn = Schemas["FingersIn"];
+export type LayoutExportReply = Schemas["LayoutExport"];
+export type LessonSetSummary = Schemas["LessonSetSummary"];
+export type LessonSetImported = Schemas["LessonSetImported"];
+export type LessonSetReply = Schemas["LessonSet"];
+export type AttemptIn = Schemas["AttemptIn"];
+export type LearningSettingsIn = Schemas["LearningSettingsIn"];
