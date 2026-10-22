@@ -3,8 +3,8 @@
 
     python util/smoke_test.py dist/Vial.exe        (or dist/vial; any command that runs Vial)
 
-Vial runs with --fake (the simulated keyboard: no keyboard is looked for or opened), --no-browser and a temporary
---data-dir. It checks `--self-check`, then waits for the link Vial prints, reads GET /api/session (a connected
+Vial runs with --fake (the simulated keyboard: no keyboard is looked for or opened), --no-browser, --no-tray (no icon
+in the notification area: the runner may have none, and the link is read from the output) and a temporary --data-dir. It checks `--self-check`, then waits for the link Vial prints, reads GET /api/session (a connected
 simulated keyboard), quits with POST /api/shutdown, and checks that Vial exits with 0 by itself. Prints how long it
 took to start. Python's standard library only. Exits 1 on any failure, and stops whatever it started first.
 """
@@ -140,7 +140,7 @@ def main(command):
     self_check(command)
     data_dir = tempfile.mkdtemp(prefix="vial-smoke-")
     started = time.monotonic()
-    vial = start(command + ["--fake", "--no-browser", "--data-dir", data_dir],
+    vial = start(command + ["--fake", "--no-browser", "--no-tray", "--data-dir", data_dir],
                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
     output = []
     shutdown = None

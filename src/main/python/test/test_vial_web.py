@@ -17,14 +17,17 @@ import uvicorn
 
 import console
 import resources
+import tray
 import version
 import vial_web
 from protocol.unlock_hook import set_unlock_handler
+from server import app as app_module
 from server import device as device_module
 from server.device import DeviceManager, HidBackend
 from simulator.corne import LIGHTING, definition, encode
 from simulator.device import SimulatedHidDevice
 from test.test_core_isolation import run_isolated
+from test.test_tray import FakeIcon
 
 LAYOUT_2x2 = {"name": "Tiny", "matrix": {"rows": 2, "cols": 2},
               "layouts": {"keymap": [["0,0", "0,1"], ["1,0", "1,1"]]}}
@@ -43,6 +46,21 @@ def reset_data_dir():
     """ main(["--data-dir", ...]) and use_data_dir() choose the data dir for the whole process """
     yield
     vial_web.use_data_dir(None)
+
+
+@pytest.fixture(autouse=True)
+def no_tray_icon(monkeypatch):
+    """ main() shows a tray icon by default where it can: never in the tests. Returns what tray.make was asked for
+    (the title and the Open Vial and Quit Vial callbacks); a test that wants an icon sets a FakeIcon as tray.make's
+    answer. """
+    asked = []
+
+    def make(title, open_vial, quit_vial):
+        asked.append({"title": title, "open": open_vial, "quit": quit_vial})
+        return make.icon
+    make.icon = None
+    monkeypatch.setattr(tray, "make", make)
+    return asked
 
 
 @pytest.fixture
@@ -592,6 +610,94 @@ def test_quit_on_the_page_stops_the_server_once_the_keyboard_is_let_go_of(home, 
     assert fake_server.seen["closed"] == [True]  # by the time it answered
     assert fake_server.seen["server"].should_exit is True  # uvicorn stops
     assert capsys.readouterr().out.count(vial_web.QUIT_MESSAGE) == 1  # asked twice, said once
+    assert not os.path.exists(vial_web.session_file(True))
+
+
+# ---------- the tray icon ----------
+
+def test_the_tray_icon_is_asked_for_by_default_and_not_with_no_tray(home, fake_server, no_tray_icon, capsys):
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert [a["title"] for a in no_tray_icon] == ["Vial (simulated keyboard)"]
+    assert vial_web.TRAY_MESSAGE not in capsys.readouterr().out  # none could be made (tray.make said None)
+    assert vial_web.main(["--fake", "--no-browser", "--no-tray"]) == 0
+    assert len(no_tray_icon) == 1
+    assert vial_web.TRAY_TITLE.format(fake="") == "Vial"  # a real keyboard's
+
+
+def test_with_an_icon_the_server_runs_in_a_thread_and_quit_on_the_icon_stops_it(home, fake_server, no_tray_icon,
+                                                                                 capsys):
+    icon = FakeIcon()
+    tray.make.icon = icon
+    seen = fake_server.seen
+
+    def quit_on_the_icon():
+        seen["serving thread"] = threading.current_thread()
+        no_tray_icon[0]["quit"]()
+        seen["should exit"] = seen["server"].should_exit
+    fake_server.while_serving = quit_on_the_icon
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert seen["serving thread"] is not threading.main_thread()
+    assert seen["should exit"] is True
+    assert icon.ran_in is threading.main_thread()
+    assert icon.stopped.is_set() and icon.visible is False
+    out = capsys.readouterr().out
+    assert vial_web.TRAY_MESSAGE in out and vial_web.TRAY_QUIT_MESSAGE in out
+    assert not os.path.exists(vial_web.session_file(True))
+
+
+def test_open_vial_on_the_icon_opens_the_browser(home, fake_server, no_tray_icon):
+    tray.make.icon = FakeIcon()
+
+    def open_from_the_icon():
+        no_tray_icon[0]["open"]()
+    fake_server.while_serving = open_from_the_icon
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    url = fake_server.seen["session"]["url"]
+    for _ in range(100):  # the browser is opened from a thread
+        if home:
+            break
+        threading.Event().wait(0.02)
+    assert home == [url]
+
+
+def test_the_last_tab_closing_notifies_from_the_icon(home, fake_server, no_tray_icon, monkeypatch, capsys):
+    icon = FakeIcon()
+    tray.make.icon = icon
+    create_app = app_module.create_app
+    seen = {}
+
+    def recording_create_app(*args, **kwargs):
+        seen["all gone"] = kwargs["on_all_clients_gone"]
+        return create_app(*args, **kwargs)
+    monkeypatch.setattr(app_module, "create_app", recording_create_app)
+    fake_server.while_serving = lambda: seen["all gone"]()
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert icon.notifications == [tray.STILL_RUNNING]
+    assert fake_server.seen["session"]["url"] in capsys.readouterr().out  # the reopen message is printed too
+
+
+def test_ctrl_c_with_an_icon_stops_cleanly(home, fake_server, no_tray_icon, monkeypatch):
+    """ Ctrl+C reaches the main thread, inside the icon's loop: the server (in its thread) is asked to stop, and Vial
+    ends as it does on Ctrl+C without an icon """
+    icon = FakeIcon(raise_in_run=KeyboardInterrupt())
+    tray.make.icon = icon
+    stop_asked = threading.Event()
+
+    class Stoppable(fake_server):
+        """ serves until should_exit is set, as uvicorn does """
+        @property
+        def should_exit(self):
+            return stop_asked.is_set()
+
+        @should_exit.setter
+        def should_exit(self, value):
+            if value:
+                stop_asked.set()
+    monkeypatch.setattr(uvicorn, "Server", Stoppable)
+    fake_server.while_serving = lambda: stop_asked.wait(5) or pytest.fail("stop() was never called")
+    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert stop_asked.is_set()
+    assert icon.visible is False
     assert not os.path.exists(vial_web.session_file(True))
 
 

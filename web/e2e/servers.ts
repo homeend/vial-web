@@ -1,4 +1,4 @@
-// Starts a `vial_web.py --fake --no-browser` server (or the Vial executable, see below), on a free port with its own
+// Starts a `vial_web.py --fake --no-browser --no-tray` server (or the Vial executable, see below), on a free port with its own
 // temporary data dir, and stops it: the simulated keyboards the tests use (see SERVERS). Each test worker starts its
 // own (fixtures.ts), so tests that run at the same time never share a keyboard. The URLs carry the session token.
 //
@@ -248,7 +248,7 @@ export async function startServer(extraArgs: string[]): Promise<TestServer> {
   try {
     server = spawn(
       vial.file,
-      [...vial.args, "--fake", "--no-browser", "--port", "0", "--data-dir", dataDir, ...extraArgs],
+      [...vial.args, "--fake", "--no-browser", "--no-tray", "--port", "0", "--data-dir", dataDir, ...extraArgs],
       {
         cwd: vial.cwd,
         stdio: ["ignore", "pipe", "pipe"],

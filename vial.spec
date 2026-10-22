@@ -1,6 +1,7 @@
 # -*- mode: python -*-
 # PyInstaller spec: Vial as one executable file, which unpacks itself to a temporary folder at start (one-file mode).
-# Windows: dist/Vial.exe, a console app with Vial's icon and version info. Linux and macOS: dist/vial.
+# Windows: dist/Vial.exe, a windowed app (no console: Vial shows an icon in the notification area instead) with Vial's
+# icon and version info. Linux and macOS: dist/vial, run from a terminal, with the icon where the desktop has a tray.
 #
 # Build it from the repository root, once the web UI is built (see README.md):
 #     cd web && npm ci && npm run build && cd ..
@@ -32,6 +33,9 @@ HIDDEN_IMPORTS = [
     "websockets",
     # hidapi: hidproxy imports its hidraw backend on Linux, its default one elsewhere
     "hidraw" if sys.platform.startswith("linux") else "hid",
+    # the tray icon (tray.py): pystray picks its backend by name at run time, and Pillow its plugin for Icon.ico
+    "pystray._win32" if WINDOWS else "pystray._darwin" if sys.platform == "darwin" else "pystray._xorg",
+    "PIL.IcoImagePlugin",
 ]
 
 EXCLUDES = [
@@ -39,6 +43,11 @@ EXCLUDES = [
     "tkinter",
     "PyQt5",
     "pytest",
+    # pystray's GTK and AppIndicator backends need the system's PyGObject, which the executable can't carry: it
+    # takes the plain X11 backend on Linux (tray.py)
+    "gi",
+    "pystray._appindicator",
+    "pystray._gtk",
     # the build's own tools, which PyInstaller's analysis otherwise pulls in through optional imports
     "setuptools",
     "pkg_resources",
@@ -83,7 +92,9 @@ exe = EXE(  # noqa: F821
     a.datas,
     [],
     name="Vial" if WINDOWS else "vial",
-    console=True,  # the window shows the link and the reopen message; closing it stops Vial
+    # Windows: no console window; the tray icon stands in for it (--no-tray: the link is in vial.log, and printed to
+    # whatever Vial's output is redirected to). Linux and macOS: a terminal program, as it is run from one.
+    console=not WINDOWS,
     debug=False,
     strip=False,
     upx=False,
