@@ -966,7 +966,10 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         raw = await read_limited(request, MAX_LESSON_SET)
 
         def do():
-            data = json.loads(raw.decode("utf-8-sig"))  # ValueError (422) when it isn't JSON
+            try:
+                data = json.loads(raw.decode("utf-8-sig"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                raise HTTPException(422, "the file isn't JSON: {}".format(e))
             if not isinstance(data, dict):
                 raise HTTPException(422, "the file isn't a JSON object")
             uid, built = keyboard_dict(lang)

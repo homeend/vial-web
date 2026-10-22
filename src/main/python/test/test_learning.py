@@ -536,7 +536,9 @@ def test_import_refuses_a_bad_file_with_the_checkers_errors(client):
     assert client.get("/api/learning/sets").json() == []
     # not a lesson set at all
     assert client.post("/api/learning/sets", json=[1, 2]).status_code == 422
-    assert client.post("/api/learning/sets", content=b"{not json").status_code == 422
+    not_json = client.post("/api/learning/sets", content=b"{not json")
+    assert not_json.status_code == 422 and not_json.json()["detail"].startswith("the file isn't JSON: ")
+    assert client.post("/api/learning/sets", content=b"\xff\xfe").status_code == 422
     assert client.post("/api/learning/sets", json={"format": "x"}).json()["errors"][0].startswith("format:")
     assert client.post("/api/learning/sets?lang=klingon", json=data).status_code == 422
 
