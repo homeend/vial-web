@@ -8,7 +8,8 @@ import { api, expect, open, openSection, restoreAll, serverUrl, test } from "./f
 // and the back button, a set file that isn't a lesson set, what a keydown means in the typing area, the picture in
 // word exercises, Escape saving nothing, Next at the end of a lesson and of the set, a failed save, a lesson file's
 // oddities (a character listed twice, a new entry without a key, long titles), the import's findings, the settings
-// dialog's refusal, the out-of-date banner while the export loads, and the Fingers view's resting switch and failures.
+// dialog's refusal, the out-of-date banner while the export loads, the Fingers view's resting switch and failures, and
+// Reset progress.
 // The keys are typed as keydown events dispatched on the typing area (keys.ts decides what counts), so an exercise is
 // typed in a moment. Nothing touches the keyboard; the sets, the fingers and the settings are put back after each test.
 
@@ -356,6 +357,49 @@ test("a result the server doesn't take stays on the page, marked not saved", asy
     await expect(result.getByRole("button", { name: "Again" })).toBeVisible();
     await app.unrouteAll();
     expect(await progressOf(app, exercise.id)).toEqual(before);
+  } finally {
+    await putBack(app);
+  }
+});
+
+test("Reset progress forgets every attempt of the set, goes once there is nothing to reset, and gives the focus back", async ({ app }) => {
+  const exercise = lesson1.exercises[0];
+  const reset = app.getByRole("button", { name: "Reset progress" });
+  const select = app.getByRole("combobox", { name: "Lesson set" });
+  const rows = app.getByRole("list", { name: `Lessons of ${example.title}` }).getByRole("button");
+  const attempt = { at: new Date().toISOString(), chars: 40, errors: 0, seconds: 20 };
+  try {
+    await importExample(app);
+    // an attempt recorded, read with the set when the page shows again
+    expect((await api(app).put(`/api/learning/progress/${SET}/${exercise.id}`, attempt)).ok()).toBe(true);
+    await app.reload();
+    await openSection(app, "Learning");
+    await expect(select).toHaveValue(SET);
+    await expect(lessonRow(app, lesson1)).toHaveText(new RegExp(`^1\\s*${lesson1.title}\\s*\\S`)); // done, or passed
+    await reset.click();
+    const dialog = app.getByRole("dialog", { name: `Reset the progress of ${example.title}?` });
+    await expect(dialog.getByText("Every attempt and best is forgotten; the lessons stay.")).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await app.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(reset).toBeFocused(); // cancelled: back on the button, which stays
+    // a reset the server refuses: a toast, the dialog stays, the progress too
+    await app.route(new RegExp(`/api/learning/progress/${SET}(\\?|$)`), (route) =>
+      route.request().method() === "DELETE" ? route.fulfill(FAILING) : route.fallback());
+    await reset.click();
+    await dialog.getByRole("button", { name: "Reset" }).click();
+    await expect(app.getByRole("region", { name: "Notifications" }).getByText(/^Resetting the progress failed/)).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await app.unrouteAll();
+    await dialog.getByRole("button", { name: "Reset" }).click();
+    await expect(dialog).toBeHidden();
+    // every row shows its empty state at once, the server has nothing, and the button is gone: the selector has the focus
+    for (const [i, lesson] of example.lessons.entries()) {
+      await expect(rows.nth(i)).toHaveText(new RegExp(`^${i + 1}\\s*${lesson.title}\\s*$`));
+    }
+    expect((await (await api(app).get(`/api/learning/progress/${SET}`)).json()).exercises).toEqual({});
+    await expect(reset).toHaveCount(0);
+    await expect(select).toBeFocused();
   } finally {
     await putBack(app);
   }

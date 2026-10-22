@@ -83,6 +83,8 @@ export const api = {
   /** an exercise typed to the end; the server computes accuracy and WPM and keeps the best */
   recordAttempt: (set: string, exercise: string, body: AttemptIn) =>
     request("put", "/api/learning/progress/{set}/{exercise}", { params: { set, exercise }, body }),
+  /** forgets the set's progress, every attempt and best (204, also when nothing was recorded); the set stays */
+  resetLearningProgress: (set: string) => request("delete", "/api/learning/progress/{set}", { params: { set } }),
   /** the pass accuracy, the target speed and whether the picture names keys in words */
   learningSettings: () => request("get", "/api/learning/settings"),
   setLearningSettings: (body: LearningSettingsIn) => request("put", "/api/learning/settings", { body }),

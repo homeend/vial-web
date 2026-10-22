@@ -33,6 +33,9 @@
     ? [{ value: "", label: "No lesson set yet" }]
     : sets.map((s) => ({ value: s.id, label: choiceLabel(s) })));
   const stale = $derived(set !== null && outOfDate(set, learning.export?.hash));
+  /** the set open has something to forget: an exercise with a best or an attempt */
+  const hasProgress = $derived(set !== null
+    && Object.values(learning.progress?.exercises ?? {}).some((e) => e.best || e.attempts.length > 0));
   const rows = $derived(set
     ? set.lessons.map((lesson, i) => ({ lesson, number: i + 1,
       state: lessonStateText(lessonStatus(lesson, learning.progress, learning.settings)) }))
@@ -44,6 +47,7 @@
   /** the checker's findings on the file refused; the warnings on the one taken */
   let findings = $state<{ tone: "errors" | "warnings"; name: string; lines: string[] } | null>(null);
   let removing = $state(false);
+  let resetting = $state(false);
   let settingsOpen = $state(false);
 
   async function importFile(file: File) {
@@ -117,6 +121,9 @@
         e.currentTarget.value = "";
         if (file) void importFile(file);
       }} />
+    {#if hasProgress}
+      <Button id="reset-progress" onclick={() => (resetting = true)}>Reset progress</Button>
+    {/if}
     {#if chosenEntry}
       <Button variant="danger" onclick={() => (removing = true)}>Remove</Button>
     {/if}
@@ -169,6 +176,15 @@
     removing = false;
     // the last set removed: the selector is disabled, so the focus goes to Import (never to the body)
     void tick().then(() => document.getElementById(learning.sets.length === 0 ? "import-lessons" : "lesson-set")?.focus());
+  }} />
+
+<ConfirmDialog open={resetting} title="Reset the progress of {chosenEntry?.title ?? 'the lesson set'}?"
+  message="Every attempt and best is forgotten; the lessons stay."
+  confirmLabel="Reset" danger onconfirm={() => learning.resetProgress()}
+  onclose={() => {
+    resetting = false;
+    // the progress reset, the button is gone with it (there is nothing left to reset): the selector takes the focus
+    void tick().then(() => (document.getElementById("reset-progress") ?? document.getElementById("lesson-set"))?.focus());
   }} />
 
 <SettingsDialog open={settingsOpen} settings={learning.settings} onsave={(s) => learning.saveSettings(s)}

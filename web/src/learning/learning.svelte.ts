@@ -220,6 +220,23 @@ export class LearningState {
     }
   }
 
+  /** Forgets the progress of the set open, every attempt and best: the empty progress takes its place, so every row
+   * shows its empty state at once; false (with a toast) when that fails */
+  async resetProgress(): Promise<boolean> {
+    const read = this.#reads;
+    const set = this.chosen;
+    if (set === null) return false;
+    try {
+      await api.resetLearningProgress(set);
+      if (read !== this.#reads || this.chosen !== set) return true;
+      this.progress = { format: "vial-web-progress/1", lessonSet: set, exercises: {} };
+      return true;
+    } catch (error) {
+      if (read === this.#reads) toasts.error(failureMessage("Resetting the progress", error));
+      return false;
+    }
+  }
+
   async saveSettings(body: LearningSettingsIn): Promise<boolean> {
     const read = this.#reads;
     try {
