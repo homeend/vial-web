@@ -991,6 +991,20 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         uid = read(model.uid_of)
         return store.set(uid, set_id)
 
+    @app.post("/api/learning/sets/{set}/refit", response_model=schemas.LessonSetImported)
+    def refit_lesson_set(set_id: SetId, lang: Lang = languages.DEFAULT):
+        """ Re-fit the lesson set to the keyboard as it is now: every new key of it is pointed at where its character
+        is typed now (the same key when it still types it, else the same key on another layer, else another key on
+        the same layer, else the first that types it), its layout set to the keyboard's export in the keyboard
+        language lang, and the file rewritten; its progress stays. 404 when there is none; 422, the file untouched,
+        with the characters no key types (errors), with the checker's errors, or when the file isn't a lesson set.
+        Returns its listing entry with the checker's warnings, as the import does. """
+        store = learning_store()
+        uid, built = keyboard_dict(lang)
+        export = learning_layout.export(built, store.fingers(uid), lang)
+        entry = store.refit_set(uid, set_id, export)
+        return schemas.LessonSetImported(**entry, outOfDate=entry["layoutHash"] != export["hash"])
+
     @app.delete("/api/learning/sets/{set}", status_code=204, response_class=Response)
     def delete_lesson_set(set_id: SetId):
         """ Remove the lesson set; its progress stays (for the set imported again). 404 when there is none. """

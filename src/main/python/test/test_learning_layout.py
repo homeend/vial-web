@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from server import describe, languages, learning_layout, model
+from server import describe, languages, learning_check, learning_layout, model
 from server.device import DeviceManager, FakeBackend
 from simulator import corne
 from simulator.corne import make_corne, encode
@@ -600,3 +600,129 @@ def test_layer_mod_and_tri_layer_keys_reach_their_layer():
     assert keys["r0c0"]["layerKey"] == {"layer": 1, "how": "hold"}
     assert keys["r0c3"]["chars"] == {"0": {"tap": "a", "shift": "A"}, "1": {"tap": "b", "shift": "B"},
                                      "2": {"tap": "c", "shift": "C"}}
+
+
+# ---------- re-fitting a lesson set to the keyboard as it is now ----------
+
+# four keys: a (A) and 1; b (B), 2 and a with Shift on layer 1; c, b on layer 1, x on layer 2 (which no key reaches);
+# Space, which holds layer 1
+FIT_EXPORT = {
+    "format": "vial-web-layout-export/1", "keyboard": {"name": "Fit", "uid": "0000000000000002"},
+    "hash": "sha256:fedcba9876543210", "exportedAt": "2026-10-22T10:00:00Z", "language": "en-us",
+    "layers": [{"index": 0, "name": "Base", "reachedBy": []},
+               {"index": 1, "name": "Sym", "reachedBy": [{"key": "r0c3", "how": "hold", "label": "hold Space"},
+                                                         {"key": "r0c2", "how": "oneShot", "label": "tap C"}]},
+               {"index": 2, "name": "Lost", "reachedBy": []}],
+    "shiftKeys": [],
+    "keys": [{"id": "r0c0", "chars": {"0": {"tap": "a", "shift": "A"}, "1": {"tap": "1"}}},
+             {"id": "r0c1", "chars": {"0": {"tap": "b", "shift": "B"}, "1": {"tap": "2", "shift": "a"}}},
+             {"id": "r0c2", "chars": {"0": {"tap": "c"}, "1": {"tap": "b"}, "2": {"tap": "x"}}},
+             {"id": "r0c3", "chars": {"0": {"tap": " ", "hold": "layer 1"}}, "layerKey": {"layer": 1, "how": "hold"}}],
+}
+
+
+def set_of(*entries, **lesson):
+    """ A lesson set with one lesson whose new entries are given (refit reads nothing else of it; its one exercise
+    drills those characters, so that the checker has nothing against it but its size) """
+    return {"format": "vial-web-lessons/1", "id": "fit", "title": "Fit", "language": "en",
+            "layout": {"name": "Old", "uid": "0000000000000001", "hash": "sha256:0123456789abcdef"},
+            "lessons": [{"id": "01", "title": "One", "guidance": "Go.", "new": list(entries), **lesson,
+                         "exercises": [{"id": "01-n1", "kind": "new-keys", "title": "New",
+                                        "lines": ["".join(e["char"] for e in entries) or "x"]}]}]}
+
+
+def entry(char, key, layer=0, via="tap", **more):
+    return {"char": char, "key": key, "layer": layer, "via": via, **more}
+
+
+def test_refit_chooses_the_old_key_then_the_old_layer_then_the_first_candidate():
+    data = set_of(
+        entry("a", "r0c0"),                                     # still there: unchanged
+        entry("a", "r0c1", 1, "shift", path="hold Space"),      # still there too, though a is cheaper on r0c0
+        entry("1", "r0c0"),                                     # the same key, now on layer 1: the path appears
+        entry("b", "r0c2", 0, path="old"),                      # the same key on layer 1 beats another key on layer 0
+        entry("b", "r0c0", 0, path="old"),                      # not on r0c0 any more: another key on the old layer
+        entry("c", "r0c1", 1, path="hold Space"),               # neither: the first candidate, on layer 0 (no path)
+        entry("x", "r0c0", 0, path="old"),                      # only on layer 2, which nothing reaches: no path
+        entry("2", "r9c9", 7, "altGr", note="kept as it is"),   # a key and a layer that never existed
+    )
+    before = json.loads(json.dumps(data))
+    fitted, problems = learning_layout.refit(data, FIT_EXPORT)
+    assert problems == []
+    assert data == before  # a new document; the input is left alone
+    assert fitted["lessons"][0]["new"] == [
+        entry("a", "r0c0"),
+        entry("a", "r0c1", 1, "shift", path="hold Space"),
+        entry("1", "r0c0", 1, path="hold Space"),
+        entry("b", "r0c2", 1, path="hold Space"),
+        entry("b", "r0c1"),
+        entry("c", "r0c2"),
+        entry("x", "r0c2", 2),
+        entry("2", "r0c1", 1, path="hold Space", note="kept as it is"),
+    ]
+    assert fitted["layout"] == {"name": "Fit", "uid": "0000000000000002", "hash": "sha256:fedcba9876543210"}
+    # the rest of the set is as it was
+    assert {k: v for k, v in fitted.items() if k not in ("layout", "lessons")} == \
+        {k: v for k, v in before.items() if k not in ("layout", "lessons")}
+    assert fitted["lessons"][0]["exercises"] == before["lessons"][0]["exercises"]
+    # the choice is settled: fitting again changes nothing
+    assert learning_layout.refit(fitted, FIT_EXPORT) == (fitted, [])
+
+
+def test_refit_lists_every_character_no_key_types_and_fits_the_rest():
+    data = set_of(entry("a", "r0c0"), entry("z", "r0c0"), entry("1", "r0c0"), entry("Q", "r0c1", 0, "shift"))
+    data["lessons"].append({**data["lessons"][0], "id": "02", "new": [entry("b", "r0c1"), entry(";", "r0c0", 1)]})
+    fitted, problems = learning_layout.refit(data, FIT_EXPORT)
+    assert problems == ["lesson 01/new[1]: 'z' is typed by no key of this keyboard",
+                        "lesson 01/new[3]: 'Q' is typed by no key of this keyboard",
+                        "lesson 02/new[1]: ';' is typed by no key of this keyboard"]
+    assert fitted["lessons"][0]["new"][2] == entry("1", "r0c0", 1, path="hold Space")  # the others were fitted
+    assert fitted["lessons"][0]["new"][1] == entry("z", "r0c0")  # a lost one is left as it was
+    # a review lesson with no new entries, or none at all, is fine
+    assert learning_layout.refit(set_of(review=True), FIT_EXPORT)[1] == []
+    without = set_of()
+    del without["lessons"][0]["new"]
+    assert learning_layout.refit(without, FIT_EXPORT) == ({**without, "layout": FIT_EXPORT["keyboard"] | {
+        "hash": FIT_EXPORT["hash"]}}, [])
+
+
+def swap_layers(export, a, b):
+    """ The export with what layers a and b hold exchanged (the keys that reach each stay), under another hash """
+    out = json.loads(json.dumps(export))
+    for key in out["keys"]:
+        chars = key["chars"]
+        chars[a], chars[b] = chars.pop(b, None), chars.pop(a, None)
+        key["chars"] = {l: c for l, c in chars.items() if c is not None}
+    names = {l["index"]: l["name"] for l in out["layers"]}
+    for layer in out["layers"]:
+        layer["name"] = names.get({int(a): int(b), int(b): int(a)}.get(layer["index"], layer["index"]), layer["name"])
+    out["hash"] = "sha256:" + "".join(reversed(out["hash"][len("sha256:"):]))
+    return out
+
+
+def test_refit_follows_two_layers_that_changed_places(corne_model):
+    """ The symbols of layer 1 (held Space) and the digits of layer 3 (one-shot) exchange layers: every entry follows
+    its character, and the path labels follow the layers """
+    export = learning_layout.export(corne_model)
+    swapped = swap_layers(export, "1", "3")
+    assert swapped["hash"] != export["hash"]
+    keys = {k["id"]: k for k in swapped["keys"]}
+    assert keys["r1c4"]["chars"]["1"] == {"tap": "4", "shift": "$"} and keys["r1c4"]["chars"]["3"] == {"tap": ")"}
+    data = set_of(entry("s", "r1c1"), entry("S", "r1c1", 0, "shift"),
+                  entry(")", "r1c4", 1, path="hold Space"), entry("(", "r1c3", 1, path="hold Space"),
+                  entry("4", "r1c4", 3, path="tap OSL 3"), entry("$", "r1c4", 3, "shift", path="tap OSL 3"),
+                  entry("x", "r6c3", 1, path="hold Space"))
+    data["layout"] = {"name": export["keyboard"]["name"], "uid": export["keyboard"]["uid"], "hash": export["hash"]}
+    fitted, problems = learning_layout.refit(data, swapped)
+    assert problems == []
+    assert fitted["lessons"][0]["new"] == [
+        entry("s", "r1c1"), entry("S", "r1c1", 0, "shift"),
+        entry(")", "r1c4", 3, path="tap OSL 3"), entry("(", "r1c3", 3, path="tap OSL 3"),
+        entry("4", "r1c4", 1, path="hold Space"),
+        entry("$", "r1c4", 1, "shift", path="hold Space"),  # the same key, not r0c4 which now types $ on layer 3
+        entry("x", "r6c3"),  # x stays on r6c3 (layers 0 and 3 now): the same key on its lowest layer, no path
+    ]
+    assert fitted["layout"]["hash"] == swapped["hash"]
+    # every entry points at a key that types its character: the checker agrees
+    assert learning_check.check_set(fitted, swapped)[0] == []
+    assert learning_check.check_set(data, swapped)[0] != []

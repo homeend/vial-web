@@ -125,6 +125,15 @@ Fields:
 | `lessons[].exercises[].kind` | `new-keys`, `keys`, `words`, `blind`, `text`, `extra-keys`, `extra-words` |
 | `exercises[].lines` | the text, one screen line per entry, no trailing spaces, no tabs, no empty lines |
 
+**Re-fit.** A set made from an earlier character map (out of date) can be re-fitted to the keyboard as it is now
+(`POST /api/learning/sets/<id>/refit`, "Re-fit" on the page): every `new` entry is pointed at where its `char` is
+typed now and `layout` becomes the current export's; the exercises and the progress stay. For each entry the
+candidates are every (key, layer, via) of the export that types the character; the one chosen is, in order: the
+entry's own key, layer and via when it still types it; else the same key on any layer (the lowest); else any key on
+the same layer (in the export's key order); else the first candidate (by layer, then key order). `path` becomes the
+label of the chosen layer's first `reachedBy` entry, and is dropped on layer 0. A character no key types any more
+refuses the re-fit, listing every such entry; the file is left as it was.
+
 How the app shows each kind:
 
 | kind | Picture | Next key lit | Typing | Lines |

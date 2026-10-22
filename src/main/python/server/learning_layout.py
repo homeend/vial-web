@@ -3,6 +3,7 @@
 the rules of lesson-rules.md section 2, and what each key types on each layer. Pure functions over the keyboard's
 model as a dict (schemas.KeyboardModel.model_dump(), the JSON of GET /api/keyboard), so that the server and
 util/learning/export_layout.py share them. """
+import copy
 import hashlib
 import json
 import math
@@ -11,6 +12,8 @@ from datetime import datetime, timezone
 from typing import NamedTuple, Optional
 
 FORMAT = "vial-web-layout-export/1"
+VIAS = ("tap", "shift", "altGr")
+""" how a key types a character, cheapest first: what a lesson's new entry calls via """
 FINGERS_OUT = ["index", "middle", "ring", "pinky"]
 """ the finger columns from the gap outwards """
 LAYER_KEY = re.compile(r"^(MO|OSL|TG|TO|TT|DF|PDF)\((\d+)\)$")
@@ -482,3 +485,61 @@ def export(model, fingers=None, language="en-us"):
         "shiftKeys": shift_keys,
         "keys": [keys_out[k] for k in sorted(keys_out, key=lambda kid: (keys_out[kid]["y"], keys_out[kid]["x"]))],
     }
+
+
+def typed_by(export):
+    """ Character -> where the export's keys type it, as (key id, layer, via) in the order the first candidate is
+    taken: the export's layer order, then its key order, then VIAS """
+    position = {str(l["index"]): i for i, l in enumerate(export.get("layers") or [])}
+    found = {}
+    for pos, key in enumerate(export.get("keys") or []):
+        for layer, chars in (key.get("chars") or {}).items():
+            for which, via in enumerate(VIAS):
+                c = chars.get(via)
+                if c is not None:
+                    found.setdefault(c, []).append((position.get(layer, len(position)), pos, which,
+                                                    (key["id"], int(layer), via)))
+    return {c: [where for *_, where in sorted(places)] for c, places in found.items()}
+
+
+def refit(data, export):
+    """ The lesson set (a parsed file the checker passed) re-fitted to the keyboard as the export has it: a new
+    document in which every lesson's new entry points at where its character is typed now, and layout is the export's
+    (name, uid, hash). For an entry (char c on key k, layer l, via v) the candidates are every (key, layer, via) of
+    the export that types c; the one chosen is, in order: the old (k, l, v) when it still types c; else the key k on
+    any layer (the lowest); else any key on the layer l (the export's key order); else the first candidate (by layer,
+    then key order). path becomes the label of the chosen layer's first reachedBy entry ("hold Space"), and is dropped
+    on layer 0, or on a layer nothing reaches. key, layer and via are written, nothing else of the entry.
+
+    Returns (document, problems): problems lists the entries whose character no key of this keyboard types
+    ("lesson 15/new[2]: ';' is typed by no key of this keyboard"), left as they were; with any, the document isn't
+    one to save. """
+    out = copy.deepcopy(data)
+    where = typed_by(export)
+    reached = {l["index"]: l.get("reachedBy") or [] for l in export.get("layers") or []}
+    problems = []
+    for i, lesson in enumerate(out.get("lessons") or []):
+        if not isinstance(lesson, dict):
+            continue
+        label = "lesson {}".format(lesson["id"]) if isinstance(lesson.get("id"), str) else "lessons[{}]".format(i)
+        for j, entry in enumerate(lesson.get("new") or []):
+            if not isinstance(entry, dict) or not isinstance(entry.get("char"), str):
+                continue
+            c, key, layer, via = entry["char"], entry.get("key"), entry.get("layer", 0), entry.get("via", "tap")
+            candidates = where.get(c) or []
+            if not candidates:
+                problems.append("{}/new[{}]: {!r} is typed by no key of this keyboard".format(label, j, c))
+                continue
+            chosen = next((p for p in candidates if p == (key, layer, via)), None) \
+                or next((p for p in candidates if p[0] == key), None) \
+                or next((p for p in candidates if p[1] == layer), None) \
+                or candidates[0]
+            entry["key"], entry["layer"], entry["via"] = chosen
+            paths = reached.get(chosen[1]) if chosen[1] != 0 else None
+            if paths:
+                entry["path"] = paths[0]["label"]
+            else:
+                entry.pop("path", None)
+    keyboard = export.get("keyboard") or {}
+    out["layout"] = {"name": keyboard.get("name"), "uid": keyboard.get("uid"), "hash": export.get("hash")}
+    return out, problems

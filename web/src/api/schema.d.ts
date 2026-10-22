@@ -693,6 +693,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/learning/sets/{set}/refit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refit Lesson Set
+         * @description Re-fit the lesson set to the keyboard as it is now: every new key of it is pointed at where its character
+         *     is typed now (the same key when it still types it, else the same key on another layer, else another key on
+         *     the same layer, else the first that types it), its layout set to the keyboard's export in the keyboard
+         *     language lang, and the file rewritten; its progress stays. 404 when there is none; 422, the file untouched,
+         *     with the characters no key types (errors), with the checker's errors, or when the file isn't a lesson set.
+         *     Returns its listing entry with the checker's warnings, as the import does.
+         */
+        post: operations["refit_lesson_set_api_learning_sets__set__refit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/learning/progress/{set}": {
         parameters: {
             query?: never;
@@ -3301,6 +3326,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refit_lesson_set_api_learning_sets__set__refit_post: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path: {
+                set: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonSetImported"];
+                };
             };
             /** @description Validation Error */
             422: {
