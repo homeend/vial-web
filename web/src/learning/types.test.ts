@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import set from "../../../docs/learning/examples/corne-sim-en.json";
-import { readLessonSet } from "./types";
+import layout from "../../../docs/learning/examples/corne-sim-layout-export.json";
+import { readLayoutExport, readLessonSet } from "./types";
 
 describe("readLessonSet", () => {
   it("reads the worked example", () => {
@@ -39,5 +40,29 @@ describe("readLessonSet", () => {
       .toThrow("lines");
     expect(() => readLessonSet({ ...set, lessons: [{ ...lesson, exercises: [{ id: "x", kind: "text", lines: [3] }] }] }))
       .toThrow("lines");
+  });
+});
+
+describe("readLayoutExport", () => {
+  it("reads the worked example", () => {
+    const read = readLayoutExport(layout);
+    expect(read.format).toBe("vial-web-layout-export/1");
+    expect(read.hash).toBe(layout.hash);
+    expect(read.layers).toHaveLength(4);
+    expect(read.shiftKeys[0]).toEqual({ key: "r1c4", hand: "left", label: "T (hold)" });
+    expect(read.keys[0].id).toBe("r0c0");
+  });
+
+  it("says what is wrong with a reply that isn't a layout export", () => {
+    expect(() => readLayoutExport(null)).toThrow("not a layout export");
+    expect(() => readLayoutExport([])).toThrow("not a layout export");
+    expect(() => readLayoutExport({ ...layout, format: "vial-web-layout-export/2" })).toThrow("format");
+    expect(() => readLayoutExport({ ...layout, hash: 7 })).toThrow("hash");
+    expect(() => readLayoutExport({ ...layout, layers: {} })).toThrow("layers");
+    expect(() => readLayoutExport({ ...layout, shiftKeys: null })).toThrow("shiftKeys");
+    expect(() => readLayoutExport({ ...layout, keys: "r0c0" })).toThrow("keys");
+    expect(() => readLayoutExport({ ...layout, keys: [layout.keys[0], { hand: "left" }] })).toThrow("key 2");
+    expect(() => readLayoutExport({ ...layout, keys: ["r0c0"] })).toThrow("key 1");
+    expect(readLayoutExport({ ...layout, keys: [] }).keys).toEqual([]);
   });
 });

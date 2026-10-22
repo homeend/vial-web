@@ -2,8 +2,6 @@
   interface Choice {
     value: string;
     label: string;
-    /** listed, but not to be chosen (a lesson set file that can't be read) */
-    disabled?: boolean;
   }
 
   interface Props {
@@ -18,10 +16,12 @@
     /** a change is being saved: the list keeps the focus, but takes nothing until it is done */
     busy?: boolean;
     describedby?: string;
+    /** the list's tooltip: the whole of a label the list cuts short */
+    title?: string;
     onchange: (value: string) => void;
   }
 
-  let { id, label, value, choices, disabled = false, busy = false, describedby, onchange }: Props = $props();
+  let { id, label, value, choices, disabled = false, busy = false, describedby, title, onchange }: Props = $props();
   const uid = $props.id();
   const inputId = $derived(id ?? `${uid}-select`);
 </script>
@@ -34,6 +34,7 @@
     {disabled}
     aria-disabled={busy || undefined}
     aria-describedby={describedby}
+    {title}
     onchange={(event) => {
       const chosen = event.currentTarget.value;
       // a list can't refuse a choice: while busy it goes back to what is chosen
@@ -45,7 +46,7 @@
     }}
   >
     {#each choices as choice (choice.value)}
-      <option value={choice.value} disabled={choice.disabled || undefined}>{choice.label}</option>
+      <option value={choice.value}>{choice.label}</option>
     {/each}
   </select>
 </div>

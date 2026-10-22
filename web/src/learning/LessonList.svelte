@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import type { LessonSetSummary } from "../api/types";
   import PageHeader from "../behaviours/PageHeader.svelte";
+  import { causeMessage } from "../api/errors";
   import { router } from "../lib/router.svelte";
   import Banner from "../shell/Banner.svelte";
   import Button from "../ui/Button.svelte";
@@ -25,9 +27,11 @@
   const sets = $derived(learning.sets);
   const set = $derived(learning.set);
   const chosenEntry = $derived(sets.find((s) => s.id === learning.chosen) ?? null);
+  /** a set file the checker refuses is listed all the same, so that its error shows and it can be removed */
+  const choiceLabel = (s: LessonSetSummary) => (s.error ? `${s.title} — error` : s.title);
   const choices = $derived(sets.length === 0
     ? [{ value: "", label: "No lesson set yet" }]
-    : sets.map((s) => ({ value: s.id, label: s.error ? `${s.title} — error` : s.title, disabled: !!s.error })));
+    : sets.map((s) => ({ value: s.id, label: choiceLabel(s) })));
   const stale = $derived(set !== null && outOfDate(set, learning.export?.hash));
   const rows = $derived(set
     ? set.lessons.map((lesson, i) => ({ lesson, number: i + 1,
@@ -58,6 +62,9 @@
       } else {
         findings = { tone: "errors", name: file.name, lines: listedErrors(outcome.errors) };
       }
+    } catch (error) {
+      // reading the file fails when it was moved or changed since it was picked (importSet fails only into its outcome)
+      findings = { tone: "errors", name: file.name, lines: [`the file can't be read: ${causeMessage(error)}`] };
     } finally {
       importing = false;
     }
@@ -86,8 +93,11 @@
 {#if note}<p class="note" role="status">{note}</p>{/if}
 
 <div class="row">
-  <SelectField id="lesson-set" label="Lesson set" value={learning.chosen ?? ""} {choices}
-    disabled={sets.length === 0} busy={learning.opening} onchange={(id) => void learning.open(id)} />
+  <div class="select">
+    <SelectField id="lesson-set" label="Lesson set" value={learning.chosen ?? ""} {choices}
+      title={chosenEntry ? choiceLabel(chosenEntry) : undefined}
+      disabled={sets.length === 0} busy={learning.opening} onchange={(id) => void learning.open(id)} />
+  </div>
   <div class="buttons">
     <Button id="import-lessons" aria-disabled={importing || undefined} onclick={() => {
       if (!importing) fileInput?.click();
@@ -135,7 +145,7 @@
       <li>
         <button type="button" class="lesson" onclick={() => openLesson(row.lesson.id)}>
           <span class="number">{row.number}</span>
-          <span class="title">{row.lesson.title}</span>
+          <span class="title" title={row.lesson.title}>{row.lesson.title}</span>
           <span class="state" class:star={row.state.startsWith("★")}>{row.state}</span>
         </button>
       </li>
@@ -149,7 +159,8 @@
   onconfirm={() => (chosenEntry ? learning.deleteSet(chosenEntry.id) : Promise.resolve(true))}
   onclose={() => {
     removing = false;
-    void tick().then(() => document.getElementById("lesson-set")?.focus());
+    // the last set removed: the selector is disabled, so the focus goes to Import (never to the body)
+    void tick().then(() => document.getElementById(learning.sets.length === 0 ? "import-lessons" : "lesson-set")?.focus());
   }} />
 
 <SettingsDialog open={settingsOpen} settings={learning.settings} onsave={(s) => learning.saveSettings(s)}
@@ -186,7 +197,7 @@
   }
 
   /* the selector shrinks to the row (a long set title gets its ellipsis) rather than widening the page */
-  .row > :global(.field) {
+  .select {
     flex: 1 1 280px;
     min-width: 0;
   }
@@ -203,6 +214,8 @@
     border: 1px solid;
     border-radius: 8px;
     font-size: 13px;
+    /* a finding quotes the file (a long id, a line of text): it wraps rather than widening the page at 375 px */
+    overflow-wrap: anywhere;
   }
 
   .findings.errors {
@@ -230,6 +243,7 @@
     background: var(--danger-weak);
     color: var(--danger);
     font-size: 13px;
+    overflow-wrap: anywhere;
   }
 
   .empty {

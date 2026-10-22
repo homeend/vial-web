@@ -4,17 +4,33 @@
 // (docs/learning/lesson-format.md); nothing is read from or written to the keyboard. Loaded when the page first
 // shows, and again for another keyboard or another keyboard language (the export's characters are the language's).
 import { api } from "../api/api";
-import { ApiError, failureMessage } from "../api/errors";
-import type { FingersIn, LearningSettingsIn, LessonSetSummary } from "../api/types";
+import { ApiError, causeMessage, failureMessage } from "../api/errors";
+import type { AttemptIn, FingersIn, LearningSettingsIn, LessonSetSummary } from "../api/types";
 import { browserStorage } from "../lib/theme";
 import { toasts } from "../lib/toasts.svelte";
 import { placeOfChars, type PlaceOf } from "./picture";
 import { DEFAULT_SETTINGS } from "./state";
 import { readChosenSet, saveChosenSet } from "./storage";
-import { readLessonSet, type Fingers, type LayoutExport, type LearningSettings, type LessonSet, type Progress } from "./types";
+import {
+  readLayoutExport, readLessonSet, type Fingers, type LayoutExport, type LearningSettings, type LessonSet, type Progress,
+} from "./types";
 
 /** what an import came to: the set's listing entry, or the checker's findings */
 export type ImportOutcome = { ok: true; entry: LessonSetSummary; warnings: string[] } | { ok: false; errors: string[] };
+
+/** Why a read failed: the server's answer, or what is wrong with the shape of a file it passed through (a plain Error
+ * from readLessonSet or readLayoutExport: the failure of the request itself is always an ApiError) */
+function readFailure(action: string, error: unknown): string {
+  const cause = error instanceof Error && !(error instanceof ApiError) ? error.message : causeMessage(error);
+  return `${action} failed: ${cause}`;
+}
+
+/** The set to open from a listing: the one chosen if it is still listed and readable, else the first readable, else the
+ * first listed (a broken file: its error shows, and it can be removed) */
+function setToOpen(sets: LessonSetSummary[], chosen: string | null): string | null {
+  if (chosen !== null && sets.some((s) => s.id === chosen && !s.error)) return chosen;
+  return sets.find((s) => !s.error)?.id ?? sets[0]?.id ?? null;
+}
 
 export class LearningState {
   /** the sets the keyboard has, as the server lists them (a file that isn't a lesson set with its error) */
@@ -43,6 +59,8 @@ export class LearningState {
   #uid: string | null = null;
   /** reads under way, so a stale one's answer is dropped */
   #reads = 0;
+  /** opens under way: only the latest one's answer counts, and only it ends `opening` */
+  #opens = 0;
 
   /** Start over when the keyboard, or the keyboard language, isn't the one shown before */
   follow(uid: string, language: string): void {
@@ -51,6 +69,7 @@ export class LearningState {
     this.#key = key;
     this.#uid = uid;
     this.#reads++;
+    this.#opens++;
     this.sets = [];
     this.chosen = readChosenSet(browserStorage(), uid);
     this.set = null;
@@ -64,7 +83,8 @@ export class LearningState {
     this.error = null;
   }
 
-  /** Reads the sets, the settings and the export, then opens the set chosen (or the first that can be read) */
+  /** Reads the sets, the settings and the export, then opens the set chosen (or the first that can be read, or the
+   * first listed when none can be: its error shows) */
   async load(): Promise<void> {
     if (this.loading) return;
     const read = ++this.#reads;
@@ -73,16 +93,14 @@ export class LearningState {
     try {
       const [sets, settings, layout] = await Promise.all([api.learningSets(), api.learningSettings(), api.learningExport()]);
       if (read !== this.#reads) return;
+      this.export = readLayoutExport(layout);
       this.sets = sets;
       this.settings = settings;
-      this.export = layout as unknown as LayoutExport;
       this.loaded = true;
-      const readable = (id: string | null) => id !== null && sets.some((s) => s.id === id && !s.error);
-      const chosen = readable(this.chosen) ? this.chosen : (sets.find((s) => !s.error)?.id ?? null);
-      await this.open(chosen);
+      await this.open(setToOpen(sets, this.chosen));
     } catch (error) {
       if (read !== this.#reads) return;
-      this.error = failureMessage("Reading the lessons", error);
+      this.error = readFailure("Reading the lessons", error);
       this.loaded = true;
     } finally {
       if (read === this.#reads) this.loading = false;
@@ -95,36 +113,40 @@ export class LearningState {
     try {
       const [sets, layout] = await Promise.all([api.learningSets(), api.learningExport()]);
       if (read !== this.#reads) return;
+      this.export = readLayoutExport(layout);
       this.sets = sets;
-      this.export = layout as unknown as LayoutExport;
     } catch (error) {
-      if (read === this.#reads) toasts.error(failureMessage("Reading the lessons", error));
+      if (read === this.#reads) toasts.error(readFailure("Reading the lessons", error));
     }
   }
 
-  /** Opens a set: reads it whole with its progress; null closes the one open. Remembered for the keyboard. */
+  /** Opens a set: reads it whole with its progress; null closes the one open; a set listed with an error is chosen
+   * but not read (nothing is open: its entry says why). Remembered for the keyboard. */
   async open(id: string | null): Promise<void> {
     const read = this.#reads;
+    const opened = ++this.#opens;
     this.chosen = id;
     if (id !== null && this.#uid !== null) saveChosenSet(browserStorage(), this.#uid, id);
     if (id === null || this.sets.find((s) => s.id === id)?.error) {
       this.set = null;
       this.progress = null;
+      this.opening = false;
       return;
     }
     this.opening = true;
     try {
       const [set, progress] = await Promise.all([api.learningSet(id), api.learningProgress(id)]);
-      if (read !== this.#reads || this.chosen !== id) return;
+      if (read !== this.#reads || opened !== this.#opens) return;
       this.set = readLessonSet(set);
-      this.progress = progress as Progress;
+      this.progress = progress;
     } catch (error) {
-      if (read !== this.#reads || this.chosen !== id) return;
+      if (read !== this.#reads || opened !== this.#opens) return;
       this.set = null;
       this.progress = null;
-      toasts.error(failureMessage(`Opening the lesson set ${id}`, error));
+      toasts.error(readFailure(`Opening the lesson set ${id}`, error));
     } finally {
-      if (read === this.#reads && this.chosen === id) this.opening = false;
+      // a later open (or follow) ends it itself: this one's answer was dropped
+      if (opened === this.#opens) this.opening = false;
     }
   }
 
@@ -155,7 +177,7 @@ export class LearningState {
       await api.deleteLearningSet(id);
       if (read !== this.#reads) return true;
       this.sets = this.sets.filter((s) => s.id !== id);
-      if (this.chosen === id) await this.open(this.sets.find((s) => !s.error)?.id ?? null);
+      if (this.chosen === id) await this.open(setToOpen(this.sets, null));
       return true;
     } catch (error) {
       if (read === this.#reads) toasts.error(failureMessage("Removing the lesson set", error));
@@ -164,15 +186,15 @@ export class LearningState {
   }
 
   /** Records an exercise typed to the end; the server's best and attempts take the exercise's place in the progress */
-  async recordAttempt(exercise: string, body: { at: string; chars: number; errors: number; seconds: number }): Promise<boolean> {
+  async recordAttempt(exercise: string, body: AttemptIn): Promise<boolean> {
     const read = this.#reads;
     const set = this.chosen;
     if (set === null) return false;
     try {
       const record = await api.recordAttempt(set, exercise, body);
       if (read !== this.#reads || this.chosen !== set) return true;
-      const progress = this.progress ?? { format: "vial-web-progress/1", lessonSet: set, layoutHash: "", exercises: {} };
-      this.progress = { ...progress, exercises: { ...progress.exercises, [exercise]: record as Progress["exercises"][string] } };
+      const progress: Progress = this.progress ?? { format: "vial-web-progress/1", lessonSet: set, exercises: {} };
+      this.progress = { ...progress, exercises: { ...progress.exercises, [exercise]: record } };
       return true;
     } catch (error) {
       if (read === this.#reads) toasts.error(failureMessage("Saving the result", error));

@@ -20,12 +20,14 @@
   const WPM = { min: 1, max: 300 };
 
   let dialog = $state<HTMLDialogElement>();
-  let first = $state<HTMLInputElement>();
+  let accuracyInput = $state<HTMLInputElement>();
+  let wpmInput = $state<HTMLInputElement>();
   let working = $state(false);
   let passAccuracy = $state(95);
   let targetWpm = $state(30);
   let pictureInWords = $state(true);
-  let problem = $state<string | null>(null);
+  /** what is wrong with the input named, which has the focus */
+  let problem = $state<{ input: "accuracy" | "wpm"; text: string } | null>(null);
   const uid = $props.id();
 
   $effect(() => {
@@ -38,7 +40,7 @@
       problem = null;
       working = false;
       dialog.showModal();
-      void tick().then(() => first?.focus());
+      void tick().then(() => accuracyInput?.focus());
     } else if (!open && dialog.open) {
       dialog.close();
     }
@@ -48,14 +50,20 @@
     return Number.isInteger(value) && value >= range.min && value <= range.max;
   }
 
+  /** Refuses the input: the problem is said under the fields, and the input takes the focus to be put right */
+  function refuse(input: "accuracy" | "wpm", text: string) {
+    problem = { input, text };
+    void tick().then(() => (input === "accuracy" ? accuracyInput : wpmInput)?.focus());
+  }
+
   async function save() {
     if (working) return;
     if (!whole(passAccuracy, ACCURACY)) {
-      problem = `The pass accuracy is a whole number from ${ACCURACY.min} to ${ACCURACY.max}.`;
+      refuse("accuracy", `The pass accuracy is a whole number from ${ACCURACY.min} to ${ACCURACY.max}.`);
       return;
     }
     if (!whole(targetWpm, WPM)) {
-      problem = `The target speed is a whole number from ${WPM.min} to ${WPM.max}.`;
+      refuse("wpm", `The target speed is a whole number from ${WPM.min} to ${WPM.max}.`);
       return;
     }
     problem = null;
@@ -81,17 +89,21 @@
   <p class="about">What passes a lesson, and what earns a star. Both apply to every lesson set of this keyboard.</p>
   <label class="field">
     <span>Pass accuracy</span>
-    <span class="input"><input bind:this={first} type="number" min={ACCURACY.min} max={ACCURACY.max} step="1"
-      bind:value={passAccuracy} readonly={working} /> %</span>
+    <span class="input"><input bind:this={accuracyInput} type="number" min={ACCURACY.min} max={ACCURACY.max} step="1"
+      bind:value={passAccuracy} readonly={working}
+      aria-invalid={problem?.input === "accuracy" || undefined}
+      aria-describedby={problem?.input === "accuracy" ? `${uid}-problem` : undefined} /> %</span>
   </label>
   <label class="field">
     <span>Target speed</span>
-    <span class="input"><input type="number" min={WPM.min} max={WPM.max} step="1" bind:value={targetWpm}
-      readonly={working} /> wpm</span>
+    <span class="input"><input bind:this={wpmInput} type="number" min={WPM.min} max={WPM.max} step="1"
+      bind:value={targetWpm} readonly={working}
+      aria-invalid={problem?.input === "wpm" || undefined}
+      aria-describedby={problem?.input === "wpm" ? `${uid}-problem` : undefined} /> wpm</span>
   </label>
   <Switch label="Show the picture in word exercises" checked={pictureInWords} busy={working}
     onchange={(checked) => (pictureInWords = checked)} />
-  {#if problem}<p class="problem" role="alert">{problem}</p>{/if}
+  {#if problem}<p class="problem" id="{uid}-problem" role="alert">{problem.text}</p>{/if}
   <div class="buttons">
     <Button aria-disabled={working || undefined} onclick={() => {
       if (!working) dialog?.close();
@@ -156,6 +168,10 @@
     background: var(--surface-2);
     color: var(--text);
     font: inherit;
+  }
+
+  input[aria-invalid="true"] {
+    border-color: var(--danger-line);
   }
 
   .problem {

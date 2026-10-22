@@ -179,3 +179,21 @@ export function readLessonSet(json: unknown): LessonSet {
   });
   return json as unknown as LessonSet;
 }
+
+/** The layout export the server's reply holds, or an Error saying what is wrong with its shape (the format, the hash,
+ * the layers, the shift keys, and the keys with their ids). The server writes it; this guards the client against a
+ * reply of another shape (another version of the server, a proxy's page). */
+export function readLayoutExport(json: unknown): LayoutExport {
+  if (!isRecord(json)) throw new Error("not a layout export: not a JSON object");
+  if (json.format !== "vial-web-layout-export/1") {
+    throw new Error(`not a layout export: the format is ${String(json.format)}`);
+  }
+  if (typeof json.hash !== "string") throw new Error("the layout export has no hash");
+  if (!Array.isArray(json.layers)) throw new Error("the layout export has no layers array");
+  if (!Array.isArray(json.shiftKeys)) throw new Error("the layout export has no shiftKeys array");
+  if (!Array.isArray(json.keys)) throw new Error("the layout export has no keys array");
+  json.keys.forEach((key: unknown, i: number) => {
+    if (!isRecord(key) || typeof key.id !== "string") throw new Error(`key ${i + 1} of the layout export needs an id`);
+  });
+  return json as unknown as LayoutExport;
+}
