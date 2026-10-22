@@ -557,17 +557,20 @@ async function reasonsInView(dialog: Locator, flags: string[]) {
   await expect(dialog.getByRole("button", { name: "Apply", exact: true })).toBeInViewport({ ratio: 1 });
 }
 
-/** The dialog is inside the window, and the page doesn't scroll sideways */
+/** The dialog is inside the window, and the page doesn't scroll sideways. Measured until it holds: right after a
+ * window resize the layout may not have settled (on a loaded CI runner the dialog was still the wider one). */
 async function fits(page: Page, dialog: Locator) {
-  const box = await dialog.boundingBox();
   const size = page.viewportSize()!;
-  expect(box).not.toBeNull();
-  expect(box!.y).toBeGreaterThanOrEqual(0);
-  expect(box!.y + box!.height).toBeLessThanOrEqual(size.height);
-  expect(box!.x).toBeGreaterThanOrEqual(0);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(size.width);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
-    .toBeLessThanOrEqual(0);
+  await expect(async () => {
+    const box = await dialog.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(size.height);
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(size.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
+      .toBeLessThanOrEqual(0);
+  }).toPass({ timeout: 5_000 });
 }
 
 /** 40 characters, the longest name a layer can have */
