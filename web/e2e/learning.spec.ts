@@ -50,9 +50,24 @@ async function openExercise(page: Page, lesson: { title: string }, exercise: { t
   await expect(page.getByRole("application", { name: "Typing area" })).toBeFocused();
 }
 
+type ExerciseProgress = Record<string, { best: unknown; attempts: unknown[] } | undefined>;
+
+/** The set's progress, by exercise id */
+async function progressOf(page: Page): Promise<ExerciseProgress> {
+  return (await (await api(page).get(`/api/learning/progress/${SET}`)).json()).exercises;
+}
+
 async function attemptsOf(page: Page, exercise: string): Promise<number> {
-  const progress = await (await api(page).get(`/api/learning/progress/${SET}`)).json();
-  return progress.exercises[exercise]?.attempts.length ?? 0;
+  return (await progressOf(page))[exercise]?.attempts.length ?? 0;
+}
+
+/** The state a lesson's row shows for the progress: "" or "n of m done". An exercise's results outlive the set (its
+ * progress file stays for the set imported again), so a test of the worker run earlier may have done one. */
+function rowState(lesson: (typeof example.lessons)[number], progress: ExerciseProgress): string {
+  const main = lesson.exercises.filter((e) => ["new-keys", "keys", "words", "blind", "text"].includes(e.kind));
+  const done = main.filter((e) => progress[e.id]?.best).length;
+  if (done === main.length) throw new Error(`every main exercise of ${lesson.title} is done: the row would say passed`);
+  return done === 0 ? "" : `${done} of ${main.length} done`;
 }
 
 test("the example imports, lists its lessons with empty states, and isn't out of date", async ({ app }) => {
@@ -61,8 +76,9 @@ test("the example imports, lists its lessons with empty states, and isn't out of
     await expect(app.getByRole("option", { name: example.title })).toHaveCount(1);
     const rows = app.getByRole("list", { name: `Lessons of ${example.title}` }).getByRole("button");
     await expect(rows).toHaveCount(example.lessons.length);
+    const progress = await progressOf(app);
     for (const [i, lesson] of example.lessons.entries()) {
-      await expect(rows.nth(i)).toHaveText(new RegExp(`^${i + 1}\\s*${lesson.title}\\s*$`));
+      await expect(rows.nth(i)).toHaveText(new RegExp(`^${i + 1}\\s*${lesson.title}\\s*${rowState(lesson, progress)}$`));
     }
     await expect(app.getByText("Built for another layout.")).toHaveCount(0);
     expect(await sidewaysScroll(app)).toBeLessThanOrEqual(0);
@@ -86,15 +102,17 @@ test("typing lesson 1's first exercise passes it, records the attempt, and the l
     await expect(result).toContainText("Errors0");
     await expect(result.getByRole("status")).toHaveText("Saved.");
     expect(await attemptsOf(app, exercise.id)).toBe(before + 1);
-    const best = (await (await api(app).get(`/api/learning/progress/${SET}`)).json()).exercises[exercise.id].best;
+    const progress = await progressOf(app);
+    const best = progress[exercise.id]!.best as { accuracy: number; chars: number };
     expect(best.accuracy).toBe(100);
     expect(best.chars).toBe(exercise.lines.join(" ").length);
 
-    // back in the list: one of the lesson's main exercises is done
-    const main = lesson1.exercises.filter((e) => ["new-keys", "keys", "words", "blind", "text"].includes(e.kind)).length;
+    // back in the list: the lesson's main exercises done, this one among them
+    const state = rowState(lesson1, progress);
+    expect(state).toMatch(/^[1-9]\d* of \d+ done$/);
     await app.getByRole("button", { name: "Back to the lesson" }).first().click();
     await app.getByRole("button", { name: "Back to lessons" }).click();
-    await expect(app.getByRole("button", { name: new RegExp(`^1\\s*${lesson1.title}`) })).toContainText(`1 of ${main} done`);
+    await expect(app.getByRole("button", { name: new RegExp(`^1\\s*${lesson1.title}`) })).toContainText(state);
   } finally {
     await putBack(app);
   }
