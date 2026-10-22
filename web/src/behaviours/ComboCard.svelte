@@ -53,7 +53,7 @@
   const output = $derived(draft ? draft.output : combo.output);
   const outputFace = $derived(keyFace(output, names));
   const outputText = $derived(output.kind === "none" ? "nothing" : outputFace.main || output.code);
-  /** a combo of no keys never fires: it isn't saved (Remove the combo clears it) */
+  /** a combo of no keys never fires: it isn't saved (Remove clears it) */
   const noKeys = $derived(draft !== null && draft.members.length === 0);
   let chipList = $state<HTMLUListElement>();
 
@@ -115,11 +115,10 @@
         </div>
       </div>
       <div class="buttons">
-        <Button variant="danger" disabled={!canEdit} aria-disabled={busy || undefined} onclick={onclear}>
-          Remove the combo
-        </Button>
-        <span class="spacer"></span>
         {#if noKeys}<span class="needs" id="combo-{combo.index}-needs">Choose at least one key</span>{/if}
+        <span class="spacer"></span>
+        <Button variant="danger" disabled={!canEdit} aria-disabled={busy || undefined} title="Removes combo {combo.index}"
+          onclick={onclear}>Remove</Button>
         <Button aria-disabled={busy || undefined} onclick={oncancel}>Cancel</Button>
         <Button variant="primary" disabled={!canEdit || noKeys} aria-disabled={busy || undefined}
           aria-describedby={noKeys ? `combo-${combo.index}-needs` : undefined} onclick={onsave}>Save</Button>

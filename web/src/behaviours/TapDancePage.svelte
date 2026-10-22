@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { Analysis } from "../analysis/analysis";
   import type { KeyboardModel, TapDance, TapDanceIn } from "../api/types";
   import { namesOf } from "../keyboard/labels";
@@ -9,10 +9,12 @@
   import { toasts } from "../lib/toasts.svelte";
   import Picker from "../picker/Picker.svelte";
   import Button from "../ui/Button.svelte";
+  import ConfirmDialog from "../ui/ConfirmDialog.svelte";
   import NameDialog, { type NameSubject } from "../ui/NameDialog.svelte";
   import { shownEntries, tapDanceIsSet } from "./entries";
   import { openUse } from "./navigate";
   import PageHeader from "./PageHeader.svelte";
+  import { tapDanceClearNote } from "./sentences";
   import { useTarget } from "./target.svelte";
   import TapDanceCard from "./TapDanceCard.svelte";
 
@@ -73,6 +75,36 @@
     return keyboard.setTapDance(index, body(td, { tappingTerm: ms }), "Changing the tapping term");
   }
 
+  /** the tap dance whose Clear asks first, and what it says */
+  let clearing = $state<{ index: number; note: string } | null>(null);
+
+  /** Clear: all four slots emptied (the tapping term stays), saved at once as every change here. When something uses
+   * it, a confirmation says what first. */
+  function clear(index: number) {
+    if (busy) return;
+    current = index;
+    const note = tapDanceClearNote(index, analysis.usage.tapDances[index] ?? []);
+    if (note) clearing = { index, note };
+    else void clearNow(index).then((done) => {
+      if (done) void focusAfterClear(index);
+    });
+  }
+
+  async function clearNow(index: number): Promise<boolean> {
+    const td = model.tapDance[index];
+    if (!td) return false;
+    const empty = { tap: "KC_NO", hold: "KC_NO", doubleTap: "KC_NO", tapHold: "KC_NO" };
+    if (!(await keyboard.setTapDance(index, body(td, empty), "Clearing the tap dance"))) return false;
+    opened = opened.filter((i) => i !== index);
+    return true;
+  }
+
+  /** the card's heading, when the card stays (something uses it, or the address names it); else the page's */
+  async function focusAfterClear(index: number) {
+    await tick();
+    (document.getElementById(`tap-dance-${index}-title`) ?? document.getElementById("tap-dance-title"))?.focus();
+  }
+
   // the keycode picker, for one slot at a time
   let pickerOpen = $state(false);
   let picking = $state<{ index: number; slot: SlotLabel } | null>(null);
@@ -123,7 +155,7 @@
     id="tap-dance-title"
     title="Tap dance"
     description="One key, up to four actions: tapped, held, tapped twice, or tapped then held. Click a slot to change it."
-    note="Each change is saved to the keyboard at once: there is no Save. To remove a tap dance, clear all four of its slots."
+    note="Each change is saved to the keyboard at once: there is no Save. Clear empties all four slots of a tap dance, which removes it."
   >
     {#snippet action()}
       <Button variant="primary" disabled={!canEdit || free === null} aria-disabled={busy || undefined}
@@ -153,6 +185,7 @@
         current = index;
         setSlot(index, slot, "KC_NO");
       }}
+      onclear={() => clear(index)}
       onterm={(ms) => {
         current = index;
         return setTerm(index, ms);
@@ -181,6 +214,24 @@
     }}
   />
 {/if}
+
+<ConfirmDialog
+  open={clearing !== null}
+  title="Clear tap dance {clearing?.index}?"
+  message={clearing?.note ?? ""}
+  confirmLabel="Clear"
+  danger
+  onconfirm={() => (clearing ? clearNow(clearing.index) : Promise.resolve(true))}
+  onclose={() => {
+    const index = clearing?.index;
+    clearing = null;
+    // cleared: the card stays (something uses it), so its heading; not cleared: the Clear button that asked
+    if (index === undefined) return;
+    const button = document.getElementById(`tap-dance-${index}-clear`);
+    if (button) button.focus();
+    else void focusAfterClear(index);
+  }}
+/>
 
 <NameDialog
   {subject}

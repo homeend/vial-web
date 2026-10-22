@@ -28,6 +28,8 @@ releases, see [get.vial.today](https://get.vial.today/).
   before Apply; only what changes is written, and Undo puts the old order back. If writing stops partway (the keyboard
   unplugged, say), Vial offers to finish the arrange or put the layers back as they were.
 - **Tap dance, combos, macros, key overrides, alt-repeat:** a page each. Macros can be edited as text or recorded.
+  A tap dance's Clear empties its four slots at once (it asks first when keys use it); a combo, macro, key
+  override or alt-repeat key has Remove in its editor.
 - **QMK settings, lighting, layout options, matrix tester, reboot to bootloader.**
 - **Layout files:** save the whole layout to a `.vil` file and load one back, with a preview of what it changes.
 - Several keyboards plugged in: choose which one to edit. Unlocking, when the keyboard asks for it.
