@@ -27,7 +27,10 @@ HELD = "while held"
 """ the start of Described.layerAction for a layer that is on while the key is held (LM, with or without modifiers) """
 SPLIT_GAP = 1.0
 """ a gap wider than this between neighbouring key centres (in key units) splits the board in two halves; without one
-the board is one piece and the hands part between the home row's middle letters """
+the board is one piece and the hands part after the home row's fifth typing key (one_board_split) """
+HOME_KEYS_A_HAND = 5
+""" the home-row keys that type a character under one hand of a board in one piece: the four fingers' and the index
+finger's inner reach (A S D F G on a QWERTY 60 %) """
 REACH_OF_ROW = {"home": "rest", "top": "up", "bottom": "down", "number": "up"}
 """ a finger column's reach by row: the number row is always up (from the top row's finger); inner and outer are
 reaches from the home row only """
@@ -243,18 +246,21 @@ def row_names(keys, row_idx, letter):
     return names, main_rows[1] if len(main_rows) > 1 else main_rows[0]
 
 
-def one_board_split(keys, pos, letter):
-    """ Where the hands part on a board in one piece: between the two middle letters of the home row (g and h on
-    QWERTY), the left hand taking the odd one. Halfway across when the home row has fewer than two letters. """
+def one_board_split(keys, pos, tap0, letter):
+    """ Where the hands part on a board in one piece: after the fifth home-row key that types a character
+    (HOME_KEYS_A_HAND), counted from the left edge; Caps Lock types nothing, so a QWERTY 60 % parts between G and H
+    whatever the keyboard language makes of ; and ' (German's Ö and Ä are letters too: parting between the middle
+    letters would rest the hands on S D F G and K L Ö Ä). Halfway across when the home row has fewer than ten typing
+    keys (a macropad, a lone half). """
     y0 = min(p[1] for p in pos.values())
     row_idx = {key_id(g): grid(pos[key_id(g)][1], y0) for g in keys}
     _, home_row = row_names(keys, row_idx, letter)
-    xs = sorted(pos[key_id(g)][0] for g in keys if row_idx[key_id(g)] == home_row and letter[key_id(g)])
-    if len(xs) < 2:
+    xs = sorted(pos[key_id(g)][0] for g in keys
+                if row_idx[key_id(g)] == home_row and tap0.get(key_id(g)) is not None)
+    if len(xs) < 2 * HOME_KEYS_A_HAND:
         xs = sorted(p[0] for p in pos.values())
         return (xs[0] + xs[-1]) / 2
-    left = (len(xs) + 1) // 2
-    return (xs[left - 1] + xs[left]) / 2
+    return (xs[HOME_KEYS_A_HAND - 1] + xs[HOME_KEYS_A_HAND]) / 2
 
 
 def propose_fingers(keys, tap0, rest_pref):
@@ -269,11 +275,12 @@ def propose_fingers(keys, tap0, rest_pref):
     end's is not, and a column that types nothing lies nearer the gap (Ctrl N E I O ' on a Corne: the outer ' is the
     extra); of six or more, the innermost is the extra one and the four after it the fingers. The extra inner column
     and any column nearer the gap are the index finger's inner reach, columns beyond the pinky its outer reach. A
-    board in one piece parts between the home row's middle letters, and its rows are staggered, so each row counts
-    its keys from the gap outwards instead: inner, index, middle, ring, pinky, outer. A board with one hand on it (a
-    macropad, a lone half) has no gap either, so it is parted the same way, and the user corrects the fingers. The
-    rows below the bottom letter row are the thumbs; the thumb rests on Space, else Enter, else the widest key, else
-    the one nearest the index finger. The number row is always typed up, from the top row's finger. """
+    board in one piece parts after the home row's fifth typing key (one_board_split), and its rows are staggered, so
+    each row counts its keys from the gap outwards instead: inner, index, middle, ring, pinky, outer. A board with
+    one hand on it (a macropad, a lone half) has no gap either, so it is parted halfway, and the user corrects the
+    fingers. The rows below the bottom letter row are the thumbs; the thumb rests on Space, else Enter, else the
+    widest key, else the one nearest the index finger. The number row is always typed up, from the top row's finger.
+    """
     if not keys:
         return {}
     pos = {key_id(g): centre(g) for g in keys}
@@ -282,7 +289,7 @@ def propose_fingers(keys, tap0, rest_pref):
     # the hand split is the widest gap between key centres, when there is one
     gap_at = max(zip(xs, xs[1:]), key=lambda p: p[1] - p[0]) if len(xs) > 1 else (xs[0], xs[0])
     one_board = gap_at[1] - gap_at[0] <= SPLIT_GAP
-    split = one_board_split(keys, pos, letter) if one_board else (gap_at[0] + gap_at[1]) / 2
+    split = one_board_split(keys, pos, tap0, letter) if one_board else (gap_at[0] + gap_at[1]) / 2
     out = {}
     for hand in ("left", "right"):
         # a key right under the split (B on a row-stagger board, between G and H) is the left hand's; on a split board
@@ -396,13 +403,15 @@ def proposal(model):
 
 def apply_fingers(proposal, fingers_file):
     """ The proposal with the user's corrections (a vial-web-fingers/1 file as a dict, or None) on top: a new dict.
-    Keys the keyboard doesn't have are ignored; a resting key that isn't a thumb's gets the rest reach. """
+    A correction is a key's finger and reach (lesson-format.md section 2.3: the hand and the row stay the
+    proposal's) and the list of resting keys. Keys the keyboard doesn't have are ignored; a resting key that isn't a
+    thumb's gets the rest reach. """
     out = {kid: dict(entry) for kid, entry in proposal.items()}
     if not fingers_file:
         return out
     for kid, change in (fingers_file.get("keys") or {}).items():
         if kid in out and isinstance(change, dict):
-            out[kid].update({k: v for k, v in change.items() if k in ("finger", "reach", "hand", "row")})
+            out[kid].update({k: v for k, v in change.items() if k in ("finger", "reach")})
     if "home" in fingers_file:
         home = set(fingers_file["home"] or [])
         for kid in out:

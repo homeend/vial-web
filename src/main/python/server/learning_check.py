@@ -12,7 +12,6 @@ import json
 import re
 from pathlib import Path
 
-SCHEMA = Path(__file__).resolve().parents[4] / "docs" / "learning" / "lesson-set.schema.json"
 FORMAT = "vial-web-lessons/1"
 EXPORT_FORMAT = "vial-web-layout-export/1"
 
@@ -35,21 +34,51 @@ MAX_TITLE, MAX_EXERCISE_TITLE, MAX_GUIDANCE, MAX_LINE, MAX_PATH = 120, 80, 1000,
 # Windows makes no file of these names, with any extension: the set id becomes <id>.json
 RESERVED = {"con", "prn", "aux", "nul"} | {"com{}".format(i) for i in range(1, 10)} | \
            {"lpt{}".format(i) for i in range(1, 10)}
+MAX_REPORTED = 200
+""" errors, and warnings, a report lists at most; the rest are counted in one closing line, so that a file of
+megabytes of junk doesn't come back as millions of lines """
+
+
+def schema_path(file=__file__):
+    """ docs/learning/lesson-set.schema.json of the source tree this file is in (four folders up), or None where there
+    is no such tree: a frozen build unpacked to a shallow folder (PyInstaller's /tmp/_MEIxxxxxx on Linux) has too few
+    parents to count up, and must still import """
+    parents = Path(file).resolve().parents
+    return parents[4] / "docs" / "learning" / "lesson-set.schema.json" if len(parents) > 4 else None
 
 
 class Report:
     """ What a check found: errors (the set can't be used) and warnings (it can, but the rules say otherwise), each
-    "where: what" """
+    "where: what". Each list holds MAX_REPORTED lines at most, then one "... and N more". """
 
     def __init__(self):
-        self.errors = []
-        self.warnings = []
+        self._errors = []
+        self._warnings = []
+        self._more = {"errors": 0, "warnings": 0}
+
+    def _add(self, kind, lines, where, what):
+        if len(lines) < MAX_REPORTED:
+            lines.append("{}: {}".format(where, what))
+        else:
+            self._more[kind] += 1
+
+    def _listed(self, kind, lines):
+        more = self._more[kind]
+        return lines + (["... and {} more".format(more)] if more else [])
 
     def error(self, where, what):
-        self.errors.append("{}: {}".format(where, what))
+        self._add("errors", self._errors, where, what)
 
     def warn(self, where, what):
-        self.warnings.append("{}: {}".format(where, what))
+        self._add("warnings", self._warnings, where, what)
+
+    @property
+    def errors(self):
+        return self._listed("errors", self._errors)
+
+    @property
+    def warnings(self):
+        return self._listed("warnings", self._warnings)
 
 
 def load(path, report, what):
@@ -64,18 +93,22 @@ def load(path, report, what):
 
 def schema_check(data, report):
     """ The JSON Schema's say, as errors in the report, when jsonschema is installed (it isn't needed: the structural
-    checks cover what matters); returns a note on what was done """
+    checks cover what matters) and the schema file is there (a frozen build has no docs folder: no error for that);
+    returns a note on what was done """
     try:
         import jsonschema  # type: ignore
     except ImportError:
         return "schema: jsonschema not installed, structural checks only"
-    schema = load(SCHEMA, report, "schema")
+    path = schema_path()
+    if path is None or not path.is_file():
+        return "schema: not found"
+    schema = load(path, report, "schema")
     if schema is None:
         return "schema: not found"
     for err in sorted(jsonschema.Draft202012Validator(schema).iter_errors(data), key=lambda e: list(e.path)):
         where = "/".join(str(p) for p in err.path) or "(root)"
         report.error(where, err.message)
-    return "schema: checked against {}".format(SCHEMA.name)
+    return "schema: checked against {}".format(path.name)
 
 
 def short(value):

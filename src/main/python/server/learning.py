@@ -9,10 +9,12 @@ file system (Windows, macOS) a set saved as mini is no set MINI (the listing is 
 import json
 import math
 import os
-import re
 import threading
 
 from server import learning_check, learning_layout
+# the checker's patterns: a lesson set's id (its file name) and a keyboard uid are a file or folder name that stays
+# inside the store; a key id is "r1c4"
+from server.learning_check import ID, KEY_ID
 
 FINGERS_FORMAT = "vial-web-fingers/1"
 PROGRESS_FORMAT = "vial-web-progress/1"
@@ -21,9 +23,6 @@ ATTEMPTS_KEPT = 50
 DEFAULT_SETTINGS = {"passAccuracy": 95, "targetWpm": 30, "pictureInWords": True}
 FINGERS = ("index", "middle", "ring", "pinky", "thumb")
 REACHES = ("rest", "up", "down", "inner", "outer")
-ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
-""" a lesson set's id (its file name) and a keyboard uid: a file or folder name that stays inside the store """
-KEY_ID = re.compile(r"^r[0-9]+c[0-9]+$")
 
 
 class NotFound(LookupError):
@@ -61,17 +60,26 @@ def _number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
+def _whole(value):
+    """ A whole, finite number: an int, or a float with nothing after the point (100.0, as JSON may spell it) """
+    return _number(value) and (not isinstance(value, float) or value.is_integer())
+
+
 def _key_id(value):
     return isinstance(value, str) and KEY_ID.fullmatch(value) is not None
 
 
 def _clean_attempt(attempt):
-    """ An attempt as the file should hold it, or None for one that isn't """
+    """ An attempt as the file should hold it (chars and errors whole numbers, as the reply's schema has them), or
+    None for one that isn't """
     if not isinstance(attempt, dict) or not isinstance(attempt.get("at"), str):
         return None
-    if not all(_number(attempt.get(f)) for f in ("chars", "errors", "accuracy", "wpm", "seconds")):
+    if not all(_whole(attempt.get(f)) for f in ("chars", "errors")):
         return None
-    return {f: attempt[f] for f in ("at", "chars", "errors", "accuracy", "wpm", "seconds")}
+    if not all(_number(attempt.get(f)) for f in ("accuracy", "wpm", "seconds")):
+        return None
+    return {"at": attempt["at"], "chars": int(attempt["chars"]), "errors": int(attempt["errors"]),
+            **{f: attempt[f] for f in ("accuracy", "wpm", "seconds")}}
 
 
 def _exercise_entry(attempts, best=None):
@@ -148,6 +156,21 @@ class LearningStore:
             return os.path.basename(path) in os.listdir(os.path.dirname(path))
         except OSError:
             return False
+
+    @staticmethod
+    def _check_no_case_clash(path, what):
+        """ ValueError when the folder holds a file whose name is path's ignoring case, but not exactly: on a
+        case-insensitive file system (Windows, macOS) writing path would land on that file, and the listing (by exact
+        names) would lose one of the two; refused on every platform, so that a store moved between them stays whole """
+        name = os.path.basename(path)
+        try:
+            names = os.listdir(os.path.dirname(path))
+        except OSError:
+            return
+        clash = next((n for n in names if n != name and n.lower() == name.lower()), None)
+        if clash is not None:
+            raise ValueError("a {} `{}` differs only in case".format(what, clash[:-len(".json")]
+                                                                  if clash.endswith(".json") else clash))
 
     def _load(self, path, for_write=False):
         """ The JSON in path, or None when there is none. As NamesStore._load: reading for display treats any
@@ -295,13 +318,16 @@ class LearningStore:
 
     def import_set(self, uid, data, export=None):
         """ Check a lesson set (the parsed file) and save it as sets/<its id>.json; LessonSetInvalid when the checker
-        finds errors. The export, when given, checks its new keys. Returns its listing entry with the warnings. """
+        finds errors, ValueError when a set whose id differs from this one's only in case is there (MINI beside
+        mini: ids name files exactly, and a case-insensitive file system would put one on the other). The export,
+        when given, checks its new keys. Returns its listing entry with the warnings. """
         errors, warnings = learning_check.check_set(data, export)
         if errors:
             raise LessonSetInvalid(errors, warnings)
         set_id = data["id"]  # check_set saw to it being a plain id
         with self.lock:
             path = self._set_path(uid, set_id)
+            self._check_no_case_clash(path, "set")
             self._load(path, for_write=True)
             self._save(path, data)
         return {**self._summary(set_id, data), "warnings": warnings}
@@ -348,7 +374,8 @@ class LearningStore:
         the exercise is done, its best attempt the one with the highest accuracy then WPM (of all time), and the last
         ATTEMPTS_KEPT attempts are kept; the progress of exercises the set no longer has is dropped. Every wrong press
         counts an error, so errors may exceed chars: accuracy floors at 0. NotFound when the set has no such exercise;
-        ValueError for numbers that can't be. Returns the exercise's progress entry. """
+        ValueError for numbers that can't be, or when a progress file whose name differs only in case is there (as
+        import_set). Returns the exercise's progress entry. """
         chars, errors, seconds = attempt.get("chars"), attempt.get("errors"), attempt.get("seconds")
         if not all(_number(v) for v in (chars, errors, seconds)) or not isinstance(attempt.get("at"), str):
             raise ValueError("an attempt has at (a string), chars, errors and seconds (finite numbers)")
@@ -368,6 +395,7 @@ class LearningStore:
             exercises = {ex["id"] for lesson in lesson_set["lessons"] for ex in lesson["exercises"]}
             if exercise_id not in exercises:
                 raise NotFound("lesson set {} has no exercise {!r}".format(set_id, exercise_id))
+            self._check_no_case_clash(self._progress_path(uid, set_id), "progress file")
             progress = self._clean_progress(set_id, self._load_progress(uid, set_id, for_write=True))
             progress["exercises"] = {eid: e for eid, e in progress["exercises"].items() if eid in exercises}
             before = progress["exercises"].get(exercise_id) or {"best": None, "attempts": []}

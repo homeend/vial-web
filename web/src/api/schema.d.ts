@@ -598,7 +598,8 @@ export interface paths {
         /**
          * Get Fingers
          * @description Which finger types each key of the keyboard open: the app's proposal from the key positions and what layer
-         *     0 types (lesson-rules.md section 2), with the user's corrections (PUT) on top
+         *     0 types in the keyboard language lang (lesson-rules.md section 2; the export, the listing and the import use
+         *     the same), with the user's corrections (PUT) on top
          */
         get: operations["get_fingers_api_learning_fingers_get"];
         /**
@@ -610,7 +611,7 @@ export interface paths {
         post?: never;
         /**
          * Clear Fingers
-         * @description Forget the user's corrections: back to the app's proposal
+         * @description Forget the user's corrections: back to the app's proposal (as GET gives it)
          */
         delete: operations["clear_fingers_api_learning_fingers_delete"];
         options?: never;
@@ -3053,7 +3054,10 @@ export interface operations {
     };
     get_fingers_api_learning_fingers_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3069,11 +3073,23 @@ export interface operations {
                     "application/json": components["schemas"]["Fingers"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     set_fingers_api_learning_fingers_put: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3106,7 +3122,10 @@ export interface operations {
     };
     clear_fingers_api_learning_fingers_delete: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3120,6 +3139,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Fingers"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

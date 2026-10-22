@@ -153,6 +153,68 @@ def test_schema_check_without_jsonschema_only_says_so(monkeypatch):
     assert report.errors == []
 
 
+def test_the_schema_path_is_none_where_the_source_tree_is_too_shallow(tmp_path):
+    """ PyInstaller unpacks the Linux one-file build to /tmp/_MEIxxxxxx: this file has four parents there, no docs
+    folder above them. The path is found lazily and is None then, so that the checker (and the app) still import. """
+    assert learning_check.schema_path("/tmp/_MEI123456/server/learning_check.py") is None
+    assert learning_check.schema_path("/opt/vial/server/learning_check.py") is None
+    assert learning_check.schema_path("/a/b/c/d/learning_check.py") is not None  # five parents: counted up
+    found = learning_check.schema_path()
+    assert found is not None and found.name == "lesson-set.schema.json" and found.is_file()
+    assert learning_check.schema_path(__file__) == found  # test/ lies beside server/: four up is the same tree
+
+
+def test_schema_check_without_the_schema_file_only_says_so(monkeypatch, tmp_path):
+    """ A frozen build has no docs folder: "not found", and no error in the report for it (every import would fail
+    otherwise). Run with a stand-in jsonschema, as the real one needn't be installed: the file is looked for first. """
+    import sys
+    import types
+    stub = types.ModuleType("jsonschema")
+    stub.Draft202012Validator = lambda schema: types.SimpleNamespace(iter_errors=lambda data: [])
+    monkeypatch.setitem(sys.modules, "jsonschema", stub)
+    for path in (None, tmp_path / "missing.json", tmp_path):
+        monkeypatch.setattr(learning_check, "schema_path", lambda path=path: path)
+        report = Report()
+        assert learning_check.schema_check(minimal_set(), report) == "schema: not found", path
+        assert report.errors == [] and report.warnings == []
+    monkeypatch.undo()  # the real schema_path again, under the stand-in still
+    monkeypatch.setitem(sys.modules, "jsonschema", stub)
+    report = Report()
+    assert learning_check.schema_check(minimal_set(), report) == "schema: checked against lesson-set.schema.json"
+    assert report.errors == []
+
+
+def test_a_report_lists_two_hundred_lines_at_most_then_counts_the_rest():
+    """ {"lessons": [1, 1, 1, ...]} of thousands (a 4 MiB file could hold two million) is 200 errors and one closing
+    line, not an error per entry in the reply; the warnings the same """
+    data = minimal_set()
+    data["lessons"] = [1] * 5000
+    errors, warnings = check_set(data)
+    assert len(errors) == learning_check.MAX_REPORTED + 1 == 201
+    assert errors[0] == "lessons[0]: not an object" and errors[199] == "lessons[199]: not an object"
+    assert errors[200] == "... and 4800 more"
+    assert warnings == []
+    # a lesson repeated: each copy repeats the ids (4 errors) and lacks new characters and two exercise kinds
+    # (3 warnings)
+    data = minimal_set()
+    again = copy.deepcopy(data["lessons"][0])
+    again["new"] = []
+    data["lessons"] += [copy.deepcopy(again) for _ in range(3000)]
+    errors, warnings = check_set(data)
+    assert len(errors) == 201 and errors[-1] == "... and 11800 more"
+    assert len(warnings) == 201 and warnings[-1] == "... and 8800 more"
+    assert warnings[0] == "lesson 01: no new characters and not a review lesson"
+    # exactly the limit: no closing line
+    report = Report()
+    for i in range(learning_check.MAX_REPORTED):
+        report.error("e{}".format(i), "x")
+    assert len(report.errors) == 200 and report.errors[-1] == "e199: x"
+    report.warn("w", "y")
+    assert report.warnings == ["w: y"]
+    report.error("one more", "x")
+    assert len(report.errors) == 201 and report.errors[-1] == "... and 1 more"
+
+
 def mutated(path, value):
     """ A minimal set with the field at path (keys and indices) replaced by value """
     data = minimal_set()
@@ -310,7 +372,7 @@ def test_a_missing_new_char_says_so():
 
 def test_the_schema_allows_what_the_checker_allows():
     """ lesson-set.schema.json restates the checker: unknown properties pass, and `new` may be missing """
-    with open(learning_check.SCHEMA, encoding="utf-8") as inf:
+    with open(learning_check.schema_path(), encoding="utf-8") as inf:
         schema = json.load(inf)
     assert "additionalProperties" not in json.dumps(schema)
     assert "new" not in schema["$defs"]["lesson"]["required"]

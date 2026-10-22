@@ -10,9 +10,11 @@ from server.app import create_app
 from server.device import DeviceManager, FakeBackend
 from server.learning import LearningStore, LessonSetInvalid, NotFound
 from server.names import NamesStore
+from simulator import corne
 from simulator.corne import make_corne
+from simulator.virtual_keyboard import VirtualKeyboard
 from test.test_learning_check import minimal_set, EXPORT as MINI_EXPORT
-from test.test_learning_layout import model_of, EXAMPLES
+from test.test_learning_layout import model_of, keymap_of, EXAMPLES
 
 UID = "5EEDC0DE00420042"
 """ the simulated Corne's uid """
@@ -275,6 +277,32 @@ def test_set_ids_name_files_exactly(store, root):
     assert store.set(UID, "mini")["id"] == "mini" and store.progress(UID, "mini")["exercises"]["01-n1"]["done"]
 
 
+def test_a_set_whose_id_differs_only_in_case_is_refused(store, root):
+    """ On Windows and macOS MINI.json would land on mini.json, the listing lose mini and its progress be orphaned:
+    refused everywhere, by the listing, so that a store moved between platforms stays whole """
+    store.import_set(UID, minimal_set())
+    store.record(UID, "mini", "01-n1", attempt())
+    upper = minimal_set()
+    upper["id"], upper["title"] = "MINI", "Upper"
+    with pytest.raises(ValueError, match="a set `mini` differs only in case"):
+        store.import_set(UID, upper)
+    assert os.listdir(root / UID / "sets") == ["mini.json"]
+    assert [(s["id"], s["title"]) for s in store.sets(UID)] == [("mini", "Mini")]
+    assert store.progress(UID, "mini")["exercises"]["01-n1"]["done"]
+    # the same id again is a replacement, as before; another id is no clash
+    store.import_set(UID, minimal_set())
+    other = minimal_set()
+    other["id"] = "mini-2"
+    store.import_set(UID, other)
+    assert sorted(s["id"] for s in store.sets(UID)) == ["mini", "mini-2"]
+    # a progress file placed by hand under the other case: recording for mini would land on it (or shadow it)
+    (root / UID / "progress" / "MINI-2.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="a progress file `MINI-2` differs only in case"):
+        store.record(UID, "mini-2", "01-n1", attempt())
+    assert sorted(os.listdir(root / UID / "progress")) == ["MINI-2.json", "mini.json"]
+    assert store.progress(UID, "mini-2")["exercises"] == {}
+
+
 # ---------- the store: progress ----------
 
 def test_progress_is_empty_until_an_attempt_is_recorded(store):
@@ -417,16 +445,23 @@ def test_a_hand_edited_progress_file_is_cleaned_up(store, root):
     folder = root / UID / "progress"
     folder.mkdir(parents=True)
     good = {"at": "t", "chars": 100, "errors": 0, "accuracy": 100.0, "wpm": 20.0, "seconds": 60}
+    whole = {**good, "at": "t2", "chars": 100.0, "errors": 0.0}  # whole floats: read as the ints the reply promises
     (folder / "mini.json").write_text(json.dumps({
         "format": "vial-web-progress/1", "lessonSet": "mini", "layoutHash": 5,
         "exercises": {"01-n1": {"done": False, "best": None,
                                 "attempts": [good, "junk", {"at": "x"}, {**good, "wpm": float("nan")},
-                                             {**good, "accuracy": True}]},
-                      "01-k1": "junk", "01-w1": {"attempts": "junk"}}}), encoding="utf-8")
+                                             {**good, "accuracy": True}, {**good, "chars": 3.5},
+                                             {**good, "errors": 0.5}, {**good, "chars": "100"}, whole]},
+                      "01-k1": "junk", "01-w1": {"attempts": "junk"},
+                      "01-x": {"best": {**good, "chars": 3.5}, "attempts": []}}}), encoding="utf-8")
     progress = store.progress(UID, "mini")
     assert progress["layoutHash"] is None
-    assert progress["exercises"] == {"01-n1": {"done": True, "best": good, "attempts": [good]},
-                                     "01-w1": {"done": False, "best": None, "attempts": []}}
+    assert progress["exercises"] == {"01-n1": {"done": True, "best": good, "attempts": [good, {**whole, "chars": 100,
+                                                                                               "errors": 0}]},
+                                     "01-w1": {"done": False, "best": None, "attempts": []},
+                                     "01-x": {"done": False, "best": None, "attempts": []}}
+    read = progress["exercises"]["01-n1"]["attempts"][1]
+    assert isinstance(read["chars"], int) and isinstance(read["errors"], int)
     assert store.record(UID, "mini", "01-n1", attempt())["attempts"][0] == good
 
 
@@ -545,6 +580,32 @@ def test_import_list_get_and_delete_over_the_api(client, root):
     assert client.get("/api/learning/sets/a%2Fb").status_code == 404
 
 
+def test_import_of_an_id_that_differs_only_in_case_is_refused_over_the_api(client, root):
+    data = example("corne-sim-en.json")
+    assert client.post("/api/learning/sets", json=data).status_code == 201
+    response = client.post("/api/learning/sets", json={**data, "id": "Corne-Sim-EN"})
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "a set `corne-sim-en` differs only in case"
+    assert os.listdir(root / UID / "sets") == ["corne-sim-en.json"]
+    assert [s["id"] for s in client.get("/api/learning/sets").json()] == ["corne-sim-en"]
+
+
+def test_a_hand_edited_progress_file_with_fractions_is_served_not_a_500(client, root):
+    assert client.post("/api/learning/sets", json=example("corne-sim-en.json")).status_code == 201
+    folder = root / UID / "progress"
+    folder.mkdir(parents=True)
+    good = {"at": "t", "chars": 100, "errors": 0, "accuracy": 100.0, "wpm": 20.0, "seconds": 60}
+    (folder / "corne-sim-en.json").write_text(json.dumps({
+        "format": "vial-web-progress/1", "lessonSet": "corne-sim-en", "layoutHash": None,
+        "exercises": {"01-n1": {"done": True, "best": {**good, "chars": 3.5}, "attempts": [{**good, "chars": 3.5}]},
+                      "01-k1": {"done": True, "best": {**good, "chars": 100.0}, "attempts": [{**good, "errors": 0.0}]}}}),
+        encoding="utf-8")
+    response = client.get("/api/learning/progress/corne-sim-en")
+    assert response.status_code == 200, response.text
+    assert response.json()["exercises"] == {"01-n1": {"done": False, "best": None, "attempts": []},
+                                            "01-k1": {"done": True, "best": good, "attempts": [good]}}
+
+
 def test_import_refuses_a_bad_file_with_the_checkers_errors(client):
     data = example("corne-sim-en.json")
     data["lessons"][0]["exercises"][0]["lines"].append("zq zq")
@@ -652,8 +713,68 @@ def test_a_learning_write_meant_for_another_keyboard_is_refused_and_writes_nothi
     settings = {"passAccuracy": 90, "targetWpm": 40, "pictureInWords": False}
     assert client.put("/api/learning/settings", json=settings, headers=other).status_code == 409
     assert client.post("/api/learning/sets", json=example("corne-sim-en.json"), headers=other).status_code == 409
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(), headers=other).status_code == 409
+    assert client.delete("/api/learning/fingers", headers=other).status_code == 409
+    assert client.delete("/api/learning/sets/corne-sim-en", headers=other).status_code == 409
     assert not root.exists() or not any(root.rglob("*"))
     assert client.get("/api/learning/fingers").json()["proposal"] is True
+    # with something saved, the deletes and the attempt meant for another keyboard change nothing either
+    assert client.put("/api/learning/fingers", json={"keys": {}, "home": ["r1c1"]}).status_code == 200
+    assert client.post("/api/learning/sets", json=example("corne-sim-en.json")).status_code == 201
+    assert client.delete("/api/learning/fingers", headers=other).status_code == 409
+    assert client.delete("/api/learning/sets/corne-sim-en", headers=other).status_code == 409
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(), headers=other).status_code == 409
+    assert client.get("/api/learning/fingers").json()["home"] == ["r1c1"]
+    assert [s["id"] for s in client.get("/api/learning/sets").json()] == ["corne-sim-en"]
+    assert client.get("/api/learning/progress/corne-sim-en").json()["exercises"] == {}
+    assert not (root / UID / "progress").exists()
+
+
+def ctrl_neio_corne():
+    """ The Corne of test_learning_layout's "Ctrl N E I O '" case: under en-us the right hand rests on N E I O (' is
+    no letter, so it is the extra column); under German ' is the letter Ä, and the hand rests on E I O Ä """
+    layer_0 = [
+        ["KC_TAB", "KC_Q", "KC_W", "KC_E", "KC_R", "KC_T"],
+        ["KC_LCTL", "KC_A", "KC_S", "KC_D", "KC_F", "KC_G"],
+        ["KC_LSFT", "KC_Z", "KC_X", "KC_C", "KC_V", "KC_B"],
+        ["KC_NO"] * 3 + ["KC_LGUI", "KC_SPC", "KC_LALT"],
+        ["KC_BSPC", "KC_P", "KC_Y", "KC_U", "KC_L", "KC_J"],
+        ["KC_QUOT", "KC_O", "KC_I", "KC_E", "KC_N", "KC_RCTL"],
+        ["KC_RSFT", "KC_SLSH", "KC_DOT", "KC_COMM", "KC_M", "KC_H"],
+        ["KC_NO"] * 3 + ["KC_RALT", "KC_ENT", "KC_RGUI"],
+    ]
+    return VirtualKeyboard(corne.definition(), layers=1, keymap=keymap_of(layer_0), uid=corne.CORNE_UID)
+
+
+def test_fingers_are_proposed_in_the_keyboard_language_the_export_uses(tmp_path):
+    """ GET, PUT and DELETE /api/learning/fingers take ?lang= as the export, the listing and the import do, so that
+    the Fingers view shows the proposal the lessons are made from (lesson-format.md: one language throughout) """
+    manager = DeviceManager(FakeBackend(ctrl_neio_corne))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0,
+                     learning=LearningStore(str(tmp_path / "learning")))
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN, follow_redirects=False)
+        fingers = {}
+        for lang in ("en-us", "german-qwertz"):
+            export = client.get("/api/learning/export?lang=" + lang).json()
+            fingers[lang] = client.get("/api/learning/fingers?lang=" + lang).json()["keys"]
+            assert fingers[lang] == {k["id"]: {f: k[f] for f in ("hand", "finger", "row", "reach", "home")}
+                                     for k in export["keys"]}, lang
+        n, quote = "r5c4", "r5c0"
+        assert fingers["en-us"][n]["home"] and not fingers["en-us"][quote]["home"]
+        assert not fingers["german-qwertz"][n]["home"] and fingers["german-qwertz"][quote]["home"]
+        assert client.get("/api/learning/fingers").json()["keys"] == fingers["en-us"]
+        # PUT and DELETE answer in the language asked for too
+        saved = client.put("/api/learning/fingers?lang=german-qwertz", json={"keys": {}, "home": ["r1c1"]})
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["keys"][quote]["finger"] == "pinky" and saved.json()["keys"][quote]["reach"] == "rest"
+        assert not saved.json()["keys"][quote]["home"] and saved.json()["keys"]["r1c1"]["home"]
+        reset = client.delete("/api/learning/fingers?lang=german-qwertz")
+        assert reset.status_code == 200 and reset.json()["keys"] == fingers["german-qwertz"]
+        for method in (client.get, client.delete):
+            assert method("/api/learning/fingers?lang=klingon").status_code == 422
+        assert client.put("/api/learning/fingers?lang=klingon", json={"keys": {}, "home": []}).status_code == 422
 
 
 def test_an_oversized_lesson_set_is_refused(client, root):

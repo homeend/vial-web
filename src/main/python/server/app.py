@@ -908,27 +908,28 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
                                home=[kid for kid, key in keys.items() if key["home"]], proposal=saved is None)
 
     @app.get("/api/learning/fingers", response_model=schemas.Fingers)
-    def get_fingers():
+    def get_fingers(lang: Lang = languages.DEFAULT):
         """ Which finger types each key of the keyboard open: the app's proposal from the key positions and what layer
-        0 types (lesson-rules.md section 2), with the user's corrections (PUT) on top """
+        0 types in the keyboard language lang (lesson-rules.md section 2; the export, the listing and the import use
+        the same), with the user's corrections (PUT) on top """
         store = learning_store()
-        uid, built = keyboard_dict()
+        uid, built = keyboard_dict(lang)
         return fingers_of(store, uid, built)
 
     @app.put("/api/learning/fingers", response_model=schemas.Fingers)
-    def set_fingers(body: schemas.FingersIn):
+    def set_fingers(body: schemas.FingersIn, lang: Lang = languages.DEFAULT):
         """ Save the user's corrections for this keyboard (learning/<uid>/fingers.json), replacing those saved before;
         returns the result as GET does """
         store = learning_store()
-        uid, built = keyboard_dict()
+        uid, built = keyboard_dict(lang)
         store.set_fingers(uid, body.model_dump())
         return fingers_of(store, uid, built)
 
     @app.delete("/api/learning/fingers", response_model=schemas.Fingers)
-    def clear_fingers():
-        """ Forget the user's corrections: back to the app's proposal """
+    def clear_fingers(lang: Lang = languages.DEFAULT):
+        """ Forget the user's corrections: back to the app's proposal (as GET gives it) """
         store = learning_store()
-        uid, built = keyboard_dict()
+        uid, built = keyboard_dict(lang)
         store.clear_fingers(uid)
         return fingers_of(store, uid, built)
 

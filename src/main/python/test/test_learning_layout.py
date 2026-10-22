@@ -324,6 +324,33 @@ def test_ansi_other_rows(ansi_model):
     assert by_tap["KC_BSPACE"] == {"hand": "right", "finger": "pinky", "row": "number", "reach": "up", "home": False}
 
 
+def test_one_board_split_does_not_depend_on_the_keyboard_language(ansi_model):
+    """ Under German, ; and ' are the letters Ö and Ä: eleven letters in the home row, and parting between the two
+    middle ones would rest the hands on S D F G and K L Ö Ä. The hands part after the fifth key that types a
+    character (Caps Lock types nothing): A S D F G | H J K L Ö Ä, the same fingers as under en-us. """
+    with describe.keyboard_language(languages.overrides("german-qwertz")):
+        german = model_of(lambda: VirtualKeyboard(ANSI_60, layers=2, keymap=keymap_of(ANSI_60_LAYER_0)))
+    ids = ids_by_tap(german)
+    export = learning_layout.export(german, language="german-qwertz")
+    keys = {k["id"]: k for k in export["keys"]}
+    assert keys[ids["KC_SCOLON"]]["chars"]["0"]["tap"] == "ö" and keys[ids["KC_QUOTE"]]["chars"]["0"]["tap"] == "ä"
+    assert learning_layout.proposal(german) == learning_layout.proposal(ansi_model)
+    by_tap = fingers_by_tap(german)
+    assert sorted(kid for kid, f in learning_layout.proposal(german).items() if f["home"]) == \
+        sorted(ids[c] for c in ("KC_A", "KC_S", "KC_D", "KC_F", "KC_J", "KC_K", "KC_L", "KC_SCOLON", "KC_SPACE",
+                                "KC_LALT"))  # the left thumb rests on Alt: Space is the right hand's
+    assert by_tap["KC_G"] == {"hand": "left", "finger": "index", "row": "home", "reach": "inner", "home": False}
+    assert by_tap["KC_H"] == {"hand": "right", "finger": "index", "row": "home", "reach": "inner", "home": False}
+    assert by_tap["KC_QUOTE"] == {"hand": "right", "finger": "pinky", "row": "home", "reach": "outer", "home": False}
+    # fewer than ten typing keys in the home row (a lone half): halfway across
+    half = {"name": "Half", "matrix": {"rows": 3, "cols": 6},
+            "layouts": {"keymap": [["{},{}".format(r, c) for c in range(6)] for r in range(3)]}}
+    layer_0 = [["KC_Q", "KC_W", "KC_E", "KC_R", "KC_T", "KC_Y"], ["KC_A", "KC_S", "KC_D", "KC_F", "KC_G", "KC_H"],
+               ["KC_Z", "KC_X", "KC_C", "KC_V", "KC_B", "KC_N"]]
+    by_tap = fingers_by_tap(model_of(lambda: VirtualKeyboard(half, layers=1, keymap=keymap_of(layer_0))))
+    assert [by_tap[c]["hand"] for c in ("KC_A", "KC_S", "KC_D", "KC_F", "KC_G", "KC_H")] == ["left"] * 3 + ["right"] * 3
+
+
 # ---------- the proposal: a 4x10 ortho ----------
 
 def test_ortho(ortho_model):
@@ -506,6 +533,31 @@ def test_a_rotated_choice_is_moved_by_its_drawn_corner_as_the_picture_does():
     # a key with a second rectangle (an ISO Enter): its corners are both rectangles'
     iso = {"x": 1, "y": 0, "w": 1.5, "h": 1, "x2": 0.25, "y2": 0, "w2": 1.25, "h2": 2}
     assert max(p[1] for p in learning_layout.corners(iso)) == 2 and min(p[0] for p in learning_layout.corners(iso)) == 1
+
+
+# as OPTIONS, but choice 1 holds an encoder (at x 2, y 1) to the left of its key (x 3): the box around the choice's
+# keys and encoders starts at the encoder, which goes where choice 0's key (x 1) is drawn, and the key beside it
+OPTIONS_ENCODER = {"name": "Options", "matrix": {"rows": 1, "cols": 3},
+                   "layouts": {"labels": ["Split"],
+                               "keymap": [["0,0", "0,1\n\n\n0,0"],
+                                          [{"x": 2}, "0,0\n\n\n0,1\n\n\n\n\n\ne", "0,2\n\n\n0,1"]]}}
+
+
+def test_an_encoder_inside_a_layout_option_counts_for_where_the_choice_is_drawn():
+    keymap = {(0, 0, 0): encode("KC_A"), (0, 0, 1): encode("KC_B"), (0, 0, 2): encode("KC_C")}
+    built = model_of(lambda: VirtualKeyboard(OPTIONS_ENCODER, layers=1, keymap=keymap))
+    assert len(built["encoders"]) == 1
+    encoder = built["encoders"][0]
+    assert (encoder["layoutIndex"], encoder["layoutOption"], encoder["x"], encoder["y"]) == (0, 1, 2, 1)
+    assert sorted(learning_layout.corners(encoder)) == [(2, 1), (2, 2), (3, 1), (3, 2)]
+    built["layoutOptions"]["value"] = 1
+    visible = learning_layout.visible_keys(built)
+    # the encoder itself is no key the lessons type; its key lands at (2, 0), beside where the encoder is drawn, not
+    # at (1, 0) as it would were the box drawn around the keys alone
+    assert [(i, learning_layout.key_id(g), g["x"], g["y"]) for i, g in visible] == [(0, "r0c0", 0, 0), (2, "r0c2", 2, 0)]
+    export = learning_layout.export(built)
+    assert [(k["id"], k["x"], k["y"]) for k in export["keys"]] == [("r0c0", 0.5, 0.5), ("r0c2", 2.5, 0.5)]
+    assert export["keys"][1]["chars"] == {"0": {"tap": "c", "shift": "C"}}
 
 
 def test_an_empty_keyboard_exports_no_keys():

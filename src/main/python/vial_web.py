@@ -432,8 +432,8 @@ def parse_args(argv):
                         help="check that this build has everything it needs (hidapi, the server, the web UI) and exit, "
                              "without looking for any keyboard")
     parser.add_argument("--data-dir", type=os.path.abspath,
-                        help="keep the instance lock, session file, log and names in this folder instead of the "
-                             "user's data and config folders (for tests and development)")
+                        help="keep the instance lock, session file, log, names and Learning files in this folder "
+                             "instead of the user's data and config folders (for tests and development)")
     args = parser.parse_args(argv)
     if (args.definition or args.layout or args.layers or args.unlock_counter or args.lighting
             or args.second_definition) and not args.fake:
