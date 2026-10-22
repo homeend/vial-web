@@ -94,9 +94,10 @@
 
 <div class="row">
   <div class="select">
+    <!-- not busy while a set opens: a pick during an open wins (the store keeps only the latest open's answer) -->
     <SelectField id="lesson-set" label="Lesson set" value={learning.chosen ?? ""} {choices}
       title={chosenEntry ? choiceLabel(chosenEntry) : undefined}
-      disabled={sets.length === 0} busy={learning.opening} onchange={(id) => void learning.open(id)} />
+      disabled={sets.length === 0} onchange={(id) => void learning.open(id)} />
   </div>
   <div class="buttons">
     <Button id="import-lessons" aria-disabled={importing || undefined} onclick={() => {

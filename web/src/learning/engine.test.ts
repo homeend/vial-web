@@ -24,6 +24,17 @@ describe("createEngine", () => {
     expect(expectedOf(text)).toEqual([..."the sea", "\n", ..."a tide"]);
   });
 
+  it("types a decomposed character as the composed key", () => {
+    // "e" + combining acute in the file: the keyboard types "é", one character
+    const decomposed: Exercise = { id: "x", kind: "keys", title: "", lines: ["ée"] };
+    expect(expectedOf(decomposed)).toEqual(["é", "e"]);
+    let state = press(createEngine(decomposed), "é", 1000);
+    expect(state.position).toBe(1);
+    expect(state.errors).toBe(0);
+    state = press(state, "e", 2000);
+    expect(state.done).toBe(true);
+  });
+
   it("gives a one-line text exercise no line end", () => {
     const oneLine: Exercise = { id: "x", kind: "text", title: "", lines: ["the sea"] };
     expect(expectedOf(oneLine)).toEqual([..."the sea"]);
@@ -117,6 +128,16 @@ describe("press", () => {
     expect(state.position).toBe(8);
     state = press(state, "Backspace", 11000);
     expect(state.position).toBe(8);
+  });
+
+  it("doesn't cross into the previous line with Backspace at a text line's end", () => {
+    // right after Enter: the new line's start, and the Enter stays typed
+    let state = type(createEngine(text), [..."the sea", "Enter"]);
+    expect(state.position).toBe(8);
+    state = press(state, "Backspace", 10000);
+    expect(state.position).toBe(8);
+    expect(state.errors).toBe(0);
+    expect(segments(state).find((s) => s.lineBreak)?.status).toBe("typed");
   });
 
   it("starts the clock on a Backspace too, and ignores keys it doesn't know", () => {

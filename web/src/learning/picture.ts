@@ -25,12 +25,14 @@ export function keyIndex(placement: Placement, id: string): number | null {
 }
 
 /** Where every character a lesson set teaches is: the `new` entries of every lesson, the first listing of a character
- * winning; the space from the export, as the layer-0 key that taps it. An entry without a key (the checker allows one)
- * places nothing; a missing layer is 0, a missing via a tap. */
+ * winning; the space from the export, as the layer-0 key that taps it (of two, the one a touch typist uses: a resting
+ * key, else a thumb key). An entry without a key (the checker allows one) places nothing; a missing layer is 0, a
+ * missing via a tap. */
 export function placeOfChars(set: LessonSet, layout: LayoutExport): Map<string, PlaceOf> {
   const places = new Map<string, PlaceOf>();
-  const space = layout.keys.find((key) => key.chars["0"]?.tap === " ");
-  if (space) places.set(" ", { key: space.id, layer: 0, via: "tap" });
+  const spaces = layout.keys.filter((key) => key.chars["0"]?.tap === " ").map((key) => ({ key: key.id }));
+  const space = preferred(layout, spaces);
+  if (space) places.set(" ", { key: space.key, layer: 0, via: "tap" });
   for (const lesson of set.lessons) {
     for (const { char, key, layer = 0, via = "tap", path } of lesson.new) {
       if (!key || places.has(char)) continue;
@@ -128,14 +130,15 @@ export function pictureForAll(
   return { highlights, pressed, faded };
 }
 
-/** a key's legend on a layer: "Space", a letter in capitals, or the character; the layer-0 one when the layer has none;
- * the key id when the export has no such key */
+/** a key's legend on a layer: "Space", a letter in capitals (as it is when its capital isn't one character: "ß" would
+ * be "SS"), or the character; the layer-0 one when the layer has none; the key id when the export has no such key */
 function legendOf(layout: LayoutExport, id: string, layer: number): string {
   const key = exportKey(layout, id);
   const tap = key?.chars[String(layer)]?.tap ?? key?.chars["0"]?.tap;
   if (tap === undefined) return id;
   if (tap === " ") return "Space";
-  return /^\p{L}$/u.test(tap) ? tap.toUpperCase() : tap;
+  const upper = tap.toUpperCase();
+  return /^\p{L}$/u.test(tap) && Array.from(upper).length === 1 ? upper : tap;
 }
 
 /** The status line's name of the key to press: "S", "Space", "Shift + S", "hold Space → (", "tap OSL 3 → Shift + 1".

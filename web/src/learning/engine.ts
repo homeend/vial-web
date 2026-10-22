@@ -7,6 +7,7 @@
 // group or word exercise is a wrong key like any other, and `wrong` holds the key as it was pressed. Backspace
 // otherwise goes back one character, but never past the start of the current group, word or line (R4 of
 // course-method.md): a space or a line end ends a group. Going back doesn't take an error away.
+import { tenths } from "./format";
 import type { Exercise } from "./types";
 
 /** the character standing for a line's end in a text exercise; typed with Enter */
@@ -31,10 +32,11 @@ export interface EngineState {
   readonly done: boolean;
 }
 
-/** The characters an exercise expects: its lines joined by one space, or kept apart by LINE_END for a text exercise */
+/** The characters an exercise expects: its lines joined by one space, or kept apart by LINE_END for a text exercise.
+ * Composed (NFC), as a keyboard types them: a decomposed "é" in the file is one character, "é" */
 export function expectedOf(exercise: Exercise): string[] {
   const separator = exercise.kind === "text" ? LINE_END : " ";
-  return Array.from(exercise.lines.join(separator));
+  return Array.from(exercise.lines.join(separator).normalize("NFC"));
 }
 
 /** The state before the first press: nothing typed, the clock not started */
@@ -85,10 +87,6 @@ export interface Result {
   seconds: number;
 }
 
-function tenths(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
 function accuracyOf(chars: number, errors: number): number {
   return chars === 0 ? 100 : Math.max(0, tenths((100 * (chars - errors)) / chars));
 }
@@ -107,7 +105,8 @@ export function resultOf(state: EngineState): Result {
     seconds: Math.round(ms / 1000) };
 }
 
-export interface Progress {
+/** The status line's numbers while typing (not the server's Progress, the file of an exercise's results) */
+export interface TypingProgress {
   /** characters typed so far */
   typed: number;
   /** characters in all */
@@ -123,7 +122,7 @@ export interface Progress {
 }
 
 /** The status line's numbers while typing, at `now` */
-export function progressOf(state: EngineState, now: number): Progress {
+export function progressOf(state: EngineState, now: number): TypingProgress {
   const end = state.finishedAt ?? now;
   const ms = state.startedAt === null ? 0 : end - state.startedAt;
   return {

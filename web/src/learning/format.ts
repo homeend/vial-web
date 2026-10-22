@@ -1,8 +1,13 @@
 // The Learning page's texts: a lesson row's state, an exercise's best, the status line while typing, the result card.
-import type { Progress as TypingProgress, Result } from "./engine";
+import type { Result, TypingProgress } from "./engine";
 import type { LessonStatus } from "./state";
 import { safeFileName } from "../lib/fileName";
 import type { Attempt } from "./types";
+
+/** rounded to one decimal: 66.66 → 66.7 */
+export function tenths(value: number): number {
+  return Math.round(value * 10) / 10;
+}
 
 /** "0:48", "12:05"; minutes keep counting past an hour ("60:00" for 3600 s) */
 export function clockText(seconds: number): string {

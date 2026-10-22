@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import setJson from "../../../docs/learning/examples/corne-sim-en.json";
-import { DEFAULT_SETTINGS, exerciseResult, isMain, lessonStatus, MAIN_KINDS, nextExercise, outOfDate } from "./state";
+import type { LessonSetSummary } from "../api/types";
+import {
+  DEFAULT_SETTINGS, exerciseResult, isMain, lessonStatus, MAIN_KINDS, nextExercise, outOfDate, setToOpen,
+} from "./state";
 import { readLessonSet, type Attempt, type Progress } from "./types";
 
 const set = readLessonSet(setJson);
@@ -114,5 +117,27 @@ describe("outOfDate", () => {
     expect(outOfDate(set, "sha256:0000000000000000")).toBe(true);
     // no export to compare with: nothing to say
     expect(outOfDate(set, null)).toBe(false);
+  });
+});
+
+describe("setToOpen", () => {
+  const entry = (id: string, error: string | null = null): LessonSetSummary =>
+    ({ id, title: id, language: "en", lessons: 2, layoutHash: null, outOfDate: false, error });
+  const listed = [entry("broken", "not a JSON file"), entry("first"), entry("second")];
+
+  it("is the set chosen when it is listed and readable", () => {
+    expect(setToOpen(listed, "second")).toBe("second");
+  });
+
+  it("is the first readable when the one chosen is gone or can't be read", () => {
+    expect(setToOpen(listed, "gone")).toBe("first");
+    expect(setToOpen(listed, "broken")).toBe("first");
+    expect(setToOpen(listed, null)).toBe("first");
+  });
+
+  it("is the first listed when none can be read, so that its error shows; null with none listed", () => {
+    expect(setToOpen([entry("a", "bad"), entry("b", "worse")], "b")).toBe("a");
+    expect(setToOpen([], "second")).toBeNull();
+    expect(setToOpen([], null)).toBeNull();
   });
 });

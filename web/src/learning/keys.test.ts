@@ -21,6 +21,13 @@ describe("keyOf", () => {
     expect(keyOf(keydown("ą", { ctrlKey: true, altKey: true }))).toBe("ą");
   });
 
+  it("leaves the browser Alt with a letter (a menu's shortcut), but types what Option composes on macOS", () => {
+    expect(keyOf(keydown("f", { altKey: true }))).toBe("shortcut");
+    expect(keyOf(keydown("F", { altKey: true }))).toBe("shortcut");
+    expect(keyOf(keydown("å", { altKey: true }))).toBe("å");
+    expect(keyOf(keydown("ą", { ctrlKey: true, altKey: true }))).toBe("ą");
+  });
+
   it("ignores the modifiers themselves, a dead key and an IME composing", () => {
     expect(keyOf(keydown("AltGraph"))).toBe("ignore");
     expect(keyOf(keydown("Shift"))).toBe("ignore");

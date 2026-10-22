@@ -3,7 +3,7 @@ import exportJson from "../../../docs/learning/examples/corne-sim-layout-export.
 import setJson from "../../../docs/learning/examples/corne-sim-en.json";
 import { simulatedCorne } from "../analysis/testing";
 import { placeKeyboard } from "../keyboard/geometry";
-import { keyIndex, nextKeyLabel, pictureFor, pictureForAll, placeOfChars, type PlaceOf } from "./picture";
+import { heldKeysFor, keyIndex, nextKeyLabel, pictureFor, pictureForAll, placeOfChars, type PlaceOf } from "./picture";
 import { readLessonSet, type LayoutExport } from "./types";
 
 const layout = exportJson as LayoutExport;
@@ -29,6 +29,20 @@ describe("placeOfChars", () => {
     expect(placeOfChars(set, { ...layout, keys: [] }).has(" ")).toBe(false);
   });
 
+  it("takes the resting key, then a thumb key, of two that tap the space", () => {
+    // the bottom-row / (r2c5, listed before the thumb) taps a space too
+    const twoSpaces = (thumbHome: boolean) => ({
+      ...layout, keys: layout.keys.map((key) => key.id === "r2c5" ? { ...key, chars: { "0": { tap: " " } } }
+        : key.id === "r3c4" ? { ...key, home: thumbHome } : key),
+    });
+    expect(placeOfChars(set, twoSpaces(true)).get(" ")?.key).toBe("r3c4");
+    // neither resting: the thumb key
+    expect(placeOfChars(set, twoSpaces(false)).get(" ")?.key).toBe("r3c4");
+    // neither resting nor on the thumb row: the first listed
+    const noThumb = { ...layout, keys: twoSpaces(false).keys.filter((key) => key.id !== "r3c4") };
+    expect(placeOfChars(set, noThumb).get(" ")?.key).toBe("r2c5");
+  });
+
   it("keeps the lesson's own path label", () => {
     const withPath = { ...set, lessons: [{ ...set.lessons[0], new: [{ char: "(", key: "r1c3", layer: 1, via: "tap" as const, path: "hold the left thumb" }] }] };
     expect(placeOfChars(withPath, layout).get("(")).toEqual({ key: "r1c3", layer: 1, via: "tap", path: "hold the left thumb" });
@@ -36,8 +50,8 @@ describe("placeOfChars", () => {
   });
 
   it("skips an entry without a key and defaults a missing layer and via, as the checker allows them", () => {
-    // the file's entries, not the type's: the server accepts a bare char
-    const loose = { ...set, lessons: [{ ...set.lessons[0], new: [{ char: "x" }, { char: "y", key: "r1c1" }] as never[] }] };
+    // the server accepts a bare char: the type leaves the key, layer and via optional
+    const loose = { ...set, lessons: [{ ...set.lessons[0], new: [{ char: "x" }, { char: "y", key: "r1c1" }] }] };
     const got = placeOfChars(loose, layout);
     expect(got.has("x")).toBe(false);
     expect(got.get("y")).toEqual({ key: "r1c1", layer: 0, via: "tap" });
@@ -56,6 +70,18 @@ describe("keyIndex", () => {
     expect(keyId(keyIndex(placement, "r7c3")!)).toBe("r7c3");
     expect(keyIndex(placement, "r9c9")).toBeNull();
     expect(keyIndex(placement, "junk")).toBeNull();
+  });
+});
+
+describe("heldKeysFor", () => {
+  it("holds the layer key and the other hand's Shift for a shifted character on a layer", () => {
+    // ~ is Shift + ` on layer 1 (held by the left thumb, r3c4); ` is on the left: the right Shift, I (hold)
+    expect(heldKeysFor({ key: "r1c1", layer: 1, via: "shift" }, layout)).toEqual(["r3c4", "r5c1"]);
+    expect(heldKeysFor({ key: "r1c1", layer: 1, via: "tap" }, layout)).toEqual(["r3c4"]);
+    expect(heldKeysFor({ key: "r1c1", layer: 0, via: "shift" }, layout)).toEqual(["r5c1"]);
+    expect(heldKeysFor({ key: "r1c1", layer: 0, via: "tap" }, layout)).toEqual([]);
+    // a layer the export doesn't have: nothing to hold for it
+    expect(heldKeysFor({ key: "r1c1", layer: 7, via: "shift" }, layout)).toEqual(["r5c1"]);
   });
 });
 
@@ -193,6 +219,16 @@ describe("nextKeyLabel", () => {
   it("says what it can about a key or layer the export doesn't have", () => {
     expect(nextKeyLabel({ key: "r9c9", layer: 0, via: "tap" }, layout)).toBe("r9c9");
     expect(nextKeyLabel({ key: "r1c1", layer: 7, via: "tap" }, layout)).toBe("layer 7 → S");
+  });
+
+  it("keeps a letter whose capital isn't one character, and capitalises one outside ASCII", () => {
+    const taps = (tap: string) => ({
+      ...layout, keys: layout.keys.map((key) => key.id === "r1c1" ? { ...key, chars: { "0": { tap } } } : key),
+    });
+    // "ß".toUpperCase() is "SS"
+    expect(nextKeyLabel({ key: "r1c1", layer: 0, via: "tap" }, taps("ß"))).toBe("ß");
+    expect(nextKeyLabel({ key: "r1c1", layer: 0, via: "tap" }, taps("ą"))).toBe("Ą");
+    expect(nextKeyLabel({ key: "r1c1", layer: 0, via: "shift" }, taps("ß"))).toBe("Shift + ß");
   });
 });
 

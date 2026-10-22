@@ -164,9 +164,10 @@ size range, when a `new-keys` exercise has under 40 % new characters, when a gro
 - An attempt is recorded when the exercise is typed to the end (abandoned attempts are not kept).
 - `errors` = wrong keys pressed (a corrected mistake still counts one error; more errors than characters is
   possible); `accuracy` = 100 × (chars − errors) / chars, one decimal, never below 0; `wpm` = chars / 5 / minutes,
-  one decimal; the server computes both from `chars`, `errors` and `seconds`. `best` is the attempt with the
-  highest accuracy, then the highest WPM, **over all time**: the last 50 attempts of an exercise are kept, and the
-  best stays even when it is no longer among them. `done` means there is a best.
+  one decimal; the server computes both from `chars`, `errors` and `seconds`. `seconds` runs from the first key to
+  the last; the clock doesn't pause while the window is hidden. `best` is the attempt with the highest accuracy,
+  then the highest WPM, **over all time**: the last 50 attempts of an exercise are kept, and the best stays even
+  when it is no longer among them. `done` means there is a best.
 - A lesson is **passed** when every exercise of kinds `new-keys`, `keys`, `words`, `blind`, `text` has a `best`
   with `accuracy ≥ passAccuracy`; it gets a **star** when each of those also has `wpm ≥ targetWpm`. Extras don't
   count. Nothing is locked: any lesson can be opened at any time.

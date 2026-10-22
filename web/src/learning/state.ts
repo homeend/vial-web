@@ -1,4 +1,7 @@
-// A lesson's state for the list rows (design § 1) and the pass and star rules (lesson-format.md § 4).
+// A lesson's state for the list rows (design § 1), the pass and star rules (lesson-format.md § 4), and which set a
+// listing opens.
+import type { LessonSetSummary } from "../api/types";
+import { tenths } from "./format";
 import type { Attempt, Exercise, ExerciseKind, LearningSettings, Lesson, LessonSet, Progress } from "./types";
 
 /** the exercises that count towards passing a lesson: the extras don't */
@@ -24,10 +27,6 @@ export interface LessonStatus {
   /** the mean of the bests' accuracy over the main exercises that have one, one decimal; null with none */
   bestAccuracy: number | null;
   bestWpm: number | null;
-}
-
-function tenths(value: number): number {
-  return Math.round(value * 10) / 10;
 }
 
 function mean(values: number[]): number | null {
@@ -75,4 +74,11 @@ export function nextExercise(set: LessonSet, lessonId: string, exerciseId: strin
 /** Whether the set was built from another character map than the keyboard's export has now; false with no export */
 export function outOfDate(set: LessonSet, exportHash: string | null | undefined): boolean {
   return !!exportHash && set.layout.hash !== exportHash;
+}
+
+/** The set to open from a listing: the one chosen if it is still listed and readable, else the first readable, else the
+ * first listed (a broken file: its error shows, and it can be removed); null with none listed */
+export function setToOpen(sets: LessonSetSummary[], chosen: string | null): string | null {
+  if (chosen !== null && sets.some((s) => s.id === chosen && !s.error)) return chosen;
+  return sets.find((s) => !s.error)?.id ?? sets[0]?.id ?? null;
 }

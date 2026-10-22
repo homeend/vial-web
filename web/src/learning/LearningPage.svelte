@@ -20,11 +20,20 @@
   let { model, placement }: Props = $props();
 
   // the store is for the keyboard shown, in the keyboard language shown (the export's characters are the language's)
-  untrack(() => learning.follow(model.uid, keyboard.language));
   $effect.pre(() => learning.follow(model.uid, keyboard.language));
   // read when the page shows, once per keyboard
   $effect(() => {
     if (!learning.loaded && !learning.loading) void learning.load();
+  });
+  // the export follows the keymap: once read, the sets and the export are read again whenever the keyboard model is
+  // another object (replaced by every load of the keyboard), and when the page shows again after a keymap edit on
+  // another page (a keymap edit changes the model in place: the page, mounted anew, reads here once). So the out-of-date
+  // banner and the picture are for the layout as it is now. The set open stays, and an exercise under way with it.
+  $effect(() => {
+    void keyboard.model;
+    untrack(() => {
+      if (learning.loaded && !learning.loading && !learning.error) void learning.refresh();
+    });
   });
 
   /** the view the address names: the lesson list, the Fingers view, a lesson or an exercise of a set */

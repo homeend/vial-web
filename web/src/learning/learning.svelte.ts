@@ -9,7 +9,7 @@ import type { AttemptIn, FingersIn, LearningSettingsIn, LessonSetSummary } from 
 import { browserStorage } from "../lib/theme";
 import { toasts } from "../lib/toasts.svelte";
 import { placeOfChars, type PlaceOf } from "./picture";
-import { DEFAULT_SETTINGS } from "./state";
+import { DEFAULT_SETTINGS, setToOpen } from "./state";
 import { readChosenSet, saveChosenSet } from "./storage";
 import {
   readLayoutExport, readLessonSet, type Fingers, type LayoutExport, type LearningSettings, type LessonSet, type Progress,
@@ -23,13 +23,6 @@ export type ImportOutcome = { ok: true; entry: LessonSetSummary; warnings: strin
 function readFailure(action: string, error: unknown): string {
   const cause = error instanceof Error && !(error instanceof ApiError) ? error.message : causeMessage(error);
   return `${action} failed: ${cause}`;
-}
-
-/** The set to open from a listing: the one chosen if it is still listed and readable, else the first readable, else the
- * first listed (a broken file: its error shows, and it can be removed) */
-function setToOpen(sets: LessonSetSummary[], chosen: string | null): string | null {
-  if (chosen !== null && sets.some((s) => s.id === chosen && !s.error)) return chosen;
-  return sets.find((s) => !s.error)?.id ?? sets[0]?.id ?? null;
 }
 
 export class LearningState {
@@ -107,7 +100,8 @@ export class LearningState {
     }
   }
 
-  /** Reads the sets and the export again (after Fingers changes: the export, and so what is out of date) */
+  /** Reads the sets and the export again (after Fingers changes, or the keymap: the export, and so what is out of date
+   * and where the characters are). The set open and its progress stay as they are. */
   async refresh(): Promise<void> {
     const read = this.#reads;
     try {

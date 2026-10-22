@@ -25,8 +25,10 @@
 
   const layout = $derived(learning.export);
   const faces = $derived(layerFaces(model, placement.items, 0, namesOf(model)));
+  // a review lesson (nothing new) shows the whole board as it is, not faded
   const picture = $derived(layout
-    ? pictureForAll(lesson.new.map((n) => n.char), learning.places, placement, layout, { fadeOthers: true })
+    ? pictureForAll(lesson.new.map((n) => n.char), learning.places, placement, layout,
+      { fadeOthers: lesson.new.length > 0 })
     : null);
   /** the heading, from the file's title: cut short with a tooltip */
   const title = $derived(`${number} · ${lesson.title}`);
@@ -66,9 +68,10 @@
 
 {#if chars.length > 0}
   <ul class="chars" aria-label="New characters">
-    <!-- by index: a file may list a character twice -->
+    <!-- by index: a file may list a character twice. The gap is an expression: a space at the start of the block
+         would be dropped, and the text (seen or read out) is "s — S" -->
     {#each chars as c, i (i)}
-      <li><kbd>{c.char === " " ? "Space" : c.char}</kbd>{#if c.how !== null} <span class="how">— {c.how}</span>{/if}</li>
+      <li><kbd>{c.char === " " ? "Space" : c.char}</kbd>{#if c.how !== null}{" "}<span class="how">— {c.how}</span>{/if}</li>
     {/each}
   </ul>
 {:else}

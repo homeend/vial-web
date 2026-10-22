@@ -41,6 +41,8 @@
   /** the finished exercise's result, and whether it was saved */
   let result = $state.raw<Result | null>(null);
   let saving = $state<"saving" | "saved" | "failed" | null>(null);
+  /** saves started: only the latest one's answer sets `saving` (Again during a save starts a run of its own) */
+  let saves = 0;
 
   const kind = $derived(exercise.kind);
   const lit = $derived(LIT.includes(kind));
@@ -110,15 +112,18 @@
   /** the attempt goes to the server at once; the time as it was, not rounded to whole seconds, as the server takes
    * some time (a bot typing in under half a second is still an attempt) */
   async function save(state: EngineState, done: Result) {
+    const n = ++saves;
     saving = "saving";
     const ms = (state.finishedAt ?? 0) - (state.startedAt ?? 0);
     const ok = await learning.recordAttempt(exercise.id, {
       at: new Date().toISOString(), chars: done.chars, errors: done.errors, seconds: Math.max(ms / 1000, 0.001),
     });
-    saving = ok ? "saved" : "failed";
+    // an older save's answer (Again was pressed meanwhile) never sets the status of the run shown
+    if (n === saves) saving = ok ? "saved" : "failed";
   }
 
   async function again() {
+    saves++;
     engine = createEngine(exercise);
     result = null;
     saving = null;
@@ -159,7 +164,8 @@
   <p class="status">
     <span>{statusText(progress)}</span>
     {#if nextLabel && !engine.done}<span class="next-key">Next: {nextLabel}</span>{/if}
-    <span class="hint">Esc quits, nothing saved</span>
+    <!-- at the end the result is saved (or says it wasn't): the hint would be untrue -->
+    {#if !engine.done}<span class="hint">Esc quits, nothing saved</span>{/if}
   </p>
 </div>
 
@@ -171,7 +177,8 @@
 {/if}
 
 {#if result && verdict}
-  <section class="result" aria-labelledby="result-title">
+  <!-- polite: the result is read out when it comes, the focus staying in the typing area -->
+  <section class="result" aria-labelledby="result-title" aria-live="polite">
     <h2 id="result-title">{passText(verdict.passed, learning.settings.passAccuracy)}</h2>
     {#if verdict.star}<p class="star">★ reached the target speed</p>{/if}
     <dl>

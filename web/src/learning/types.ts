@@ -14,14 +14,16 @@ export const EXERCISE_KINDS: readonly ExerciseKind[] = [
 
 export type Via = "tap" | "shift" | "altGr";
 
-/** A character a lesson introduces, and where it is */
+/** A character a lesson introduces, and where it is. Only `char` is checked (readLessonSet): the checker lets a
+ * file leave the key out (the character is then listed without a key), and the layer and via default to a tap on
+ * layer 0 (placeOfChars) */
 export interface NewChar {
   /** one character */
   char: string;
   /** export key id, "r1c4" */
-  key: string;
-  layer: number;
-  via: Via;
+  key?: string;
+  layer?: number;
+  via?: Via;
   /** a label for the way there, "hold Space" */
   path?: string;
 }

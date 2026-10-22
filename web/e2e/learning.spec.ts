@@ -24,7 +24,8 @@ const sidewaysScroll = (page: Page) =>
 async function importExample(page: Page) {
   await openSection(page, "Learning");
   await page.locator('input[type="file"]').setInputFiles(EXAMPLE);
-  await expect(page.getByRole("combobox", { name: "Lesson set" })).toHaveValue(SET);
+  // the server checks the file and builds the export: with every worker importing at once, over 5 s
+  await expect(page.getByRole("combobox", { name: "Lesson set" })).toHaveValue(SET, { timeout: 15_000 });
 }
 
 /** Removes the set, the fingers and the settings: what the tests change on the server */
@@ -170,6 +171,12 @@ test("a set built for another character map is out of date", async ({ app }) => 
     await importExample(app);
     await expect(app.getByText("Built for another layout.")).toHaveCount(0);
     await setCodeAt(app, 0, index, "KC_Q");
+    // the page shown again reads the export again: no reload needed
+    await openSection(app, "Keymap");
+    await openSection(app, "Learning");
+    await expect(app.getByRole("combobox", { name: "Lesson set" })).toHaveValue(SET);
+    await expect(app.getByText("Built for another layout.")).toBeVisible();
+    // and after a reload, from the server's listing
     await app.reload();
     await openSection(app, "Learning");
     await expect(app.getByRole("combobox", { name: "Lesson set" })).toHaveValue(SET);
