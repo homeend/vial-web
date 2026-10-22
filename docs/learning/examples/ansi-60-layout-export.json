@@ -1,0 +1,960 @@
+{
+  "format": "vial-web-layout-export/1",
+  "keyboard": {
+    "name": "ANSI 60",
+    "uid": "F00DFACEDEADBEEF"
+  },
+  "hash": "sha256:895407b9cb17312f",
+  "exportedAt": "2026-10-22T12:00:00Z",
+  "language": "en-us",
+  "layers": [
+    {
+      "index": 0,
+      "name": "Base",
+      "reachedBy": []
+    },
+    {
+      "index": 1,
+      "name": "Layer 1",
+      "reachedBy": [
+        {
+          "key": "r4c6",
+          "how": "hold",
+          "label": "hold MO 1"
+        }
+      ]
+    }
+  ],
+  "shiftKeys": [
+    {
+      "key": "r3c0",
+      "hand": "left",
+      "label": "Shift"
+    },
+    {
+      "key": "r3c11",
+      "hand": "right",
+      "label": "Shift"
+    }
+  ],
+  "keys": [
+    {
+      "id": "r0c0",
+      "hand": "left",
+      "finger": "pinky",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 0.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "`",
+          "shift": "~"
+        }
+      }
+    },
+    {
+      "id": "r0c1",
+      "hand": "left",
+      "finger": "pinky",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 1.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "1",
+          "shift": "!"
+        }
+      }
+    },
+    {
+      "id": "r0c2",
+      "hand": "left",
+      "finger": "ring",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 2.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "2",
+          "shift": "@"
+        }
+      }
+    },
+    {
+      "id": "r0c3",
+      "hand": "left",
+      "finger": "middle",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 3.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "3",
+          "shift": "#"
+        }
+      }
+    },
+    {
+      "id": "r0c4",
+      "hand": "left",
+      "finger": "index",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 4.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "4",
+          "shift": "$"
+        }
+      }
+    },
+    {
+      "id": "r0c5",
+      "hand": "left",
+      "finger": "index",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 5.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "5",
+          "shift": "%"
+        }
+      }
+    },
+    {
+      "id": "r0c6",
+      "hand": "left",
+      "finger": "index",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 6.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "6",
+          "shift": "^"
+        }
+      }
+    },
+    {
+      "id": "r0c7",
+      "hand": "right",
+      "finger": "index",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 7.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "7",
+          "shift": "&"
+        }
+      }
+    },
+    {
+      "id": "r0c8",
+      "hand": "right",
+      "finger": "middle",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 8.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "8",
+          "shift": "*"
+        }
+      }
+    },
+    {
+      "id": "r0c9",
+      "hand": "right",
+      "finger": "ring",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 9.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "9",
+          "shift": "("
+        }
+      }
+    },
+    {
+      "id": "r0c10",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 10.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "0",
+          "shift": ")"
+        }
+      }
+    },
+    {
+      "id": "r0c11",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 11.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "-",
+          "shift": "_"
+        }
+      }
+    },
+    {
+      "id": "r0c12",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 12.5,
+      "y": 0.5,
+      "chars": {
+        "0": {
+          "tap": "=",
+          "shift": "+"
+        }
+      }
+    },
+    {
+      "id": "r0c13",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "number",
+      "reach": "up",
+      "home": false,
+      "x": 14.0,
+      "y": 0.5,
+      "chars": {}
+    },
+    {
+      "id": "r1c0",
+      "hand": "left",
+      "finger": "pinky",
+      "row": "top",
+      "reach": "outer",
+      "home": false,
+      "x": 0.75,
+      "y": 1.5,
+      "chars": {}
+    },
+    {
+      "id": "r1c1",
+      "hand": "left",
+      "finger": "pinky",
+      "row": "top",
+      "reach": "up",
+      "home": false,
+      "x": 2.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "q",
+          "shift": "Q"
+        }
+      }
+    },
+    {
+      "id": "r1c2",
+      "hand": "left",
+      "finger": "ring",
+      "row": "top",
+      "reach": "up",
+      "home": false,
+      "x": 3.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "w",
+          "shift": "W"
+        }
+      }
+    },
+    {
+      "id": "r1c3",
+      "hand": "left",
+      "finger": "middle",
+      "row": "top",
+      "reach": "up",
+      "home": false,
+      "x": 4.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "e",
+          "shift": "E"
+        }
+      }
+    },
+    {
+      "id": "r1c4",
+      "hand": "left",
+      "finger": "index",
+      "row": "top",
+      "reach": "up",
+      "home": false,
+      "x": 5.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "r",
+          "shift": "R"
+        }
+      }
+    },
+    {
+      "id": "r1c5",
+      "hand": "left",
+      "finger": "index",
+      "row": "top",
+      "reach": "inner",
+      "home": false,
+      "x": 6.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "t",
+          "shift": "T"
+        }
+      }
+    },
+    {
+      "id": "r1c6",
+      "hand": "right",
+      "finger": "index",
+      "row": "top",
+      "reach": "inner",
+      "home": false,
+      "x": 7.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "y",
+          "shift": "Y"
+        }
+      }
+    },
+    {
+      "id": "r1c7",
+      "hand": "right",
+      "finger": "index",
+      "row": "top",
+      "reach": "up",
+      "home": false,
+      "x": 8.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "u",
+          "shift": "U"
+        }
+      }
+    },
+    {
+      "id": "r1c8",
+      "hand": "right",
+      "finger": "middle",
+      "row": "top",
+      "reach": "up",
+      "home": false,
+      "x": 9.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "i",
+          "shift": "I"
+        }
+      }
+    },
+    {
+      "id": "r1c9",
+      "hand": "right",
+      "finger": "ring",
+      "row": "top",
+      "reach": "up",
+      "home": false,
+      "x": 10.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "o",
+          "shift": "O"
+        }
+      }
+    },
+    {
+      "id": "r1c10",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "top",
+      "reach": "up",
+      "home": false,
+      "x": 11.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "p",
+          "shift": "P"
+        }
+      }
+    },
+    {
+      "id": "r1c11",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "top",
+      "reach": "outer",
+      "home": false,
+      "x": 12.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "[",
+          "shift": "{"
+        }
+      }
+    },
+    {
+      "id": "r1c12",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "top",
+      "reach": "outer",
+      "home": false,
+      "x": 13.0,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "]",
+          "shift": "}"
+        }
+      }
+    },
+    {
+      "id": "r1c13",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "top",
+      "reach": "outer",
+      "home": false,
+      "x": 14.25,
+      "y": 1.5,
+      "chars": {
+        "0": {
+          "tap": "\\",
+          "shift": "|"
+        }
+      }
+    },
+    {
+      "id": "r2c0",
+      "hand": "left",
+      "finger": "pinky",
+      "row": "home",
+      "reach": "outer",
+      "home": false,
+      "x": 0.88,
+      "y": 2.5,
+      "chars": {}
+    },
+    {
+      "id": "r2c1",
+      "hand": "left",
+      "finger": "pinky",
+      "row": "home",
+      "reach": "rest",
+      "home": true,
+      "x": 2.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "a",
+          "shift": "A"
+        }
+      }
+    },
+    {
+      "id": "r2c2",
+      "hand": "left",
+      "finger": "ring",
+      "row": "home",
+      "reach": "rest",
+      "home": true,
+      "x": 3.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "s",
+          "shift": "S"
+        }
+      }
+    },
+    {
+      "id": "r2c3",
+      "hand": "left",
+      "finger": "middle",
+      "row": "home",
+      "reach": "rest",
+      "home": true,
+      "x": 4.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "d",
+          "shift": "D"
+        }
+      }
+    },
+    {
+      "id": "r2c4",
+      "hand": "left",
+      "finger": "index",
+      "row": "home",
+      "reach": "rest",
+      "home": true,
+      "x": 5.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "f",
+          "shift": "F"
+        }
+      }
+    },
+    {
+      "id": "r2c5",
+      "hand": "left",
+      "finger": "index",
+      "row": "home",
+      "reach": "inner",
+      "home": false,
+      "x": 6.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "g",
+          "shift": "G"
+        }
+      }
+    },
+    {
+      "id": "r2c6",
+      "hand": "right",
+      "finger": "index",
+      "row": "home",
+      "reach": "inner",
+      "home": false,
+      "x": 7.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "h",
+          "shift": "H"
+        }
+      }
+    },
+    {
+      "id": "r2c7",
+      "hand": "right",
+      "finger": "index",
+      "row": "home",
+      "reach": "rest",
+      "home": true,
+      "x": 8.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "j",
+          "shift": "J"
+        }
+      }
+    },
+    {
+      "id": "r2c8",
+      "hand": "right",
+      "finger": "middle",
+      "row": "home",
+      "reach": "rest",
+      "home": true,
+      "x": 9.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "k",
+          "shift": "K"
+        }
+      }
+    },
+    {
+      "id": "r2c9",
+      "hand": "right",
+      "finger": "ring",
+      "row": "home",
+      "reach": "rest",
+      "home": true,
+      "x": 10.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "l",
+          "shift": "L"
+        }
+      }
+    },
+    {
+      "id": "r2c10",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "home",
+      "reach": "rest",
+      "home": true,
+      "x": 11.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": ";",
+          "shift": ":"
+        }
+      }
+    },
+    {
+      "id": "r2c11",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "home",
+      "reach": "outer",
+      "home": false,
+      "x": 12.25,
+      "y": 2.5,
+      "chars": {
+        "0": {
+          "tap": "'",
+          "shift": "\""
+        }
+      }
+    },
+    {
+      "id": "r2c12",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "home",
+      "reach": "outer",
+      "home": false,
+      "x": 13.88,
+      "y": 2.5,
+      "chars": {}
+    },
+    {
+      "id": "r3c0",
+      "hand": "left",
+      "finger": "pinky",
+      "row": "bottom",
+      "reach": "outer",
+      "home": false,
+      "x": 1.12,
+      "y": 3.5,
+      "chars": {}
+    },
+    {
+      "id": "r3c1",
+      "hand": "left",
+      "finger": "pinky",
+      "row": "bottom",
+      "reach": "down",
+      "home": false,
+      "x": 2.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": "z",
+          "shift": "Z"
+        }
+      }
+    },
+    {
+      "id": "r3c2",
+      "hand": "left",
+      "finger": "ring",
+      "row": "bottom",
+      "reach": "down",
+      "home": false,
+      "x": 3.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": "x",
+          "shift": "X"
+        }
+      }
+    },
+    {
+      "id": "r3c3",
+      "hand": "left",
+      "finger": "middle",
+      "row": "bottom",
+      "reach": "down",
+      "home": false,
+      "x": 4.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": "c",
+          "shift": "C"
+        }
+      }
+    },
+    {
+      "id": "r3c4",
+      "hand": "left",
+      "finger": "index",
+      "row": "bottom",
+      "reach": "down",
+      "home": false,
+      "x": 5.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": "v",
+          "shift": "V"
+        }
+      }
+    },
+    {
+      "id": "r3c5",
+      "hand": "left",
+      "finger": "index",
+      "row": "bottom",
+      "reach": "inner",
+      "home": false,
+      "x": 6.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": "b",
+          "shift": "B"
+        }
+      }
+    },
+    {
+      "id": "r3c6",
+      "hand": "right",
+      "finger": "index",
+      "row": "bottom",
+      "reach": "inner",
+      "home": false,
+      "x": 7.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": "n",
+          "shift": "N"
+        }
+      }
+    },
+    {
+      "id": "r3c7",
+      "hand": "right",
+      "finger": "index",
+      "row": "bottom",
+      "reach": "down",
+      "home": false,
+      "x": 8.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": "m",
+          "shift": "M"
+        }
+      }
+    },
+    {
+      "id": "r3c8",
+      "hand": "right",
+      "finger": "middle",
+      "row": "bottom",
+      "reach": "down",
+      "home": false,
+      "x": 9.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": ",",
+          "shift": "<"
+        }
+      }
+    },
+    {
+      "id": "r3c9",
+      "hand": "right",
+      "finger": "ring",
+      "row": "bottom",
+      "reach": "down",
+      "home": false,
+      "x": 10.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": ".",
+          "shift": ">"
+        }
+      }
+    },
+    {
+      "id": "r3c10",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "bottom",
+      "reach": "down",
+      "home": false,
+      "x": 11.75,
+      "y": 3.5,
+      "chars": {
+        "0": {
+          "tap": "/",
+          "shift": "?"
+        }
+      }
+    },
+    {
+      "id": "r3c11",
+      "hand": "right",
+      "finger": "pinky",
+      "row": "bottom",
+      "reach": "outer",
+      "home": false,
+      "x": 13.62,
+      "y": 3.5,
+      "chars": {}
+    },
+    {
+      "id": "r4c0",
+      "hand": "left",
+      "finger": "thumb",
+      "row": "thumb",
+      "reach": "outer",
+      "home": false,
+      "x": 0.62,
+      "y": 4.5,
+      "chars": {}
+    },
+    {
+      "id": "r4c1",
+      "hand": "left",
+      "finger": "thumb",
+      "row": "thumb",
+      "reach": "outer",
+      "home": false,
+      "x": 1.88,
+      "y": 4.5,
+      "chars": {}
+    },
+    {
+      "id": "r4c2",
+      "hand": "left",
+      "finger": "thumb",
+      "row": "thumb",
+      "reach": "rest",
+      "home": true,
+      "x": 3.12,
+      "y": 4.5,
+      "chars": {}
+    },
+    {
+      "id": "r4c3",
+      "hand": "right",
+      "finger": "thumb",
+      "row": "thumb",
+      "reach": "rest",
+      "home": true,
+      "x": 6.88,
+      "y": 4.5,
+      "chars": {
+        "0": {
+          "tap": " "
+        }
+      }
+    },
+    {
+      "id": "r4c4",
+      "hand": "right",
+      "finger": "thumb",
+      "row": "thumb",
+      "reach": "outer",
+      "home": false,
+      "x": 10.62,
+      "y": 4.5,
+      "chars": {
+        "0": {
+          "hold": "AltGr"
+        }
+      }
+    },
+    {
+      "id": "r4c5",
+      "hand": "right",
+      "finger": "thumb",
+      "row": "thumb",
+      "reach": "outer",
+      "home": false,
+      "x": 11.88,
+      "y": 4.5,
+      "chars": {}
+    },
+    {
+      "id": "r4c6",
+      "hand": "right",
+      "finger": "thumb",
+      "row": "thumb",
+      "reach": "outer",
+      "home": false,
+      "x": 13.12,
+      "y": 4.5,
+      "chars": {},
+      "layerKey": {
+        "layer": 1,
+        "how": "hold"
+      }
+    },
+    {
+      "id": "r4c7",
+      "hand": "right",
+      "finger": "thumb",
+      "row": "thumb",
+      "reach": "outer",
+      "home": false,
+      "x": 14.38,
+      "y": 4.5,
+      "chars": {}
+    }
+  ]
+}

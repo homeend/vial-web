@@ -22,4 +22,6 @@ Short form:
    keep what remains in `notes`.
 5. Save as `<id>.json` where the user wants it (default: next to the export) and say how to load it.
 
-An example with the first two lessons of the simulated Corne: `docs/learning/examples/corne-sim-en.json`.
+An example with the first two lessons of the simulated Corne: `docs/learning/examples/corne-sim-en.json`. A full
+course for a plain US QWERTY board (18 lessons, made by this recipe): `docs/learning/examples/ansi-60-en.json`,
+with its export and a simulated board next to it (`examples/ansi-60/README.md`).
