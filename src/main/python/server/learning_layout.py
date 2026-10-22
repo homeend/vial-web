@@ -8,12 +8,15 @@ import json
 import math
 import re
 from datetime import datetime, timezone
+from typing import NamedTuple, Optional
 
 FORMAT = "vial-web-layout-export/1"
 FINGERS_OUT = ["index", "middle", "ring", "pinky"]
 """ the finger columns from the gap outwards """
 LAYER_KEY = re.compile(r"^(MO|OSL|TG|TO|TT|DF|PDF)\((\d+)\)$")
 LAYER_MOD = re.compile(r"^LM\((\d+),.*\)$")
+""" the LM(n, mods) spelling of a layer-modifier key. The API never emits it (describe gives the hex code with kind
+"layer" and a layerAction starting "while held", which held_layer reads); it only serves hand-edited JSON """
 LAYER_TAP = re.compile(r"^LT(\d+)\((.+)\)$")
 TAP_DANCE = re.compile(r"^TD\((\d+)\)$")
 HOW = {"MO": "hold", "OSL": "oneShot", "TG": "toggle", "TT": "hold", "TO": "switch", "DF": "switch", "PDF": "switch"}
@@ -26,26 +29,36 @@ SPLIT_GAP = 1.0
 """ a gap wider than this between neighbouring key centres (in key units) splits the board in two halves; without one
 the board is one piece and the hands part between the home row's middle letters """
 REACH_OF_ROW = {"home": "rest", "top": "up", "bottom": "down", "number": "up"}
-""" a finger column's reach by row: the number row is up from the top row's finger """
+""" a finger column's reach by row: the number row is always up (from the top row's finger); inner and outer are
+reaches from the home row only """
+SHIFT_CODES = ("KC_LSHIFT", "KC_RSHIFT")
+SHIFT_HOLDS = ("Shift", "LShift", "RShift")
+""" what a key that gives Shift alone is called: describe.mods_name of a lone left or right Shift (a mod-tap's hold,
+a one-shot modifier's legend) and the legends of KC_LSHIFT / KC_RSHIFT (a tap dance's hold). Ctrl+Shift is not one """
 
 
 def char_of(legend, code, tap_code):
-    """ {"tap", "shift", "altGr"} typed by a basic key, or None when it types nothing printable """
+    """ {"tap", "shift", "altGr"} typed by a basic key, or None when it types nothing printable. A letter's shift is
+    its capital (the legend's shifted character when the capital isn't one character: ß); any key's altGr is the
+    legend's, as the keyboard language labels it (ą on KC_A in Polish) """
     if not legend:
         return None
     main = legend.get("main") or ""
     if code == "KC_SPACE" or tap_code == "KC_SPACE":
         return {"tap": " "}
-    if len(main) == 1 and main.isalpha():
-        return {"tap": main.lower(), "shift": main.upper()}
-    if len(main) == 1 and not main.isspace():
+    if len(main) != 1 or main.isspace():
+        return None
+    shifted, alt_gr = legend.get("shifted"), legend.get("altGr")
+    if main.isalpha():
+        out = {"tap": main.lower()}
+        shifted = main.upper() if len(main.upper()) == 1 else shifted
+    else:
         out = {"tap": main}
-        if legend.get("shifted") and len(legend["shifted"]) == 1:
-            out["shift"] = legend["shifted"]
-        if legend.get("altGr") and len(legend["altGr"]) == 1:
-            out["altGr"] = legend["altGr"]
-        return out
-    return None
+    if shifted and len(shifted) == 1:
+        out["shift"] = shifted
+    if alt_gr and len(alt_gr) == 1:
+        out["altGr"] = alt_gr
+    return out
 
 
 def held_layer(k):
@@ -62,20 +75,29 @@ def held_layer(k):
     return None
 
 
+class KeyOnLayer(NamedTuple):
+    """ What one described key does on one layer: `chars` is char_of's {"tap", "shift", "altGr"} or None; `hold` a
+    short label for what holding it does ("Shift", "layer 2") or None; `layer_key` {"layer", "how"} when it reaches a
+    layer; `transparent` when it is KC_TRNS (what layer 0 has there counts) """
+    chars: Optional[dict]
+    hold: Optional[str]
+    layer_key: Optional[dict]
+    transparent: bool
+
+
 def describe_key(k, tap_dances):
-    """ (chars, hold label, layer key, transparent) of one described key (schemas.Described as a dict) on one layer """
+    """ KeyOnLayer of one described key (schemas.Described as a dict) on one layer """
     code = k.get("code") or "KC_NO"
     if code in ("KC_NO", "KC_TRNS"):
-        return None, None, None, code == "KC_TRNS"
+        return KeyOnLayer(None, None, None, code == "KC_TRNS")
     hold = k.get("hold")
     layer_key = None
     m = LAYER_KEY.match(code)
     if m:
-        layer_key = {"layer": int(m.group(2)), "how": HOW[m.group(1)]}
-        return None, None, layer_key, False
+        return KeyOnLayer(None, None, {"layer": int(m.group(2)), "how": HOW[m.group(1)]}, False)
     held = held_layer(k)
     if held is not None:
-        return None, None, {"layer": held, "how": "hold"}, False
+        return KeyOnLayer(None, None, {"layer": held, "how": "hold"}, False)
     m = LAYER_TAP.match(code)
     if m:
         layer_key = {"layer": int(m.group(1)), "how": "hold"}
@@ -92,13 +114,70 @@ def describe_key(k, tap_dances):
             hold = "layer {}".format(hm.group(2))
         elif h.get("code") not in (None, "KC_NO"):
             hold = (h.get("legend") or {}).get("main")
-        return chars, hold, layer_key, False
+        return KeyOnLayer(chars, hold, layer_key, False)
     if k.get("kind") == "modifier":
-        return None, None, None, False
-    chars = char_of(k.get("legend"), code, k.get("tapCode"))
-    if k.get("kind") == "mod-tap" or (hold and k.get("tapCode")):
-        hold = hold or k.get("hold")
-    return chars, hold, layer_key, False
+        return KeyOnLayer(None, None, None, False)
+    return KeyOnLayer(char_of(k.get("legend"), code, k.get("tapCode")), hold, layer_key, False)
+
+
+def shift_label(k, hold):
+    """ How a layer-0 key that gives Shift is listed in shiftKeys, or None: Shift itself, a one-shot Shift, or a key
+    held for Shift alone (a mod-tap, a tap dance); `hold` is describe_key's label for it """
+    legend = (k.get("legend") or {}).get("main")
+    if k.get("code") in SHIFT_CODES:
+        return "Shift"
+    if k.get("kind") == "one-shot-mod" and legend in SHIFT_HOLDS:
+        return "Shift (one-shot)"
+    if hold in SHIFT_HOLDS:
+        return "{} (hold)".format(legend)
+    return None
+
+
+def layout_choices(options):
+    """ The chosen choice of each layout option, decoded as web/src/keyboard/geometry.ts's layoutChoices does: Vial
+    packs them into one number, the first option in the highest bits; an on/off option takes one bit, a list of choices
+    as many bits as its highest choice needs, at least one """
+    if not options:
+        return []
+    value, choices = options["value"], []
+    for label in reversed(options["labels"]):
+        count = 2 if isinstance(label, str) else len(label) - 1
+        size = 2 ** (1 if count <= 2 else (count - 1).bit_length())
+        choices.insert(0, value % size)
+        value //= size
+    return choices
+
+
+def visible_keys(model):
+    """ (index, geometry) of the keys the picture draws, as the web UI's placeKeyboard has it: no decals, and of the
+    keys of a layout option only the chosen choice's, moved to where the option's first choice is drawn (by the
+    top-left corner of the keys' unrotated rectangles). The index is the key's place in model["keys"] and in every
+    layer's "keys". """
+    choices = layout_choices(model.get("layoutOptions"))
+    keys = model.get("keys") or []
+    top_left = {}
+    for g in keys:
+        if g.get("layoutIndex", -1) != -1:
+            seen = top_left.get((g["layoutIndex"], g["layoutOption"]))
+            top_left[(g["layoutIndex"], g["layoutOption"])] = \
+                (min(seen[0], g["x"]), min(seen[1], g["y"])) if seen else (g["x"], g["y"])
+    out = []
+    for i, g in enumerate(keys):
+        if g.get("decal"):
+            continue
+        index = g.get("layoutIndex", -1)
+        if index != -1:
+            if g.get("layoutOption") != (choices[index] if index < len(choices) else 0):
+                continue
+            own = top_left[(index, g["layoutOption"])]
+            first = top_left.get((index, 0), own)
+            dx, dy = first[0] - own[0], first[1] - own[1]
+            if dx or dy:
+                g = dict(g, x=g["x"] + dx, y=g["y"] + dy)
+                if g.get("r"):
+                    g.update(rx=(g.get("rx") or 0) + dx, ry=(g.get("ry") or 0) + dy)
+        out.append((i, g))
+    return out
 
 
 def centre(g):
@@ -154,17 +233,24 @@ def one_board_split(keys, pos, letter):
     return (xs[left - 1] + xs[left]) / 2
 
 
-def propose_fingers(model, tap0, rest_pref):
-    """ Key id -> {hand, finger, row, reach, home} from the positions and what layer 0 types. `tap0`: id -> the
-    character tapped on layer 0; `rest_pref`: id -> 2 for Space, 1 for Enter (the thumbs' resting keys).
+def propose_fingers(keys, tap0, rest_pref):
+    """ Key id -> {hand, finger, row, reach, home} from the positions (`keys`: the geometries the picture draws, see
+    visible_keys) and what layer 0 types. `tap0`: id -> the character tapped on layer 0 (None for a key that types
+    nothing printable); `rest_pref`: id -> 2 for Space, 1 for Enter (the thumbs' resting keys).
 
-    A split board (a gap wider than SPLIT_GAP) parts at the gap, and each hand's finger columns are the 1u columns
-    whose home-row key is a letter, from the gap outwards; a column nearer the gap is the index finger's inner reach
-    and columns beyond the pinky its outer reach. A board in one piece parts between the home row's middle letters,
-    and its rows are staggered, so each row counts its keys from the gap outwards instead: inner, index, middle, ring,
-    pinky, outer. The rows below the bottom letter row are the thumbs; the thumb rests on Space, else Enter, else the
-    widest key, else the one nearest the index finger. """
-    keys = model["keys"]
+    A split board (a gap wider than SPLIT_GAP) parts at the gap, and each hand's finger columns come from the 1u
+    columns whose home-row key types a character, counted from the gap outwards (a modifier or an arrow key in the
+    home row is no finger's resting key): four are the fingers index to pinky; of five, the extra column is the end
+    whose key is not a letter (comma on the Corne), or the inner end when both ends are letters (G and H on a QWERTY
+    Corne); of six or more, the innermost is the extra one and the four after it the fingers. The extra inner column
+    and any column nearer the gap are the index finger's inner reach, columns beyond the pinky its outer reach. A
+    board in one piece parts between the home row's middle letters, and its rows are staggered, so each row counts
+    its keys from the gap outwards instead: inner, index, middle, ring, pinky, outer. A board with one hand on it (a
+    macropad, a lone half) has no gap either, so it is parted the same way, and the user corrects the fingers. The
+    rows below the bottom letter row are the thumbs; the thumb rests on Space, else Enter, else the widest key, else
+    the one nearest the index finger. The number row is always typed up, from the top row's finger. """
+    if not keys:
+        return {}
     pos = {key_id(g): centre(g) for g in keys}
     letter = {kid: bool(c) and c.isalpha() for kid, c in tap0.items()}
     xs = sorted({p[0] for p in pos.values()})
@@ -185,12 +271,20 @@ def propose_fingers(model, tap0, rest_pref):
         col_idx = {key_id(g): grid(pos[key_id(g)][0], x0) for g in hand_keys}
         row_name, home_row = row_names(hand_keys, row_idx, letter)
         row_of = {kid: row_name[r] for kid, r in row_idx.items()}
-        # finger columns: the columns whose home-row key is a letter, from the gap outwards
+        # finger columns: of the home-row columns whose key types a character, from the gap outwards, four are the
+        # fingers; of five, the extra one is the end whose key is not a letter (the inner end when both are); of six
+        # or more, the innermost is the extra one
         cols = sorted({col_idx[kid] for kid in row_of if row_of[kid] != "thumb"})
-        home_letter_cols = sorted({col_idx[kid] for kid in row_of if row_idx[kid] == home_row and letter[kid]})
+        home_keys = [kid for kid in row_of if row_idx[kid] == home_row]
+        typing_cols = sorted({col_idx[kid] for kid in home_keys if tap0.get(kid) is not None})
+        letter_cols = {col_idx[kid] for kid in home_keys if letter[kid]}
         if hand == "left":
-            home_letter_cols.reverse()  # nearest the gap first
-        finger_cols = home_letter_cols[:4]
+            typing_cols.reverse()  # nearest the gap first
+        if len(typing_cols) == 5:
+            extra_inner = typing_cols[0] not in letter_cols or typing_cols[-1] in letter_cols
+            finger_cols = typing_cols[1:] if extra_inner else typing_cols[:4]
+        else:
+            finger_cols = typing_cols[1:5] if len(typing_cols) >= 6 else typing_cols
         finger_of = {c: FINGERS_OUT[i] for i, c in enumerate(finger_cols)}
         inner_cols = [c for c in cols if (c > finger_cols[0]) == (hand == "left")] if finger_cols else []
         outer_cols = [c for c in cols if (c < finger_cols[-1]) == (hand == "left")] if finger_cols else []
@@ -217,11 +311,10 @@ def propose_fingers(model, tap0, rest_pref):
             for kid in from_gap:
                 if row_of[kid] == "number":
                     if not top:
-                        one_board_fingers[kid] = ("index", "inner") if from_gap[kid] == 0 else ("pinky", "outer")
+                        one_board_fingers[kid] = ("index" if from_gap[kid] == 0 else "pinky", "up")
                         continue
                     below = min(top, key=lambda t: (round(abs(pos[t][0] - pos[kid][0]), 2), -pos[t][0]))
-                    finger, reach = one_board_fingers[below]
-                    one_board_fingers[kid] = (finger, reach if reach in ("inner", "outer") else "up")
+                    one_board_fingers[kid] = (one_board_fingers[below][0], "up")
         thumbs = [g for g in hand_keys if row_of[key_id(g)] == "thumb"]
         # the thumb's resting key: Space, else Enter, else the widest, else the one nearest the index finger
         thumb_rest = None
@@ -247,12 +340,10 @@ def propose_fingers(model, tap0, rest_pref):
                 finger, reach = one_board_fingers[kid]
             elif x in finger_of:
                 finger, reach = finger_of[x], REACH_OF_ROW[row]
-            elif x in inner_cols:
-                finger, reach = "index", "inner"
-            elif x in outer_cols:
-                finger, reach = "pinky", "outer"
             else:
-                finger, reach = "index", "inner"
+                finger, reach = ("pinky", "outer") if x in outer_cols else ("index", "inner")
+                if row == "number":
+                    reach = "up"
             out[kid] = {"hand": hand, "finger": finger, "row": row, "reach": reach,
                         "home": row == "home" and reach == "rest"}
     return out
@@ -262,15 +353,17 @@ def proposal(model):
     """ The app's finger proposal for the keyboard: key id -> {hand, finger, row, reach, home}, from the key positions
     and what layer 0 types """
     tap_dances = model.get("tapDance") or []
+    layers = model.get("layers") or []
+    visible = visible_keys(model) if layers else []
     tap0, rest_pref = {}, {}
-    for g, k in zip(model["keys"], model["layers"][0]["keys"]):
-        chars, _, _, _ = describe_key(k, tap_dances)
-        tap0[key_id(g)] = (chars or {}).get("tap")
+    for i, g in visible:
+        k = layers[0]["keys"][i]
+        tap0[key_id(g)] = (describe_key(k, tap_dances).chars or {}).get("tap")
         if tap0[key_id(g)] == " ":
             rest_pref[key_id(g)] = 2
         elif k.get("tapCode") == "KC_ENTER" or k.get("code") == "KC_ENTER":
             rest_pref[key_id(g)] = 1
-    return propose_fingers(model, tap0, rest_pref)
+    return propose_fingers([g for _, g in visible], tap0, rest_pref)
 
 
 def apply_fingers(proposal, fingers_file):
@@ -297,11 +390,11 @@ def export(model, fingers=None, language="en-us"):
     layer access paths) and nothing else: a lesson set stays valid when a layer is renamed. """
     fingers_of = apply_fingers(proposal(model), fingers)
     tap_dances = model.get("tapDance") or []
-    layers = model["layers"]
+    layers = model.get("layers") or []
     keys_out = {}
     layer_reach = {l["index"]: [] for l in layers}
     shift_keys = []
-    for i, g in enumerate(model["keys"]):
+    for i, g in (visible_keys(model) if layers else []):
         kid = key_id(g)
         k0 = layers[0]["keys"][i]
         chars_by_layer, layer_key = {}, None
@@ -313,9 +406,8 @@ def export(model, fingers=None, language="en-us"):
                 chars, hold, lk, _ = describe_key(k0, tap_dances)
             if layer["index"] == 0:
                 layer_key = lk
-                if k.get("code") in ("KC_LSHIFT", "KC_RSHIFT") or (hold and hold.lower().endswith("shift")):
-                    shift = k.get("code") in ("KC_LSHIFT", "KC_RSHIFT")
-                    label = "Shift" if shift else "{} (hold)".format((k.get("legend") or {}).get("main"))
+                label = shift_label(k, hold)
+                if label:
                     shift_keys.append({"key": kid, "hand": fingers_of[kid]["hand"], "label": label})
             if lk and lk["layer"] in layer_reach and layer["index"] == 0:
                 label = {"hold": "hold", "oneShot": "tap", "toggle": "toggle with", "switch": "switch with"}[lk["how"]]

@@ -1,11 +1,11 @@
-""" The finger proposal and the layout export (server.learning_layout), on the simulated Corne, an ANSI 60 % and a
-4x10 ortho: pure functions over the keyboard model as a dict """
+""" The finger proposal and the layout export (server.learning_layout), on the simulated Corne (and a QWERTY one),
+an ANSI 60 % and a 4x10 ortho: pure functions over the keyboard model as a dict """
 import json
 import os
 
 import pytest
 
-from server import learning_layout, model
+from server import describe, languages, learning_layout, model
 from server.device import DeviceManager, FakeBackend
 from simulator import corne
 from simulator.corne import make_corne, encode
@@ -128,6 +128,49 @@ def test_corne_thumbs_and_reaches(corne_model):
     assert by_tap["KC_Y"] == {"hand": "right", "finger": "pinky", "row": "bottom", "reach": "down", "home": False}
 
 
+def qwerty_corne():
+    """ The simulated Corne's shape with a number row above it (matrix rows 8 and 9) and QWERTY on layer 0: five
+    letters in each hand's home row (A S D F G | H J K L ; '), so G and H are the extra columns, not , and . """
+    definition = corne.definition()
+    definition["matrix"]["rows"] = 10
+    rows = definition["layouts"]["keymap"]
+    rows.insert(0, ["8,{}".format(c) for c in range(6)] + [{"x": 3}] + ["9,{}".format(5 - c) for c in range(6)])
+    nothing = ["KC_NO"] * 3
+    layer_0 = [  # matrix rows: left 0-2 (outside in), left thumbs 3, right 4-6 (col 0 outermost), right thumbs 7
+        ["KC_TAB", "KC_Q", "KC_W", "KC_E", "KC_R", "KC_T"],
+        ["KC_LCTL", "KC_A", "KC_S", "KC_D", "KC_F", "KC_G"],
+        ["KC_LSFT", "KC_Z", "KC_X", "KC_C", "KC_V", "KC_B"],
+        nothing + ["KC_LGUI", "KC_SPC", "KC_LALT"],
+        ["KC_BSPC", "KC_P", "KC_O", "KC_I", "KC_U", "KC_Y"],
+        ["KC_QUOT", "KC_SCLN", "KC_L", "KC_K", "KC_J", "KC_H"],
+        ["KC_RSFT", "KC_SLSH", "KC_DOT", "KC_COMM", "KC_M", "KC_N"],
+        nothing + ["KC_RALT", "KC_ENT", "KC_RGUI"],
+        ["KC_GRV", "KC_1", "KC_2", "KC_3", "KC_4", "KC_5"],
+        ["KC_DEL", "KC_0", "KC_9", "KC_8", "KC_7", "KC_6"],
+    ]
+    return VirtualKeyboard(definition, layers=1, keymap=keymap_of(layer_0))
+
+
+def test_qwerty_corne_has_five_home_row_letters_and_the_inner_ones_are_the_index_fingers_reach():
+    by_tap = fingers_by_tap(model_of(qwerty_corne))
+    assert by_tap["KC_A"] == {"hand": "left", "finger": "pinky", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_S"]["finger"] == "ring" and by_tap["KC_D"]["finger"] == "middle"
+    assert by_tap["KC_F"] == {"hand": "left", "finger": "index", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_G"] == {"hand": "left", "finger": "index", "row": "home", "reach": "inner", "home": False}
+    assert by_tap["KC_H"] == {"hand": "right", "finger": "index", "row": "home", "reach": "inner", "home": False}
+    assert by_tap["KC_J"] == {"hand": "right", "finger": "index", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_SCOLON"] == {"hand": "right", "finger": "pinky", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_QUOTE"] == {"hand": "right", "finger": "pinky", "row": "home", "reach": "outer", "home": False}
+    assert by_tap["KC_LCTRL"]["reach"] == "outer" and by_tap["KC_T"]["reach"] == "inner"
+    assert by_tap["KC_Y"] == {"hand": "right", "finger": "index", "row": "top", "reach": "inner", "home": False}
+    assert by_tap["KC_B"]["reach"] == "inner" and by_tap["KC_V"]["reach"] == "down"
+    # the number row is always up: above the inner column (6) and the outer one (`, Delete) too
+    assert by_tap["KC_1"] == {"hand": "left", "finger": "pinky", "row": "number", "reach": "up", "home": False}
+    assert by_tap["KC_5"]["finger"] == "index" and by_tap["KC_6"]["finger"] == "index"
+    assert by_tap["KC_6"]["reach"] == "up" and by_tap["KC_GRAVE"]["reach"] == "up" and by_tap["KC_DELETE"]["reach"] == "up"
+    assert by_tap["KC_SPACE"]["home"] and by_tap["KC_ENTER"]["home"]
+
+
 def test_corne_proposal_matches_the_worked_example(corne_model):
     """ docs/learning/examples/corne-sim-layout-export.json was made by the verified prototype """
     with open(os.path.join(EXAMPLES, "corne-sim-layout-export.json"), encoding="utf-8") as inf:
@@ -166,7 +209,7 @@ def test_ansi_other_rows(ansi_model):
     assert by_tap["KC_SPACE"] == {"hand": "right", "finger": "thumb", "row": "thumb", "reach": "rest", "home": True}
     assert by_tap["KC_LCTRL"]["row"] == "thumb" and by_tap["KC_LCTRL"]["finger"] == "thumb"
     # the number row: up from the top row's finger, as the charts have it (1 pinky, 2 ring, 3 middle, 4 5 6 index;
-    # 7 index, 8 middle, 9 ring, 0 - pinky)
+    # 7 index, 8 middle, 9 ring, 0 - pinky); always up, even above the inner and outer columns
     assert by_tap["KC_1"] == {"hand": "left", "finger": "pinky", "row": "number", "reach": "up", "home": False}
     assert by_tap["KC_2"]["finger"] == "ring" and by_tap["KC_3"]["finger"] == "middle"
     assert by_tap["KC_4"] == {"hand": "left", "finger": "index", "row": "number", "reach": "up", "home": False}
@@ -176,9 +219,10 @@ def test_ansi_other_rows(ansi_model):
     assert by_tap["KC_8"] == {"hand": "right", "finger": "middle", "row": "number", "reach": "up", "home": False}
     assert by_tap["KC_9"]["finger"] == "ring"
     assert by_tap["KC_0"] == {"hand": "right", "finger": "pinky", "row": "number", "reach": "up", "home": False}
-    assert by_tap["KC_MINUS"]["finger"] == "pinky" and by_tap["KC_EQUAL"]["reach"] == "outer"
-    assert by_tap["KC_GRAVE"] == {"hand": "left", "finger": "pinky", "row": "number", "reach": "outer", "home": False}
-    assert by_tap["KC_BSPACE"] == {"hand": "right", "finger": "pinky", "row": "number", "reach": "outer", "home": False}
+    assert by_tap["KC_MINUS"]["finger"] == "pinky" and by_tap["KC_EQUAL"]["reach"] == "up"
+    assert by_tap["KC_6"]["reach"] == "up"
+    assert by_tap["KC_GRAVE"] == {"hand": "left", "finger": "pinky", "row": "number", "reach": "up", "home": False}
+    assert by_tap["KC_BSPACE"] == {"hand": "right", "finger": "pinky", "row": "number", "reach": "up", "home": False}
 
 
 # ---------- the proposal: a 4x10 ortho ----------
@@ -294,6 +338,67 @@ def test_hash_ignores_layer_names_but_not_moved_letters(corne_model):
     keys[i], keys[j] = keys[j], keys[i]  # L and R change places
     assert learning_layout.export(moved)["hash"] != base
     assert learning_layout.export(corne_model, language="pl")["language"] == "pl"
+
+
+def test_letters_keep_their_altgr_character_and_a_capital_of_two_letters_falls_back_to_the_legend():
+    with describe.keyboard_language(languages.overrides("polish-qwerty")):
+        polish = model_of(make_corne)
+    export = learning_layout.export(polish, language="polish-qwerty")
+    keys = {k["id"]: k for k in export["keys"]}
+    ids = ids_by_tap(polish)
+    assert keys[ids["RGUI_T(KC_A)"]]["chars"]["0"] == {"tap": "a", "shift": "A", "altGr": "ą", "hold": "RGui"}
+    assert keys[ids["KC_L"]]["chars"]["0"] == {"tap": "l", "shift": "L", "altGr": "ł"}
+    assert keys[ids["LGUI_T(KC_W)"]]["chars"]["0"] == {"tap": "w", "shift": "W", "hold": "Gui"}  # W has no AltGr one
+    assert export["hash"] != learning_layout.export(model_of(make_corne))["hash"]  # altGr is in the character map
+    # ß: its capital is "SS", so Shift types the legend's shifted character
+    assert learning_layout.char_of({"main": "ß", "shifted": "?", "altGr": None}, "KC_MINUS", "KC_MINUS") == \
+        {"tap": "ß", "shift": "?"}
+
+
+# a key, a layout option whose choices draw a key at x 1 (choice 0) or x 2 and a row lower (choice 1), and a decal
+# that would stand in for r0c0 at x 3
+OPTIONS = {"name": "Options", "matrix": {"rows": 1, "cols": 3},
+           "layouts": {"labels": ["Split"],
+                       "keymap": [["0,0", "0,1\n\n\n0,0"], [{"x": 2}, "0,2\n\n\n0,1", {"d": True}, "0,0"]]}}
+
+
+def test_export_holds_the_chosen_layout_option_and_no_decal():
+    keymap = {(0, 0, 0): encode("KC_A"), (0, 0, 1): encode("KC_B"), (0, 0, 2): encode("KC_C")}
+    built = model_of(lambda: VirtualKeyboard(OPTIONS, layers=1, keymap=keymap))
+    assert [g["decal"] for g in built["keys"]] == [False, False, False, True]  # the model has all four
+    export = learning_layout.export(built)
+    assert [(k["id"], k["x"], k["y"]) for k in export["keys"]] == [("r0c0", 0.5, 0.5), ("r0c1", 1.5, 0.5)]
+    assert set(learning_layout.proposal(built)) == {"r0c0", "r0c1"}
+    built["layoutOptions"]["value"] = 1
+    export = learning_layout.export(built)
+    # choice 1's key is drawn where choice 0's is, as the picture draws it
+    assert [(k["id"], k["x"], k["y"]) for k in export["keys"]] == [("r0c0", 0.5, 0.5), ("r0c2", 1.5, 0.5)]
+    assert export["keys"][1]["chars"] == {"0": {"tap": "c", "shift": "C"}}
+    assert learning_layout.layout_choices({"value": 0b1_10_1, "labels": ["A", ["B", "x", "y", "z"], "C"]}) == [1, 2, 1]
+
+
+def test_an_empty_keyboard_exports_no_keys():
+    empty = {"name": "Empty", "uid": "0", "keys": [], "layers": [{"index": 0, "name": "Layer 0", "keys": []}]}
+    assert learning_layout.proposal(empty) == {}
+    export = learning_layout.export(empty)
+    assert export["keys"] == [] and [l["index"] for l in export["layers"]] == [0]
+    no_layers = {"name": "Empty", "uid": "0", "keys": [{"row": 0, "col": 0, "x": 0, "y": 0, "w": 1, "h": 1}],
+                 "layers": []}
+    assert learning_layout.proposal(no_layers) == {}
+    assert learning_layout.export(no_layers)["keys"] == [] and learning_layout.export(no_layers)["layers"] == []
+
+
+def test_shift_keys_are_the_keys_that_give_shift_alone():
+    definition = {"name": "Shifts", "matrix": {"rows": 1, "cols": 6},
+                  "layouts": {"keymap": [["0,0", "0,1", "0,2", "0,3", "0,4", "0,5"]]}}
+    keymap = {(0, 0, 0): encode("KC_LSFT"), (0, 0, 1): encode("LSFT_T(KC_A)"), (0, 0, 2): encode("C_S_T(KC_B)"),
+              (0, 0, 3): encode("OSM(MOD_LSFT)"), (0, 0, 4): encode("RSFT_T(KC_C)"), (0, 0, 5): encode("OSM(MOD_RSFT)")}
+    export = learning_layout.export(model_of(lambda: VirtualKeyboard(definition, layers=1, keymap=keymap)))
+    assert [(s["key"], s["label"]) for s in export["shiftKeys"]] == [
+        ("r0c0", "Shift"), ("r0c1", "A (hold)"), ("r0c3", "Shift (one-shot)"), ("r0c4", "C (hold)"),
+        ("r0c5", "Shift (one-shot)")]  # Ctrl+Shift on B is no Shift key
+    keys = {k["id"]: k for k in export["keys"]}
+    assert keys["r0c2"]["chars"] == {"0": {"tap": "b", "shift": "B", "hold": "Ctrl+Shift"}}
 
 
 def test_layer_mod_and_tri_layer_keys_reach_their_layer():
