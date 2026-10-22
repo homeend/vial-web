@@ -123,11 +123,13 @@
     cursor: pointer;
   }
 
-  .cancel:hover {
+  .cancel:hover:not([aria-disabled="true"]) {
     background: var(--surface-2);
   }
 
+  /* taking nothing while the confirm button works (as Button.svelte): a disabled look, not a wait, since the
+   * confirm button's text says what is under way ("Reset…") */
   .cancel[aria-disabled="true"] {
-    cursor: progress;
+    cursor: default;
   }
 </style>

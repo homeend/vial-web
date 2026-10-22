@@ -190,21 +190,23 @@ export class LearningState {
   /** Re-fits the set open to the layout as it is now: the server moves every `new` entry to the key that types its
    * character and gives the set the export's hash; its listing entry is replaced and it is opened again, so the new
    * keys show (the progress stays). The checker's findings come back when a character is typed by no key (the file
-   * stays as it was); any other failure is a toast. */
-  async refitSet(): Promise<ImportOutcome | null> {
+   * stays as it was); any other failure is a toast (null). "stale" when the keyboard switched meanwhile, whatever the
+   * server answered: nothing to show, the page is another keyboard's now (its dialog closes, without a toast). */
+  async refitSet(): Promise<ImportOutcome | "stale" | null> {
     const read = this.#reads;
     const id = this.chosen;
     if (id === null) return null;
     try {
       const entry = await api.refitLearningSet(id);
       if (this.#reading) await this.#reading; // a listing asked before the re-fit has the set as it was
-      if (read !== this.#reads) return null;
+      if (read !== this.#reads) return "stale";
       this.sets = [...this.sets.filter((s) => s.id !== entry.id), entry].sort((a, b) => a.id.localeCompare(b.id));
       await this.open(entry.id);
       return { ok: true, entry, warnings: entry.warnings };
     } catch (error) {
-      if (read !== this.#reads) return null;
+      if (read !== this.#reads) return "stale";
       if (error instanceof ApiError && error.status === 422) {
+        // without `errors` only for a set listed with an error, which the UI never re-fits (the banner needs an open set)
         return { ok: false, errors: error.errors?.length ? error.errors : [error.detail ?? "a character of the set is typed by no key"] };
       }
       toasts.error(failureMessage("Re-fitting the lesson set", error));
@@ -223,7 +225,9 @@ export class LearningState {
       if (this.chosen === id) await this.open(setToOpen(this.sets, null));
       return true;
     } catch (error) {
-      if (read === this.#reads) toasts.error(failureMessage("Removing the lesson set", error));
+      // the keyboard switched meanwhile: the dialog closes, without a toast, as the page is another keyboard's now
+      if (read !== this.#reads) return true;
+      toasts.error(failureMessage("Removing the lesson set", error));
       return false;
     }
   }
@@ -257,7 +261,9 @@ export class LearningState {
       this.progress = { format: "vial-web-progress/1", lessonSet: set, exercises: {} };
       return true;
     } catch (error) {
-      if (read === this.#reads) toasts.error(failureMessage("Resetting the progress", error));
+      // the keyboard switched meanwhile: the dialog closes, without a toast, as the page is another keyboard's now
+      if (read !== this.#reads) return true;
+      toasts.error(failureMessage("Resetting the progress", error));
       return false;
     }
   }

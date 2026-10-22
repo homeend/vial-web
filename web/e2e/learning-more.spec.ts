@@ -61,7 +61,9 @@ async function smallSet(page: Page, id: string, changes: { hash?: string; lesson
   };
 }
 
-/** Removes the sets (the example and the test's own), the fingers and the settings, and every route */
+/** Removes the sets (the example and the test's own) with their progress, the fingers and the settings, and every
+ * route. The progress too: a set's results outlive it, so a test that fails before its own reset would leave attempts
+ * for the worker's next test. */
 async function putBack(page: Page, ...sets: string[]) {
   await restoreAll(
     () => page.unrouteAll({ behavior: "ignoreErrors" }),
@@ -69,6 +71,7 @@ async function putBack(page: Page, ...sets: string[]) {
       const response = await api(page).delete(`/api/learning/sets/${id}`);
       if (response.status() !== 204 && response.status() !== 404) throw new Error(`delete ${id}: ${response.status()}`);
     }),
+    ...[SET, ...sets].map((id) => () => api(page).delete(`/api/learning/progress/${id}`)),
     () => api(page).delete("/api/learning/fingers"),
     () => api(page).put("/api/learning/settings", DEFAULT_SETTINGS),
   );

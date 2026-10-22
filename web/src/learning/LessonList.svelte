@@ -11,7 +11,7 @@
   import { lessonStateText, listedErrors } from "./format";
   import { learning, type ImportOutcome } from "./learning.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
-  import { lessonStatus, outOfDate } from "./state";
+  import { hasAnyProgress, lessonStatus, outOfDate } from "./state";
 
   interface Props {
     /** what the page has to say about the address it came back from, if anything */
@@ -33,9 +33,8 @@
     ? [{ value: "", label: "No lesson set yet" }]
     : sets.map((s) => ({ value: s.id, label: choiceLabel(s) })));
   const stale = $derived(set !== null && outOfDate(set, learning.export?.hash));
-  /** the set open has something to forget: an exercise with a best or an attempt */
-  const hasProgress = $derived(set !== null
-    && Object.values(learning.progress?.exercises ?? {}).some((e) => e.best || e.attempts.length > 0));
+  /** the set open has something to forget */
+  const hasProgress = $derived(set !== null && hasAnyProgress(learning.progress));
   const rows = $derived(set
     ? set.lessons.map((lesson, i) => ({ lesson, number: i + 1,
       state: lessonStateText(lessonStatus(lesson, learning.progress, learning.settings)) }))
@@ -88,11 +87,13 @@
   }
 
   /** Re-fits the set open: the dialog closes once the server answered (the findings box says what it refused), and
-   * stays open, with a toast, when the request itself failed */
+   * stays open, with a toast, when the request itself failed; closed with nothing to show when the keyboard switched
+   * meanwhile */
   async function refit(): Promise<boolean> {
     const title = set?.title ?? "The lesson set";
     const outcome = await learning.refitSet();
-    if (!outcome) return false;
+    if (outcome === null) return false;
+    if (outcome === "stale") return true;
     findings = null;
     showOutcome(outcome, `${title} was re-fitted, with warnings:`, `${title} can't be re-fitted:`);
     return true;
