@@ -1,6 +1,6 @@
 # Phase 9: Learning — the app (phase 2) — Implementation Plan
 
-> **Since (phase 9 follow-ups, 2026-10-22):** a layer key exports no character on the layer it reaches (lesson-format.md § 2), so the simulated Corne's export hash is `sha256:4bc5cc1ba5f8b710` wherever this plan says `sha256:e435c3da038f9048`; the plan is left as it was written.
+> **Since (phase 9 follow-ups, 2026-10-22):** a held layer key (MO, LT, TT, LM, FN_MO13/23, a tap dance's hold of one) exports no character on the layer it reaches, and a tapped one (OSL, TG, TO, DF/PDF) only what a real keycode under it there types (lesson-format.md § 2), so the simulated Corne's export hash is `sha256:4bc5cc1ba5f8b710` wherever this plan says `sha256:e435c3da038f9048`; the plan is left as it was written.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

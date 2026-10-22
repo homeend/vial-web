@@ -427,10 +427,13 @@ def apply_fingers(proposal, fingers_file):
 def export(model, fingers=None, language="en-us"):
     """ The layout export of the keyboard's model, with the user's finger corrections (apply_fingers) and the keyboard
     language the model was described in. `hash` covers the character map (every key's characters per layer and the
-    layer access paths) and nothing else: a lesson set stays valid when a layer is renamed. A layer key (MO, LT, TT,
-    OSL, TG, TO, a tap dance's hold) types nothing on the layer it reaches: holding or tapping it there is what
-    switches the layer, not a key press that types, whatever lies under it on that layer (a character, or
-    transparency resolving to its own tap); its hold label and layerKey are unchanged. """
+    layer access paths) and nothing else: a lesson set stays valid when a layer is renamed. A layer key on the layer
+    it reaches: a held one (MO, LT, TT, LM, FN_MO13 / FN_MO23, a tap dance whose hold is one of those: how "hold")
+    can't be tapped while its layer is on, since holding it is what keeps the layer on, so it types nothing there,
+    whatever lies under it; a tapped one (OSL, TG, TO, DF, PDF: one-shot, toggle, switch) is tapped and released,
+    so with its layer on the same position sends what that layer holds there: a real keycode is typed (tap OSL(2),
+    then the KC_B under it on layer 2 types b), only a transparent position resolves back to the layer key itself
+    and types nothing. Its hold label and layerKey are unchanged either way. """
     fingers_of = apply_fingers(proposal(model), fingers)
     tap_dances = model.get("tapDance") or []
     layers = model.get("layers") or []
@@ -458,7 +461,10 @@ def export(model, fingers=None, language="en-us"):
                 tap = (chars or {}).get("tap")
                 name = "Space" if tap == " " else (tap.upper() if tap else (k.get("legend") or {}).get("main") or kid)
                 layer_reach[lk["layer"]].append({"key": kid, "how": lk["how"], "label": "{} {}".format(label, name)})
-            if chars and layer["index"] != own_layer:
+            # on the layer the key reaches: a held layer key can't be tapped while its layer is on, and a transparent
+            # position resolves back to the layer key itself; a tapped one over a real keycode types it
+            silent = layer["index"] == own_layer and (layer_key["how"] == "hold" or transparent)
+            if chars and not silent:
                 entry = dict(chars)
                 if hold and layer["index"] == 0:
                     entry["hold"] = hold
@@ -513,7 +519,8 @@ def refit(data, export):
     the export that types c; the one chosen is, in order: the old (k, l, v) when it still types c; else the key k on
     any layer (the lowest); else any key on the layer l (the export's key order); else the first candidate (by layer,
     then key order). path becomes the label of the chosen layer's first reachedBy entry ("hold Space"), and is dropped
-    on layer 0, or on a layer nothing reaches. key, layer and via are written, nothing else of the entry.
+    on layer 0, or on a layer nothing reaches. key, layer and via are written, in the written order char, key, layer,
+    via, then the rest of the entry's fields as they were; nothing else of the entry changes.
 
     Returns (document, problems): problems lists the entries whose character no key of this keyboard types
     ("lesson 15/new[2]: ';' is typed by no key of this keyboard"), left as they were; with any, the document isn't
@@ -538,7 +545,9 @@ def refit(data, export):
                 or next((p for p in candidates if p[0] == key), None) \
                 or next((p for p in candidates if p[1] == layer), None) \
                 or candidates[0]
-            entry["key"], entry["layer"], entry["via"] = chosen
+            entry = {"char": c, "key": chosen[0], "layer": chosen[1], "via": chosen[2]}
+            entry.update((k, v) for k, v in lesson["new"][j].items() if k not in entry)
+            lesson["new"][j] = entry
             paths = reached.get(chosen[1]) if chosen[1] != 0 else None
             if paths:
                 entry["path"] = paths[0]["label"]
