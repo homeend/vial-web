@@ -37,8 +37,10 @@ usually right:
   letter row, count keys from the inner edge of the hand outwards: index, index, middle, ring, pinky, pinky, …
 - **Fingers.** Per hand, count the home-row columns whose key types a character, from the gap outwards (a modifier
   or an arrow key in the home row is no finger's resting key). Four are the fingers index, middle, ring, pinky. Of
-  five, the *extra* column is the end whose key is not a letter (`,`/`.` next to the gap on the Corne), or the inner
-  end when both ends are letters (`g`/`h` on a QWERTY Corne); of six or more, the innermost is the extra one and
+  five, the *extra* column is the inner end (`,`/`.` next to the gap on the Corne, `g`/`h` on a QWERTY Corne, `h`
+  on a 34-key QWERTY Sweep, and `,` when neither end is a letter), unless the inner key is a letter, the outer key
+  is not, and a column that types nothing lies nearer the gap (`Ctrl n e i o '` on a Corne: the hand rests one
+  column in, and the outer `'` is the extra); of six or more, the innermost is the extra one and
   the four after it the fingers. The extra inner column, and any column nearer the gap, is the index finger's inner
   reach (`t`/`y`, `g`/`h`, `b`/`n` on QWERTY); columns beyond the pinky are the pinky's outer reach. Keys below the
   bottom row that are set in towards the middle (a thumb cluster) are thumbs; on a plain board the space bar is the

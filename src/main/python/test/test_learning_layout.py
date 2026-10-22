@@ -171,6 +171,82 @@ def test_qwerty_corne_has_five_home_row_letters_and_the_inner_ones_are_the_index
     assert by_tap["KC_SPACE"]["home"] and by_tap["KC_ENTER"]["home"]
 
 
+def sweep(layer_0):
+    """ A 34-key split (a Sweep / Ferris): three rows of five keys a hand round a gap of three keys, two thumb keys a
+    hand (matrix row 3, columns 3-6); layer_0: each matrix row's keycodes left to right as on the board """
+    rows = [["{},{}".format(r, c) for c in range(5)] + [{"x": 3}] + ["{},{}".format(r, c) for c in range(5, 10)]
+            for r in range(3)]
+    rows.append([{"x": 3}, "3,3", "3,4", {"x": 3}, "3,5", "3,6"])
+    definition = {"name": "Sweep", "matrix": {"rows": 4, "cols": 10}, "layouts": {"keymap": rows}}
+    return VirtualKeyboard(definition, layers=1, keymap=keymap_of(layer_0))
+
+
+QWERTY_SWEEP = [
+    ["KC_Q", "KC_W", "KC_E", "KC_R", "KC_T", "KC_Y", "KC_U", "KC_I", "KC_O", "KC_P"],
+    ["KC_A", "KC_S", "KC_D", "KC_F", "KC_G", "KC_H", "KC_J", "KC_K", "KC_L", "KC_SCLN"],
+    ["KC_Z", "KC_X", "KC_C", "KC_V", "KC_B", "KC_N", "KC_M", "KC_COMM", "KC_DOT", "KC_SLSH"],
+    ["KC_NO"] * 3 + ["KC_LGUI", "KC_SPC", "KC_ENT", "KC_RALT"],
+]
+
+
+def test_qwerty_sweep_rests_on_j_k_l_semicolon_and_h_is_the_index_fingers_inner_reach():
+    """ five typing columns a hand and nothing nearer the gap: the inner end is the extra one on both hands, though
+    H is a letter and ; is not """
+    by_tap = fingers_by_tap(model_of(lambda: sweep(QWERTY_SWEEP)))
+    assert by_tap["KC_J"] == {"hand": "right", "finger": "index", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_K"]["finger"] == "middle" and by_tap["KC_L"]["finger"] == "ring"
+    assert by_tap["KC_SCOLON"] == {"hand": "right", "finger": "pinky", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_H"] == {"hand": "right", "finger": "index", "row": "home", "reach": "inner", "home": False}
+    assert by_tap["KC_F"] == {"hand": "left", "finger": "index", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_D"]["finger"] == "middle" and by_tap["KC_S"]["finger"] == "ring"
+    assert by_tap["KC_A"] == {"hand": "left", "finger": "pinky", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_G"] == {"hand": "left", "finger": "index", "row": "home", "reach": "inner", "home": False}
+    assert by_tap["KC_Y"]["reach"] == "inner" and by_tap["KC_N"]["reach"] == "inner"
+    assert by_tap["KC_U"] == {"hand": "right", "finger": "index", "row": "top", "reach": "up", "home": False}
+    assert by_tap["KC_SLASH"] == {"hand": "right", "finger": "pinky", "row": "bottom", "reach": "down", "home": False}
+    assert by_tap["KC_SPACE"]["home"] and by_tap["KC_ENTER"]["home"]
+    assert by_tap["KC_LGUI"]["reach"] == "outer" and by_tap["KC_RALT"]["reach"] == "outer"
+
+
+def test_five_typing_columns_with_neither_end_a_letter_make_the_inner_end_the_extra_one():
+    """ ; S D F , | . J K L ': the comma and the full stop next to the gap are the extras, as on the Corne """
+    rows = [row[:] for row in QWERTY_SWEEP]
+    rows[1] = ["KC_SCLN", "KC_S", "KC_D", "KC_F", "KC_COMM", "KC_DOT", "KC_J", "KC_K", "KC_L", "KC_QUOT"]
+    by_tap = fingers_by_tap(model_of(lambda: sweep(rows)))
+    assert by_tap["KC_COMMA"] == {"hand": "left", "finger": "index", "row": "home", "reach": "inner", "home": False}
+    assert by_tap["KC_DOT"] == {"hand": "right", "finger": "index", "row": "home", "reach": "inner", "home": False}
+    assert by_tap["KC_F"]["home"] and by_tap["KC_J"]["home"]
+    assert by_tap["KC_SCOLON"] == {"hand": "left", "finger": "pinky", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_QUOTE"] == {"hand": "right", "finger": "pinky", "row": "home", "reach": "rest", "home": True}
+
+
+def test_a_column_that_types_nothing_nearer_the_gap_makes_the_outer_end_the_extra_one():
+    """ Ctrl N E I O ' on a Corne's right half: the hand rests one column in, on N E I O; the quote is the pinky's
+    outer reach and Ctrl the index finger's inner one. The left half (Ctrl A S D F G) is the QWERTY Corne's. """
+    definition = corne.definition()
+    layer_0 = [
+        ["KC_TAB", "KC_Q", "KC_W", "KC_E", "KC_R", "KC_T"],
+        ["KC_LCTL", "KC_A", "KC_S", "KC_D", "KC_F", "KC_G"],
+        ["KC_LSFT", "KC_Z", "KC_X", "KC_C", "KC_V", "KC_B"],
+        ["KC_NO"] * 3 + ["KC_LGUI", "KC_SPC", "KC_LALT"],
+        ["KC_BSPC", "KC_P", "KC_Y", "KC_U", "KC_L", "KC_J"],  # right rows: column 0 is the outermost key
+        ["KC_QUOT", "KC_O", "KC_I", "KC_E", "KC_N", "KC_RCTL"],
+        ["KC_RSFT", "KC_SLSH", "KC_DOT", "KC_COMM", "KC_M", "KC_H"],
+        ["KC_NO"] * 3 + ["KC_RALT", "KC_ENT", "KC_RGUI"],
+    ]
+    by_tap = fingers_by_tap(model_of(lambda: VirtualKeyboard(definition, layers=1, keymap=keymap_of(layer_0))))
+    assert by_tap["KC_N"] == {"hand": "right", "finger": "index", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_E"]["finger"] == "middle" and by_tap["KC_I"]["finger"] == "ring"
+    assert by_tap["KC_O"] == {"hand": "right", "finger": "pinky", "row": "home", "reach": "rest", "home": True}
+    assert by_tap["KC_QUOTE"] == {"hand": "right", "finger": "pinky", "row": "home", "reach": "outer", "home": False}
+    assert by_tap["KC_RCTRL"] == {"hand": "right", "finger": "index", "row": "home", "reach": "inner", "home": False}
+    assert by_tap["KC_H"]["reach"] == "inner" and by_tap["KC_J"]["reach"] == "inner"
+    assert by_tap["KC_M"] == {"hand": "right", "finger": "index", "row": "bottom", "reach": "down", "home": False}
+    assert by_tap["KC_BSPACE"]["reach"] == "outer"
+    # the left half is unchanged: both ends letters, G the extra one
+    assert by_tap["KC_F"]["home"] and by_tap["KC_A"]["home"] and by_tap["KC_G"]["reach"] == "inner"
+
+
 def test_a_plain_altgr_key_carries_its_hold_so_the_picture_can_light_it():
     """ the QWERTY Corne's right inner thumb is KC_RALT: nothing to type, but the way to a Polish letter """
     built = model_of(qwerty_corne)
@@ -376,6 +452,10 @@ def test_letters_keep_their_altgr_character_and_a_capital_of_two_letters_falls_b
     # ß: its capital is "SS", so Shift types the legend's shifted character
     assert learning_layout.char_of({"main": "ß", "shifted": "?", "altGr": None}, "KC_MINUS", "KC_MINUS") == \
         {"tap": "ß", "shift": "?"}
+    # İ: its small letter is two code points (i and a combining dot), so the tap is the legend's own character
+    assert len("İ".lower()) == 2
+    assert learning_layout.char_of({"main": "İ", "shifted": None, "altGr": None}, "KC_I", "KC_I") == \
+        {"tap": "İ", "shift": "İ"}
 
 
 # a key, a layout option whose choices draw a key at x 1 (choice 0) or x 2 and a row lower (choice 1), and a decal
@@ -398,6 +478,34 @@ def test_export_holds_the_chosen_layout_option_and_no_decal():
     assert [(k["id"], k["x"], k["y"]) for k in export["keys"]] == [("r0c0", 0.5, 0.5), ("r0c2", 1.5, 0.5)]
     assert export["keys"][1]["chars"] == {"0": {"tap": "c", "shift": "C"}}
     assert learning_layout.layout_choices({"value": 0b1_10_1, "labels": ["A", ["B", "x", "y", "z"], "C"]}) == [1, 2, 1]
+    # hand-edited JSON: no value is the first choice of each option, no labels no options
+    assert learning_layout.layout_choices({"labels": ["A", "B"]}) == [0, 0]
+    assert learning_layout.layout_choices({"value": "3", "labels": ["A"]}) == [0]
+    assert learning_layout.layout_choices({"value": 1}) == [] and learning_layout.layout_choices({}) == []
+
+
+# as OPTIONS, but choice 1's key is drawn turned by 90 degrees about its own top-left corner (2, 1), so its drawn
+# box is (1, 1)-(2, 2): a key unit to the left of its unrotated rectangle
+OPTIONS_ROTATED = {"name": "Options", "matrix": {"rows": 1, "cols": 3},
+                   "layouts": {"labels": ["Split"],
+                               "keymap": [["0,0", "0,1\n\n\n0,0"], [{"r": 90, "rx": 2, "ry": 1}, "0,2\n\n\n0,1"]]}}
+
+
+def test_a_rotated_choice_is_moved_by_its_drawn_corner_as_the_picture_does():
+    keymap = {(0, 0, 0): encode("KC_A"), (0, 0, 1): encode("KC_B"), (0, 0, 2): encode("KC_C")}
+    built = model_of(lambda: VirtualKeyboard(OPTIONS_ROTATED, layers=1, keymap=keymap))
+    turned = built["keys"][2]
+    assert (turned["x"], turned["y"], turned["r"], turned["rx"], turned["ry"]) == (2, 1, 90, 2, 1)
+    assert sorted((round(x, 6), round(y, 6)) for x, y in learning_layout.corners(turned)) == \
+        [(1, 1), (1, 2), (2, 1), (2, 2)]
+    built["layoutOptions"]["value"] = 1
+    export = learning_layout.export(built)
+    # the drawn box's corner (1, 1) goes to choice 0's (1, 0): the key's centre lands where choice 0's is drawn, not
+    # a key unit left of it (over r0c0) as moving the unrotated rectangle would put it
+    assert [(k["id"], k["x"], k["y"]) for k in export["keys"]] == [("r0c0", 0.5, 0.5), ("r0c2", 1.5, 0.5)]
+    # a key with a second rectangle (an ISO Enter): its corners are both rectangles'
+    iso = {"x": 1, "y": 0, "w": 1.5, "h": 1, "x2": 0.25, "y2": 0, "w2": 1.25, "h2": 2}
+    assert max(p[1] for p in learning_layout.corners(iso)) == 2 and min(p[0] for p in learning_layout.corners(iso)) == 1
 
 
 def test_an_empty_keyboard_exports_no_keys():

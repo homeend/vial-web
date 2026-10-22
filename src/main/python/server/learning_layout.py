@@ -41,9 +41,10 @@ ALT_GR = "AltGr"
 
 
 def char_of(legend, code, tap_code):
-    """ {"tap", "shift", "altGr"} typed by a basic key, or None when it types nothing printable. A letter's shift is
-    its capital (the legend's shifted character when the capital isn't one character: ß); any key's altGr is the
-    legend's, as the keyboard language labels it (ą on KC_A in Polish) """
+    """ {"tap", "shift", "altGr"} typed by a basic key, or None when it types nothing printable. A letter's tap is
+    its small letter (the legend's own character when that isn't one character: İ) and its shift its capital (the
+    legend's shifted character when the capital isn't one character: ß); any key's altGr is the legend's, as the
+    keyboard language labels it (ą on KC_A in Polish) """
     if not legend:
         return None
     main = legend.get("main") or ""
@@ -53,7 +54,7 @@ def char_of(legend, code, tap_code):
         return None
     shifted, alt_gr = legend.get("shifted"), legend.get("altGr")
     if main.isalpha():
-        out = {"tap": main.lower()}
+        out = {"tap": main.lower() if len(main.lower()) == 1 else main}
         shifted = main.upper() if len(main.upper()) == 1 else shifted
     else:
         out = {"tap": main}
@@ -142,11 +143,14 @@ def shift_label(k, hold):
 def layout_choices(options):
     """ The chosen choice of each layout option, decoded as web/src/keyboard/geometry.ts's layoutChoices does: Vial
     packs them into one number, the first option in the highest bits; an on/off option takes one bit, a list of choices
-    as many bits as its highest choice needs, at least one """
+    as many bits as its highest choice needs, at least one. Hand-edited JSON may lack the fields: no value is 0, no
+    labels no options. """
     if not options:
         return []
-    value, choices = options["value"], []
-    for label in reversed(options["labels"]):
+    value, choices = options.get("value"), []
+    if not isinstance(value, int):
+        value = 0
+    for label in reversed(options.get("labels") or []):
         count = 2 if isinstance(label, str) else len(label) - 1
         size = 2 ** (1 if count <= 2 else (count - 1).bit_length())
         choices.insert(0, value % size)
@@ -154,19 +158,39 @@ def layout_choices(options):
     return choices
 
 
+def rotate(x, y, r, rx, ry):
+    """ The point turned by r degrees around (rx, ry), as the picture draws a rotated key (geometry.ts's rotate) """
+    if not r:
+        return x, y
+    a = math.radians(r)
+    dx, dy = x - rx, y - ry
+    return rx + dx * math.cos(a) - dy * math.sin(a), ry + dx * math.sin(a) + dy * math.cos(a)
+
+
+def corners(g):
+    """ The corners of both of the key's rectangles, rotated as drawn (geometry.ts's corners) """
+    rects = [(g["x"], g["y"], g["w"], g["h"])]
+    w2, h2, x2, y2 = g.get("w2", g["w"]), g.get("h2", g["h"]), g.get("x2") or 0, g.get("y2") or 0
+    if w2 != g["w"] or h2 != g["h"] or x2 or y2:
+        rects.append((g["x"] + x2, g["y"] + y2, w2, h2))
+    return [rotate(px, py, g.get("r") or 0, g.get("rx") or 0, g.get("ry") or 0)
+            for x, y, w, h in rects for px, py in ((x, y), (x + w, y), (x + w, y + h), (x, y + h))]
+
+
 def visible_keys(model):
     """ (index, geometry) of the keys the picture draws, as the web UI's placeKeyboard has it: no decals, and of the
     keys of a layout option only the chosen choice's, moved to where the option's first choice is drawn (by the
-    top-left corner of the keys' unrotated rectangles). The index is the key's place in model["keys"] and in every
-    layer's "keys". """
+    top-left corner of the box around the choice's keys and encoders as drawn, rotated). The index is the key's
+    place in model["keys"] and in every layer's "keys". """
     choices = layout_choices(model.get("layoutOptions"))
     keys = model.get("keys") or []
     top_left = {}
-    for g in keys:
+    for g in keys + (model.get("encoders") or []):
         if g.get("layoutIndex", -1) != -1:
-            seen = top_left.get((g["layoutIndex"], g["layoutOption"]))
+            seen = top_left.get((g["layoutIndex"], g["layoutOption"]), (math.inf, math.inf))
+            points = corners(g)
             top_left[(g["layoutIndex"], g["layoutOption"])] = \
-                (min(seen[0], g["x"]), min(seen[1], g["y"])) if seen else (g["x"], g["y"])
+                (min(seen[0], *(p[0] for p in points)), min(seen[1], *(p[1] for p in points)))
     out = []
     for i, g in enumerate(keys):
         if g.get("decal"):
@@ -188,14 +212,8 @@ def visible_keys(model):
 
 def centre(g):
     """ The key's centre in key units, rotated the way the picture draws it (web/src/keyboard/geometry.ts) """
-    x, y = g["x"] + g["w"] / 2, g["y"] + g["h"] / 2
-    r = g.get("r") or 0
-    if not r:
-        return round(x, 2), round(y, 2)
-    rx, ry = g.get("rx") or 0, g.get("ry") or 0
-    a = math.radians(r)
-    dx, dy = x - rx, y - ry
-    return round(rx + dx * math.cos(a) - dy * math.sin(a), 2), round(ry + dx * math.sin(a) + dy * math.cos(a), 2)
+    x, y = rotate(g["x"] + g["w"] / 2, g["y"] + g["h"] / 2, g.get("r") or 0, g.get("rx") or 0, g.get("ry") or 0)
+    return round(x, 2), round(y, 2)
 
 
 def key_id(g):
@@ -246,9 +264,10 @@ def propose_fingers(keys, tap0, rest_pref):
 
     A split board (a gap wider than SPLIT_GAP) parts at the gap, and each hand's finger columns come from the 1u
     columns whose home-row key types a character, counted from the gap outwards (a modifier or an arrow key in the
-    home row is no finger's resting key): four are the fingers index to pinky; of five, the extra column is the end
-    whose key is not a letter (comma on the Corne), or the inner end when both ends are letters (G and H on a QWERTY
-    Corne); of six or more, the innermost is the extra one and the four after it the fingers. The extra inner column
+    home row is no finger's resting key): four are the fingers index to pinky; of five, the extra column is the inner
+    end (comma on the Corne, G and H on a QWERTY Corne, H on a QWERTY Sweep), unless its key is a letter, the outer
+    end's is not, and a column that types nothing lies nearer the gap (Ctrl N E I O ' on a Corne: the outer ' is the
+    extra); of six or more, the innermost is the extra one and the four after it the fingers. The extra inner column
     and any column nearer the gap are the index finger's inner reach, columns beyond the pinky its outer reach. A
     board in one piece parts between the home row's middle letters, and its rows are staggered, so each row counts
     its keys from the gap outwards instead: inner, index, middle, ring, pinky, outer. A board with one hand on it (a
@@ -278,8 +297,9 @@ def propose_fingers(keys, tap0, rest_pref):
         row_name, home_row = row_names(hand_keys, row_idx, letter)
         row_of = {kid: row_name[r] for kid, r in row_idx.items()}
         # finger columns: of the home-row columns whose key types a character, from the gap outwards, four are the
-        # fingers; of five, the extra one is the end whose key is not a letter (the inner end when both are); of six
-        # or more, the innermost is the extra one
+        # fingers; of five, the extra one is the inner end, unless its key is a letter, the outer end's is not, and
+        # a column nearer the gap types nothing (then the hand rests one column in, and the outer end is the extra);
+        # of six or more, the innermost is the extra one
         cols = sorted({col_idx[kid] for kid in row_of if row_of[kid] != "thumb"})
         home_keys = [kid for kid in row_of if row_idx[kid] == home_row]
         typing_cols = sorted({col_idx[kid] for kid in home_keys if tap0.get(kid) is not None})
@@ -287,8 +307,10 @@ def propose_fingers(keys, tap0, rest_pref):
         if hand == "left":
             typing_cols.reverse()  # nearest the gap first
         if len(typing_cols) == 5:
-            extra_inner = typing_cols[0] not in letter_cols or typing_cols[-1] in letter_cols
-            finger_cols = typing_cols[1:] if extra_inner else typing_cols[:4]
+            inner, outer = typing_cols[0], typing_cols[-1]
+            nearer_the_gap = [c for c in cols if c != inner and (c > inner) == (hand == "left")]
+            extra_outer = inner in letter_cols and outer not in letter_cols and bool(nearer_the_gap)
+            finger_cols = typing_cols[:4] if extra_outer else typing_cols[1:]
         else:
             finger_cols = typing_cols[1:5] if len(typing_cols) >= 6 else typing_cols
         finger_of = {c: FINGERS_OUT[i] for i, c in enumerate(finger_cols)}
