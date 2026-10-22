@@ -102,11 +102,11 @@ are kept apart: each has its own lock and session file).
 ### Quit
 
 **Quit Vial** at the right of the top bar stops Vial: it lets go of the keyboard, every open tab says that Vial has
-stopped and that you can close the tab, and Vial exits (its tray icon goes, and a console window it opened closes).
+stopped and that you can close the tab, and Vial exits (its tray icon goes).
 It asks first when there is work not saved (a combo being edited, the Settings page's changes, lighting not saved).
 It asks only about the tab Quit is used in: work not saved in other open tabs is lost too. **Quit Vial** on the tray
 icon's menu stops Vial the same way, without asking about unsaved work. Pressing Ctrl+C in the terminal Vial was
-started from, or closing a console window of its own, stops Vial too, closing the keyboard first. On Linux and
+started from, or closing that window on Windows, stops Vial too, closing the keyboard first. On Linux and
 macOS, `kill` (SIGTERM) and closing the terminal (SIGHUP) stop it cleanly as well, unless it was started with
 `nohup`, which keeps it running when the terminal closes. At Windows log-off or shutdown, Windows ends Vial without
 its cleanup, and the system releases the keyboard.
