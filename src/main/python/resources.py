@@ -24,7 +24,9 @@ WEB_DIST = Resource("web/dist", "web")
 """ the built web UI (cd web && npm ci && npm run build) """
 QMK_SETTINGS = Resource("src/main/resources/base/qmk_settings.json", "qmk_settings.json")
 """ the QMK settings Vial knows, grouped as the Settings page shows them """
-BUNDLED = (WEB_DIST, QMK_SETTINGS)
+ICON = Resource("src/main/icons/Icon.ico", "Icon.ico")
+""" Vial's icon, shown in the notification area while it runs (tray.py); on Windows it is the executable's too """
+BUNDLED = (WEB_DIST, QMK_SETTINGS, ICON)
 """ every file or folder vial.spec bundles """
 
 

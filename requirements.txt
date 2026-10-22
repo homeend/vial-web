@@ -8,3 +8,11 @@ simpleeval==1.0.8
 starlette==1.8.0
 uvicorn==0.54.0
 websockets==17.2
+# the tray icon (tray.py): pystray and what its backends need on each system
+pystray==0.19.5
+Pillow==13.0.0
+six==1.17.0
+python-xlib==0.33 ; sys_platform == "linux"
+pyobjc-core==12.2.2 ; sys_platform == "darwin"
+pyobjc-framework-Cocoa==12.2.2 ; sys_platform == "darwin"
+pyobjc-framework-Quartz==12.2.2 ; sys_platform == "darwin"

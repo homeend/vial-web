@@ -22,6 +22,7 @@ import platformdirs
 
 import console
 import resources
+import tray
 import version
 
 APP_NAME = "Vial"
@@ -86,6 +87,10 @@ REOPEN_MESSAGE = """Browser window closed. Vial is still running. Reopen it at:
 To stop it, press Ctrl+C or close this window."""
 
 QUIT_MESSAGE = "Quit Vial was used on the page: Vial is stopping."
+TRAY_MESSAGE = "Vial has an icon in the notification area: Open Vial and Quit Vial are on its menu."
+TRAY_QUIT_MESSAGE = "Quit Vial was used on the tray icon: Vial is stopping."
+TRAY_TITLE = "Vial{fake}"
+""" the icon's tooltip """
 
 log = logging.getLogger(__name__)
 
@@ -422,6 +427,9 @@ def parse_args(argv):
                              "VialRGB for the sample Corne)")
     parser.add_argument("--port", type=port_number, default=0, help="port to listen on (default: any free port)")
     parser.add_argument("--no-browser", action="store_true", help="don't open the browser")
+    parser.add_argument("--no-tray", action="store_true",
+                        help="don't show an icon in the notification area while Vial runs (the link is printed and "
+                             "in vial.log)")
     parser.add_argument("--dry-run", action="store_true", help="connect, print a summary and exit without serving")
     parser.add_argument("--self-check", action="store_true",
                         help="check that this build has everything it needs (hidapi, the server, the web UI) and exit, "
@@ -554,8 +562,9 @@ def load_layout_file(manager, path):
 
 
 def serve(args, manager, sock):
-    """ Serve the UI on the bound socket until Quit Vial on the page, Ctrl+C or the console window closed. The keyboard
-    is let go of before it returns. """
+    """ Serve the UI on the bound socket until Quit Vial on the page or on the tray icon, Ctrl+C or the console window
+    closed. The keyboard is let go of before it returns. With a tray icon (the default, where there can be one), the
+    icon's loop holds this thread and the server runs in a thread of its own (tray.run). """
     import uvicorn
     from server.app import create_app
     from server.names import NamesStore
@@ -570,10 +579,19 @@ def serve(args, manager, sock):
         print("Vial: {}, then start Vial again. Until then the page only says so.".format(missing_ui), file=sys.stderr,
               flush=True)
     names = NamesStore(names_file(args.fake))
+    fake_text = " with a simulated keyboard" if args.fake else ""
+
+    def open_vial():
+        """ Open Vial in the browser (from any thread; the browser is started from a thread of its own) """
+        restore_library_path()
+        threading.Thread(target=webbrowser.open, args=[url], daemon=True).start()
+
+    icon = None
 
     def all_tabs_closed():
         print(REOPEN_MESSAGE.format(url=url), flush=True)
         logging.info("all browser tabs closed")
+        tray.notify(icon, tray.STILL_RUNNING)
 
     server = None
 
@@ -581,6 +599,11 @@ def serve(args, manager, sock):
         """ Ask the server to stop, as Ctrl+C does (from any thread) """
         if server is not None:
             server.should_exit = True
+
+    def quit_from_tray():
+        stop_server()
+        print(TRAY_QUIT_MESSAGE, flush=True)
+        logging.info("Quit Vial was used on the tray icon")
 
     quit_used = []
 
@@ -604,12 +627,19 @@ def serve(args, manager, sock):
     with console.StopOnConsoleClose(stop_server):
         try:
             # the socket is already listening: the URL works from now on
-            print(STARTED_MESSAGE.format(url=url, fake=" with a simulated keyboard" if args.fake else ""), flush=True)
+            print(STARTED_MESSAGE.format(url=url, fake=fake_text), flush=True)
             logging.info("serving on port %d", port)
+            if not args.no_tray:
+                icon = tray.make(TRAY_TITLE.format(fake=" (simulated keyboard)" if args.fake else ""), open_vial,
+                                 quit_from_tray)
+            if icon is not None:
+                print(TRAY_MESSAGE, flush=True)
             if not args.no_browser:
-                restore_library_path()
-                threading.Thread(target=webbrowser.open, args=[url], daemon=True).start()
-            server.run(sockets=[sock])
+                open_vial()
+            if icon is None:
+                server.run(sockets=[sock])
+            else:
+                tray.run(icon, lambda: server.run(sockets=[sock]), stop_server)
         except KeyboardInterrupt:
             pass  # uvicorn shuts down cleanly on Ctrl+C, then raises it again
         except Exception:
