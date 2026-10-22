@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { api } from "../api/api";
   import { causeMessage } from "../api/errors";
   import type { FingersIn, KeyboardModel } from "../api/types";
@@ -9,6 +9,7 @@
   import { layerFaces, namesOf } from "../keyboard/labels";
   import { whereIs } from "../keyboard/refs";
   import { router } from "../lib/router.svelte";
+  import { capitalised } from "../lib/text";
   import { toasts } from "../lib/toasts.svelte";
   import Button from "../ui/Button.svelte";
   import ConfirmDialog from "../ui/ConfirmDialog.svelte";
@@ -29,13 +30,27 @@
   let { model, placement }: Props = $props();
 
   const REACHES: readonly Reach[] = ["rest", "up", "down", "inner", "outer"];
-  const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
-  const fingerChoices = FINGERS.map((f) => ({ value: f, label: capital(f) }));
-  const reachChoices = REACHES.map((r) => ({ value: r, label: capital(r) }));
+  const fingerChoices = FINGERS.map((f) => ({ value: f, label: capitalised(f) }));
+  const reachChoices = REACHES.map((r) => ({ value: r, label: capitalised(r) }));
 
-  // read when the view opens
+  /** the fingers are being read; the last read failed (its toast said why): a Retry line */
+  let reading = $state(false);
+  let readFailed = $state(false);
+
+  async function read() {
+    if (reading) return;
+    reading = true;
+    readFailed = false;
+    try {
+      readFailed = !(await learning.loadFingers());
+    } finally {
+      reading = false;
+    }
+  }
+
+  // read when the view opens, and again for another keyboard (follow() drops them); a failed read waits for Retry
   $effect(() => {
-    if (learning.fingers === null) void learning.loadFingers();
+    if (learning.fingers === null) untrack(() => void read());
   });
 
   const fingers = $derived(learning.fingers);
@@ -48,8 +63,12 @@
     const key = keyOf(i);
     return key ? FINGER_COLOURS[key.finger] : null;
   }));
-  /** the resting keys: drawn filled (aria-pressed) */
-  const home = $derived(ids.map((_, i) => keyOf(i)?.home ?? false));
+  /** the resting keys: drawn filled (aria-pressed). Sparse: an encoder's slot is left empty, so the Keyboard passes
+   * it `undefined` and the encoder gets no aria-pressed (it can't be a resting key) */
+  const home = $derived(ids.reduce<boolean[]>((out, id, i) => {
+    if (id !== null) out[i] = keyOf(i)?.home ?? false;
+    return out;
+  }, []));
   const labels = $derived(ids.map((_, i) => {
     const key = keyOf(i);
     const legend = faces[i]?.main || "key";
@@ -58,15 +77,25 @@
 
   let selected = $state(-1);
   const selectedId = $derived(selected >= 0 ? ids[selected] : null);
-  const selectedKey = $derived(selectedId === null ? undefined : fingers?.keys[selectedId]);
   const where = $derived(selected >= 0 ? whereIs(model, placement.items[selected]) : null);
   let saving = $state(false);
   let resetting = $state(false);
   let exporting = $state(false);
   let exported = $state("");
 
+  type Fix = Partial<{ finger: Finger; reach: Reach; home: boolean }>;
+  /** what the fields show while a change is saved: the pick, until the store has it or it fails. Going back to what
+   * is stored is then a change of `value` or `checked`, which puts the control back (as LayoutPage does). */
+  let picked = $state<{ id: string; fix: Fix } | null>(null);
+  const selectedKey = $derived.by(() => {
+    const key = selectedId === null ? undefined : fingers?.keys[selectedId];
+    return key && picked?.id === selectedId ? { ...key, ...picked.fix } : key;
+  });
+  /** the server gives a resting key that isn't a thumb's the rest reach, whatever is picked: said in the panel */
+  const restingHand = $derived(selectedKey?.home === true && selectedKey.finger !== "thumb");
+
   /** Saves every key as it is now, with one change: the server stores the whole of it */
-  async function change(id: string, fix: Partial<{ finger: Finger; reach: Reach; home: boolean }>) {
+  async function change(id: string, fix: Fix) {
     if (!fingers || saving) return;
     const keys: FingersIn["keys"] = {};
     const resting: string[] = [];
@@ -76,9 +105,13 @@
       if (changed.home) resting.push(kid);
     }
     saving = true;
+    picked = { id, fix };
     try {
-      await learning.saveFingers({ keys, home: resting });
+      const saved = await learning.saveFingers({ keys, home: resting });
+      // the control shows the pick before it goes back
+      if (!saved) await tick();
     } finally {
+      picked = null;
       saving = false;
     }
   }
@@ -108,7 +141,7 @@
 
 <PageHeader id="learning-title" title="Fingers"
   description="Which finger rests on and reaches each key. The export tells the lesson generator; correct the proposal where it is wrong."
-  note={fingers?.proposal ? "This is the app's proposal from the key positions: nothing corrected yet." : fingers ? "Corrected by you; Reset to proposal forgets the corrections." : undefined}>
+  note={fingers ? `${fingers.proposal ? "This is the app's proposal from the key positions: nothing corrected yet." : "Corrected by you."} Each change is saved at once on this computer; Reset to proposal forgets the corrections.` : undefined}>
   {#snippet action()}
     <Button id="export-layout" variant="primary" aria-disabled={exporting || undefined} onclick={() => void exportLayout()}>
       {exporting ? "Exporting…" : "Export"}
@@ -120,18 +153,27 @@
 
 {#if exported}<p class="exported" role="status">{exported}</p>{/if}
 
+{#if reading}
+  <p class="reading" role="status">Reading the fingers…</p>
+{:else if readFailed}
+  <p class="reading" role="status">
+    The fingers couldn't be read.
+    <Button size="sm" onclick={() => void read()}>Retry</Button>
+  </p>
+{/if}
+
 <Board>
   <div class="picture">
     <Keyboard {placement} {faces} {labels} {rings} chosen={home} {selected} onselect={(i) => (selected = i)}
       interactive={true} maxUnit={56} label="Keys, by finger" describedby="fingers-help" />
   </div>
-  <p id="fingers-help" class="legend">
+  <ul class="legend" aria-label="Legend">
     {#each FINGERS as finger (finger)}
-      <span><span class="swatch" style="border-color: {FINGER_COLOURS[finger]}"></span> {finger}</span>
+      <li><span class="swatch" style="border-color: {FINGER_COLOURS[finger]}"></span> {finger}</li>
     {/each}
-    <span><span class="swatch home"></span> resting key</span>
-    <span class="help">Click a key to change its finger.</span>
-  </p>
+    <li><span class="swatch home"></span> resting key</li>
+  </ul>
+  <p id="fingers-help" class="help">Click a key to change its finger.</p>
 </Board>
 
 {#if selectedId !== null && selectedKey && where}
@@ -145,7 +187,10 @@
       <Switch label="Resting key" checked={selectedKey.home} busy={saving}
         onchange={(checked) => void change(selectedId, { home: checked })} />
     </div>
-    <p class="hand">{capital(selectedKey.hand)} hand, {selectedKey.row} row.</p>
+    <p class="hand">
+      {capitalised(selectedKey.hand)} hand, {selectedKey.row} row.
+      {#if restingHand}A resting key's reach is rest: a pick of another reach goes back.{/if}
+    </p>
   </section>
 {:else if selectedId === null && selected >= 0}
   <p class="hand">An encoder has no finger.</p>
@@ -169,7 +214,18 @@
     font-size: 13px;
   }
 
-  /* the resting keys are drawn filled (their aria-pressed, the Keyboard's chosen) */
+  .reading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin: 0;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+
+  /* the resting keys are drawn filled (their aria-pressed, the Keyboard's chosen). The Key's own hover tint
+   * (`.key:not(.static):hover .face`) is more specific and wins on purpose: a resting key still shows the hover. */
   .picture :global(.key[aria-pressed="true"] .face) {
     fill: color-mix(in srgb, var(--key-bg) 60%, var(--accent));
   }
@@ -180,11 +236,13 @@
     justify-content: center;
     gap: 6px 16px;
     margin: 0;
+    padding: 0;
+    list-style: none;
     color: var(--text-2);
     font-size: 12.5px;
   }
 
-  .legend > span {
+  .legend > li {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -205,7 +263,10 @@
   }
 
   .help {
+    margin: 0;
     color: var(--text-3);
+    font-size: 12.5px;
+    text-align: center;
   }
 
   .panel {

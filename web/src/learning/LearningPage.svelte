@@ -52,6 +52,10 @@
     if (!entry) return { kind: "missing", what: `Lesson set ${named.set} isn't here.` };
     if (entry.error) return { kind: "missing", what: `Lesson set ${named.set} can't be opened: ${entry.error}` };
     const set = learning.set;
+    // chosen, not being read, and not open: the read failed (its toast said why), and nothing would try again
+    if (learning.chosen === named.set && !set && !learning.opening) {
+      return { kind: "missing", what: `Lesson set ${named.set} couldn't be opened.` };
+    }
     if (learning.chosen !== named.set || !set || set.id !== named.set) return { kind: "waiting" };
     const l = set.lessons.findIndex((lesson) => lesson.id === named.lesson);
     const lesson = set.lessons[l];
