@@ -55,7 +55,8 @@ export function lessonStatus(lesson: Lesson, progress: Progress | null | undefin
   };
 }
 
-/** The exercise after one: the next in its lesson, else the first of the next lesson, else null */
+/** The exercise after one: the next in its lesson, else the first of the next lesson that has an
+ * exercise (an empty lesson is skipped), else null */
 export function nextExercise(set: LessonSet, lessonId: string, exerciseId: string): { lessonId: string; exerciseId: string } | null {
   const l = set.lessons.findIndex((lesson) => lesson.id === lessonId);
   if (l === -1) return null;
@@ -64,9 +65,11 @@ export function nextExercise(set: LessonSet, lessonId: string, exerciseId: strin
   if (e === -1) return null;
   const after = lesson.exercises[e + 1];
   if (after) return { lessonId, exerciseId: after.id };
-  const next = set.lessons[l + 1];
-  const first = next?.exercises[0];
-  return next && first ? { lessonId: next.id, exerciseId: first.id } : null;
+  for (const next of set.lessons.slice(l + 1)) {
+    const first = next.exercises[0];
+    if (first) return { lessonId: next.id, exerciseId: first.id };
+  }
+  return null;
 }
 
 /** Whether the set was built from another character map than the keyboard's export has now; false with no export */

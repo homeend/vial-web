@@ -28,6 +28,11 @@ describe("readChosenSet", () => {
     expect(readChosenSet(s, "5EEDC0DE00420042")).toBe("corne-sim-en");
     expect(readChosenSet(s, "0")).toBeNull();
     expect(readChosenSet(storage({ "vial.learningSet.0": "" }), "0")).toBeNull();
+    // only a set id is believed
+    for (const bad of ["../x", "", "a".repeat(65)]) {
+      expect(readChosenSet(storage({ "vial.learningSet.0": bad }), "0")).toBeNull();
+    }
+    expect(readChosenSet(storage({ "vial.learningSet.0": "a".repeat(64) }), "0")).toBe("a".repeat(64));
   });
 
   it("is none when the storage can't be read, or isn't there", () => {

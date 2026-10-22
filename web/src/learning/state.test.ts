@@ -63,6 +63,16 @@ describe("lessonStatus", () => {
     expect(lessonStatus(lesson1, noBest, settings)).toMatchObject({ done: 1, passed: false, bestAccuracy: null });
   });
 
+  it("takes best: null as no best, and a progress without layoutHash", () => {
+    const p: Progress = { format: "vial-web-progress/1", lessonSet: set.id, exercises: {
+      "01-n1": { done: true, best: null, attempts: [] }, "01-k1": { done: false, best: attempt(96, 20), attempts: [] } } };
+    expect(p.layoutHash).toBeUndefined();
+    expect(lessonStatus(lesson1, p, settings))
+      .toEqual({ done: 2, of: 7, passed: false, star: false, bestAccuracy: 96, bestWpm: 20 });
+    const nulled: Progress = { ...p, layoutHash: null };
+    expect(lessonStatus(lesson1, nulled, settings).done).toBe(2);
+  });
+
   it("isn't passed with nothing to pass", () => {
     expect(lessonStatus({ ...lesson1, exercises: [] }, progress({}), settings))
       .toEqual({ done: 0, of: 0, passed: false, star: false, bestAccuracy: null, bestWpm: null });
@@ -82,6 +92,14 @@ describe("nextExercise", () => {
     expect(nextExercise(set, "01", "01-n1")).toEqual({ lessonId: "01", exerciseId: "01-n2" });
     expect(nextExercise(set, "01", "01-w1")).toEqual({ lessonId: "02", exerciseId: "02-n1" });
     expect(nextExercise(set, "02", "02-t2")).toBeNull();
+  });
+
+  it("skips a lesson without exercises", () => {
+    const [a, b, c] = [lesson1, lesson2, lesson2];
+    const gappy = { ...set, lessons: [a, { ...b, id: "empty", exercises: [] }, { ...c, id: "later" }] };
+    expect(nextExercise(gappy, "01", "01-w1")).toEqual({ lessonId: "later", exerciseId: "02-n1" });
+    const tail = { ...set, lessons: [a, { ...b, id: "empty", exercises: [] }] };
+    expect(nextExercise(tail, "01", "01-w1")).toBeNull();
   });
 
   it("is nothing for a lesson or exercise the set doesn't have", () => {
