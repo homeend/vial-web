@@ -176,4 +176,5 @@ size range, when a `new-keys` exercise has under 40 % new characters, when a gro
   file.
 - The file is per lesson set, so a regenerated set with a new `id` starts fresh and the old progress stays. A set
   imported again under the same `id` keeps its progress; entries for exercises the set no longer has are dropped
-  at the next recorded attempt. A hand-edited file is read for what is valid in it.
+  at the next recorded attempt. A hand-edited file is read for what is valid in it. Reset progress on the page
+  removes the file.

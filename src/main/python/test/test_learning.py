@@ -417,6 +417,23 @@ def test_record_drops_the_progress_of_exercises_the_set_no_longer_has(store):
     assert set(store.progress(UID, "mini")["exercises"]) == {"01-n1", "01-w1"}
 
 
+def test_clear_progress_removes_the_file_named_exactly(store, root):
+    store.import_set(UID, minimal_set())
+    store.record(UID, "mini", "01-n1", attempt())
+    path = root / UID / "progress" / "mini.json"
+    assert path.exists()
+    store.clear_progress(UID, "MINI")  # another set's name on a case-insensitive file system: not this file
+    assert path.exists() and store.progress(UID, "mini")["exercises"]["01-n1"]["done"]
+    store.clear_progress(UID, "mini")
+    assert not path.exists()
+    assert store.progress(UID, "mini")["exercises"] == {}
+    store.clear_progress(UID, "mini")  # nothing to clear: fine
+    store.clear_progress(UID, "never")  # no set of that name either: fine
+    with pytest.raises(NotFound):
+        store.clear_progress(UID, "a/b")
+    assert store.set(UID, "mini")["id"] == "mini"  # the set itself stays
+
+
 def test_a_set_file_nested_too_deeply_is_listed_with_its_error(store, root):
     store.import_set(UID, minimal_set())
     deep = root / UID / "sets" / "deep.json"
@@ -676,6 +693,31 @@ def test_progress_over_the_api(client):
     worst = client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(errors=300, at="t3"))
     assert worst.status_code == 200, worst.text
     assert worst.json()["attempts"][-1]["accuracy"] == 0 and worst.json()["best"]["at"] == "t2"
+
+
+def test_reset_progress_over_the_api(client, root):
+    data = example("corne-sim-en.json")
+    assert client.post("/api/learning/sets", json=data).status_code == 201
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt()).status_code == 200
+    path = root / UID / "progress" / "corne-sim-en.json"
+    assert path.exists()
+    # meant for another keyboard: refused, the file stays
+    other = {"x-vial-keyboard": "some-other-keyboard"}
+    assert client.delete("/api/learning/progress/corne-sim-en", headers=other).status_code == 409
+    assert path.exists() and client.get("/api/learning/progress/corne-sim-en").json()["exercises"] != {}
+    reset = client.delete("/api/learning/progress/corne-sim-en")
+    assert reset.status_code == 204, reset.text
+    assert not path.exists()
+    assert client.get("/api/learning/progress/corne-sim-en").json() == {
+        "format": "vial-web-progress/1", "lessonSet": "corne-sim-en", "layoutHash": None, "exercises": {}}
+    assert client.get("/api/learning/sets/corne-sim-en").json() == data  # the set itself stays
+    # nothing recorded, or no such set at all: nothing to remove, which is what was asked for
+    assert client.delete("/api/learning/progress/corne-sim-en").status_code == 204
+    assert client.delete("/api/learning/progress/never").status_code == 204
+    assert client.delete("/api/learning/progress/a.b").status_code == 404  # no set can be called that
+    # recording again starts afresh
+    again = client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(at="t2")).json()
+    assert [a["at"] for a in again["attempts"]] == ["t2"]
 
 
 def test_settings_over_the_api(client):

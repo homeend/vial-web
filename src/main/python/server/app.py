@@ -1015,6 +1015,15 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         uid = read(model.uid_of)
         return store.record(uid, set_id, exercise_id, body.model_dump())
 
+    @app.delete("/api/learning/progress/{set}", status_code=204, response_class=Response)
+    def reset_progress(set_id: SetId):
+        """ Reset the progress on a lesson set: its progress file is removed (204 also when there was none, or no
+        such set). The set itself stays. """
+        store = learning_store()
+        uid = read(model.uid_of)
+        store.clear_progress(uid, set_id)
+        return Response(status_code=204)
+
     @app.get("/api/learning/settings", response_model=schemas.LearningSettings)
     def learning_settings():
         """ The pass accuracy, the target WPM and whether the picture shows in word exercises """

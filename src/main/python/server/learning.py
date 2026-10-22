@@ -405,6 +405,14 @@ class LearningStore:
             self._save(self._progress_path(uid, set_id), progress)
         return progress["exercises"][exercise_id]
 
+    def clear_progress(self, uid, set_id):
+        """ Reset the progress on a lesson set: its progress file (the one named exactly set_id) is removed; nothing
+        to remove (never recorded, no such set) is fine. NotFound only for an id that can't be a set's. """
+        with self.lock:
+            path = self._progress_path(uid, set_id)
+            if self._has_file(path):
+                self._remove(path)
+
     # ---------- settings ----------
 
     @staticmethod

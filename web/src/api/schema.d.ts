@@ -708,7 +708,12 @@ export interface paths {
         get: operations["lesson_progress_api_learning_progress__set__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Reset Progress
+         * @description Reset the progress on a lesson set: its progress file is removed (204 also when there was none, or no
+         *     such set). The set itself stays.
+         */
+        delete: operations["reset_progress_api_learning_progress__set__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3327,6 +3332,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Progress"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_progress_api_learning_progress__set__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
