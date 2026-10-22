@@ -46,5 +46,9 @@ there can be no icon, Vial runs exactly as before. `--no-tray` turns the icon of
 - [x] **5. Verify on Windows:** pytest (whole suite), build `dist/Vial.exe`, smoke test, and a live check of the built
   exe with `--fake`: PE subsystem 2 (GUI), no console window, pystray's windows present, Quit through the API, exit 0.
 - [x] **6. README** ("What it does", Status, Download and run, Quit, options, Building) and this plan; STATUS.md.
-- [ ] **7. CI green** on the three systems (the Linux and macOS builds install the new packages; the Linux self-check
-  imports Pillow and python-xlib without a display). **Owner:** try the icon on Windows and Linux.
+- [x] **7. CI green** on the three systems (`f4f0302`, 2026-10-22: Build with the smoke test and the e2e tests against
+  the executable, Test with pytest on Windows, Linux and macOS). The first push failed pytest on Linux and macOS:
+  the stop-signal test sent SIGTERM to the whole process, which pytest-xdist's own threads don't block; it now sends
+  it to the waiting thread.
+- [ ] **8. Owner:** try the icon on Windows (hidden-icons area, Open Vial, Quit Vial, the notification after the last
+  tab closes) and on Linux; then merge to `main`.
