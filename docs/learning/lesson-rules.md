@@ -35,10 +35,14 @@ usually right:
 - **Columns.** Keys are grouped into columns by their x position (centre within ±0.4 u of each other). On a
   row-stagger board the rows are shifted, so the grouping uses the standard touch-typing columns instead: in each
   letter row, count keys from the inner edge of the hand outwards: index, index, middle, ring, pinky, pinky, …
-- **Fingers.** Per hand, the four columns next to the gap, from the gap outwards, are index, middle, ring, pinky
-  — but an *extra* column next to the gap (a sixth column on a Corne, `t`/`y` on QWERTY) is the index finger's
-  inner reach, and columns beyond the pinky are the pinky's outer reach. Keys below the bottom row that are set in
-  towards the middle (a thumb cluster) are thumbs; on a plain board the space bar is the thumb.
+- **Fingers.** Per hand, count the home-row columns whose key types a character, from the gap outwards (a modifier
+  or an arrow key in the home row is no finger's resting key). Four are the fingers index, middle, ring, pinky. Of
+  five, the *extra* column is the end whose key is not a letter (`,`/`.` next to the gap on the Corne), or the inner
+  end when both ends are letters (`g`/`h` on a QWERTY Corne); of six or more, the innermost is the extra one and
+  the four after it the fingers. The extra inner column, and any column nearer the gap, is the index finger's inner
+  reach (`t`/`y`, `g`/`h`, `b`/`n` on QWERTY); columns beyond the pinky are the pinky's outer reach. Keys below the
+  bottom row that are set in towards the middle (a thumb cluster) are thumbs; on a plain board the space bar is the
+  thumb.
 - **Rows.** The three rows with the most letters on layer 0 are `top`, `home`, `bottom`; a row above them with
   digits is `number`; the thumb cluster is `thumb`. The resting keys are the four finger columns on the home row of
   each hand (`reach: rest`, `home: true`). The thumb's resting key is the thumb key that types Space (or Enter

@@ -58,7 +58,8 @@ the simulated Corne's. Example (two keys of it):
 ```
 
 - `hash` covers the character map only (every key's `chars` and the layer access paths), so a lesson set stays
-  valid when a layer is renamed or a macro changes, and is marked **out of date** when a character moves.
+  valid when a layer is renamed or a macro changes, and is marked **out of date** when a character moves. It doesn't
+  cover `shiftKeys`: a Shift key moved or removed doesn't mark a set out of date.
 - `chars.<layer>` has `tap`, and `shift` / `altGr` when those differ; a key with no printable result on a layer is
   left out of that layer. `hold` is a short label for what holding does (`"Shift"`, `"Ctrl"`, `"layer 2"`).
 - Transparent keys are resolved: a layer-1 entry shows what the key does *when layer 1 is on*.
