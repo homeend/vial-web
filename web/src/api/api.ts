@@ -73,13 +73,17 @@ export const api = {
   learningSets: () => request("get", "/api/learning/sets"),
   /** a lesson set file, checked and saved (201); 422 lists what is wrong with it (ApiError.errors) */
   importLearningSet: (text: string) => request("post", "/api/learning/sets", { raw: text }),
+  /** one lesson set, whole; 404 when there is none, 422 when its file isn't a lesson set */
   learningSet: (set: string) => request("get", "/api/learning/sets/{set}", { params: { set } }),
   /** removes the set; its progress stays */
   deleteLearningSet: (set: string) => request("delete", "/api/learning/sets/{set}", { params: { set } }),
+  /** the exercises typed so far in a set, each with its best and attempts; empty for a set never recorded, also for one
+   * that doesn't exist */
   learningProgress: (set: string) => request("get", "/api/learning/progress/{set}", { params: { set } }),
   /** an exercise typed to the end; the server computes accuracy and WPM and keeps the best */
   recordAttempt: (set: string, exercise: string, body: AttemptIn) =>
     request("put", "/api/learning/progress/{set}/{exercise}", { params: { set, exercise }, body }),
+  /** the pass accuracy, the target speed and whether the picture names keys in words */
   learningSettings: () => request("get", "/api/learning/settings"),
   setLearningSettings: (body: LearningSettingsIn) => request("put", "/api/learning/settings", { body }),
   unlockStart: () => request("post", "/api/unlock/start"),

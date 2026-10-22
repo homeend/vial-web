@@ -1,12 +1,18 @@
 // The Learning page's texts: a lesson row's state, an exercise's best, the status line while typing, the result card.
 import type { Progress as TypingProgress, Result } from "./engine";
 import type { LessonStatus } from "./state";
+import { safeFileName } from "../lib/fileName";
 import type { Attempt } from "./types";
 
-/** "0:48", "12:05" */
+/** "0:48", "12:05"; minutes keep counting past an hour ("60:00" for 3600 s) */
 export function clockText(seconds: number): string {
   const whole = Math.max(0, Math.round(seconds));
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+/** Words per minute, whole: "31" */
+function wholeWpm(value: number): string {
+  return String(Math.round(value));
 }
 
 /** "98 %" (whole percents, for a lesson row) */
@@ -23,7 +29,7 @@ function percentTenths(value: number): string {
  * was typed */
 export function lessonStateText(status: LessonStatus): string {
   if (status.passed) {
-    const numbers = `${percent(status.bestAccuracy ?? 0)} · ${Math.round(status.bestWpm ?? 0)} wpm`;
+    const numbers = `${percent(status.bestAccuracy ?? 0)} · ${wholeWpm(status.bestWpm ?? 0)} wpm`;
     return `${status.star ? "★ " : ""}passed · ${numbers}`;
   }
   return status.done > 0 ? `${status.done} of ${status.of} done` : "";
@@ -31,13 +37,13 @@ export function lessonStateText(status: LessonStatus): string {
 
 /** An exercise's best: "99.1 % · 31 wpm", or "—" with none */
 export function bestText(best: Pick<Attempt, "accuracy" | "wpm"> | null | undefined): string {
-  return best ? `${percentTenths(best.accuracy)} · ${best.wpm.toFixed(0)} wpm` : "—";
+  return best ? `${percentTenths(best.accuracy)} · ${wholeWpm(best.wpm)} wpm` : "—";
 }
 
 /** The status line while typing: "23 of 312 · 1 error · 99.1 % · 31 wpm · 0:48" */
 export function statusText(progress: TypingProgress): string {
   const errors = `${progress.errors} ${progress.errors === 1 ? "error" : "errors"}`;
-  return [`${progress.typed} of ${progress.of}`, errors, percentTenths(progress.accuracy), `${progress.wpm.toFixed(0)} wpm`,
+  return [`${progress.typed} of ${progress.of}`, errors, percentTenths(progress.accuracy), `${wholeWpm(progress.wpm)} wpm`,
     clockText(progress.seconds)].join(" · ");
 }
 
@@ -63,8 +69,7 @@ export function listedErrors(errors: string[], max = 10): string[] {
   return [...errors.slice(0, max), `and ${more} more`];
 }
 
-/** "Simulated Corne-layout-export.json": the keyboard's name without the characters file systems refuse */
+/** "Simulated Corne-layout-export.json": the keyboard's name, made safe for file systems */
 export function exportFileName(keyboardName: string): string {
-  const name = keyboardName.replace(/[\u0000-\u001f<>:"/\\|?*]+/g, "_").replace(/^[\s._]+|[\s._]+$/g, "");
-  return `${name.slice(0, 100) || "keyboard"}-layout-export.json`;
+  return `${safeFileName(keyboardName)}-layout-export.json`;
 }
