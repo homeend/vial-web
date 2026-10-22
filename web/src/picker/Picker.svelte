@@ -1,9 +1,9 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import type { CatalogueKeycode, Described, KeycodeCategory } from "../api/types";
+  import type { CatalogueKeycode, Described } from "../api/types";
   import { keyFace, type Names } from "../keyboard/labels";
   import AnyKeycode from "./AnyKeycode.svelte";
-  import { categoryIndex } from "./offered";
+  import { categoryIndex, type OfferedCategory } from "./offered";
   import { searchKeycodes, searchTemplates } from "./search";
   import { fillTemplate } from "./template";
 
@@ -11,7 +11,7 @@
     open: boolean;
     /** what the picker is for, e.g. "Key row 1, column 2 on Base" */
     subject: string;
-    categories: KeycodeCategory[];
+    categories: OfferedCategory[];
     /** the keycode the key has now */
     current: string;
     names: Names;
@@ -194,6 +194,9 @@
           </button>
         {/each}
       </div>
+      {#if !results && categories[category]?.note}
+        <p class="note">{categories[category].note}</p>
+      {/if}
       {#if templates.length > 0}
         <div class="templates">
           <span>Wrap another key:</span>
@@ -425,6 +428,13 @@
   .empty {
     margin: 0 0 12px;
     color: var(--text-2);
+  }
+
+  /* under the Tap dance and Macros tabs' keys: only those set up are offered */
+  .note {
+    margin: 12px 0 0;
+    color: var(--text-2);
+    font-size: 12.5px;
   }
 
   footer {

@@ -16,8 +16,9 @@ releases, see [get.vial.today](https://get.vial.today/).
 ## What it does
 
 - **Keymap:** every key on every layer. Click a key to see what it does on tap and on hold, and change it from a
-  picker. Find which keys type a character or send a key (`ą`, `@`, `Esc`, `MO(2)`). Drag a key onto another to swap
-  or copy it. Name your layers.
+  picker. The picker's Tap dance and Macros tabs list only the tap dances and macros that are set up, and pointing at
+  one shows what it does. Find which keys type a character or send a key (`ą`, `@`, `Esc`, `MO(2)`). Drag a key onto
+  another to swap or copy it. Name your layers.
 - **Overview:** all layers at once, how each one is reached (layer keys, tap dances, combos), and what is set up but
   never used.
 - **Arrange layers** (new in 0.9.0): move layers to other positions by dragging them or with ↑ and ↓. Every key that

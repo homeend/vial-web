@@ -14,7 +14,7 @@ import { actionAt, whereIs, type KeyRef } from "../keyboard/refs";
 import { unlockFirst, type Change } from "../keymap/move";
 import { freeTapDance } from "../keymap/tapdance";
 import { hasLighting } from "../lighting/lighting";
-import { offeredCategories } from "../picker/offered";
+import { offeredCategories, setUpEntries } from "../picker/offered";
 import { toasts } from "./toasts.svelte";
 import { LOCKED, Unlocker, type UnlockOutcome } from "./unlock.svelte";
 import { capitalised } from "./text";
@@ -126,8 +126,9 @@ export class KeyboardStore {
    * worked out again only when it changes, not on every lighting change */
   #lit = $derived(this.model === null || hasLighting(this.model.lighting));
   /** the keycode categories the picker offers: the catalogue, without the Lighting category on a keyboard without
-   * lighting. Finding keys and describing keycodes still use the whole catalogue. */
-  pickerCatalogue = $derived(offeredCategories(this.catalogue, this.#lit));
+   * lighting, and with only the tap dances and macros set up (each described by what it does). Finding keys and
+   * describing keycodes still use the whole catalogue. */
+  pickerCatalogue = $derived(setUpEntries(offeredCategories(this.catalogue, this.#lit), this.model));
 
   /** whether the keyboard shown can be changed: not while Quit Vial is on its way, nor once Vial has stopped */
   canEdit = $derived(

@@ -208,3 +208,39 @@ test("a long layer name is renamed in a dialog that shows all of it, and cut sho
     await setLayerName(app, 2, before);
   }
 });
+
+test("the picker offers only the tap dances and macros set up, each with a tooltip saying what it does", async ({ app }) => {
+  const model = await (await api(app).get("/api/keyboard")).json();
+  type Slot = { kind: string };
+  const tapDances = model.tapDance.filter((td: Record<string, Slot>) =>
+    [td.tap, td.hold, td.doubleTap, td.tapHold].some((s) => s.kind !== "none")).map((td: { index: number }) => td.index);
+  const macros = model.macros.items.filter((m: { actions: unknown[] }) => m.actions.length > 0)
+    .map((m: { index: number }) => m.index);
+  expect(tapDances.length).toBeGreaterThan(0);
+  expect(tapDances.length).toBeLessThan(model.tapDance.length);
+  expect(macros.length).toBeGreaterThan(0);
+  expect(macros.length).toBeLessThan(model.macros.items.length);
+
+  await app.locator(`[data-ref="key:${await keyIndex(app, 0, 1)}"]`).click();
+  await app.getByRole("button", { name: "Change key" }).click();
+  const picker = app.getByRole("dialog", { name: "Choose a keycode" });
+  await expect(picker).toBeVisible();
+
+  await picker.getByRole("tab", { name: "Tap dance" }).click();
+  const tdKeys = picker.locator(".grid .kc");
+  await expect(tdKeys).toHaveCount(tapDances.length);
+  for (const [i, index] of tapDances.entries()) {
+    await expect(tdKeys.nth(i)).toHaveAttribute("title", new RegExp(`^TD\\(${index}\\): .*tapping term \\d+ ms$`));
+  }
+  await expect(picker.getByText("Only the tap dances set up are shown.")).toBeVisible();
+
+  await picker.getByRole("tab", { name: "Macros" }).click();
+  for (const [i, index] of macros.entries()) {
+    await expect(picker.locator(".grid .kc").nth(i)).toHaveAttribute("title", new RegExp(`^M${index}: \\S`));
+  }
+  await expect(picker.locator(".grid .kc")).toHaveCount(macros.length + 5); // and the five dynamic macro keys
+  await expect(picker.getByRole("button", { name: /DYN_REC_START1/ })).toBeVisible();
+  await expect(picker.getByText("Only the macros set up are shown.")).toBeVisible();
+  await screenshots(app, "picker-tap-dances-set-up");
+  await picker.getByRole("button", { name: "Close" }).click();
+});
