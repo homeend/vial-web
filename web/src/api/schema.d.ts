@@ -588,6 +588,170 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/learning/fingers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fingers
+         * @description Which finger types each key of the keyboard open: the app's proposal from the key positions and what layer
+         *     0 types (lesson-rules.md section 2), with the user's corrections (PUT) on top
+         */
+        get: operations["get_fingers_api_learning_fingers_get"];
+        /**
+         * Set Fingers
+         * @description Save the user's corrections for this keyboard (learning/<uid>/fingers.json), replacing those saved before;
+         *     returns the result as GET does
+         */
+        put: operations["set_fingers_api_learning_fingers_put"];
+        post?: never;
+        /**
+         * Clear Fingers
+         * @description Forget the user's corrections: back to the app's proposal
+         */
+        delete: operations["clear_fingers_api_learning_fingers_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Learning Export
+         * @description The layout export of the keyboard open for the lesson generator (lesson-format.md section 2), with the
+         *     user's finger corrections; also saved as learning/<uid>/layout-export.json
+         */
+        get: operations["learning_export_api_learning_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lesson Sets
+         * @description The lesson sets of the keyboard open (learning/<uid>/sets/*.json), each with whether it was made from
+         *     another character map than the keyboard has now (outOfDate, for the characters of the keyboard language lang);
+         *     a file that isn't a lesson set is listed with its error
+         */
+        get: operations["lesson_sets_api_learning_sets_get"];
+        put?: never;
+        /**
+         * Import Lesson Set
+         * @description Import a lesson set (the body is the file): checked as util/learning/check_lessons.py checks it, against
+         *     the keyboard's export in the keyboard language lang, and saved as sets/<its id>.json (replacing one of that
+         *     id). 422 with the checker's errors (and warnings) when it fails; the warnings of one that passes come back
+         *     with its listing entry.
+         */
+        post: operations["import_lesson_set_api_learning_sets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/sets/{set}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lesson Set
+         * @description One lesson set, whole; 404 when there is none, 422 when the file isn't a lesson set
+         */
+        get: operations["lesson_set_api_learning_sets__set__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Lesson Set
+         * @description Remove the lesson set; its progress stays (for the set imported again). 404 when there is none.
+         */
+        delete: operations["delete_lesson_set_api_learning_sets__set__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/progress/{set}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lesson Progress
+         * @description The progress on a lesson set (lesson-format.md section 4): empty when nothing was recorded (also for a set
+         *     that doesn't exist)
+         */
+        get: operations["lesson_progress_api_learning_progress__set__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/progress/{set}/{exercise}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Record Attempt
+         * @description Record an attempt at an exercise typed to the end: the server computes accuracy and WPM, keeps the best
+         *     attempt and the last 50. 404 when the set has no such exercise.
+         */
+        put: operations["record_attempt_api_learning_progress__set___exercise__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Learning Settings */
+        get: operations["learning_settings_api_learning_settings_get"];
+        /** Set Learning Settings */
+        put: operations["set_learning_settings_api_learning_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/unlock/start": {
         parameters: {
             query?: never;
@@ -829,6 +993,39 @@ export interface components {
             /** Kept */
             kept: number;
         };
+        /**
+         * Attempt
+         * @description An exercise typed to the end
+         */
+        Attempt: {
+            /** At */
+            at: string;
+            /** Chars */
+            chars: number;
+            /** Errors */
+            errors: number;
+            /** Accuracy */
+            accuracy: number;
+            /** Wpm */
+            wpm: number;
+            /** Seconds */
+            seconds: number;
+        };
+        /**
+         * AttemptIn
+         * @description An exercise typed to the end (PUT /api/learning/progress/{set}/{exercise}); accuracy and WPM are computed by
+         *     the server
+         */
+        AttemptIn: {
+            /** At */
+            at: string;
+            /** Chars */
+            chars: number;
+            /** Errors */
+            errors: number;
+            /** Seconds */
+            seconds: number;
+        };
         /** Backlight */
         Backlight: {
             /** Brightness */
@@ -939,6 +1136,93 @@ export interface components {
             direction: number;
             before: components["schemas"]["Described"];
             after: components["schemas"]["Described"];
+        };
+        /** ExerciseProgress */
+        ExerciseProgress: {
+            /** Done */
+            done: boolean;
+            best?: components["schemas"]["Attempt"] | null;
+            /** Attempts */
+            attempts: components["schemas"]["Attempt"][];
+        };
+        /** ExportKeyboard */
+        ExportKeyboard: {
+            /** Name */
+            name: string;
+            /** Uid */
+            uid: string;
+        };
+        /**
+         * FingerFix
+         * @description The user's say on one key
+         */
+        FingerFix: {
+            /**
+             * Finger
+             * @enum {string}
+             */
+            finger: "index" | "middle" | "ring" | "pinky" | "thumb";
+            /**
+             * Reach
+             * @enum {string}
+             */
+            reach: "rest" | "up" | "down" | "inner" | "outer";
+        };
+        /**
+         * FingerKey
+         * @description Which finger types a key, and from where (lesson-rules.md section 2)
+         */
+        FingerKey: {
+            /**
+             * Hand
+             * @enum {string}
+             */
+            hand: "left" | "right";
+            /**
+             * Finger
+             * @enum {string}
+             */
+            finger: "index" | "middle" | "ring" | "pinky" | "thumb";
+            /**
+             * Row
+             * @enum {string}
+             */
+            row: "number" | "top" | "home" | "bottom" | "thumb";
+            /**
+             * Reach
+             * @enum {string}
+             */
+            reach: "rest" | "up" | "down" | "inner" | "outer";
+            /** Home */
+            home: boolean;
+        };
+        /**
+         * Fingers
+         * @description The app's finger proposal for the keyboard open, with the user's corrections on top
+         */
+        Fingers: {
+            /** Format */
+            format: string;
+            /** Keys */
+            keys: {
+                [key: string]: components["schemas"]["FingerKey"];
+            };
+            /** Home */
+            home: string[];
+            /** Proposal */
+            proposal: boolean;
+        };
+        /**
+         * FingersIn
+         * @description The user's finger corrections (PUT /api/learning/fingers): replaces what was saved
+         */
+        FingersIn: {
+            /** Keys */
+            keys: {
+                [key: string]: components["schemas"]["FingerFix"];
+            };
+            /** Home */
+            home: string[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1185,6 +1469,34 @@ export interface components {
             to: number;
         };
         /**
+         * LayoutExport
+         * @description The layout export the lesson generator reads (lesson-format.md section 2); layers, shiftKeys and keys are as
+         *     the format describes them
+         */
+        LayoutExport: {
+            /** Format */
+            format: string;
+            keyboard: components["schemas"]["ExportKeyboard"];
+            /** Hash */
+            hash: string;
+            /** Exportedat */
+            exportedAt: string;
+            /** Language */
+            language: string;
+            /** Layers */
+            layers: {
+                [key: string]: unknown;
+            }[];
+            /** Shiftkeys */
+            shiftKeys: {
+                [key: string]: unknown;
+            }[];
+            /** Keys */
+            keys: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
          * LayoutFilePreview
          * @description What loading a .vil file would change on the keyboard; nothing is written to find out. Each list holds only
          *     what differs from what the keyboard holds now.
@@ -1233,6 +1545,24 @@ export interface components {
             /** Value */
             value: number;
         };
+        /** LearningSettings */
+        LearningSettings: {
+            /** Passaccuracy */
+            passAccuracy: number;
+            /** Targetwpm */
+            targetWpm: number;
+            /** Pictureinwords */
+            pictureInWords: boolean;
+        };
+        /** LearningSettingsIn */
+        LearningSettingsIn: {
+            /** Passaccuracy */
+            passAccuracy: number;
+            /** Targetwpm */
+            targetWpm: number;
+            /** Pictureinwords */
+            pictureInWords: boolean;
+        };
         /**
          * Legend
          * @description What a key cap shows, each on one line
@@ -1244,6 +1574,69 @@ export interface components {
             shifted?: string | null;
             /** Altgr */
             altGr?: string | null;
+        };
+        /**
+         * LessonSet
+         * @description A lesson set, as its file has it (lesson-format.md section 3); fields the format doesn't require are kept
+         */
+        LessonSet: {
+            /** Format */
+            format: string;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Language */
+            language: string;
+            /** Layout */
+            layout: {
+                [key: string]: unknown;
+            };
+            /** Lessons */
+            lessons: {
+                [key: string]: unknown;
+            }[];
+        } & {
+            [key: string]: unknown;
+        };
+        /** LessonSetImported */
+        LessonSetImported: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Language */
+            language: string;
+            /** Lessons */
+            lessons: number;
+            /** Layouthash */
+            layoutHash?: string | null;
+            /** Outofdate */
+            outOfDate: boolean;
+            /** Error */
+            error?: string | null;
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
+         * LessonSetSummary
+         * @description A lesson set file of the keyboard open (learning/<uid>/sets/<id>.json)
+         */
+        LessonSetSummary: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Language */
+            language: string;
+            /** Lessons */
+            lessons: number;
+            /** Layouthash */
+            layoutHash?: string | null;
+            /** Outofdate */
+            outOfDate: boolean;
+            /** Error */
+            error?: string | null;
         };
         /** Lighting */
         Lighting: {
@@ -1384,6 +1777,22 @@ export interface components {
         ParseRequest: {
             /** Expression */
             expression: string;
+        };
+        /**
+         * Progress
+         * @description The progress on one lesson set (lesson-format.md section 4)
+         */
+        Progress: {
+            /** Format */
+            format: string;
+            /** Lessonset */
+            lessonSet: string;
+            /** Layouthash */
+            layoutHash?: string | null;
+            /** Exercises */
+            exercises: {
+                [key: string]: components["schemas"]["ExerciseProgress"];
+            };
         };
         /** QmkSetting */
         QmkSetting: {
@@ -2623,6 +3032,355 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ArrangedModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fingers_api_learning_fingers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Fingers"];
+                };
+            };
+        };
+    };
+    set_fingers_api_learning_fingers_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FingersIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Fingers"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_fingers_api_learning_fingers_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Fingers"];
+                };
+            };
+        };
+    };
+    learning_export_api_learning_export_get: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayoutExport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lesson_sets_api_learning_sets_get: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonSetSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_lesson_set_api_learning_sets_post: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonSetImported"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lesson_set_api_learning_sets__set__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonSet"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_lesson_set_api_learning_sets__set__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lesson_progress_api_learning_progress__set__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Progress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_attempt_api_learning_progress__set___exercise__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set: string;
+                exercise: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttemptIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExerciseProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    learning_settings_api_learning_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningSettings"];
+                };
+            };
+        };
+    };
+    set_learning_settings_api_learning_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearningSettingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningSettings"];
                 };
             };
             /** @description Validation Error */

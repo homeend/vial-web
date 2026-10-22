@@ -22,6 +22,16 @@ def test_dump_openapi_writes_the_schema_without_qt_hidapi_or_a_server(tmp_path):
     assert {"/api/keyboards", "/api/keyboards/select"} <= set(schema["paths"])
     assert {"/api/unlock/start", "/api/unlock/cancel", "/api/lock", "/api/bootloader", "/api/lighting/save",
             "/api/shutdown"} <= set(schema["paths"])
+    # the Learning feature (its store isn't configured for the dump: the routes are described all the same)
+    assert {"/api/learning/fingers", "/api/learning/export", "/api/learning/sets", "/api/learning/sets/{set}",
+            "/api/learning/progress/{set}", "/api/learning/progress/{set}/{exercise}",
+            "/api/learning/settings"} <= set(schema["paths"])
+    assert set(schema["paths"]["/api/learning/fingers"]) == {"get", "put", "delete"}
+    assert {"Fingers", "FingerKey", "FingersIn", "LayoutExport", "LessonSetSummary", "LessonSetImported",
+            "LessonSet", "Progress", "ExerciseProgress", "Attempt", "AttemptIn", "LearningSettings",
+            "LearningSettingsIn"} <= set(schema["components"]["schemas"])
+    imported = schema["paths"]["/api/learning/sets"]["post"]["responses"]["201"]["content"]["application/json"]
+    assert imported["schema"] == {"$ref": "#/components/schemas/LessonSetImported"}
     assert "/" not in schema["paths"]  # the page, not the API
     # what /api/events sends (WebSockets have no place in OpenAPI's paths)
     event = schema["components"]["schemas"]["Event"]

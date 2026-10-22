@@ -1,17 +1,24 @@
-""" The Learning feature's store (server.learning) """
+""" The Learning feature's store (server.learning) and its routes """
 import json
 import os
 
 import pytest
+from fastapi.testclient import TestClient
 
 from server import learning_layout
+from server.app import create_app
+from server.device import DeviceManager, FakeBackend
 from server.learning import LearningStore, LessonSetInvalid, NotFound
+from server.names import NamesStore
 from simulator.corne import make_corne
 from test.test_learning_check import minimal_set, EXPORT as MINI_EXPORT
 from test.test_learning_layout import model_of, EXAMPLES
 
 UID = "5EEDC0DE00420042"
 """ the simulated Corne's uid """
+TOKEN = "test-token"
+PORT = 8766
+BASE = "http://127.0.0.1:{}".format(PORT)
 
 
 def example(name):
@@ -301,3 +308,184 @@ def test_settings_file_with_wrong_values_falls_back_to_the_defaults_for_them(sto
     (folder / "settings.json").write_text(json.dumps({"passAccuracy": 200, "targetWpm": 40, "extra": 1}),
                                           encoding="utf-8")
     assert store.settings(UID) == {"passAccuracy": 95, "targetWpm": 40, "pictureInWords": True}
+
+
+# ---------- the routes ----------
+
+@pytest.fixture
+def client(tmp_path):
+    """ A client with a session cookie, on an app with a learning store under tmp_path/learning """
+    manager = DeviceManager(FakeBackend(make_corne))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0,
+                     learning=LearningStore(str(tmp_path / "learning")))
+    with TestClient(app, base_url=BASE) as client:
+        assert client.get("/?token=" + TOKEN, follow_redirects=False).status_code == 303
+        yield client
+
+
+def test_routes_refuse_without_a_store(tmp_path):
+    manager = DeviceManager(FakeBackend(make_corne))
+    manager.connect()
+    app = create_app(manager, NamesStore(str(tmp_path / "names.json")), TOKEN, PORT, poll_interval=0)
+    with TestClient(app, base_url=BASE) as client:
+        client.get("/?token=" + TOKEN, follow_redirects=False)
+        assert client.get("/api/learning/fingers").status_code == 501
+        assert client.get("/api/learning/settings").status_code == 501
+        assert client.get("/api/learning/sets").status_code == 501
+
+
+def test_fingers_round_trip_and_reset_over_the_api(client, root):
+    proposal = client.get("/api/learning/fingers").json()
+    assert proposal["proposal"] is True and proposal["format"] == "vial-web-fingers/1"
+    assert proposal["keys"]["r1c4"] == {"hand": "left", "finger": "index", "row": "home", "reach": "rest", "home": True}
+    assert sorted(proposal["home"]) == ["r1c1", "r1c2", "r1c3", "r1c4", "r3c4", "r5c1", "r5c2", "r5c3", "r5c4", "r7c4"]
+    assert len(proposal["keys"]) == 42
+    home = [k for k in proposal["home"] if k != "r1c4"] + ["r1c5"]
+    response = client.put("/api/learning/fingers", json={"keys": {"r0c5": {"finger": "middle", "reach": "up"},
+                                                                  "r9c9": {"finger": "ring", "reach": "up"}},
+                                                         "home": home})
+    assert response.status_code == 200, response.text
+    fixed = response.json()
+    assert fixed["proposal"] is False
+    assert fixed["keys"]["r0c5"]["finger"] == "middle" and fixed["keys"]["r0c5"]["reach"] == "up"
+    assert fixed["keys"]["r1c5"]["home"] and fixed["keys"]["r1c5"]["reach"] == "rest"
+    assert not fixed["keys"]["r1c4"]["home"]
+    assert sorted(fixed["home"]) == sorted(home) and "r9c9" not in fixed["keys"]
+    assert client.get("/api/learning/fingers").json() == fixed
+    assert (root / UID / "fingers.json").exists()
+    assert client.put("/api/learning/fingers", json={"keys": {"r0c5": {"finger": "hand", "reach": "up"}},
+                                                     "home": []}).status_code == 422
+    assert client.put("/api/learning/fingers", json={"keys": {}, "home": [], "extra": 1}).status_code == 422
+    assert client.get("/api/learning/fingers").json() == fixed
+    reset = client.delete("/api/learning/fingers")
+    assert reset.status_code == 200 and reset.json() == proposal
+    assert not (root / UID / "fingers.json").exists()
+
+
+def test_export_is_saved_and_its_hash_stable(client, root):
+    first = client.get("/api/learning/export")
+    assert first.status_code == 200, first.text
+    export = first.json()
+    assert export["format"] == "vial-web-layout-export/1" and export["language"] == "en-us"
+    assert export["keyboard"] == {"name": "Simulated Corne", "uid": UID}
+    assert export["hash"] == example("corne-sim-layout-export.json")["hash"]
+    saved = json.loads((root / UID / "layout-export.json").read_text(encoding="utf-8"))
+    assert saved == export
+    second = client.get("/api/learning/export").json()
+    assert second["hash"] == export["hash"] and second["keys"] == export["keys"]
+    assert client.get("/api/learning/export?lang=klingon").status_code == 422
+    assert len(client.get("/api/learning/export?lang=en-us").json()["layers"]) == 4
+
+
+def test_import_list_get_and_delete_over_the_api(client, root):
+    data = example("corne-sim-en.json")
+    assert client.get("/api/learning/sets").json() == []
+    response = client.post("/api/learning/sets", json=data)
+    assert response.status_code == 201, response.text
+    assert response.json() == {"id": "corne-sim-en", "title": data["title"], "language": "en", "lessons": 2,
+                               "layoutHash": data["layout"]["hash"], "outOfDate": False, "error": None,
+                               "warnings": []}
+    listed = client.get("/api/learning/sets").json()
+    assert listed == [{"id": "corne-sim-en", "title": data["title"], "language": "en", "lessons": 2,
+                       "layoutHash": data["layout"]["hash"], "outOfDate": False, "error": None}]
+    assert client.get("/api/learning/sets/corne-sim-en").json() == data
+    assert (root / UID / "sets" / "corne-sim-en.json").exists()
+    assert client.delete("/api/learning/sets/corne-sim-en").status_code == 204
+    assert client.get("/api/learning/sets").json() == []
+    assert client.get("/api/learning/sets/corne-sim-en").status_code == 404
+    assert client.delete("/api/learning/sets/corne-sim-en").status_code == 404
+    assert client.get("/api/learning/sets/a%2Fb").status_code == 404
+
+
+def test_import_refuses_a_bad_file_with_the_checkers_errors(client):
+    data = example("corne-sim-en.json")
+    data["lessons"][0]["exercises"][0]["lines"].append("zq zq")
+    data["lessons"][1]["new"][0]["key"] = "r9c9"
+    response = client.post("/api/learning/sets", json=data)
+    assert response.status_code == 422, response.text
+    body = response.json()
+    assert body["errors"] == ["exercise 01-n1: uses characters not taught yet: 'q' 'z'",
+                              "lesson 02/new[0]: key r9c9 is not in the layout export"]
+    assert body["detail"].startswith("the lesson set has 2 errors")
+    assert isinstance(body["warnings"], list)
+    assert client.get("/api/learning/sets").json() == []
+    # not a lesson set at all
+    assert client.post("/api/learning/sets", json=[1, 2]).status_code == 422
+    assert client.post("/api/learning/sets", content=b"{not json").status_code == 422
+    assert client.post("/api/learning/sets", json={"format": "x"}).json()["errors"][0].startswith("format:")
+    assert client.post("/api/learning/sets?lang=klingon", json=data).status_code == 422
+
+
+def test_import_of_a_set_made_for_another_layout_is_out_of_date(client):
+    data = example("corne-sim-en.json")
+    data["layout"]["hash"] = "sha256:ffffffffffffffff"
+    response = client.post("/api/learning/sets", json=data)
+    assert response.status_code == 201, response.text
+    assert response.json()["outOfDate"] is True
+    assert response.json()["warnings"] == ["layout/hash: differs from the export's hash: the set was made from "
+                                           "another layout"]
+    assert client.get("/api/learning/sets").json()[0]["outOfDate"] is True
+
+
+def test_a_file_dropped_in_by_hand_is_listed_with_its_error(client, root):
+    folder = root / UID / "sets"
+    folder.mkdir(parents=True)
+    (folder / "broken.json").write_text("{", encoding="utf-8")
+    listed = client.get("/api/learning/sets").json()
+    assert len(listed) == 1 and listed[0]["id"] == "broken" and listed[0]["error"].startswith("not a JSON file")
+    assert listed[0]["outOfDate"] is False and listed[0]["layoutHash"] is None
+    assert client.get("/api/learning/sets/broken").status_code == 422
+
+
+def test_progress_over_the_api(client):
+    data = example("corne-sim-en.json")
+    assert client.post("/api/learning/sets", json=data).status_code == 201
+    empty = client.get("/api/learning/progress/corne-sim-en").json()
+    assert empty == {"format": "vial-web-progress/1", "lessonSet": "corne-sim-en", "layoutHash": None, "exercises": {}}
+    response = client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(chars=228, errors=3, seconds=88))
+    assert response.status_code == 200, response.text
+    entry = response.json()
+    assert entry["done"] is True and entry["best"]["accuracy"] == 98.7 and entry["best"]["wpm"] == 31.1
+    assert entry["attempts"] == [entry["best"]]
+    better = client.put("/api/learning/progress/corne-sim-en/01-n1",
+                        json=attempt(chars=228, errors=0, seconds=100, at="t2")).json()
+    assert better["best"]["at"] == "t2" and better["best"]["accuracy"] == 100.0 and len(better["attempts"]) == 2
+    progress = client.get("/api/learning/progress/corne-sim-en").json()
+    assert progress["exercises"] == {"01-n1": better} and progress["layoutHash"] == data["layout"]["hash"]
+    assert client.put("/api/learning/progress/corne-sim-en/99-x", json=attempt()).status_code == 404
+    assert client.put("/api/learning/progress/other-set/01-n1", json=attempt()).status_code == 404
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(chars=0)).status_code == 422
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(errors=300)).status_code == 422
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(seconds=0)).status_code == 422
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1",
+                      json={**attempt(), "accuracy": 50}).status_code == 422
+    assert client.get("/api/learning/progress/corne-sim-en").json() == progress
+    assert client.get("/api/learning/progress/never").json()["exercises"] == {}
+
+
+def test_settings_over_the_api(client):
+    assert client.get("/api/learning/settings").json() == {"passAccuracy": 95, "targetWpm": 30,
+                                                           "pictureInWords": True}
+    response = client.put("/api/learning/settings", json={"passAccuracy": 90, "targetWpm": 40,
+                                                          "pictureInWords": False})
+    assert response.status_code == 200, response.text
+    assert response.json() == {"passAccuracy": 90, "targetWpm": 40, "pictureInWords": False}
+    assert client.get("/api/learning/settings").json() == response.json()
+    for bad in ({"passAccuracy": 49, "targetWpm": 40, "pictureInWords": False},
+                {"passAccuracy": 90, "targetWpm": 301, "pictureInWords": False},
+                {"passAccuracy": 90.5, "targetWpm": 40, "pictureInWords": False},
+                {"passAccuracy": 90, "targetWpm": 40, "pictureInWords": "no"},
+                {"passAccuracy": 90, "targetWpm": 40},
+                {"passAccuracy": 90, "targetWpm": 40, "pictureInWords": False, "more": 1}):
+        assert client.put("/api/learning/settings", json=bad).status_code == 422, bad
+    assert client.get("/api/learning/settings").json() == response.json()
+
+
+def test_learning_routes_need_a_keyboard(client):
+    client.put("/api/simulator/connection", json={"connected": False})
+    client.app.state.manager.check()  # the hot-plug poll (off in tests) notices
+    assert client.get("/api/learning/fingers").status_code == 503
+    assert client.get("/api/learning/sets").status_code == 503
+    assert client.get("/api/learning/settings").status_code == 503
+    assert client.post("/api/learning/sets", json=example("corne-sim-en.json")).status_code == 503

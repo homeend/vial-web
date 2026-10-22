@@ -1208,7 +1208,8 @@ def test_data_dir_option_is_made_absolute(tmp_path, monkeypatch):
 def test_data_dir_holds_every_file_of_its_mode(tmp_path, no_platform_dirs, fake):
     vial_web.use_data_dir(str(tmp_path))
     where = str(tmp_path / "fake") if fake else str(tmp_path)
-    for path in (vial_web.lock_file, vial_web.session_file, vial_web.log_file, vial_web.names_file):
+    for path in (vial_web.lock_file, vial_web.session_file, vial_web.log_file, vial_web.names_file,
+                 vial_web.learning_dir):
         assert os.path.dirname(path(fake)) == where
 
 

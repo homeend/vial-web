@@ -130,6 +130,11 @@ def names_file(fake):
     return os.path.join(config_dir(fake), "names.json")
 
 
+def learning_dir(fake):
+    """ The Learning feature's files (server.learning.LearningStore), a folder per keyboard inside """
+    return os.path.join(config_dir(fake), "learning")
+
+
 def ensure_data_dir(fake):
     """ The data dir, created if needed. It holds the session token (server.json), so only the user may open it. """
     path = data_dir(fake)
@@ -558,6 +563,7 @@ def serve(args, manager, sock):
     is let go of before it returns. """
     import uvicorn
     from server.app import create_app
+    from server.learning import LearningStore
     from server.names import NamesStore
 
     port = sock.getsockname()[1]
@@ -596,7 +602,8 @@ def serve(args, manager, sock):
     # the page says the web UI isn't built whenever the console does: also when web/dist is there without its page
     web_ui = None if missing_ui else resources.path(resources.WEB_DIST)
     app = create_app(manager, names, token, port, static_dir=web_ui,
-                     on_all_clients_gone=all_tabs_closed, instance_id=instance, on_stop=quit_from_page)
+                     on_all_clients_gone=all_tabs_closed, instance_id=instance, on_stop=quit_from_page,
+                     learning=LearningStore(learning_dir(args.fake)))
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning", log_config=UVICORN_LOGGING,
                                            timeout_graceful_shutdown=SHUTDOWN_GRACE))
 
