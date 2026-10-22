@@ -424,6 +424,16 @@ test("the import lists the checker's errors, gone with the next import, and a ta
     await importExample(app);
     await expect(errors).toHaveCount(0);
 
+    // a file that isn't a .json at all (the picker asks for one, but any file can be chosen): said before its size is
+    await app.locator('input[type="file"]').setInputFiles({ name: "Vial.exe", mimeType: "application/octet-stream",
+                                                            buffer: Buffer.alloc(5 * 1024 * 1024) });
+    const notJson = app.getByRole("alert").filter({ hasText: "Vial.exe wasn't imported:" });
+    await expect(notJson.getByRole("listitem")).toHaveText(["not a lesson set: a lesson set is a .json file, written by the generate-lessons skill from the layout export"]);
+    await app.locator('input[type="file"]').setInputFiles({ name: "huge.json", mimeType: "application/json",
+                                                            buffer: Buffer.alloc(5 * 1024 * 1024, 32) });
+    await expect(app.getByRole("alert").filter({ hasText: "huge.json wasn't imported:" }).getByRole("listitem"))
+      .toHaveText(["too large for a lesson set: 5.0 MiB, at most 4 MiB"]);
+
     await importJson(app, "warned.json", await smallSet(app, "warned", { hash: "sha256:0123456789abcdef" }));
     const warnings = app.getByRole("status").filter({ hasText: "warned.json was imported, with warnings:" });
     await expect(warnings).toBeVisible();

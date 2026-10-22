@@ -71,6 +71,27 @@ function rowState(lesson: (typeof example.lessons)[number], progress: ExercisePr
   return done === 0 ? "" : `${done} of ${main.length} done`;
 }
 
+test("Learning is the first section, a line under it, and Keymap still the one shown first", async ({ app }) => {
+  const nav = app.getByRole("navigation", { name: "Sections" });
+  await expect(nav.getByRole("button").first()).toHaveText("Learning");
+  await expect(nav.getByRole("button").nth(1)).toHaveText(/^Keymap/);
+  await expect(nav.getByRole("button").nth(1)).toHaveAttribute("aria-current", "page"); // the default section
+  await expect(app.getByRole("heading", { level: 1, name: "Keymap" })).toBeVisible();
+  // the line sits between them, decoration only (not in the accessibility tree)
+  const items = nav.locator("ul > li");
+  await expect(items.nth(1)).toHaveClass(/line/);
+  await expect(items.nth(1)).toHaveAttribute("aria-hidden", "true");
+  await expect(nav.getByRole("listitem")).toHaveCount((await items.count()) - 1);
+  expect(await items.nth(1).evaluate((el) => getComputedStyle(el).height)).toBe("1px");
+  await screenshots(app, "learning-nav");
+  // a narrow window wraps the sections into rows: the line takes a row of its own, 1 px tall, and nothing is hidden
+  await app.setViewportSize({ width: 600, height: 800 });
+  await expect(nav.getByRole("button").first()).toBeVisible();
+  expect(await items.nth(1).evaluate((el) => el.getBoundingClientRect().height)).toBe(1);
+  expect(await items.nth(1).evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThan(300);
+  await screenshots(app, "learning-nav-narrow");
+});
+
 test("the example imports, lists its lessons with empty states, and isn't out of date", async ({ app }) => {
   try {
     await importExample(app);

@@ -219,7 +219,7 @@ test("a keyboard without lighting has no Lighting page and says nothing of light
   // settings), the Keymap too: its keycode picker offers no lighting keys on a keyboard without lighting, though Qt's
   // always does. (Outside <main>, the theme switch's "Light" is no lighting either.)
   const names = await nav.locator("button > span").allTextContents();
-  expect(names).toEqual(["Keymap", "Layout", "Macros", "Learning", "Matrix tester", "Keyboard"]);
+  expect(names).toEqual(["Learning", "Keymap", "Layout", "Macros", "Matrix tester", "Keyboard"]);
   for (const name of names) {
     await openSection(macropad, name);
     await expect(macropad.locator("main")).not.toContainText(/lighting|RGB|backlight/i);

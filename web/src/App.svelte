@@ -44,15 +44,16 @@
   // alt-repeat keys, QMK settings, lighting or matrix tester) are left out
   const sections = $derived.by<Section[]>(() => {
     const model = keyboard.model;
-    const list: Section[] = [{ id: "keymap", label: "Keymap", count: model?.layers.length }];
+    // Learning first, a line under it: every keyboard has it (the lessons are the app's files, nothing of the
+    // firmware's), and it is the page used daily; the editing pages follow, Keymap still the one shown by default
+    const list: Section[] = [{ id: "learning", label: "Learning", lineAfter: true },
+                             { id: "keymap", label: "Keymap", count: model?.layers.length }];
     if (!model) return list;
     if (model.layoutOptions) list.push({ id: "layout", label: "Layout" });
     const counts = behaviourCounts(model);
     if (counts.tapDance !== null) list.push({ id: "tap-dance", label: "Tap dance", count: counts.tapDance });
     if (counts.combos !== null) list.push({ id: "combos", label: "Combos", count: counts.combos });
     if (counts.macros !== null) list.push({ id: "macros", label: "Macros", count: counts.macros });
-    // every keyboard: the lessons are the app's files, nothing of the firmware's
-    list.push({ id: "learning", label: "Learning" });
     if (counts.keyOverrides !== null) list.push({ id: "key-overrides", label: "Key overrides", count: counts.keyOverrides });
     if (counts.altRepeat !== null) list.push({ id: "alt-repeat", label: "Alt-repeat", count: counts.altRepeat });
     if (model.settings.length > 0) list.push({ id: "settings", label: "Settings" });

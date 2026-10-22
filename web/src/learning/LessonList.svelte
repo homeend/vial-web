@@ -51,8 +51,15 @@
     findings = null;
     onnote(null);
     try {
+      // the picker asks for .json, but any file can be chosen: say what a lesson set is before anything else
+      if (!/\.json$/i.test(file.name)) {
+        findings = { tone: "errors", name: file.name,
+                     lines: ["not a lesson set: a lesson set is a .json file, written by the generate-lessons skill from the layout export"] };
+        return;
+      }
       if (file.size > MAX_BYTES) {
-        findings = { tone: "errors", name: file.name, lines: [`too large for a lesson set (at most ${MAX_BYTES / 1024 / 1024} MiB)`] };
+        findings = { tone: "errors", name: file.name,
+                     lines: [`too large for a lesson set: ${(file.size / 1024 / 1024).toFixed(1)} MiB, at most ${MAX_BYTES / 1024 / 1024} MiB`] };
         return;
       }
       const outcome = await learning.importSet(await file.text());

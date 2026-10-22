@@ -32,7 +32,8 @@ releases, see [get.vial.today](https://get.vial.today/).
   override or alt-repeat key has Remove in its editor.
 - **QMK settings, lighting, layout options, matrix tester, reboot to bootloader.**
 - **Layout files:** save the whole layout to a `.vil` file and load one back, with a preview of what it changes.
-- **Learning:** a typing course for your own layout. The Fingers view proposes which finger rests on and
+- **Learning** (first in the list of sections, above the editing pages): a typing course for your own layout. The
+  Fingers view proposes which finger rests on and
   reaches each key (correct it where it is wrong) and exports the layout for the `generate-lessons` skill in Claude
   Code, which writes a lesson set; import it, and type the lessons with the next key lit on the keyboard picture.
   Accuracy and speed are recorded per keyboard; a lesson passes at the pass accuracy, a star at the target speed
