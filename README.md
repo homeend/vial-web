@@ -28,6 +28,12 @@ releases, see [get.vial.today](https://get.vial.today/).
 - **Tap dance, combos, macros, key overrides, alt-repeat:** a page each. Macros can be edited as text or recorded.
 - **QMK settings, lighting, layout options, matrix tester, reboot to bootloader.**
 - **Layout files:** save the whole layout to a `.vil` file and load one back, with a preview of what it changes.
+- **Learning:** a typing course for your own layout. The Fingers view proposes which finger rests on and
+  reaches each key (correct it where it is wrong) and exports the layout for the `generate-lessons` skill in Claude
+  Code, which writes a lesson set; import it, and type the lessons with the next key lit on the keyboard picture.
+  Accuracy and speed are recorded per keyboard; a lesson passes at the pass accuracy, a star at the target speed
+  ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)).
+  Nothing is written to the keyboard.
 - Several keyboards plugged in: choose which one to edit. Unlocking, when the keyboard asks for it.
 - Light and dark themes; key legends in your keyboard language.
 
@@ -44,6 +50,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 | 6 | One executable per system (PyInstaller); Qt and fbs removed; Quit Vial; CI on Windows, Linux and macOS | done |
 | 7 | Firmware flasher (its logic is in `src/main/python/protocol/flasher.py`, without a UI yet) | optional |
 | 8 | Arrange layers: move layers, every layer reference and name follows ([design](docs/superpowers/specs/2026-10-21-arrange-layers-design.md)) | done (0.9.0) |
+| 9 | Learning: a typing course generated from the layout ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)) | done |
 
 Design: [`docs/superpowers/specs/2026-10-15-vial-web-ui-design.md`](docs/superpowers/specs/2026-10-15-vial-web-ui-design.md).
 Roadmap: [`docs/superpowers/plans/2026-10-15-roadmap-phases-2-7.md`](docs/superpowers/plans/2026-10-15-roadmap-phases-2-7.md).
@@ -112,7 +119,7 @@ and prints the link to reopen it.
 | `--port PORT` | Port to listen on (default: any free port) |
 | `--no-browser` | Don't open the browser; the link with its session token is printed |
 | `--dry-run` | Connect, print a summary of the keyboard and exit |
-| `--data-dir DIR` | Keep the lock, session file, log and names in `DIR` instead of the user folders (below); a `--fake` Vial keeps them in `DIR/fake` |
+| `--data-dir DIR` | Keep the lock, session file, log, names and Learning files in `DIR` instead of the user folders (below); a `--fake` Vial keeps them in `DIR/fake` |
 | `--self-check` | Check that this build has everything it needs (hidapi, the server, the web UI) and exit, without looking for any keyboard |
 | `--version` | Print Vial's version and exit |
 
@@ -123,7 +130,7 @@ printed link.
 
 Never next to the executable, and never in the folder the executable unpacks itself to while it runs:
 
-| System | Lock, session file, log (`vial.log`) | Layer, tap dance and macro names (`names.json`) |
+| System | Lock, session file, log (`vial.log`) | Layer, tap dance and macro names (`names.json`); Learning's lesson sets, progress and fingers (`learning/<keyboard uid>/`) |
 |---|---|---|
 | Windows | `%LOCALAPPDATA%\Vial` | `%LOCALAPPDATA%\Vial` |
 | Linux | `~/.local/share/Vial` | `~/.config/Vial` |
