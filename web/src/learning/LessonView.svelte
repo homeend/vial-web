@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { KeyboardModel } from "../api/types";
-  import PageHeader from "../behaviours/PageHeader.svelte";
   import type { Placement } from "../keyboard/geometry";
   import Keyboard from "../keyboard/Keyboard.svelte";
   import { layerFaces, namesOf } from "../keyboard/labels";
@@ -29,10 +28,13 @@
   const picture = $derived(layout
     ? pictureForAll(lesson.new.map((n) => n.char), learning.places, placement, layout, { fadeOthers: true })
     : null);
-  /** each new character with the way to its key: "( — hold Sym → (" */
+  /** the heading, from the file's title: cut short with a tooltip */
+  const title = $derived(`${number} · ${lesson.title}`);
+  /** each new character with the way to its key: "( — hold Sym → ("; an entry without a key (the file may leave it
+   * out) shows the character alone */
   const chars = $derived(lesson.new.map((n) => {
-    const place = learning.places.get(n.char) ?? { key: n.key, layer: n.layer, via: n.via };
-    return { char: n.char, how: layout ? nextKeyLabel(place, layout) : n.key };
+    const place = learning.places.get(n.char) ?? (n.key ? { key: n.key, layer: n.layer ?? 0, via: n.via ?? "tap" } : null);
+    return { char: n.char, how: place ? (layout ? nextKeyLabel(place, layout) : place.key) : null };
   }));
   const exercises = $derived(lesson.exercises.map((exercise) => {
     const best = learning.progress?.exercises[exercise.id]?.best ?? null;
@@ -45,11 +47,15 @@
   }
 </script>
 
-<PageHeader id="learning-title" title="{number} · {lesson.title}" description={lesson.guidance}>
-  {#snippet action()}
-    <Button onclick={() => router.go("learning")}>Back to lessons</Button>
-  {/snippet}
-</PageHeader>
+<!-- PageHeader's shape, with the file-carried title cut short and a tooltip (which PageHeader's h1 can't do) -->
+<header class="head">
+  <div class="heading">
+    <!-- focusable from script: it takes the focus when the view replaces another (LearningPage, App) -->
+    <h1 id="learning-title" tabindex="-1" {title}>{title}</h1>
+    <p class="guidance">{lesson.guidance}</p>
+  </div>
+  <Button onclick={() => router.go("learning")}>Back to lessons</Button>
+</header>
 
 {#if picture}
   <Board>
@@ -60,8 +66,9 @@
 
 {#if chars.length > 0}
   <ul class="chars" aria-label="New characters">
-    {#each chars as c (c.char)}
-      <li><kbd>{c.char === " " ? "Space" : c.char}</kbd> <span class="how">— {c.how}</span></li>
+    <!-- by index: a file may list a character twice -->
+    {#each chars as c, i (i)}
+      <li><kbd>{c.char === " " ? "Space" : c.char}</kbd>{#if c.how !== null} <span class="how">— {c.how}</span>{/if}</li>
     {/each}
   </ul>
 {:else}
@@ -73,14 +80,45 @@
     <li>
       <button type="button" class="exercise" onclick={() => open(e.exercise.id)}>
         <span class="kind" class:extra={!e.main}>{e.exercise.kind}</span>
-        <span class="title">{e.exercise.title}</span>
-        <span class="best">{#if e.star}<span class="star" aria-label="reached the target speed">★</span> {/if}{e.best}</span>
+        <span class="title" title={e.exercise.title}>{e.exercise.title}</span>
+        <span class="best">{#if e.star}<span class="star" role="img" aria-label="reached the target speed">★</span> {/if}{e.best}</span>
       </button>
     </li>
   {/each}
 </ol>
 
 <style>
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px 16px;
+  }
+
+  .heading {
+    flex: 1 1 320px;
+    min-width: 0;
+  }
+
+  h1 {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+  }
+
+  h1:focus {
+    outline: none;
+  }
+
+  .guidance {
+    margin: 4px 0 0;
+    color: var(--text-2);
+  }
+
   .chars {
     display: flex;
     flex-wrap: wrap;

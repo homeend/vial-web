@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import type { KeyboardModel } from "../api/types";
   import type { Placement } from "../keyboard/geometry";
   import { keyboard } from "../lib/keyboard.svelte";
@@ -86,6 +86,26 @@
   // the note is for the list it came back to: it goes once the user goes somewhere
   $effect(() => {
     if (path.length > 0) note = null;
+  });
+
+  // a view replacing another takes the focused element with it (Escape, Back to the lesson, Back to lessons; the
+  // back button): the focus, fallen to <body>, goes to the heading of the view shown (every view's h1 is
+  // #learning-title). A view that takes it itself keeps it (the typing area, when an exercise opens). The shape of
+  // App.svelte, which does the same between sections.
+  let viewShown: string | null = null;
+  $effect(() => {
+    const view = shown;
+    const now = view.kind === "lesson" ? `lesson ${view.set.id}/${view.lesson.id}`
+      : view.kind === "typing" ? `typing ${view.set.id}/${view.exercise.id}` : view.kind;
+    untrack(() => {
+      const before = viewShown;
+      viewShown = now;
+      if (before === null || before === now) return;
+      void tick().then(() => {
+        const focused = document.activeElement;
+        if (!focused || focused === document.body) document.getElementById("learning-title")?.focus();
+      });
+    });
   });
 </script>
 

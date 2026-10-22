@@ -9,6 +9,7 @@
   import Board from "./Board.svelte";
   import { createEngine, press, progressOf, resultOf, segments, type EngineState, type Result } from "./engine";
   import { passText, resultLines, statusText } from "./format";
+  import { keyOf, typesKey } from "./keys";
   import { learning } from "./learning.svelte";
   import { nextKeyLabel, pictureFor } from "./picture";
   import { exerciseResult, nextExercise } from "./state";
@@ -56,6 +57,8 @@
   const progress = $derived(progressOf(engine, now));
   const next = $derived(nextExercise(set, lesson.id, exercise.id));
   const verdict = $derived(result ? exerciseResult(result, learning.settings) : null);
+  /** the heading, from the files' titles: cut short with a tooltip */
+  const title = $derived(`${number} · ${lesson.title} · ${exercise.title}`);
 
   // a second at a time while the clock runs
   $effect(() => {
@@ -73,19 +76,25 @@
 
   onMount(() => area?.focus());
 
+  // keys.ts says what a key means. A dead key arrives as "Dead", then the composed character on the next keydown
+  // (current Chromium and Firefox on Windows); IME composition ("Process") isn't supported.
   function onkeydown(event: KeyboardEvent) {
-    if (event.key === "Escape") {
+    const key = keyOf(event);
+    if (key === "quit") {
       event.preventDefault();
       quit();
       return;
     }
-    if (engine.done) return;
-    // a shortcut of the browser's (Ctrl+R) stays one; AltGr comes as Ctrl+Alt on Windows, and its characters are typed
-    if (event.metaKey || (event.ctrlKey && !event.altKey)) return;
-    const key = event.key;
-    const printable = Array.from(key).length === 1;
-    if (!printable && key !== "Backspace" && key !== "Enter") return;
+    // a shortcut of the browser's (Ctrl+R) stays one, and a named key keeps its work (Tab moves the focus)
+    if (key === "shortcut" || key === "ignore") {
+      // auto-repeat is ignored: a drill never needs it, and a key held down is one press, one error at most; a held
+      // Space would scroll the page, so a typing key's repeats are swallowed
+      if (event.repeat && typesKey(event.key)) event.preventDefault();
+      return;
+    }
     event.preventDefault();
+    // the area keeps the focus after the last character (a key typed late does nothing, and Escape still quits)
+    if (engine.done) return;
     const at = performance.now();
     now = at;
     engine = press(engine, key, at);
@@ -122,14 +131,16 @@
     router.go("learning", null, { path: [set.id, lesson.id] });
   }
 
+  // the next exercise takes this one's place in the history: Back goes to the lesson, not to the exercise just done
   function goNext() {
     if (!next) return;
-    router.go("learning", null, { path: [set.id, next.lessonId, next.exerciseId] });
+    router.go("learning", null, { path: [set.id, next.lessonId, next.exerciseId], replace: true });
   }
 </script>
 
 <div class="head">
-  <h1 id="learning-title" tabindex="-1">{number} · {lesson.title} · {exercise.title}</h1>
+  <!-- focusable from script: it takes the focus when the view replaces another (LearningPage, App) -->
+  <h1 id="learning-title" tabindex="-1" {title}>{title}</h1>
   <Button size="sm" onclick={quit}>Back to the lesson</Button>
 </div>
 
@@ -140,7 +151,7 @@
   <p id="typing-help" class="visually-hidden">
     Type the text shown. Backspace goes back within the word. Escape leaves the exercise without saving.
   </p>
-  <div bind:this={text} class="text" class:lines={kind === "text"} aria-hidden="true">
+  <div bind:this={text} class="text">
     {#each runs as run, i (i)}
       {#if run.lineBreak}<span class="run {run.status} end">↵</span><br />{:else}<span class="run {run.status}">{run.text}</span>{/if}
     {/each}
@@ -148,7 +159,7 @@
   <p class="status">
     <span>{statusText(progress)}</span>
     {#if nextLabel && !engine.done}<span class="next-key">Next: {nextLabel}</span>{/if}
-    <span class="hint">Esc quits</span>
+    <span class="hint">Esc quits, nothing saved</span>
   </p>
 </div>
 
@@ -173,7 +184,8 @@
     </p>
     <div class="buttons">
       <Button id="typing-again" variant="primary" onclick={() => void again()}>Again</Button>
-      <Button disabled={next === null} title={next === null ? "This is the last exercise of the set" : undefined}
+      <!-- not disabled: a disabled button shows no tooltip in Firefox -->
+      <Button aria-disabled={next === null || undefined} title={next === null ? "This is the last exercise of the set" : undefined}
         onclick={goNext}>Next exercise</Button>
       <Button onclick={quit}>Back to the lesson</Button>
     </div>
@@ -190,7 +202,12 @@
   }
 
   h1 {
+    flex: 1 1 240px;
+    min-width: 0;
     margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 18px;
     letter-spacing: -0.01em;
   }
@@ -210,7 +227,8 @@
     box-shadow: var(--shadow);
   }
 
-  .area:focus-visible {
+  /* :focus, not :focus-visible: the focus is given from script after a click (Again), and the ring must show then */
+  .area:focus {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
