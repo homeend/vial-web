@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEngine, expectedOf, press, progressOf, resultOf, segments, type EngineState } from "./engine";
+import { createEngine, expectedOf, LINE_END, press, progressOf, resultOf, segments, type EngineState } from "./engine";
 import type { Exercise } from "./types";
 
 const groups: Exercise = { id: "01-n1", kind: "new-keys", title: "New key exercise 1", lines: ["sa sa", "ei ei"] };
@@ -22,6 +22,15 @@ describe("createEngine", () => {
 
   it("keeps the lines of a text exercise apart, each but the last ended by Enter", () => {
     expect(expectedOf(text)).toEqual([..."the sea", "\n", ..."a tide"]);
+  });
+
+  it("gives a one-line text exercise no line end", () => {
+    const oneLine: Exercise = { id: "x", kind: "text", title: "", lines: ["the sea"] };
+    expect(expectedOf(oneLine)).toEqual([..."the sea"]);
+    expect(expectedOf(oneLine)).not.toContain(LINE_END);
+    const state = type(createEngine(oneLine), [..."the sea"]);
+    expect(state.done).toBe(true);
+    expect(segments(state).some((s) => s.lineBreak)).toBe(false);
   });
 });
 
@@ -117,6 +126,72 @@ describe("press", () => {
     expect(press(state, "Tab", 800)).toBe(state);
     expect(press(createEngine(groups), "ArrowLeft", 1).startedAt).toBeNull();
   });
+
+  it("starts the clock on a first press that is wrong", () => {
+    const state = press(createEngine(groups), "x", 700);
+    expect(state.startedAt).toBe(700);
+    expect(state.errors).toBe(1);
+    expect(state.wrongNow).toBe(true);
+    expect(state.position).toBe(0);
+    // the clock doesn't restart on the right key
+    expect(press(state, "s", 900).startedAt).toBe(700);
+  });
+
+  it("counts Enter in a group exercise as a wrong key, the position staying", () => {
+    let state = type(createEngine(groups), [..."sa"]);
+    state = press(state, "Enter", 3000);
+    expect(state.errors).toBe(1);
+    expect(state.position).toBe(2);
+    expect(state.wrongNow).toBe(true);
+    expect(state.wrong).toBe("Enter");
+    state = press(state, " ", 4000);
+    expect(state.position).toBe(3);
+    expect(state.errors).toBe(1);
+  });
+
+  it("clears the wrong mark with one Backspace and goes back within the word with the next", () => {
+    let state = type(createEngine(groups), [..."sa s", "x"]);
+    expect(state.position).toBe(4);
+    expect(state.wrongNow).toBe(true);
+    state = press(state, "Backspace", 6000);
+    expect(state.wrongNow).toBe(false);
+    expect(state.wrong).toBeNull();
+    expect(state.position).toBe(4);
+    state = press(state, "Backspace", 7000);
+    expect(state.position).toBe(3);
+    expect(state.wrongNow).toBe(false);
+    expect(state.errors).toBe(1);
+  });
+
+  it("types characters outside ASCII and the basic plane", () => {
+    const wide: Exercise = { id: "x", kind: "keys", title: "", lines: ["ą😀"] };
+    expect(expectedOf(wide)).toEqual(["ą", "😀"]);
+    let state = press(createEngine(wide), "ą", 1000);
+    expect(state.position).toBe(1);
+    expect(state.errors).toBe(0);
+    state = press(state, "😀", 2000);
+    expect(state.done).toBe(true);
+    expect(state.errors).toBe(0);
+    expect(resultOf(state).chars).toBe(2);
+    expect(segments(state)).toEqual([{ text: "ą😀", status: "typed" }]);
+  });
+
+  it("doesn't change the state it is given", () => {
+    const before = createEngine(groups);
+    const snapshot = structuredClone(before);
+    let state = press(before, "s", 1000);
+    state = press(state, "x", 2000);
+    state = press(state, "Backspace", 3000);
+    state = press(state, "a", 4000);
+    expect(before).toEqual(snapshot);
+    expect(before.position).toBe(0);
+    expect(before.expected).toEqual(snapshot.expected);
+    const mid = type(createEngine(groups), ["s", "x"]);
+    const midSnapshot = structuredClone(mid);
+    press(mid, "Backspace", 3000);
+    press(mid, "a", 3000);
+    expect(mid).toEqual(midSnapshot);
+  });
 });
 
 describe("resultOf", () => {
@@ -151,6 +226,18 @@ describe("resultOf", () => {
     expect(() => resultOf(createEngine(groups))).toThrow("not finished");
     expect(() => resultOf(type(createEngine(groups), ["s"]))).toThrow("not finished");
   });
+
+  it("says 0 wpm, not Infinity or NaN, when no time passed", () => {
+    const one: Exercise = { id: "x", kind: "keys", title: "", lines: ["a"] };
+    const state = press(createEngine(one), "a", 1000);
+    expect(state.startedAt).toBe(state.finishedAt);
+    const result = resultOf(state);
+    expect(result).toEqual({ chars: 1, errors: 0, accuracy: 100, wpm: 0, seconds: 0 });
+    expect(Number.isFinite(result.wpm)).toBe(true);
+    expect(progressOf(state, 1000).wpm).toBe(0);
+    // and while typing, before the first second passed by the same clock reading
+    expect(progressOf(press(createEngine(groups), "s", 1000), 1000).wpm).toBe(0);
+  });
 });
 
 describe("progressOf", () => {
@@ -183,6 +270,13 @@ describe("segments", () => {
 
   it("is all typed at the end", () => {
     expect(runs(type(createEngine(groups), [..."sa sa ei ei"]))).toEqual([["sa sa ei ei", "typed", false]]);
+  });
+
+  it("shows no wrong run once a wrong key is corrected", () => {
+    const state = type(createEngine(groups), ["s", "x", "Backspace", "a"]);
+    expect(state.errors).toBe(1);
+    expect(runs(state)).toEqual([["sa", "typed", false], [" ", "next", false], ["sa ei ei", "todo", false]]);
+    expect(segments(state).some((s) => s.status === "wrong")).toBe(false);
   });
 
   it("gives a text exercise's line end its own run", () => {

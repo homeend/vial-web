@@ -3,12 +3,13 @@
 //
 // A group or word exercise is its lines joined by one space, typed character by character, spaces included. A text
 // exercise keeps its lines apart: each line but the last ends with Enter (a "\n" among the expected characters). A wrong
-// key counts an error and the position stays until the right key comes (Backspace only clears the mark). Backspace
+// key counts an error and the position stays until the right key comes (Backspace only clears the mark); Enter in a
+// group or word exercise is a wrong key like any other, and `wrong` holds the key as it was pressed. Backspace
 // otherwise goes back one character, but never past the start of the current group, word or line (R4 of
 // course-method.md): a space or a line end ends a group. Going back doesn't take an error away.
 import type { Exercise } from "./types";
 
-/** the key of a line's end in a text exercise, typed with Enter */
+/** the character standing for a line's end in a text exercise; typed with Enter */
 export const LINE_END = "\n";
 
 export interface EngineState {
@@ -36,6 +37,7 @@ export function expectedOf(exercise: Exercise): string[] {
   return Array.from(exercise.lines.join(separator));
 }
 
+/** The state before the first press: nothing typed, the clock not started */
 export function createEngine(exercise: Exercise): EngineState {
   return {
     expected: expectedOf(exercise), position: 0, errors: 0, wrongNow: false, wrong: null, startedAt: null,
@@ -91,6 +93,7 @@ function accuracyOf(chars: number, errors: number): number {
   return chars === 0 ? 100 : Math.max(0, tenths((100 * (chars - errors)) / chars));
 }
 
+/** chars / 5 per minute; 0 at zero duration (the recorded number is the server's, computed from the seconds sent) */
 function wpmOf(chars: number, ms: number): number {
   return ms <= 0 ? 0 : tenths(chars / 5 / (ms / 60_000));
 }
@@ -109,9 +112,11 @@ export interface Progress {
   typed: number;
   /** characters in all */
   of: number;
+  /** wrong keys pressed so far, corrected ones included */
   errors: number;
   /** over the characters typed so far; 100 before the first */
   accuracy: number;
+  /** of the characters typed so far, over the time since the first press; 0 before */
   wpm: number;
   /** since the first press, whole seconds; the clock stops at the end */
   seconds: number;
