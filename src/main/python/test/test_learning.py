@@ -389,6 +389,29 @@ def test_record_drops_the_progress_of_exercises_the_set_no_longer_has(store):
     assert set(store.progress(UID, "mini")["exercises"]) == {"01-n1", "01-w1"}
 
 
+def test_a_set_file_nested_too_deeply_is_listed_with_its_error(store, root):
+    store.import_set(UID, minimal_set())
+    deep = root / UID / "sets" / "deep.json"
+    deep.write_text("[" * 50000 + "]" * 50000, encoding="utf-8")
+    listed = {e["id"]: e for e in store.sets(UID)}
+    assert set(listed) == {"mini", "deep"}
+    assert listed["deep"]["error"] == "not a JSON file: nested too deeply"
+    assert listed["mini"]["error"] is None
+    with pytest.raises(ValueError):
+        store.set(UID, "deep")
+    store.delete_set(UID, "deep")
+    assert not deep.exists()
+    assert [e["id"] for e in store.sets(UID)] == ["mini"]
+
+
+def test_a_progress_file_nested_too_deeply_reads_as_empty(store, root):
+    store.import_set(UID, minimal_set())
+    folder = root / UID / "progress"
+    folder.mkdir(parents=True)
+    (folder / "mini.json").write_text("[" * 50000 + "]" * 50000, encoding="utf-8")
+    assert store.progress(UID, "mini")["exercises"] == {}
+
+
 def test_a_hand_edited_progress_file_is_cleaned_up(store, root):
     store.import_set(UID, minimal_set())
     folder = root / UID / "progress"

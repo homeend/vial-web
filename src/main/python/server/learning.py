@@ -44,7 +44,11 @@ def _read_json(path):
     """ The JSON in path; FileNotFoundError, ValueError (not JSON) or another OSError """
     # utf-8-sig: a file saved by Windows Notepad may start with a byte order mark
     with open(path, "r", encoding="utf-8-sig") as inf:
-        return json.load(inf)
+        try:
+            return json.load(inf)
+        except RecursionError:
+            # a hand-placed file nested thousands of levels deep: unusable like any other file that isn't JSON
+            raise ValueError("nested too deeply")
 
 
 def _attempt_key(attempt):
