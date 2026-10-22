@@ -115,26 +115,47 @@ def string_problem(value, limit, required=True):
 
 def check_strings(data, report):
     """ Every string in the document, keys included, must be UTF-8: a lone surrogate is legal JSON that neither the
-    reply nor the file on disk could hold. Walks without recursion, so a deeply nested document is no trouble. """
-    stack = [("", data)]
-    while stack:
-        where, value = stack.pop()
+    reply nor the file on disk could hold. Walks without recursion, so a deeply nested document is no trouble, and
+    holds one iterator per level, not every child's label, so a huge flat list takes no memory to walk. """
+    def utf8(value):
+        try:
+            value.encode("utf-8")
+            return True
+        except UnicodeEncodeError:
+            return False
+
+    def enter(where, value):
+        """ A string is checked here; a container gives a frame: (where, an iterator over its (key, child) pairs,
+        the keys that aren't UTF-8, reported now and skipped later) """
         if isinstance(value, str):
-            try:
-                value.encode("utf-8")
-            except UnicodeEncodeError:
+            if not utf8(value):
                 report.error(where or "(root)", "not valid UTF-8 (a lone surrogate)")
         elif isinstance(value, list):
-            stack.extend(("{}[{}]".format(where, i), v) for i, v in reversed(list(enumerate(value))))
+            return where, iter(enumerate(value)), ()
         elif isinstance(value, dict):
-            for key, v in reversed(list(value.items())):
-                try:
-                    key.encode("utf-8")
-                except UnicodeEncodeError:
-                    report.error(where or "(root)", "a key is not valid UTF-8 (a lone surrogate)")
-                    continue
+            bad = [key for key in value if not utf8(key)]
+            for _ in bad:
+                report.error(where or "(root)", "a key is not valid UTF-8 (a lone surrogate)")
+            return where, iter(value.items()), set(bad)
+        return None
+
+    stack = [frame for frame in (enter("", data),) if frame]
+    while stack:
+        where, children, bad = stack[-1]
+        for key, child in children:
+            if isinstance(key, int):
+                label = "{}[{}]".format(where, key)
+            elif key in bad:
+                continue
+            else:
                 label = key if key.isprintable() and len(key) <= 40 else short(key)
-                stack.append(("{}/{}".format(where, label) if where else label, v))
+                label = "{}/{}".format(where, label) if where else label
+            frame = enter(label, child)
+            if frame:
+                stack.append(frame)
+            break
+        else:
+            stack.pop()
 
 
 def export_chars(export):
@@ -149,12 +170,15 @@ def export_chars(export):
 
 
 def export_keys(export, data, report):
-    """ The characters of a layout export (export_chars), for checking the set's new keys against; an error when it
-    isn't an export, a warning when the set's layout hash isn't the export's (made from another layout) """
+    """ The characters of a layout export (export_chars), for checking the set's new keys against; None, with an
+    error, when it isn't an object with a list of keys (then no key is compared: one error, not one per new key);
+    an error when its format isn't an export's, a warning when the set's layout hash isn't the export's (made from
+    another layout) """
+    if not isinstance(export, dict) or not isinstance(export.get("keys"), list):
+        report.error("layout export", "not a layout export (no keys)")
+        return None
     if export.get("format") != EXPORT_FORMAT:
         report.error("layout export", "unexpected format {}".format(short(export.get("format"))))
-    elif not isinstance(export.get("keys"), list):
-        report.error("layout export", "has no keys")
     keys = export_chars(export)
     layout = data.get("layout") if isinstance(data, dict) else None
     if isinstance(layout, dict) and layout.get("hash") != export.get("hash"):
@@ -216,7 +240,7 @@ def check_new(lesson, where, known, keys, report):
             continue
         c = entry.get("char")
         if not isinstance(c, str) or len(c) != 1 or c == " ":
-            report.error(w, "char must be one character, not a space")
+            report.error(w, "char missing" if c is None else "char must be one character, not a space")
             continue
         if c in known:
             report.warn(w, "{!r} is already known".format(c))
@@ -362,9 +386,10 @@ def check(data, keys, report, known_before="", first_lesson=0):
 
 def check_set(data, export=None):
     """ The server's check of a lesson set (the parsed file): (errors, warnings). With the layout export of the
-    keyboard, the new keys are checked against what it types, and a hash that isn't the export's is a warning. """
+    keyboard, the new keys are checked against what it types, and a hash that isn't the export's is a warning; an
+    export that isn't one (not an object, or no keys) is an error. """
     report = Report()
-    keys = export_keys(export, data, report) if isinstance(export, dict) else None
+    keys = export_keys(export, data, report) if export is not None else None
     schema_check(data, report)
     check(data, keys, report)
     return report.errors, report.warnings

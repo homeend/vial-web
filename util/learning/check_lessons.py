@@ -52,8 +52,9 @@ def main(argv=None):
     data = load(args.lesson_set, report, "lesson set")
     keys = None
     if args.layout:
+        errors_before = len(report.errors)
         export = load(args.layout, report, "layout export")
-        if isinstance(export, dict):
+        if len(report.errors) == errors_before:  # read; whatever it holds (null too) is reported if not an export
             keys = export_keys(export, data, report)
     known, first = args.known, args.first_lesson
     lessons = data.get("lessons") if isinstance(data, dict) else None

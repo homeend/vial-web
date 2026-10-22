@@ -272,6 +272,62 @@ def test_a_lone_surrogate_anywhere_is_an_error():
     assert check_set(surrogate)[0] == ["(root): not valid UTF-8 (a lone surrogate)", "(root): not a JSON object"]
 
 
+def test_a_huge_flat_list_is_walked_in_bounded_memory():
+    """ check_strings keeps one iterator per level, not a label and a tuple for every child of a container: a
+    two-million-element list is walked in under a second (tracemalloc would make that ten), and a 200 000-element
+    one, traced, peaks in kilobytes where holding every child's label and tuple took some 40 MB """
+    import time
+    import tracemalloc
+    data = minimal_set()
+    data["lessons"][0]["big"] = ["ab"] * 2_000_000  # an unknown field: the checker lets it be
+    data["lessons"][0]["big"][-1] = "ab\ud83d"  # the last one is still looked at
+    report = Report()
+    started = time.perf_counter()
+    learning_check.check_strings(data, report)
+    elapsed = time.perf_counter() - started
+    assert report.errors == ["lessons[0]/big[1999999]: not valid UTF-8 (a lone surrogate)"]
+    assert elapsed < 3, elapsed
+    # the whole check returns too
+    data["lessons"][0]["big"][-1] = "ab"
+    assert check_set(data, EXPORT) == ([], [])
+    data["lessons"][0]["big"] = ["ab"] * 200_000
+    tracemalloc.start()
+    learning_check.check_strings(data, Report())
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak < 1024 * 1024, peak
+
+
+def test_a_missing_new_char_says_so():
+    """ the first error; the exercises then use the untaught 'a', which follows """
+    assert check_set(mutated(N + ["char"], None))[0][0] == "lesson 01/new[0]: char missing"
+    data = minimal_set()
+    del data["lessons"][0]["new"][0]["char"]
+    assert check_set(data)[0][0] == "lesson 01/new[0]: char missing"
+    assert check_set(mutated(N + ["char"], "ab"))[0][0] == "lesson 01/new[0]: char must be one character, not a space"
+    assert check_set(mutated(N + ["char"], " "))[0][0] == "lesson 01/new[0]: char must be one character, not a space"
+
+
+def test_the_schema_allows_what_the_checker_allows():
+    """ lesson-set.schema.json restates the checker: unknown properties pass, and `new` may be missing """
+    with open(learning_check.SCHEMA, encoding="utf-8") as inf:
+        schema = json.load(inf)
+    assert "additionalProperties" not in json.dumps(schema)
+    assert "new" not in schema["$defs"]["lesson"]["required"]
+    assert schema["$defs"]["lesson"]["properties"]["new"]["default"] == []
+    assert "authority" in schema["description"] and "jsonschema" in schema["description"]
+    data = minimal_set()
+    data["extra"], data["lessons"][0]["extra"], data["lessons"][0]["exercises"][0]["extra"] = 1, 2, 3
+    data["lessons"][0]["new"][0]["extra"], data["layout"]["extra"] = 4, 5
+    assert check_set(data, EXPORT) == ([], [])
+    data = minimal_set()
+    del data["lessons"][0]["new"]
+    data["lessons"][0]["review"] = True
+    data["lessons"][0]["exercises"] = [{"id": "01-k1", "kind": "keys", "title": "Keys", "lines": ["x"]}]
+    errors, _ = check_set(data)
+    assert errors == ["exercise 01-k1: uses characters not taught yet: 'x'"]  # a missing new is [], not an error
+
+
 def test_reserved_device_names_are_refused_as_ids():
     """ Windows makes no file con.json, and the lesson and exercise ids go into addresses """
     for name in ("con", "CON", "Prn", "aux", "nul", "com1", "COM9", "lpt1", "lpt9"):
@@ -360,13 +416,28 @@ def test_a_layout_export_that_is_odd_is_reported_not_a_crash():
                                         "keys": [{"chars": {}}, 5, {"id": "r1c1"}, {"id": "r1c2", "chars": "x"}]})
     assert errors == ["lesson 01/new[0]: key r1c1 layer 0 tap types None, not 'a'",
                       "lesson 01/new[1]: key r1c2 layer 0 tap types None, not 'b'"]
-    errors, _ = check_set(data, {"format": "vial-web-layout-export/1", "hash": "sha256:0123456789abcdef", "keys": 5})
-    assert errors[0] == "layout export: has no keys"
-    errors, _ = check_set(data, {"format": "x" * 100})
-    assert errors[0] == "layout export: unexpected format '" + "x" * 56 + "..."
+    errors, _ = check_set(data, {"format": "x" * 100, "keys": []})
+    assert errors == ["layout export: unexpected format '" + "x" * 56 + "...",
+                      "lesson 01/new[0]: key r1c1 is not in the layout export",
+                      "lesson 01/new[1]: key r1c2 is not in the layout export"]
     assert export_chars({"keys": [{"id": "r1c1", "chars": {"0": {"tap": "a"}}}, {"id": 5}]}) == {
         "r1c1": {"0": {"tap": "a"}}}
     assert export_chars([]) == {} and export_chars({"keys": "x"}) == {}
+
+
+def test_a_layout_export_that_is_not_one_is_one_error_and_no_key_is_compared():
+    """ not an object, or no list of keys: one error, not one per new key; the hash isn't compared either """
+    data = minimal_set()
+    for export in ([], "x", 5, True, {}, {"format": "vial-web-layout-export/1", "hash": "sha256:0123456789abcdef"},
+                   {"format": "vial-web-layout-export/1", "hash": "sha256:0123456789abcdef", "keys": 5},
+                   {"format": "vial-web-layout-export/1", "hash": "sha256:ffffffffffffffff", "keys": {"r1c1": {}}}):
+        assert check_set(data, export) == (["layout export: not a layout export (no keys)"], []), export
+    assert check_set(data, {"format": "x", "hash": "sha256:ffffffffffffffff"}) == (
+        ["layout export: not a layout export (no keys)"], [])
+    assert check_set(data, None) == ([], [])  # no export: nothing to compare with
+    # with keys, a wrong format is reported and the keys are compared still
+    assert check_set(data, {"format": "x", "hash": "sha256:0123456789abcdef", "keys": EXPORT["keys"]}) == (
+        ["layout export: unexpected format 'x'"], [])
 
 
 def cli():
@@ -429,9 +500,17 @@ def test_the_command_line_reports_malformed_course_and_export_files(tmp_path, ca
                                                             "keys": [{"chars": {}}, "r1c1"]}), encoding="utf-8")
     assert cli().main([str(tmp_path / "mini.json"), "--layout", str(tmp_path / "keys-no-ids.json")]) == 1
     assert "error: lesson 01/new[0]: key r1c1 is not in the layout export" in capsys.readouterr().out
-    assert cli().main([str(tmp_path / "mini.json"), "--layout", str(tmp_path / "list.json")]) == 0
+    # a layout file that isn't an export (a list, null, an object with no keys): one error, no key compared
+    (tmp_path / "null.json").write_text("null", encoding="utf-8")
+    (tmp_path / "no-keys.json").write_text('{"format": "vial-web-layout-export/1"}', encoding="utf-8")
+    for name in ("list.json", "null.json", "no-keys.json"):
+        assert cli().main([str(tmp_path / "mini.json"), "--layout", str(tmp_path / name)]) == 1, name
+        out = capsys.readouterr().out
+        assert "error: layout export: not a layout export (no keys)" in out, name
+        assert "is not in the layout export" not in out and out.strip().endswith("1 lessons, 1 errors, 0 warnings")
+    assert cli().main([str(tmp_path / "mini.json"), "--layout", str(tmp_path / "broken.json")]) == 1
     out = capsys.readouterr().out
-    assert "error:" not in out and out.strip().endswith("1 lessons, 0 errors, 0 warnings")  # not a dict: not used
+    assert "error: layout export: can't read " in out and "not a layout export" not in out
     (tmp_path / "lessons-number.json").write_text('{"lessons": 5}', encoding="utf-8")
     assert cli().main([str(tmp_path / "lessons-number.json"), "--course", str(tmp_path / "mini.json")]) == 1
     assert capsys.readouterr().out.strip().endswith("0 lessons, 6 errors, 0 warnings")
