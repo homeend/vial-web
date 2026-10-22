@@ -2,8 +2,12 @@
 """ The Learning feature's files (docs/learning/lesson-format.md): the user's finger corrections, the layout export,
 the lesson sets, progress and settings, per keyboard uid under <config dir>/learning/<uid>/. Every write is a new
 file put in place of the old one (as NamesStore), every read tolerant: a missing file is empty, an unparsable one is
-moved aside to <file>.corrupt when it is about to be written. """
+moved aside to <file>.corrupt when it is about to be written, and a hand-edited one is read for what is valid in it
+(_clean_fingers, _clean_progress). An exercise's best attempt is its all-time best: the file's best outlives the
+last ATTEMPTS_KEPT attempts, so that a pass or a star never regresses. Ids name files exactly: on a case-insensitive
+file system (Windows, macOS) a set saved as mini is no set MINI (the listing is the authority for ids). """
 import json
+import math
 import os
 import re
 import threading
@@ -49,7 +53,12 @@ def _attempt_key(attempt):
 
 
 def _number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    """ A finite number (JSON has no NaN or infinity; Python's json module reads them all the same) """
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _key_id(value):
+    return isinstance(value, str) and KEY_ID.match(value) is not None
 
 
 def _clean_attempt(attempt):
@@ -61,10 +70,42 @@ def _clean_attempt(attempt):
     return {f: attempt[f] for f in ("at", "chars", "errors", "accuracy", "wpm", "seconds")}
 
 
-def _exercise_entry(attempts):
-    """ An exercise's progress from its attempts: done once there is one, best by _attempt_key """
-    return {"done": bool(attempts), "best": max(attempts, key=_attempt_key) if attempts else None,
+def _exercise_entry(attempts, best=None):
+    """ An exercise's progress: the attempts kept, best the better (by _attempt_key) of the best so far and those
+    attempts, so that it outlives the attempts kept; done once there is a best """
+    candidates = ([best] if best else []) + attempts
+    return {"done": bool(candidates), "best": max(candidates, key=_attempt_key) if candidates else None,
             "attempts": attempts}
+
+
+def _clean_fingers(data):
+    """ (corrections, problem) of data as fingers.json holds it: the corrections that are valid, as {"format", "keys":
+    {key id: {"finger", "reach"}}, "home": [key ids]} (None when data holds neither a keys object nor a home list),
+    and the first thing wrong with it (None when nothing is) """
+    if not isinstance(data, dict):
+        return None, "fingers must be an object"
+    keys, home = data.get("keys"), data.get("home")
+    problem = None
+    if not isinstance(keys, dict) or not isinstance(home, list):
+        problem = "fingers need \"keys\" (an object) and \"home\" (a list of key ids)"
+        if not isinstance(keys, dict) and not isinstance(home, list):
+            return None, problem
+        keys, home = keys if isinstance(keys, dict) else {}, home if isinstance(home, list) else []
+    clean, rest = {}, []
+    for kid, change in keys.items():
+        if not _key_id(kid):
+            problem = problem or "not a key id: {!r}".format(kid)
+        elif not isinstance(change, dict) or change.get("finger") not in FINGERS or change.get("reach") not in REACHES:
+            problem = problem or "key {}: a finger ({}) and a reach ({}) are needed".format(
+                kid, ", ".join(FINGERS), ", ".join(REACHES))
+        else:
+            clean[kid] = {"finger": change["finger"], "reach": change["reach"]}
+    for kid in home:
+        if not _key_id(kid):
+            problem = problem or "not a key id in home: {!r}".format(kid)
+        elif kid not in rest:
+            rest.append(kid)
+    return {"format": FINGERS_FORMAT, "keys": clean, "home": rest}, problem
 
 
 class LearningStore:
@@ -81,16 +122,28 @@ class LearningStore:
             raise ValueError("not a keyboard uid: {!r}".format(uid))
         return os.path.join(self.root, uid)
 
-    def _set_path(self, uid, set_id):
-        """ The lesson set's file; NotFound for an id that can't be one (so it never leaves the sets folder) """
+    @staticmethod
+    def _check_set_id(set_id):
+        """ NotFound for an id that can't be a lesson set's (so a path made of it never leaves its folder) """
         if not isinstance(set_id, str) or not ID.match(set_id):
             raise NotFound("no lesson set {!r}".format(set_id))
+
+    def _set_path(self, uid, set_id):
+        self._check_set_id(set_id)
         return os.path.join(self._dir(uid), "sets", set_id + ".json")
 
     def _progress_path(self, uid, set_id):
-        if not isinstance(set_id, str) or not ID.match(set_id):
-            raise NotFound("no lesson set {!r}".format(set_id))
+        self._check_set_id(set_id)
         return os.path.join(self._dir(uid), "progress", set_id + ".json")
+
+    @staticmethod
+    def _has_file(path):
+        """ Whether the file exists under exactly that name: a case-insensitive file system (Windows, macOS) opens
+        mini.json as MINI.json too, while the listing names the set mini """
+        try:
+            return os.path.basename(path) in os.listdir(os.path.dirname(path))
+        except OSError:
+            return False
 
     def _load(self, path, for_write=False):
         """ The JSON in path, or None when there is none. As NamesStore._load: reading for display treats any
@@ -134,31 +187,20 @@ class LearningStore:
     # ---------- fingers ----------
 
     def fingers(self, uid):
-        """ The user's finger corrections (a vial-web-fingers/1 file as a dict), or None when none are saved """
+        """ The user's finger corrections (a vial-web-fingers/1 file as a dict, what is valid in it), or None when
+        none are saved """
         with self.lock:
             data = self._load(os.path.join(self._dir(uid), "fingers.json"))
-        return data if isinstance(data, dict) and data.get("format") == FINGERS_FORMAT else None
+        if not isinstance(data, dict) or data.get("format") != FINGERS_FORMAT:
+            return None
+        return _clean_fingers(data)[0]
 
     def set_fingers(self, uid, data):
         """ Save corrections: {"keys": {key id: {"finger", "reach"}}, "home": [key ids]}; ValueError when they aren't
         that. Returns what was saved. """
-        if not isinstance(data, dict):
-            raise ValueError("fingers must be an object")
-        keys, home = data.get("keys"), data.get("home")
-        if not isinstance(keys, dict) or not isinstance(home, list):
-            raise ValueError("fingers need \"keys\" (an object) and \"home\" (a list of key ids)")
-        clean = {}
-        for kid, change in keys.items():
-            if not isinstance(kid, str) or not KEY_ID.match(kid):
-                raise ValueError("not a key id: {!r}".format(kid))
-            if not isinstance(change, dict) or change.get("finger") not in FINGERS or change.get("reach") not in REACHES:
-                raise ValueError("key {}: a finger ({}) and a reach ({}) are needed".format(
-                    kid, ", ".join(FINGERS), ", ".join(REACHES)))
-            clean[kid] = {"finger": change["finger"], "reach": change["reach"]}
-        for kid in home:
-            if not isinstance(kid, str) or not KEY_ID.match(kid):
-                raise ValueError("not a key id in home: {!r}".format(kid))
-        saved = {"format": FINGERS_FORMAT, "keys": clean, "home": list(dict.fromkeys(home))}
+        saved, problem = _clean_fingers(data)
+        if problem:
+            raise ValueError(problem)
         with self.lock:
             path = os.path.join(self._dir(uid), "fingers.json")
             self._load(path, for_write=True)  # an unparsable file is moved aside, not silently overwritten
@@ -232,10 +274,17 @@ class LearningStore:
                 out.append(self._summary(set_id, data, error))
         return out
 
+    def _read_set_named(self, uid, set_id):
+        """ _read_set of the set named exactly set_id; NotFound when there is none """
+        path = self._set_path(uid, set_id)
+        if not self._has_file(path):
+            raise NotFound("no lesson set {!r}".format(set_id))
+        return self._read_set(set_id, path)
+
     def set(self, uid, set_id):
         """ The lesson set, whole; NotFound when there is none, ValueError when the file isn't a lesson set """
         with self.lock:
-            data, error = self._read_set(set_id, self._set_path(uid, set_id))
+            data, error = self._read_set_named(uid, set_id)
         if error:
             raise ValueError("lesson set {}: {}".format(set_id, error))
         return data
@@ -257,40 +306,49 @@ class LearningStore:
         """ Remove the lesson set; its progress file stays (a set imported again under the id finds it). NotFound
         when there is none. """
         with self.lock:
-            if not self._remove(self._set_path(uid, set_id)):
+            path = self._set_path(uid, set_id)
+            if not self._has_file(path) or not self._remove(path):
                 raise NotFound("no lesson set {!r}".format(set_id))
 
     # ---------- progress ----------
 
     def _clean_progress(self, set_id, data):
-        """ The progress file's content as vial-web-progress/1, whatever it holds: each exercise's attempts that are
-        attempts, its best and done computed from them """
+        """ The progress file's content as vial-web-progress/1, whatever it holds: each exercise's last ATTEMPTS_KEPT
+        attempts that are attempts, its best the better of the file's best (when that is an attempt: it is the
+        all-time best, kept when the attempt itself is gone) and of those, done once there is a best """
         exercises = {}
         if isinstance(data, dict) and isinstance(data.get("exercises"), dict):
             for eid, entry in data["exercises"].items():
                 if not isinstance(eid, str) or not isinstance(entry, dict):
                     continue
-                attempts = [a for a in (entry.get("attempts") or []) if _clean_attempt(a)] \
+                attempts = [a for a in map(_clean_attempt, entry["attempts"]) if a] \
                     if isinstance(entry.get("attempts"), list) else []
-                exercises[eid] = _exercise_entry([_clean_attempt(a) for a in attempts][-ATTEMPTS_KEPT:])
+                exercises[eid] = _exercise_entry(attempts[-ATTEMPTS_KEPT:], _clean_attempt(entry.get("best")))
         layout_hash = data.get("layoutHash") if isinstance(data, dict) else None
         return {"format": PROGRESS_FORMAT, "lessonSet": set_id,
                 "layoutHash": layout_hash if isinstance(layout_hash, str) else None, "exercises": exercises}
 
+    def _load_progress(self, uid, set_id, for_write=False):
+        """ The progress file named exactly set_id (_has_file), as _load """
+        path = self._progress_path(uid, set_id)
+        return self._load(path, for_write) if self._has_file(path) else None
+
     def progress(self, uid, set_id):
         """ The progress on a lesson set (lesson-format.md section 4); empty when nothing was recorded yet """
         with self.lock:
-            data = self._load(self._progress_path(uid, set_id))
+            data = self._load_progress(uid, set_id)
         return self._clean_progress(set_id, data)
 
     def record(self, uid, set_id, exercise_id, attempt):
         """ An exercise typed to the end: attempt = {at, chars, errors, seconds}; accuracy and WPM are computed here,
-        the exercise is done, its best attempt the one with the highest accuracy then WPM, and the last ATTEMPTS_KEPT
-        attempts are kept. NotFound when the set has no such exercise; ValueError for numbers that can't be. Returns
-        the exercise's progress entry. """
+        the exercise is done, its best attempt the one with the highest accuracy then WPM (of all time), and the last
+        ATTEMPTS_KEPT attempts are kept; the progress of exercises the set no longer has is dropped. NotFound when the
+        set has no such exercise; ValueError for numbers that can't be. Returns the exercise's progress entry. """
         chars, errors, seconds = attempt.get("chars"), attempt.get("errors"), attempt.get("seconds")
         if not all(_number(v) for v in (chars, errors, seconds)) or not isinstance(attempt.get("at"), str):
-            raise ValueError("an attempt has at (a string), chars, errors and seconds (numbers)")
+            raise ValueError("an attempt has at (a string), chars, errors and seconds (finite numbers)")
+        if any(isinstance(v, float) and not v.is_integer() for v in (chars, errors)):
+            raise ValueError("an attempt's chars and errors are whole numbers")
         if chars < 1 or errors < 0 or errors > chars or seconds <= 0:
             raise ValueError("an attempt has at least one character, no more errors than characters and some time")
         if isinstance(seconds, float) and seconds.is_integer():
@@ -299,18 +357,19 @@ class LearningStore:
                  "accuracy": round(100 * (chars - errors) / chars, 1), "wpm": round(chars / 5 / (seconds / 60), 1),
                  "seconds": seconds}
         with self.lock:
-            lesson_set, error = self._read_set(set_id, self._set_path(uid, set_id))
+            lesson_set, error = self._read_set_named(uid, set_id)
             if error:
                 raise ValueError("lesson set {}: {}".format(set_id, error))
             exercises = {ex["id"] for lesson in lesson_set["lessons"] for ex in lesson["exercises"]}
             if exercise_id not in exercises:
                 raise NotFound("lesson set {} has no exercise {!r}".format(set_id, exercise_id))
-            path = self._progress_path(uid, set_id)
-            progress = self._clean_progress(set_id, self._load(path, for_write=True))
-            attempts = progress["exercises"].get(exercise_id, {}).get("attempts", []) + [entry]
-            progress["exercises"][exercise_id] = _exercise_entry(attempts[-ATTEMPTS_KEPT:])
+            progress = self._clean_progress(set_id, self._load_progress(uid, set_id, for_write=True))
+            progress["exercises"] = {eid: e for eid, e in progress["exercises"].items() if eid in exercises}
+            before = progress["exercises"].get(exercise_id) or {"best": None, "attempts": []}
+            progress["exercises"][exercise_id] = _exercise_entry((before["attempts"] + [entry])[-ATTEMPTS_KEPT:],
+                                                                 before["best"])
             progress["layoutHash"] = lesson_set["layout"]["hash"]
-            self._save(path, progress)
+            self._save(self._progress_path(uid, set_id), progress)
         return progress["exercises"][exercise_id]
 
     # ---------- settings ----------

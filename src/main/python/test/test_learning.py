@@ -132,6 +132,30 @@ def test_a_saved_file_of_another_format_counts_as_nothing_saved(store, root):
     assert store.fingers(UID) is None
 
 
+def test_a_hand_edited_fingers_file_is_read_for_what_is_valid_in_it(store, root):
+    folder = root / UID
+    folder.mkdir(parents=True)
+    path = folder / "fingers.json"
+    path.write_text(json.dumps({
+        "format": "vial-web-fingers/1",
+        "keys": {"r0c5": {"finger": "middle", "reach": "up"}, "r0c6": {"finger": "hand", "reach": "far"},
+                 "r0c7": {"finger": "index"}, "r0c8": "junk", "../x": {"finger": "index", "reach": "up"}},
+        "home": ["r1c1", 5, "r1", "r1c1", ["r1c2"]]}), encoding="utf-8")
+    assert store.fingers(UID) == {"format": "vial-web-fingers/1", "keys": {"r0c5": {"finger": "middle", "reach": "up"}},
+                                  "home": ["r1c1"]}
+    out = store.export(UID, model_of(make_corne), "en-us")
+    assert next(k for k in out["keys"] if k["id"] == "r0c5")["finger"] == "middle"
+    assert [k["id"] for k in out["keys"] if k["home"]] == ["r1c1"]
+    # one part that isn't its type counts as empty; neither: nothing saved
+    path.write_text(json.dumps({"format": "vial-web-fingers/1", "keys": 5, "home": []}), encoding="utf-8")
+    assert store.fingers(UID) == {"format": "vial-web-fingers/1", "keys": {}, "home": []}
+    path.write_text(json.dumps({"format": "vial-web-fingers/1", "keys": {}, "home": 5}), encoding="utf-8")
+    assert store.fingers(UID) == {"format": "vial-web-fingers/1", "keys": {}, "home": []}
+    path.write_text(json.dumps({"format": "vial-web-fingers/1", "keys": 5, "home": "r1c1"}), encoding="utf-8")
+    assert store.fingers(UID) is None
+    assert store.export(UID, model_of(make_corne), "en-us")["hash"] == example("corne-sim-layout-export.json")["hash"]
+
+
 # ---------- the store: the export ----------
 
 def test_export_is_saved_with_the_corrections(store, root):
@@ -215,6 +239,33 @@ def test_files_dropped_in_by_hand_are_listed_with_their_error(store, root):
         store.set(UID, "renamed")
 
 
+def test_import_of_the_same_id_replaces_the_set_and_keeps_its_progress(store):
+    store.import_set(UID, minimal_set())
+    store.record(UID, "mini", "01-n1", attempt())
+    again = minimal_set()
+    again["title"] = "Mini, second edition"
+    assert store.import_set(UID, again)["title"] == "Mini, second edition"
+    assert [s["title"] for s in store.sets(UID)] == ["Mini, second edition"]
+    assert store.set(UID, "mini") == again
+    assert store.progress(UID, "mini")["exercises"]["01-n1"]["done"]
+
+
+def test_set_ids_name_files_exactly(store, root):
+    """ On a case-insensitive file system (Windows, macOS) MINI.json opens mini.json; the listing says mini """
+    store.import_set(UID, minimal_set())
+    store.record(UID, "mini", "01-n1", attempt())
+    with pytest.raises(NotFound):
+        store.set(UID, "MINI")
+    with pytest.raises(NotFound):
+        store.record(UID, "MINI", "01-n1", attempt())
+    assert store.progress(UID, "MINI")["exercises"] == {}
+    with pytest.raises(NotFound):
+        store.delete_set(UID, "Mini")
+    assert os.listdir(root / UID / "sets") == ["mini.json"]
+    assert [s["id"] for s in store.sets(UID)] == ["mini"]
+    assert store.set(UID, "mini")["id"] == "mini" and store.progress(UID, "mini")["exercises"]["01-n1"]["done"]
+
+
 # ---------- the store: progress ----------
 
 def test_progress_is_empty_until_an_attempt_is_recorded(store):
@@ -245,13 +296,39 @@ def test_record_computes_accuracy_wpm_and_best(store):
     assert store.record(UID, "mini", "01-w1", attempt(chars=10, errors=0, seconds=4.0))["best"]["seconds"] == 4
 
 
-def test_the_last_fifty_attempts_are_kept(store):
+def test_the_last_fifty_attempts_are_kept_and_the_best_outlives_them(store):
     store.import_set(UID, minimal_set())
     for i in range(55):
         entry = store.record(UID, "mini", "01-k1", attempt(chars=100, errors=i, seconds=60, at="t{}".format(i)))
     assert len(entry["attempts"]) == 50
     assert entry["attempts"][0]["at"] == "t5" and entry["attempts"][-1]["at"] == "t54"
-    assert entry["best"]["at"] == "t5"  # the perfect attempts are gone
+    assert entry["best"]["at"] == "t0" and entry["best"]["accuracy"] == 100.0  # the perfect attempt, though gone
+    assert store.progress(UID, "mini")["exercises"]["01-k1"] == entry
+    better = store.record(UID, "mini", "01-k1", attempt(chars=100, errors=0, seconds=30, at="t55"))
+    assert better["best"]["at"] == "t55" and better["attempts"][0]["at"] == "t6"
+
+
+def test_the_files_best_is_kept_when_it_is_an_attempt_and_recomputed_when_it_is_not(store, root):
+    store.import_set(UID, minimal_set())
+    folder = root / UID / "progress"
+    folder.mkdir(parents=True)
+    best = {"at": "long ago", "chars": 100, "errors": 0, "accuracy": 100.0, "wpm": 40.0, "seconds": 30}
+    worse = {"at": "t", "chars": 100, "errors": 10, "accuracy": 90.0, "wpm": 20.0, "seconds": 60}
+    (folder / "mini.json").write_text(json.dumps({
+        "format": "vial-web-progress/1", "lessonSet": "mini", "layoutHash": "sha256:0123456789abcdef",
+        "exercises": {"01-n1": {"done": True, "best": best, "attempts": [worse]},
+                      "01-k1": {"done": True, "best": "junk", "attempts": [worse]},
+                      "01-w1": {"attempts": [worse]}}}), encoding="utf-8")
+    progress = store.progress(UID, "mini")
+    assert progress["exercises"]["01-n1"] == {"done": True, "best": best, "attempts": [worse]}
+    assert progress["exercises"]["01-k1"] == {"done": True, "best": worse, "attempts": [worse]}
+    assert progress["exercises"]["01-w1"] == {"done": True, "best": worse, "attempts": [worse]}
+    recorded = store.record(UID, "mini", "01-n1", attempt(chars=100, errors=5, seconds=60, at="t2"))
+    assert recorded["best"] == best and [a["at"] for a in recorded["attempts"]] == ["t", "t2"]
+    # a best with no attempts left at all still makes the exercise done
+    (folder / "mini.json").write_text(json.dumps({"exercises": {"01-n1": {"best": best, "attempts": "junk"}}}),
+                                      encoding="utf-8")
+    assert store.progress(UID, "mini")["exercises"]["01-n1"] == {"done": True, "best": best, "attempts": []}
 
 
 def test_record_refuses_unknown_exercises_and_bad_numbers(store):
@@ -260,11 +337,30 @@ def test_record_refuses_unknown_exercises_and_bad_numbers(store):
         store.record(UID, "mini", "99-x", attempt())
     with pytest.raises(NotFound):
         store.record(UID, "other", "01-n1", attempt())
+    nan, inf = float("nan"), float("inf")
     for bad in (attempt(chars=0), attempt(errors=-1), attempt(errors=101), attempt(seconds=0),
-                attempt(chars="100"), {"chars": 1, "errors": 0, "seconds": 1}):
+                attempt(chars="100"), attempt(chars=True), {"chars": 1, "errors": 0, "seconds": 1},
+                attempt(seconds=nan), attempt(chars=nan), attempt(errors=nan), attempt(seconds=inf),
+                attempt(chars=inf), attempt(errors=-inf), attempt(chars=100.5), attempt(errors=0.5)):
         with pytest.raises(ValueError):
             store.record(UID, "mini", "01-n1", bad)
     assert store.progress(UID, "mini")["exercises"] == {}
+    # whole floats are whole numbers
+    entry = store.record(UID, "mini", "01-n1", attempt(chars=100.0, errors=2.0, seconds=60))
+    assert entry["best"]["chars"] == 100 and isinstance(entry["best"]["chars"], int)
+    assert entry["best"]["errors"] == 2 and isinstance(entry["best"]["errors"], int)
+
+
+def test_record_drops_the_progress_of_exercises_the_set_no_longer_has(store):
+    store.import_set(UID, minimal_set())
+    store.record(UID, "mini", "01-n1", attempt())
+    store.record(UID, "mini", "01-k1", attempt())
+    smaller = minimal_set()
+    del smaller["lessons"][0]["exercises"][1]  # 01-k1
+    store.import_set(UID, smaller)
+    assert set(store.progress(UID, "mini")["exercises"]) == {"01-n1", "01-k1"}  # reading changes nothing
+    store.record(UID, "mini", "01-w1", attempt())
+    assert set(store.progress(UID, "mini")["exercises"]) == {"01-n1", "01-w1"}
 
 
 def test_a_hand_edited_progress_file_is_cleaned_up(store, root):
@@ -274,7 +370,9 @@ def test_a_hand_edited_progress_file_is_cleaned_up(store, root):
     good = {"at": "t", "chars": 100, "errors": 0, "accuracy": 100.0, "wpm": 20.0, "seconds": 60}
     (folder / "mini.json").write_text(json.dumps({
         "format": "vial-web-progress/1", "lessonSet": "mini", "layoutHash": 5,
-        "exercises": {"01-n1": {"done": False, "best": None, "attempts": [good, "junk", {"at": "x"}]},
+        "exercises": {"01-n1": {"done": False, "best": None,
+                                "attempts": [good, "junk", {"at": "x"}, {**good, "wpm": float("nan")},
+                                             {**good, "accuracy": True}]},
                       "01-k1": "junk", "01-w1": {"attempts": "junk"}}}), encoding="utf-8")
     progress = store.progress(UID, "mini")
     assert progress["layoutHash"] is None
