@@ -22,7 +22,7 @@ SERVER_MODULES = (
     "uvicorn.protocols.websockets.websockets_sansio_impl",
     "uvicorn.lifespan.on",
 )
-LINUX_TRAY_MODULES = ("PIL.Image", "Xlib.display")
+LINUX_TRAY_MODULES = ("PIL.Image", "dbus_fast.service", "Xlib.display")
 """ On Linux the tray's libraries are checked module by module: importing pystray itself opens the display, which a
 Linux without one (the CI's runners) can't. Elsewhere the tray is loaded as Vial loads it (tray.load). """
 

@@ -5,11 +5,12 @@ The icon's menu has Open Vial (also what a click does, where the system lets an 
 Vial, which stops Vial as Quit Vial on the page does. The icon is drawn by pystray; its loop must own the main thread
 on macOS (AppKit) and does on every system here, so the server runs in a thread while the icon is shown (run()).
 
-The tray is optional: when pystray or its libraries can't be loaded (a Linux without a display, or whose desktop has
-no tray), or the icon can't be shown, Vial runs as it does without one, and says why in vial.log. On Linux the
-executable carries pystray's plain X11 backend only: it shows on an X11 session whose panel takes XEmbed icons, and
-it has no menu there (a click opens Vial; Quit is on the page). pystray's better Linux backends (GTK, AppIndicator)
-need the system's PyGObject, which Vial uses when running from source and it is installed.
+The tray is optional: when the icon's libraries can't be loaded (a Linux without a display, or whose desktop has no
+tray), or the icon can't be shown, Vial runs as it does without one, and says why in vial.log. On Linux the icon is
+a StatusNotifierItem of Vial's own (statusnotifier.py: a menu and notifications on every current panel, X11 or
+Wayland) when the session has a panel that takes one; otherwise pystray's plain X11 backend, which shows on an X11
+session whose panel takes XEmbed icons, with no menu (a click opens Vial; Quit is on the page). pystray's GTK and
+AppIndicator backends need the system's PyGObject, which Vial uses when running from source and it is installed.
 
 The icon's image is Vial's round logo (Icon.ico) on a light square with rounded corners (square()): the dark round
 logo alone sank into a dark panel.
@@ -20,6 +21,7 @@ import sys
 import threading
 
 import resources
+import statusnotifier
 
 log = logging.getLogger(__name__)
 
@@ -80,22 +82,40 @@ def keep_out_of_the_dock():
         log.warning("Vial may show in the Dock: %s", e)
 
 
+def image():
+    """ The tray's image (PIL): Vial's logo on the light square. Raises when Pillow or the logo can't be loaded. """
+    from PIL import Image
+    logo = Image.open(resources.path(resources.ICON))
+    logo.load()
+    return square(logo, Image)
+
+
 def make(title, open_vial, quit_vial):
     """ The tray icon, not yet shown: run() shows it. open_vial() opens Vial in the browser (Open Vial, or a click);
-    quit_vial() stops Vial (Quit Vial). None, with why logged, when there can be no icon here. """
+    quit_vial() stops Vial (Quit Vial). On Linux, Vial's own StatusNotifierItem when the session has a panel for
+    one, else pystray's icon. None, with why logged, when there can be no icon here. """
+    try:
+        picture = image()
+    except Exception as e:
+        log.warning(UNAVAILABLE, "{}: {}".format(e.__class__.__name__, e), exc_info=True)
+        return None
+    if sys.platform.startswith("linux"):
+        icon, problem = statusnotifier.make(ICON_NAME, picture, title,
+                                            [statusnotifier.Item(OPEN, open_vial, default=True),
+                                             statusnotifier.Item(QUIT, quit_vial)])
+        if icon is not None:
+            return icon
+        log.info("no StatusNotifier tray icon: %s; trying pystray", problem)
     loaded, problem = load()
     if loaded is None:
         log.info(UNAVAILABLE, problem)
         return None
     pystray, Image = loaded
     try:
-        logo = Image.open(resources.path(resources.ICON))
-        logo.load()
-        image = square(logo, Image)
         keep_out_of_the_dock()
         menu = pystray.Menu(pystray.MenuItem(OPEN, lambda icon, item: open_vial(), default=True),
                             pystray.MenuItem(QUIT, lambda icon, item: quit_vial()))
-        return pystray.Icon(ICON_NAME, image, title, menu)
+        return pystray.Icon(ICON_NAME, picture, title, menu)
     except Exception as e:
         log.warning(UNAVAILABLE, "{}: {}".format(e.__class__.__name__, e), exc_info=True)
         return None

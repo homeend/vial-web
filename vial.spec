@@ -36,6 +36,8 @@ HIDDEN_IMPORTS = [
     # the tray icon (tray.py): pystray picks its backend by name at run time, and Pillow its plugin for Icon.ico
     "pystray._win32" if WINDOWS else "pystray._darwin" if sys.platform == "darwin" else "pystray._xorg",
     "PIL.IcoImagePlugin",
+    # Linux: the StatusNotifierItem icon (statusnotifier.py) over dbus-fast, imported where it is used
+    *(["dbus_fast.aio", "dbus_fast.service"] if sys.platform.startswith("linux") else []),
 ]
 
 EXCLUDES = [
