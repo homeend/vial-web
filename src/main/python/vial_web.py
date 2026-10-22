@@ -5,6 +5,7 @@
     python vial_web.py --fake     # simulated keyboard, never touches hardware
 """
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -89,6 +90,9 @@ To stop it, press Ctrl+C or close this window."""
 QUIT_MESSAGE = "Quit Vial was used on the page: Vial is stopping."
 TRAY_MESSAGE = "Vial has an icon in the notification area: Open Vial and Quit Vial are on its menu."
 TRAY_QUIT_MESSAGE = "Quit Vial was used on the tray icon: Vial is stopping."
+QUIT_WAIT = 5.0
+""" seconds Quit Vial on the tray icon gives the server to let go of the keyboard and tell the tabs (as Quit on the
+page does) before the server is stopped outright """
 TRAY_TITLE = "Vial{fake}"
 """ the icon's tooltip """
 
@@ -600,21 +604,47 @@ def serve(args, manager, sock):
         if server is not None:
             server.should_exit = True
 
-    def quit_from_tray():
-        stop_server()
-        print(TRAY_QUIT_MESSAGE, flush=True)
-        logging.info("Quit Vial was used on the tray icon")
-
     quit_used = []
+    tray_quit = []
+    """ [True] once Quit Vial on the tray icon was used: the page's message isn't printed on top of the icon's """
 
     def quit_from_page():
-        # POST /api/shutdown has answered, and closed the keyboard. Once: Quit asked again says nothing more.
+        # Quit (POST /api/shutdown, or the tray icon's Quit through the server: quit_from_tray) has let go of the
+        # keyboard and told the tabs. Once: Quit asked again says nothing more.
         if quit_used:
             return
         quit_used.append(True)
         stop_server()  # first: a console that is gone already must not keep Vial running
-        print(QUIT_MESSAGE, flush=True)
-        logging.info("Quit Vial was used on the page")
+        if not tray_quit:
+            print(QUIT_MESSAGE, flush=True)
+            logging.info("Quit Vial was used on the page")
+
+    def quit_from_tray():
+        """ Quit Vial on the icon's menu (called in the icon's thread): as Quit on the page, through the server's
+        loop (server.app's quit_from_outside), so that the keyboard is let go of and every tab is told that Vial
+        stopped before the server stops; otherwise the tabs would keep trying to reconnect. Without a server loop to
+        ask, or if that takes longer than QUIT_WAIT, the server is stopped outright, as Ctrl+C does. """
+        tray_quit.append(True)
+        print(TRAY_QUIT_MESSAGE, flush=True)
+        logging.info("Quit Vial was used on the tray icon")
+        loop, quit_server = getattr(app.state, "loop", None), getattr(app.state, "quit", None)
+        if loop is None or quit_server is None or loop.is_closed():
+            stop_server()
+            return
+        try:
+            future = asyncio.run_coroutine_threadsafe(quit_server(), loop)
+        except RuntimeError:  # the loop is gone
+            stop_server()
+            return
+
+        def stop_anyway():
+            try:
+                future.result(QUIT_WAIT)
+            except Exception as e:
+                log.warning("Quit Vial on the tray icon did not finish (%s): stopping the server outright",
+                            e.__class__.__name__)
+                stop_server()
+        threading.Thread(target=stop_anyway, name="tray quit", daemon=True).start()
 
     # the page says the web UI isn't built whenever the console does: also when web/dist is there without its page
     web_ui = None if missing_ui else resources.path(resources.WEB_DIST)

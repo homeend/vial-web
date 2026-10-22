@@ -396,6 +396,8 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @contextlib.asynccontextmanager
     async def lifespan(app):
+        app.state.loop = asyncio.get_running_loop()  # for quit_from_outside, called from another thread
+
         async def poll():
             while True:
                 await asyncio.sleep(poll_interval)
@@ -969,6 +971,21 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         # by each request, in case one's answer never gets out: only the first to get there stops the server
         background.add_task(stop_once)
         return Response(status_code=204)
+
+    async def quit_from_outside():
+        """ Quit Vial as POST /api/shutdown does, asked from outside the server: Quit Vial on the tray icon, from the
+        icon's thread, through asyncio.run_coroutine_threadsafe(app.state.quit(), app.state.loop). The keyboard is let
+        go of and every tab is told that Vial stopped (so no tab tries to reconnect), then the server is asked to stop.
+        Never raises; asked again, it waits for the same letting go and stops the server once. """
+        if not stopping:
+            stopping.append(asyncio.ensure_future(let_go()))
+        try:
+            await asyncio.shield(stopping[0])
+        except Exception:  # let_go never raises: should it all the same, Vial still stops
+            log.exception("quit: letting go of the keyboard failed; stopping all the same")
+        if on_stop is not None:
+            stop_once()
+    app.state.quit = quit_from_outside
 
     @app.websocket("/api/events")
     async def events(ws: WebSocket):

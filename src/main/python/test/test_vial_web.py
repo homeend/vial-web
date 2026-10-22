@@ -635,7 +635,7 @@ def test_with_an_icon_the_server_runs_in_a_thread_and_quit_on_the_icon_stops_it(
         no_tray_icon[0]["quit"]()
         seen["should exit"] = seen["server"].should_exit
     fake_server.while_serving = quit_on_the_icon
-    assert vial_web.main(["--fake", "--no-browser"]) == 0
+    assert vial_web.main(["--fake", "--no-browser"]) == 0  # no server loop (FakeServer): stopped outright
     assert seen["serving thread"] is not threading.main_thread()
     assert seen["should exit"] is True
     assert icon.ran_in is threading.main_thread()
@@ -643,6 +643,96 @@ def test_with_an_icon_the_server_runs_in_a_thread_and_quit_on_the_icon_stops_it(
     out = capsys.readouterr().out
     assert vial_web.TRAY_MESSAGE in out and vial_web.TRAY_QUIT_MESSAGE in out
     assert not os.path.exists(vial_web.session_file(True))
+
+
+class ServerLoop:
+    """ An asyncio loop in a thread, as uvicorn's: app.state.loop and app.state.quit (which the test chooses) are set
+    on every app created while it is in use """
+
+    def __init__(self, monkeypatch, quit_server):
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self.loop.run_forever, name="server loop", daemon=True)
+        self.thread.start()
+        self.quits = []
+        create_app = app_module.create_app
+
+        def with_a_loop(*args, **kwargs):
+            app = create_app(*args, **kwargs)
+            app.state.loop = self.loop
+
+            async def quit():
+                self.quits.append(threading.current_thread())
+                await quit_server(kwargs["on_stop"])
+            app.state.quit = quit
+            return app
+        monkeypatch.setattr(app_module, "create_app", with_a_loop)
+
+    def close(self):
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.thread.join(5)
+
+
+def stoppable_server(fake_server, monkeypatch):
+    """ uvicorn.Server standing in: serves (while_serving) until should_exit is set; returns the event """
+    stop_asked = threading.Event()
+
+    class Stoppable(fake_server):
+        @property
+        def should_exit(self):
+            return stop_asked.is_set()
+
+        @should_exit.setter
+        def should_exit(self, value):
+            if value:
+                stop_asked.set()
+    monkeypatch.setattr(uvicorn, "Server", Stoppable)
+    return stop_asked
+
+
+def test_quit_on_the_icon_goes_through_the_server_as_quit_on_the_page_does(home, fake_server, no_tray_icon,
+                                                                            monkeypatch, capsys):
+    """ so that the keyboard is let go of and the tabs are told that Vial stopped before the server stops """
+    tray.make.icon = FakeIcon()
+
+    async def quit_server(on_stop):
+        on_stop()  # the real one lets go of the keyboard and tells the tabs first
+    server_loop = ServerLoop(monkeypatch, quit_server)
+    stop_asked = stoppable_server(fake_server, monkeypatch)
+
+    def quit_on_the_icon():
+        no_tray_icon[0]["quit"]()
+        assert stop_asked.wait(5)
+    fake_server.while_serving = quit_on_the_icon
+    try:
+        assert vial_web.main(["--fake", "--no-browser"]) == 0
+    finally:
+        server_loop.close()
+    assert server_loop.quits == [server_loop.thread]  # on the server's loop
+    out = capsys.readouterr().out
+    assert vial_web.TRAY_QUIT_MESSAGE in out
+    assert vial_web.QUIT_MESSAGE not in out  # on_stop (the page's) said nothing on top
+
+
+def test_quit_on_the_icon_stops_the_server_outright_when_quitting_through_it_hangs(home, fake_server, no_tray_icon,
+                                                                                  monkeypatch, caplog):
+    tray.make.icon = FakeIcon()
+    monkeypatch.setattr(vial_web, "QUIT_WAIT", 0.2)
+
+    async def quit_server(on_stop):
+        await asyncio.Event().wait()  # never finishes
+    server_loop = ServerLoop(monkeypatch, quit_server)
+    stop_asked = stoppable_server(fake_server, monkeypatch)
+
+    def quit_on_the_icon():
+        no_tray_icon[0]["quit"]()
+        assert stop_asked.wait(5)
+    fake_server.while_serving = quit_on_the_icon
+    try:
+        with caplog.at_level(logging.WARNING):
+            assert vial_web.main(["--fake", "--no-browser"]) == 0
+    finally:
+        server_loop.close()
+    assert "did not finish (TimeoutError)" in caplog.text
 
 
 def test_open_vial_on_the_icon_opens_the_browser(home, fake_server, no_tray_icon):
