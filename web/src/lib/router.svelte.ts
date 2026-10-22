@@ -2,7 +2,7 @@
 // Outside a browser (unit tests without a DOM) there is no address: the route is only kept here.
 import { untrack } from "svelte";
 import type { Place } from "../analysis/find";
-import { HOME, isWhole, parseRoute, routeHash, type Route, type SectionId } from "./route";
+import { HOME, isPathed, isWhole, parseRoute, routeHash, sameRoute, type Route, type SectionId } from "./route";
 
 export class Router {
   // what the address says from the start, so a reload doesn't show the keymap first
@@ -23,11 +23,11 @@ export class Router {
       // the route (scrolling to a card) run once
       const read = () => {
         const route = parseRoute(location.hash);
-        // an entry named for a section that shows one page ("#lighting/3") goes from the address too, as it does from
-        // the route: no step back
+        // an entry named for a section that shows one page ("#lighting/3"), or a Learning path that can't be read, goes
+        // from the address too, as it does from the route: no step back
         const hash = routeHash(route);
         if (location.hash !== hash && location.hash.startsWith(`#${route.section}/`)) location.replace(hash);
-        if (route.section !== this.route.section || route.item !== this.route.item) {
+        if (!sameRoute(route, this.route)) {
           this.fromAddress = true;
           this.route = route;
           this.visits++;
@@ -39,10 +39,16 @@ export class Router {
     });
   }
 
-  /** Show a section (and a card in it). `replace` changes the address without a new step back, for opening something
-   * on the page shown */
-  go(section: SectionId, item: number | null = null, { replace = false }: { replace?: boolean } = {}): void {
-    const route = { section, item: isWhole(section) ? null : item };
+  /** Show a section (and a card in it, or a Learning view by its `path`; the path's names must match the address
+   * pattern (route.ts's NAME), or the address is read back as the list). `replace` changes the address without a new
+   * step back, for opening something on the page shown */
+  go(
+    section: SectionId, item: number | null = null,
+    { replace = false, path = [] }: { replace?: boolean; path?: readonly string[] } = {},
+  ): void {
+    const route: Route = isPathed(section)
+      ? { section, item: null, path }
+      : { section, item: isWhole(section) ? null : item, path: [] };
     this.fromAddress = false;
     this.route = route;
     this.visits++;

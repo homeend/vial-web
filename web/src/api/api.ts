@@ -1,6 +1,9 @@
 // The server's routes the UI uses.
 import { download, request } from "./client";
-import type { AltRepeatKeyIn, ComboIn, KeyOverrideIn, LightingIn, MacroActionIn, Named, TapDanceIn } from "./types";
+import type {
+  AltRepeatKeyIn, AttemptIn, ComboIn, FingersIn, KeyOverrideIn, LearningSettingsIn, LightingIn, MacroActionIn, Named,
+  TapDanceIn,
+} from "./types";
 
 export const api = {
   session: () => request("get", "/api/session"),
@@ -57,6 +60,32 @@ export const api = {
   putBackArrange: () => request("post", "/api/layers/arrange/put-back"),
   setName: (kind: Named["kind"], index: number, name: string) =>
     request("put", "/api/names/{kind}/{index}", { params: { kind, index }, body: { name } }),
+  // Learning (docs/learning/lesson-format.md): the app's files for this keyboard, nothing on the keyboard
+  /** which finger types each key: the app's proposal with the user's corrections on top */
+  learningFingers: () => request("get", "/api/learning/fingers"),
+  /** saves the corrections (all of them: it replaces what was saved); answers as learningFingers does */
+  setLearningFingers: (body: FingersIn) => request("put", "/api/learning/fingers", { body }),
+  /** forgets the corrections: back to the proposal */
+  resetLearningFingers: () => request("delete", "/api/learning/fingers"),
+  /** the layout export for the lesson generator, in the keyboard language shown */
+  learningExport: () => request("get", "/api/learning/export"),
+  /** the lesson sets of this keyboard, each with whether it is out of date */
+  learningSets: () => request("get", "/api/learning/sets"),
+  /** a lesson set file, checked and saved (201); 422 lists what is wrong with it (ApiError.errors) */
+  importLearningSet: (text: string) => request("post", "/api/learning/sets", { raw: text }),
+  /** one lesson set, whole; 404 when there is none, 422 when its file isn't a lesson set */
+  learningSet: (set: string) => request("get", "/api/learning/sets/{set}", { params: { set } }),
+  /** removes the set; its progress stays */
+  deleteLearningSet: (set: string) => request("delete", "/api/learning/sets/{set}", { params: { set } }),
+  /** the exercises typed so far in a set, each with its best and attempts; empty for a set never recorded, also for one
+   * that doesn't exist */
+  learningProgress: (set: string) => request("get", "/api/learning/progress/{set}", { params: { set } }),
+  /** an exercise typed to the end; the server computes accuracy and WPM and keeps the best */
+  recordAttempt: (set: string, exercise: string, body: AttemptIn) =>
+    request("put", "/api/learning/progress/{set}/{exercise}", { params: { set, exercise }, body }),
+  /** the pass accuracy, the target speed and whether the picture names keys in words */
+  learningSettings: () => request("get", "/api/learning/settings"),
+  setLearningSettings: (body: LearningSettingsIn) => request("put", "/api/learning/settings", { body }),
   unlockStart: () => request("post", "/api/unlock/start"),
   unlockCancel: () => request("post", "/api/unlock/cancel"),
   lock: () => request("post", "/api/lock"),

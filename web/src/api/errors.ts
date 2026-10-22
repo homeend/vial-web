@@ -6,13 +6,16 @@ export class ApiError extends Error {
   readonly detail: string | undefined;
   /** what the server calls this refusal, to tell it from others of its status: "layoutChanged" (409) */
   readonly code: string | undefined;
+  /** the refusal's findings one by one, when the server lists them (a lesson set the checker refuses, 422) */
+  readonly errors: string[] | undefined;
 
-  constructor(status: number, detail?: string, code?: string) {
+  constructor(status: number, detail?: string, code?: string, errors?: string[]) {
     super(errorMessage(status, detail));
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
     this.code = code;
+    this.errors = errors;
   }
 }
 

@@ -32,6 +32,13 @@ releases, see [get.vial.today](https://get.vial.today/).
   override or alt-repeat key has Remove in its editor.
 - **QMK settings, lighting, layout options, matrix tester, reboot to bootloader.**
 - **Layout files:** save the whole layout to a `.vil` file and load one back, with a preview of what it changes.
+- **Learning** (first in the list of sections, above the editing pages): a typing course for your own layout. The
+  Fingers view proposes which finger rests on and
+  reaches each key (correct it where it is wrong) and exports the layout for the `generate-lessons` skill in Claude
+  Code, which writes a lesson set; import it, and type the lessons with the next key lit on the keyboard picture.
+  Accuracy and speed are recorded per keyboard; a lesson passes at the pass accuracy, a star at the target speed
+  ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)).
+  Nothing is written to the keyboard.
 - Several keyboards plugged in: choose which one to edit. Unlocking, when the keyboard asks for it.
 - Light and dark themes; key legends in your keyboard language.
 - **Tray icon** (new in 1.0.0): while Vial runs it shows an icon (Vial's logo on a light square) in the notification
@@ -53,6 +60,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 | 6 | One executable per system (PyInstaller); Qt and fbs removed; Quit Vial; CI on Windows, Linux and macOS | done |
 | 7 | Firmware flasher (its logic is in `src/main/python/protocol/flasher.py`, without a UI yet) | optional |
 | 8 | Arrange layers: move layers, every layer reference and name follows ([design](docs/superpowers/specs/2026-10-21-arrange-layers-design.md)) | done (0.9.0) |
+| 9 | Learning: a typing course generated from the layout ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)) | done |
 | 10 | Tray icon instead of the console window: Open Vial and Quit Vial on its menu; Windows build without a console ([design](docs/superpowers/specs/2026-10-22-tray-icon-design.md)) | done |
 
 Design: [`docs/superpowers/specs/2026-10-15-vial-web-ui-design.md`](docs/superpowers/specs/2026-10-15-vial-web-ui-design.md).
@@ -136,7 +144,7 @@ and Linux, a click on the icon does the same).
 | `--no-browser` | Don't open the browser; the link with its session token is printed |
 | `--no-tray` | Don't show the tray icon; the link is printed and in `vial.log`. The tests and the smoke test use it |
 | `--dry-run` | Connect, print a summary of the keyboard and exit |
-| `--data-dir DIR` | Keep the lock, session file, log and names in `DIR` instead of the user folders (below); a `--fake` Vial keeps them in `DIR/fake` |
+| `--data-dir DIR` | Keep the lock, session file, log, names and Learning files in `DIR` instead of the user folders (below); a `--fake` Vial keeps them in `DIR/fake` |
 | `--self-check` | Check that this build has everything it needs (hidapi, the server, the web UI, the tray icon's libraries) and exit, without looking for any keyboard |
 | `--version` | Print Vial's version and exit |
 
@@ -147,7 +155,7 @@ printed link.
 
 Never next to the executable, and never in the folder the executable unpacks itself to while it runs:
 
-| System | Lock, session file, log (`vial.log`) | Layer, tap dance and macro names (`names.json`) |
+| System | Lock, session file, log (`vial.log`) | Layer, tap dance and macro names (`names.json`); Learning's lesson sets, progress and fingers (`learning/<keyboard uid>/`) |
 |---|---|---|
 | Windows | `%LOCALAPPDATA%\Vial` | `%LOCALAPPDATA%\Vial` |
 | Linux | `~/.local/share/Vial` | `~/.config/Vial` |

@@ -12,6 +12,7 @@
   import { namesOf } from "./keyboard/labels";
   import KeymapPage from "./keymap/KeymapPage.svelte";
   import LayoutPage from "./layout/LayoutPage.svelte";
+  import LearningPage from "./learning/LearningPage.svelte";
   import { hasLighting } from "./lighting/lighting";
   import LightingPage from "./lighting/LightingPage.svelte";
   import MatrixPage from "./matrix/MatrixPage.svelte";
@@ -43,7 +44,10 @@
   // alt-repeat keys, QMK settings, lighting or matrix tester) are left out
   const sections = $derived.by<Section[]>(() => {
     const model = keyboard.model;
-    const list: Section[] = [{ id: "keymap", label: "Keymap", count: model?.layers.length }];
+    // Learning first, a line under it: every keyboard has it (the lessons are the app's files, nothing of the
+    // firmware's), and it is the page used daily; the editing pages follow, Keymap still the one shown by default
+    const list: Section[] = [{ id: "learning", label: "Learning", lineAfter: true },
+                             { id: "keymap", label: "Keymap", count: model?.layers.length }];
     if (!model) return list;
     if (model.layoutOptions) list.push({ id: "layout", label: "Layout" });
     const counts = behaviourCounts(model);
@@ -280,13 +284,17 @@
       {#if keyboard.model && placement && analysis}
         <!-- made anew for another keyboard, even one alike (the same uid): an editor open was for the one before -->
         {#key keyboard.opened}
-          <div class="page" class:list={section !== "keymap"} class:blocked={greyed} inert={greyed}>
+          <!-- the Learning page sets its own width: a list, or the keymap's for the typing view -->
+          <div class="page" class:list={section !== "keymap" && section !== "learning"} class:learning={section === "learning"}
+            class:blocked={greyed} inert={greyed}>
             {#if section === "tap-dance"}
               <TapDancePage model={keyboard.model} {analysis} item={router.route.item} />
             {:else if section === "combos"}
               <CombosPage model={keyboard.model} {placement} {analysis} item={router.route.item} />
             {:else if section === "macros"}
               <MacrosPage model={keyboard.model} {analysis} item={router.route.item} />
+            {:else if section === "learning"}
+              <LearningPage model={keyboard.model} {placement} />
             {:else if section === "key-overrides"}
               <KeyOverridesPage model={keyboard.model} item={router.route.item} />
             {:else if section === "alt-repeat"}
@@ -408,6 +416,13 @@
     width: 100%;
     max-width: var(--list-max);
     margin: 0 auto;
+  }
+
+  /* the Learning page is as wide as its column, never wider: its content (a long lesson set title in the selector)
+     shrinks to it, as the page sets its own width per view */
+  .page.learning {
+    width: 100%;
+    min-width: 0;
   }
 
   .page.blocked {

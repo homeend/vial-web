@@ -119,7 +119,7 @@ def data_dir(fake):
 
 
 def config_dir(fake):
-    """ Holds names.json of real mode, or (fake=True) of fake mode """
+    """ Holds names.json and learning/ of real mode, or (fake=True) of fake mode """
     return _mode_dir(_data_root or platformdirs.user_config_dir(APP_NAME, appauthor=False), fake)
 
 
@@ -137,6 +137,11 @@ def log_file(fake):
 
 def names_file(fake):
     return os.path.join(config_dir(fake), "names.json")
+
+
+def learning_dir(fake):
+    """ The Learning feature's files (server.learning.LearningStore), a folder per keyboard inside """
+    return os.path.join(config_dir(fake), "learning")
 
 
 def ensure_data_dir(fake):
@@ -439,8 +444,8 @@ def parse_args(argv):
                         help="check that this build has everything it needs (hidapi, the server, the web UI) and exit, "
                              "without looking for any keyboard")
     parser.add_argument("--data-dir", type=os.path.abspath,
-                        help="keep the instance lock, session file, log and names in this folder instead of the "
-                             "user's data and config folders (for tests and development)")
+                        help="keep the instance lock, session file, log, names and Learning files in this folder "
+                             "instead of the user's data and config folders (for tests and development)")
     args = parser.parse_args(argv)
     if (args.definition or args.layout or args.layers or args.unlock_counter or args.lighting
             or args.second_definition) and not args.fake:
@@ -571,6 +576,7 @@ def serve(args, manager, sock):
     icon's loop holds this thread and the server runs in a thread of its own (tray.run). """
     import uvicorn
     from server.app import create_app
+    from server.learning import LearningStore
     from server.names import NamesStore
 
     port = sock.getsockname()[1]
@@ -649,7 +655,8 @@ def serve(args, manager, sock):
     # the page says the web UI isn't built whenever the console does: also when web/dist is there without its page
     web_ui = None if missing_ui else resources.path(resources.WEB_DIST)
     app = create_app(manager, names, token, port, static_dir=web_ui,
-                     on_all_clients_gone=all_tabs_closed, instance_id=instance, on_stop=quit_from_page)
+                     on_all_clients_gone=all_tabs_closed, instance_id=instance, on_stop=quit_from_page,
+                     learning=LearningStore(learning_dir(args.fake)))
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning", log_config=UVICORN_LOGGING,
                                            timeout_graceful_shutdown=SHUTDOWN_GRACE))
 
