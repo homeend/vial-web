@@ -50,5 +50,11 @@ there can be no icon, Vial runs exactly as before. `--no-tray` turns the icon of
   the executable, Test with pytest on Windows, Linux and macOS). The first push failed pytest on Linux and macOS:
   the stop-signal test sent SIGTERM to the whole process, which pytest-xdist's own threads don't block; it now sends
   it to the waiting thread.
-- [ ] **8. Owner:** try the icon on Windows (hidden-icons area, Open Vial, Quit Vial, the notification after the last
-  tab closes) and on Linux; then merge to `main`.
+- [x] **8. Owner:** tried the icon on Windows 2026-10-22: looks good; merged to `main` (`dd58828`). One issue: after Quit
+  Vial on the icon, the page kept saying "Lost contact with Vial. Reconnecting…" in a loop.
+- [x] **9. Fix (branch `phase10-tray-quit`):** Quit on the icon stopped the server outright, as Ctrl+C does, so the tabs
+  were never told. Now it goes through the server as Quit on the page does: `server.app` sets `app.state.quit`
+  (lets go of the keyboard, tells every tab "stopped" and closes its link, then stops the server once) and
+  `app.state.loop`; `vial_web.quit_from_tray` runs it on that loop from the icon's thread, and stops the server
+  outright if it takes longer than `QUIT_WAIT` (5 s) or there is no loop. Tests in `test_shutdown.py` and
+  `test_vial_web.py`; live check from source: the tab got `stopped` and close 1001, exit 0.
