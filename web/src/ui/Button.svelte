@@ -78,8 +78,9 @@
     cursor: not-allowed;
   }
 
-  /* enabled, keeping the focus, but taking nothing while a change is saved */
+  /* enabled, keeping the focus, but taking nothing: while a change is saved, or for good (Next exercise after the
+   * set's last). A disabled look, not a wait: the button's text says when something is under way ("Importing…") */
   .btn[aria-disabled="true"]:not(:disabled) {
-    cursor: progress;
+    cursor: default;
   }
 </style>
