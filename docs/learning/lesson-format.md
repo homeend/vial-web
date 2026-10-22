@@ -64,7 +64,9 @@ the simulated Corne's. Example (two keys of it):
 - `chars.<layer>` has `tap`, and `shift` / `altGr` when those differ; a key with no printable result on a layer is
   left out of that layer. `hold` is a short label for what holding does (`"Shift"`, `"Ctrl"`, `"layer 2"`). A plain
   AltGr key (`KC_RALT`) types nothing but has `"0": { "hold": "AltGr" }`, so the picture can light it for an `altGr`
-  character.
+  character. A layer key (`MO`, `LT`, `TT`, `OSL`, `TG`, `TO`) is left out of the layer it reaches, whatever lies
+  under it there: holding or tapping it is what switches the layer, not a key press that types (the Space of the
+  example above holds layer 1, so it has no `"1"`); its `hold` and `layerKey` are as on any key.
 - Transparent keys are resolved: a layer-1 entry shows what the key does *when layer 1 is on*.
 - `x`, `y` are the key's centre in key units, for the generator's own sanity checks only.
 - The export, and so the hash, is made in the app's keyboard language (`language`): the legends differ between

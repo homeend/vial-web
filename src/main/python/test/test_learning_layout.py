@@ -420,13 +420,11 @@ def test_export_resolves_transparent_keys_and_drops_unreachable_layers(corne_mod
     # T on layer 0 is a mod-tap (Shift); layer 1 types ")", layer 3 "4" (and "$" with Shift); on layer 2 it is Shift
     assert keys["r1c4"]["chars"] == {"0": {"tap": "t", "shift": "T", "hold": "Shift"}, "1": {"tap": ")"},
                                      "3": {"tap": "4", "shift": "$"}}
-    # B holds layer 2, where it is transparent: it types B there as well
-    assert keys["r0c4"]["chars"] == {"0": {"tap": "b", "shift": "B", "hold": "layer 2"}, "1": {"tap": "$"},
-                                     "2": {"tap": "b", "shift": "B"}}
+    # B holds layer 2, where it is transparent; but holding it is what keeps layer 2 on: it types nothing there
+    assert keys["r0c4"]["chars"] == {"0": {"tap": "b", "shift": "B", "hold": "layer 2"}, "1": {"tap": "$"}}
     assert keys["r0c4"]["layerKey"] == {"layer": 2, "how": "hold"}
-    # Space is transparent on every other layer: it types a space on each
-    assert keys["r3c4"]["chars"] == {"0": {"tap": " ", "hold": "layer 1"}, "1": {"tap": " "}, "2": {"tap": " "},
-                                     "3": {"tap": " "}}
+    # Space is transparent on every other layer: it types a space on each but layer 1, which it holds
+    assert keys["r3c4"]["chars"] == {"0": {"tap": " ", "hold": "layer 1"}, "2": {"tap": " "}, "3": {"tap": " "}}
     assert keys["r3c4"]["layerKey"] == {"layer": 1, "how": "hold"}
     assert [l["index"] for l in export["layers"]] == [0, 1, 2, 3]
     assert export["layers"][1]["reachedBy"] == [{"key": "r3c4", "how": "hold", "label": "hold Space"}]
@@ -442,6 +440,38 @@ def test_export_matches_the_worked_example(corne_model):
     assert export["hash"] == example["hash"]
     for field in ("keyboard", "layers", "shiftKeys", "keys"):
         assert export[field] == example[field], field
+    # the example was regenerated when a layer key stopped typing on the layer it reaches (sha256:e435c3da038f9048
+    # before); docs/learning/examples/corne-sim-en.json carries the same hash
+    assert export["hash"] != "sha256:e435c3da038f9048"
+    with open(os.path.join(EXAMPLES, "corne-sim-en.json"), encoding="utf-8") as inf:
+        assert json.load(inf)["layout"]["hash"] == export["hash"]
+
+
+def test_a_layer_key_types_nothing_on_the_layer_it_reaches():
+    """ Holding MO(1) or LT1(D), tapping OSL(2), toggling TG(3) is what switches the layer: on that layer the key
+    itself isn't one that types, whatever lies under it there (a character, or transparency resolving to its own tap).
+    On every other layer it types what is there, and its hold label and layerKey are as before. """
+    definition = {"name": "Own", "matrix": {"rows": 1, "cols": 5},
+                  "layouts": {"keymap": [["0,0", "0,1", "0,2", "0,3", "0,4"]]}}
+    keymap = {(0, 0, 0): encode("MO(1)"), (1, 0, 0): encode("KC_A"), (2, 0, 0): encode("KC_A"),
+              (0, 0, 1): encode("OSL(2)"), (2, 0, 1): encode("KC_B"), (1, 0, 1): encode("KC_B"),
+              (0, 0, 2): encode("TG(3)"), (3, 0, 2): encode("KC_C"),
+              (0, 0, 3): encode("LT1(KC_D)"), (1, 0, 3): encode("KC_TRNS"), (3, 0, 3): encode("KC_D"),
+              (0, 0, 4): encode("KC_E"), (1, 0, 4): encode("KC_F"), (2, 0, 4): encode("KC_G"), (3, 0, 4): encode("KC_H")}
+    export = learning_layout.export(model_of(lambda: VirtualKeyboard(definition, layers=4, keymap=keymap)))
+    keys = {k["id"]: k for k in export["keys"]}
+    assert keys["r0c0"]["chars"] == {"2": {"tap": "a", "shift": "A"}} and keys["r0c0"]["layerKey"] == {"layer": 1, "how": "hold"}
+    assert keys["r0c1"]["chars"] == {"1": {"tap": "b", "shift": "B"}} and keys["r0c1"]["layerKey"] == {"layer": 2, "how": "oneShot"}
+    assert keys["r0c2"]["chars"] == {} and keys["r0c2"]["layerKey"] == {"layer": 3, "how": "toggle"}
+    assert keys["r0c3"]["chars"] == {"0": {"tap": "d", "shift": "D", "hold": "layer 1"}, "3": {"tap": "d", "shift": "D"}}
+    assert keys["r0c3"]["layerKey"] == {"layer": 1, "how": "hold"}
+    assert keys["r0c4"]["chars"] == {"0": {"tap": "e", "shift": "E"}, "1": {"tap": "f", "shift": "F"},
+                                     "2": {"tap": "g", "shift": "G"}, "3": {"tap": "h", "shift": "H"}}
+    assert [(l["index"], [r["label"] for r in l["reachedBy"]]) for l in export["layers"]] == \
+        [(0, []), (1, ["hold MO 1", "hold D"]), (2, ["tap OSL 2"]), (3, ["toggle with TG 3"])]
+    # the character map, and so the hash, differs from one where the layer keys typed on their own layers
+    typing = {k: dict(v) for k, v in keys.items()}
+    assert "1" not in typing["r0c0"]["chars"] and "1" not in typing["r0c3"]["chars"]
 
 
 def test_export_with_fewer_layers_drops_those_no_key_reaches():

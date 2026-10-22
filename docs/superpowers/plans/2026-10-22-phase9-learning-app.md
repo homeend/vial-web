@@ -1,5 +1,7 @@
 # Phase 9: Learning — the app (phase 2) — Implementation Plan
 
+> **Since (phase 9 follow-ups, 2026-10-22):** a layer key exports no character on the layer it reaches (lesson-format.md § 2), so the simulated Corne's export hash is `sha256:4bc5cc1ba5f8b710` wherever this plan says `sha256:e435c3da038f9048`; the plan is left as it was written.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** a **Learning** page that teaches the user's own keyboard layout: the app proposes which finger rests on and reaches each key (the user corrects it), exports the layout for the lesson generator (the `generate-lessons` Claude Code skill, phase 1 of this phase), imports the lesson set the generator writes, shows each lesson's new keys on the keyboard picture, lets the user type every exercise with the next key lit, and records accuracy and speed per keyboard on this computer. Nothing is written to the keyboard.

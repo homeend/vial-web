@@ -18,7 +18,7 @@ from key positions; the app does that, and the user corrects it in the UI before
 | `row` | `number` / `top` / `home` / `bottom` / `thumb` |
 | `reach` | `rest` (a resting key), `inner` (one column towards the middle), `outer` (one column away from the middle), `up`, `down` (the key above / below the resting key of that finger); thumb keys: `rest` for the thumb's main key, else `inner` / `outer` |
 | `home` | `true` for the eight (or so) resting keys |
-| `chars` | per layer, what the key types: `tap` (no modifier), `shift`, `altGr`; and `hold` when holding it does something else (a modifier or a layer) |
+| `chars` | per layer, what the key types: `tap` (no modifier), `shift`, `altGr`; and `hold` when holding it does something else (a modifier or a layer). A layer key types nothing on the layer it reaches (holding or tapping it there is the layer switch itself), so it has no entry for that layer |
 | `layerKey` | for a key that reaches another layer: `{ "layer": 1, "how": "hold" \| "toggle" \| "oneShot" \| "switch" }` |
 
 And per layer: its name, and the keys that reach it, as `[{ "key": "r3c4", "how": "hold", "label": "hold Space" }]`.

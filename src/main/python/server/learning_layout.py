@@ -427,7 +427,10 @@ def apply_fingers(proposal, fingers_file):
 def export(model, fingers=None, language="en-us"):
     """ The layout export of the keyboard's model, with the user's finger corrections (apply_fingers) and the keyboard
     language the model was described in. `hash` covers the character map (every key's characters per layer and the
-    layer access paths) and nothing else: a lesson set stays valid when a layer is renamed. """
+    layer access paths) and nothing else: a lesson set stays valid when a layer is renamed. A layer key (MO, LT, TT,
+    OSL, TG, TO, a tap dance's hold) types nothing on the layer it reaches: holding or tapping it there is what
+    switches the layer, not a key press that types, whatever lies under it on that layer (a character, or
+    transparency resolving to its own tap); its hold label and layerKey are unchanged. """
     fingers_of = apply_fingers(proposal(model), fingers)
     tap_dances = model.get("tapDance") or []
     layers = model.get("layers") or []
@@ -437,7 +440,9 @@ def export(model, fingers=None, language="en-us"):
     for i, g in (visible_keys(model) if layers else []):
         kid = key_id(g)
         k0 = layers[0]["keys"][i]
-        chars_by_layer, layer_key = {}, None
+        layer_key = describe_key(k0, tap_dances).layer_key
+        own_layer = layer_key["layer"] if layer_key else None
+        chars_by_layer = {}
         for layer in layers:
             k = layer["keys"][i]
             chars, hold, lk, transparent = describe_key(k, tap_dances)
@@ -445,7 +450,6 @@ def export(model, fingers=None, language="en-us"):
                 k = k0
                 chars, hold, lk, _ = describe_key(k0, tap_dances)
             if layer["index"] == 0:
-                layer_key = lk
                 label = shift_label(k, hold)
                 if label:
                     shift_keys.append({"key": kid, "hand": fingers_of[kid]["hand"], "label": label})
@@ -454,12 +458,12 @@ def export(model, fingers=None, language="en-us"):
                 tap = (chars or {}).get("tap")
                 name = "Space" if tap == " " else (tap.upper() if tap else (k.get("legend") or {}).get("main") or kid)
                 layer_reach[lk["layer"]].append({"key": kid, "how": lk["how"], "label": "{} {}".format(label, name)})
-            if chars:
+            if chars and layer["index"] != own_layer:
                 entry = dict(chars)
                 if hold and layer["index"] == 0:
                     entry["hold"] = hold
                 chars_by_layer[str(layer["index"])] = entry
-            elif hold and layer["index"] == 0 and not chars:
+            elif hold and layer["index"] == 0:
                 chars_by_layer.setdefault("0", {})["hold"] = hold
         x, y = centre(g)
         entry = {"id": kid, **fingers_of[kid], "x": x, "y": y, "chars": chars_by_layer}
