@@ -10,6 +10,9 @@ no tray), or the icon can't be shown, Vial runs as it does without one, and says
 executable carries pystray's plain X11 backend only: it shows on an X11 session whose panel takes XEmbed icons, and
 it has no menu there (a click opens Vial; Quit is on the page). pystray's better Linux backends (GTK, AppIndicator)
 need the system's PyGObject, which Vial uses when running from source and it is installed.
+
+The icon's image is Vial's round logo (Icon.ico) on a light square with rounded corners (square()): the dark round
+logo alone sank into a dark panel.
 """
 import logging
 import signal
@@ -27,6 +30,14 @@ STILL_RUNNING = "Vial is still running. Click its icon to open it again, or Quit
 """ the notification when the last browser tab closes, where the icon can show one """
 UNAVAILABLE = "no tray icon: %s"
 """ logged (information) when Vial runs without the icon, with why """
+IMAGE_SIDE = 256
+""" the tray image's side in pixels: the system scales it to its icon size """
+IMAGE_BACKGROUND = (226, 231, 238, 255)
+""" the light square behind the logo (RGBA): light enough to stand out on a dark panel, grey enough on a light one """
+IMAGE_CORNER = 0.18
+""" the square's corner radius, as a fraction of its side """
+IMAGE_MARGIN = 0.06
+""" the logo's margin inside the square on each side, as a fraction of the side """
 POSIX_STOP_SIGNALS = ("SIGINT", "SIGTERM", "SIGHUP")
 """ what stops Vial while the icon's loop holds the main thread: Ctrl+C, kill or log-out, the terminal closed. The
 loop is native code (AppKit's, GTK's), where Python's own signal handlers don't get to run: these are taken by a
@@ -43,6 +54,19 @@ def load():
         # display as it is imported (no DISPLAY: a Wayland session, a headless Linux)
         return None, "{}: {}".format(e.__class__.__name__, e) if str(e) else e.__class__.__name__
     return (pystray, Image), None
+
+
+def square(logo, Image):
+    """ The tray's image: logo (a PIL image, Vial's round logo) on a light square with rounded corners, IMAGE_SIDE
+    pixels a side; Image is PIL.Image (from load()) """
+    from PIL import ImageDraw
+    image = Image.new("RGBA", (IMAGE_SIDE, IMAGE_SIDE), (0, 0, 0, 0))
+    ImageDraw.Draw(image).rounded_rectangle((0, 0, IMAGE_SIDE - 1, IMAGE_SIDE - 1),
+                                            radius=round(IMAGE_SIDE * IMAGE_CORNER), fill=IMAGE_BACKGROUND)
+    margin = round(IMAGE_SIDE * IMAGE_MARGIN)
+    inner = IMAGE_SIDE - 2 * margin
+    image.alpha_composite(logo.convert("RGBA").resize((inner, inner), Image.Resampling.LANCZOS), (margin, margin))
+    return image
 
 
 def keep_out_of_the_dock():
@@ -65,8 +89,9 @@ def make(title, open_vial, quit_vial):
         return None
     pystray, Image = loaded
     try:
-        image = Image.open(resources.path(resources.ICON))
-        image.load()
+        logo = Image.open(resources.path(resources.ICON))
+        logo.load()
+        image = square(logo, Image)
         keep_out_of_the_dock()
         menu = pystray.Menu(pystray.MenuItem(OPEN, lambda icon, item: open_vial(), default=True),
                             pystray.MenuItem(QUIT, lambda icon, item: quit_vial()))

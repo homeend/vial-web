@@ -34,11 +34,11 @@ releases, see [get.vial.today](https://get.vial.today/).
 - **Layout files:** save the whole layout to a `.vil` file and load one back, with a preview of what it changes.
 - Several keyboards plugged in: choose which one to edit. Unlocking, when the keyboard asks for it.
 - Light and dark themes; key legends in your keyboard language.
-- **Tray icon** (new in 1.0.0): while Vial runs it shows an icon in the notification area (on Windows no console
-  window opens any more). Its menu has **Open Vial**, which opens the page in the browser, and **Quit Vial**, which
-  stops Vial. When the last tab closes, the icon says that Vial is still running. On Linux and macOS the icon
-  appears where the desktop has a tray or menu bar for it (see "Download and run"); without one, Vial runs as
-  before, from the terminal.
+- **Tray icon** (new in 1.0.0): while Vial runs it shows an icon (Vial's logo on a light square) in the notification
+  area (on Windows no console window opens any more). Its menu has **Open Vial**, which opens the page in the
+  browser, and **Quit Vial**, which stops Vial. When the last tab closes, the icon says that Vial is still running.
+  On Linux and macOS the icon appears where the desktop has a tray or menu bar for it (see "Download and run");
+  without one, Vial runs as before, from the terminal.
 
 ## Status
 
