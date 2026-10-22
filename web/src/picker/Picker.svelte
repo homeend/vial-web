@@ -3,7 +3,8 @@
   import type { CatalogueKeycode, Described } from "../api/types";
   import { keyFace, type Names } from "../keyboard/labels";
   import AnyKeycode from "./AnyKeycode.svelte";
-  import { categoryIndex, type OfferedCategory } from "./offered";
+  import EntryCard from "./EntryCard.svelte";
+  import { categoryIndex, type EntryDetail, type OfferedCategory } from "./offered";
   import { searchKeycodes, searchTemplates } from "./search";
   import { fillTemplate } from "./template";
 
@@ -38,6 +39,24 @@
     if (results.length === 0 && templates.length === 0) return `No keycode matches “${query.trim()}”`;
     const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
     return count(results.length, "keycode") + (templates.length ? `, ${count(templates.length, "template")}` : "");
+  });
+
+  /** each tap dance's and macro's card, by keycode, from every category (a search finds them too) */
+  const details = $derived(new Map<string, EntryDetail>(categories.flatMap((c) => [...(c.details ?? [])])));
+  /** the key whose card is shown: pointed at, or with the focus (the last of the two) */
+  let carded = $state<{ code: string; anchor: HTMLElement } | null>(null);
+  const cardDetail = $derived(carded ? (details.get(carded.code) ?? null) : null);
+
+  function showCard(code: string, anchor: HTMLElement) {
+    carded = details.has(code) ? { code, anchor } : null;
+  }
+
+  function hideCard(code: string) {
+    if (carded?.code === code) carded = null;
+  }
+
+  $effect(() => {
+    if (!open) carded = null;
   });
 
   $effect(() => {
@@ -168,6 +187,7 @@
       role={results ? "region" : "tabpanel"}
       aria-label={results ? "Search results" : undefined}
       aria-labelledby={results ? undefined : tabId(category)}
+      onscroll={() => (carded = null)}
     >
       {#if results && results.length === 0 && templates.length === 0}
         <p class="empty">No keycode matches “{query.trim()}”. Try the Any keycode box below.</p>
@@ -181,10 +201,14 @@
             data-tone={face.tone}
             class:current={k.code === current}
             aria-current={k.code === current ? "true" : undefined}
-            title={k.description ? `${k.code}: ${k.description}` : k.code}
+            title={details.has(k.code) ? undefined : k.description ? `${k.code}: ${k.description}` : k.code}
             aria-label="{k.tap || k.code} ({k.code})"
             aria-describedby={k.description ? `picker-description-${i}` : undefined}
             onclick={() => pick(k.code, k)}
+            onpointerenter={(e) => showCard(k.code, e.currentTarget)}
+            onpointerleave={() => hideCard(k.code)}
+            onfocus={(e) => showCard(k.code, e.currentTarget)}
+            onblur={() => hideCard(k.code)}
           >
             {#if face.altGr}<span class="alt-gr">{face.altGr}</span>{/if}
             {#if face.shifted}<span class="kc-shifted">{face.shifted}</span>{/if}
@@ -211,6 +235,9 @@
       <AnyKeycode bind:value={anyKeycode} onpick={pick} />
     </footer>
   </div>
+  {#if carded && cardDetail}
+    <EntryCard detail={cardDetail} anchor={carded.anchor} {names} />
+  {/if}
 </dialog>
 
 <style>

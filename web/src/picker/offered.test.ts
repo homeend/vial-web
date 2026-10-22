@@ -112,6 +112,18 @@ describe("setUpEntries", () => {
     expect(offered[2].keycodes[0].description).toBe("type “git status”, tap Enter");
   });
 
+  it("gives each one's card: a name given, the four slots (empty ones as null) or the steps", () => {
+    const offered = setUpEntries(withEntries, both);
+    expect(offered[1].details?.get("TD(1)")).toEqual({
+      kind: "tap-dance", name: "Nav", tappingTerm: 200,
+      slots: [{ label: "Tap", action: esc }, { label: "Hold", action: ctrl }, { label: "Double tap", action: null },
+        { label: "Tap, then hold", action: null }],
+    });
+    expect(offered[2].details?.get("M1")).toEqual({ kind: "macro", name: "", steps: both.macros.items[1].actions });
+    expect([...(offered[2].details?.keys() ?? [])]).toEqual(["M1"]);
+    expect(offered[0].details).toBeUndefined();
+  });
+
   it("leaves out a name made from the slots, which would only say them again", () => {
     const made = model([td(0, { name: "Esc / LCtrl", customName: false, tap: esc, hold: ctrl })], []);
     expect(setUpEntries(withEntries, made)[1].keycodes[0].description).toBe("tap: Esc · hold: LCtrl · tapping term 200 ms");
