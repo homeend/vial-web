@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { expect, setTapDance, tapDanceAt, test } from "./fixtures";
+import { expect, screenshots, setTapDance, tapDanceAt, test } from "./fixtures";
 
 // Editing a tap dance keeps the focus where it was. A worker's server is shared by the tests it runs: each test puts
 // back the tap dance it changed, in its `finally` (setTapDance throws when the server refuses it).
@@ -184,6 +184,55 @@ test("a tapping term out of range says what is wrong, isn't saved, and is put ba
     await expect.poll(async () => (await tapDanceAt(app, 1)).tappingTerm).toBe(220);
     await expect(problem).toHaveCount(0);
     await expect(term).toHaveAttribute("aria-invalid", "false");
+  } finally {
+    await setTapDance(app, 1, before);
+  }
+});
+
+test("Clear on a tap dance keys use asks first, then empties its four slots; the card stays", async ({ app }) => {
+  const before = await tapDanceAt(app, 0);
+  try {
+    await openTapDance(app);
+    const card = tapDanceCard(app, 0);
+    const clear = card.getByRole("button", { name: "Clear", exact: true });
+    const dialog = app.getByRole("dialog", { name: "Clear tap dance 0?" });
+    await screenshots(app, "tap-dance-clear-button");
+    await clear.click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(/\d+ keys? uses? TD\(0\)\./);
+    await expect(dialog).toContainText("does nothing there until one of its slots is set again");
+    await screenshots(app, "tap-dance-clear-question");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(clear).toBeFocused();
+    expect(await tapDanceAt(app, 0)).toEqual(before);
+
+    await clear.click();
+    await dialog.getByRole("button", { name: "Clear" }).click();
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => tapDanceAt(app, 0)).toEqual({
+      tap: "KC_NO", hold: "KC_NO", doubleTap: "KC_NO", tapHold: "KC_NO", tappingTerm: before.tappingTerm,
+    });
+    // still listed (keys use it), with nothing left to clear; the focus on its heading
+    await expect(card).toBeVisible();
+    await expect(clear).toHaveCount(0);
+    await expect(app.locator("#tap-dance-0-title")).toBeFocused();
+  } finally {
+    await setTapDance(app, 0, before);
+  }
+});
+
+test("Clear on a tap dance nothing uses empties it at once, and its card goes", async ({ app }) => {
+  const before = await tapDanceAt(app, 1);
+  try {
+    await openTapDance(app);
+    const card = tapDanceCard(app, 1);
+    await expect(card.getByText("Nothing uses it yet")).toBeVisible();
+    await card.getByRole("button", { name: "Clear", exact: true }).click();
+    await expect(card).toHaveCount(0);
+    await expect(app.getByRole("dialog")).toHaveCount(0);
+    expect((await tapDanceAt(app, 1)).tap).toBe("KC_NO");
+    await expect(app.getByRole("heading", { level: 1, name: "Tap dance" })).toBeFocused();
   } finally {
     await setTapDance(app, 1, before);
   }

@@ -291,3 +291,12 @@ export function macroRemoveNote(index: number, uses: Use[]): string | null {
   return `${text} ${total === 1 ? "uses" : "use"} M${index}. Once the macro is removed, M${index} sends ` +
     "nothing there until the macro has steps again.";
 }
+
+/** Why clearing tap dance `index` asks first: what uses it, which does nothing once its four slots are empty (vial-qmk
+ * presses KC_NO for each, which sends nothing); null when nothing uses it */
+export function tapDanceClearNote(index: number, uses: Use[]): string | null {
+  const { text, total } = usesCounted(uses);
+  if (total === 0) return null;
+  return `${text} ${total === 1 ? "uses" : "use"} TD(${index}). Once the tap dance is cleared, TD(${index}) does ` +
+    "nothing there until one of its slots is set again.";
+}

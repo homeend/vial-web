@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { comboAt, expect, keyIndex, setCombo, test } from "./fixtures";
+import { comboAt, expect, keyIndex, screenshots, setCombo, test } from "./fixtures";
 
 // Editing a combo: a combo listing a keycode twice, where the focus goes, and the key chooser's cursor. A worker's
 // server is shared by the tests it runs: each test puts back the combo it changed, in its `finally` (setCombo throws
@@ -146,5 +146,18 @@ test("the combo editor fits a 1080p window", async ({ app }) => {
   const topBar = await app.locator("header.topbar").boundingBox();
   const box = await card.boundingBox();
   expect(box!.height + topBar!.height).toBeLessThanOrEqual(950);
+  await card.getByRole("button", { name: "Cancel" }).click();
+});
+
+test("the combo editor's Remove is by Cancel and Save, at the right", async ({ app }) => {
+  await openCombos(app);
+  const card = comboCard(app, 0);
+  await card.getByRole("button", { name: "Edit" }).click();
+  const buttons = card.locator(".buttons .btn");
+  await expect(buttons).toHaveText(["Remove", "Cancel", "Save"]);
+  const remove = await card.getByRole("button", { name: "Remove", exact: true }).boundingBox();
+  const cancel = await card.getByRole("button", { name: "Cancel" }).boundingBox();
+  expect(cancel!.x - (remove!.x + remove!.width)).toBeLessThan(20);
+  await screenshots(app, "combo-editor-remove");
   await card.getByRole("button", { name: "Cancel" }).click();
 });

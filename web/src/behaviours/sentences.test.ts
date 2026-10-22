@@ -5,7 +5,7 @@ import { placeKeyboard } from "../keyboard/geometry";
 import type { Use } from "../analysis/usage";
 import { namesOf } from "../keyboard/labels";
 import {
-  comboNotes, comboSentence, macroRemoveNote, outcome, tapDanceSentence, useLabel, usesCounted,
+  comboNotes, comboSentence, macroRemoveNote, outcome, tapDanceClearNote, tapDanceSentence, useLabel, usesCounted,
 } from "./sentences";
 
 const model = corne({
@@ -297,5 +297,19 @@ describe("macroRemoveNote", () => {
 
   it("is null when nothing uses it: it is removed at once", () => {
     expect(macroRemoveNote(3, [])).toBeNull();
+  });
+});
+
+describe("tapDanceClearNote", () => {
+  it("says what uses the tap dance, which does nothing once it is cleared", () => {
+    expect(tapDanceClearNote(0, [
+      { type: "key", layer: 1, ref: { kind: "key", index: 38 } },
+      { type: "key", layer: 2, ref: { kind: "key", index: 38 } },
+    ])).toBe("2 keys use TD(0). Once the tap dance is cleared, TD(0) does nothing there until one of its slots is set " +
+      "again.");
+  });
+
+  it("is null when nothing uses it: it is cleared at once", () => {
+    expect(tapDanceClearNote(3, [])).toBeNull();
   });
 });
