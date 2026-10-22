@@ -17,9 +17,20 @@ describe("readLessonSet", () => {
     expect(() => readLessonSet({ ...set, format: "vial-web-lessons/2" })).toThrow("format");
     expect(() => readLessonSet({ ...set, id: "" })).toThrow("id");
     expect(() => readLessonSet({ ...set, id: "bad id!" })).toThrow("id");
+    expect(() => readLessonSet({ ...set, id: "-leading" })).toThrow("id");
+    expect(() => readLessonSet({ ...set, id: "x".repeat(65) })).toThrow("id");
+    expect(readLessonSet({ ...set, id: "x".repeat(64) }).id).toBe("x".repeat(64));
     expect(() => readLessonSet({ ...set, lessons: {} })).toThrow("lessons");
+    expect(() => readLessonSet({ ...set, lessons: [] })).toThrow("no lessons");
     expect(() => readLessonSet({ ...set, lessons: [{ id: "01" }] })).toThrow("lesson 01");
     const lesson = set.lessons[0];
+    expect(() => readLessonSet({ ...set, lessons: [{ ...lesson, exercises: [] }] })).toThrow("lesson 01 has no exercises");
+    for (const bad of [{}, { char: "" }, { char: "ab" }, { char: 7 }, "s"]) {
+      expect(() => readLessonSet({ ...set, lessons: [{ ...lesson, new: [bad] }] })).toThrow("lesson 01: each entry of new");
+    }
+    // a review lesson adds nothing; a character outside the BMP is still one character
+    expect(readLessonSet({ ...set, lessons: [{ ...lesson, new: [] }] }).lessons[0].new).toEqual([]);
+    expect(readLessonSet({ ...set, lessons: [{ ...lesson, new: [{ char: "𝄞" }] }] }).lessons[0].new).toEqual([{ char: "𝄞" }]);
     expect(() => readLessonSet({ ...set, lessons: [{ ...lesson, exercises: [{ id: "x" }] }] }))
       .toThrow("exercise x");
     expect(() => readLessonSet({ ...set, lessons: [{ ...lesson, exercises: [{ id: "x", kind: "song", lines: ["a"] }] }] }))

@@ -33,7 +33,7 @@ describe("parseRoute", () => {
   it("is the Learning list for a path it can't read", () => {
     const list = { section: "learning", item: null, path: [] };
     for (const hash of ["#learning/", "#learning//01", "#learning/a/b/c/d", "#learning/a b", "#learning/a.json",
-      "#learning/ą", `#learning/${"x".repeat(65)}`, "#learning/a/"]) {
+      "#learning/ą", `#learning/${"x".repeat(65)}`, "#learning/a/", "#learning/-a", "#learning/_a"]) {
       expect(parseRoute(hash)).toEqual(list);
     }
     expect(parseRoute(`#learning/${"x".repeat(64)}`)).toEqual({ ...list, path: ["x".repeat(64)] });

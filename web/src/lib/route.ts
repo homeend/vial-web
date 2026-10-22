@@ -23,6 +23,11 @@ export function isWhole(section: SectionId): boolean {
   return WHOLE.includes(section);
 }
 
+/** Whether a section's address holds a path of names (the Learning section) rather than an entry number */
+export function isPathed(section: SectionId): boolean {
+  return section === PATHED;
+}
+
 export interface Route {
   section: SectionId;
   /** the entry to show (a tap dance, combo, macro, key override or alt-repeat key), or null */
@@ -33,8 +38,9 @@ export interface Route {
 
 export const HOME: Route = { section: "keymap", item: null, path: [] };
 
-/** one name of a Learning path: a set id, a lesson id, an exercise id or "fingers" */
-const NAME = /^[A-Za-z0-9_-]{1,64}$/;
+/** one name of a Learning path: a set id, a lesson id, an exercise id or "fingers"; the lesson set schema's id pattern
+ * (docs/learning/lesson-set.schema.json), which learning/types.ts checks a set's id against too */
+export const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const PATH_MAX = 3;
 
 /** "#combos/2" -> combo 2 on the Combos page; a section with no entries leaves the number out; "#learning/<set>/<lesson>"
@@ -54,7 +60,7 @@ export function parseRoute(hash: string): Route {
 
 /** The address of a route; a section with no entries never names one, and only the Learning section writes a path */
 export function routeHash(route: Route): string {
-  if (route.section === PATHED) return ["#learning", ...route.path].join("/");
+  if (route.section === PATHED) return [`#${PATHED}`, ...route.path].join("/");
   return route.item === null || WHOLE.includes(route.section) ? `#${route.section}` : `#${route.section}/${route.item}`;
 }
 

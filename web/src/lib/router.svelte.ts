@@ -2,7 +2,7 @@
 // Outside a browser (unit tests without a DOM) there is no address: the route is only kept here.
 import { untrack } from "svelte";
 import type { Place } from "../analysis/find";
-import { HOME, isWhole, parseRoute, routeHash, sameRoute, type Route, type SectionId } from "./route";
+import { HOME, isPathed, isWhole, parseRoute, routeHash, sameRoute, type Route, type SectionId } from "./route";
 
 export class Router {
   // what the address says from the start, so a reload doesn't show the keymap first
@@ -39,13 +39,14 @@ export class Router {
     });
   }
 
-  /** Show a section (and a card in it, or a Learning view by its `path`). `replace` changes the address without a new
+  /** Show a section (and a card in it, or a Learning view by its `path`; the path's names must match the address
+   * pattern (route.ts's NAME), or the address is read back as the list). `replace` changes the address without a new
    * step back, for opening something on the page shown */
   go(
     section: SectionId, item: number | null = null,
     { replace = false, path = [] }: { replace?: boolean; path?: readonly string[] } = {},
   ): void {
-    const route: Route = section === "learning"
+    const route: Route = isPathed(section)
       ? { section, item: null, path }
       : { section, item: isWhole(section) ? null : item, path: [] };
     this.fromAddress = false;
