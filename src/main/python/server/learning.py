@@ -58,7 +58,7 @@ def _number(value):
 
 
 def _key_id(value):
-    return isinstance(value, str) and KEY_ID.match(value) is not None
+    return isinstance(value, str) and KEY_ID.fullmatch(value) is not None
 
 
 def _clean_attempt(attempt):
@@ -118,14 +118,14 @@ class LearningStore:
     # ---------- files ----------
 
     def _dir(self, uid):
-        if not isinstance(uid, str) or not ID.match(uid):
+        if not isinstance(uid, str) or not ID.fullmatch(uid):
             raise ValueError("not a keyboard uid: {!r}".format(uid))
         return os.path.join(self.root, uid)
 
     @staticmethod
     def _check_set_id(set_id):
         """ NotFound for an id that can't be a lesson set's (so a path made of it never leaves its folder) """
-        if not isinstance(set_id, str) or not ID.match(set_id):
+        if not isinstance(set_id, str) or not ID.fullmatch(set_id):
             raise NotFound("no lesson set {!r}".format(set_id))
 
     def _set_path(self, uid, set_id):
@@ -264,7 +264,7 @@ class LearningStore:
             out = []
             for name in names:
                 set_id = name[:-len(".json")]
-                if not ID.match(set_id):
+                if not ID.fullmatch(set_id):
                     out.append(self._summary(set_id, None, "file name: letters, digits, - and _ only"))
                     continue
                 try:
@@ -342,20 +342,21 @@ class LearningStore:
     def record(self, uid, set_id, exercise_id, attempt):
         """ An exercise typed to the end: attempt = {at, chars, errors, seconds}; accuracy and WPM are computed here,
         the exercise is done, its best attempt the one with the highest accuracy then WPM (of all time), and the last
-        ATTEMPTS_KEPT attempts are kept; the progress of exercises the set no longer has is dropped. NotFound when the
-        set has no such exercise; ValueError for numbers that can't be. Returns the exercise's progress entry. """
+        ATTEMPTS_KEPT attempts are kept; the progress of exercises the set no longer has is dropped. Every wrong press
+        counts an error, so errors may exceed chars: accuracy floors at 0. NotFound when the set has no such exercise;
+        ValueError for numbers that can't be. Returns the exercise's progress entry. """
         chars, errors, seconds = attempt.get("chars"), attempt.get("errors"), attempt.get("seconds")
         if not all(_number(v) for v in (chars, errors, seconds)) or not isinstance(attempt.get("at"), str):
             raise ValueError("an attempt has at (a string), chars, errors and seconds (finite numbers)")
         if any(isinstance(v, float) and not v.is_integer() for v in (chars, errors)):
             raise ValueError("an attempt's chars and errors are whole numbers")
-        if chars < 1 or errors < 0 or errors > chars or seconds <= 0:
-            raise ValueError("an attempt has at least one character, no more errors than characters and some time")
+        if chars < 1 or errors < 0 or seconds <= 0:
+            raise ValueError("an attempt has at least one character, no negative errors and some time")
         if isinstance(seconds, float) and seconds.is_integer():
             seconds = int(seconds)
         entry = {"at": attempt["at"], "chars": int(chars), "errors": int(errors),
-                 "accuracy": round(100 * (chars - errors) / chars, 1), "wpm": round(chars / 5 / (seconds / 60), 1),
-                 "seconds": seconds}
+                 "accuracy": max(0.0, round(100 * (chars - errors) / chars, 1)),
+                 "wpm": round(chars / 5 / (seconds / 60), 1), "seconds": seconds}
         with self.lock:
             lesson_set, error = self._read_set_named(uid, set_id)
             if error:

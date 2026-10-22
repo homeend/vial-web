@@ -98,6 +98,15 @@ def test_bad_uids_and_ids_stay_inside_the_store(store):
         store.progress(UID, "a/b")
     with pytest.raises(NotFound):
         store.delete_set(UID, "")
+    # an id is matched whole: a trailing newline is no part of one (re.match would let "$" stop before it)
+    with pytest.raises(ValueError):
+        store.settings("abc\n")
+    with pytest.raises(NotFound):
+        store.set(UID, "abc\n")
+    with pytest.raises(NotFound):
+        store.progress(UID, "abc\n")
+    with pytest.raises(ValueError):
+        store.set_fingers(UID, {"keys": {"r0c5\n": {"finger": "index", "reach": "up"}}, "home": []})
 
 
 # ---------- the store: fingers ----------
@@ -338,7 +347,7 @@ def test_record_refuses_unknown_exercises_and_bad_numbers(store):
     with pytest.raises(NotFound):
         store.record(UID, "other", "01-n1", attempt())
     nan, inf = float("nan"), float("inf")
-    for bad in (attempt(chars=0), attempt(errors=-1), attempt(errors=101), attempt(seconds=0),
+    for bad in (attempt(chars=0), attempt(errors=-1), attempt(seconds=0),
                 attempt(chars="100"), attempt(chars=True), {"chars": 1, "errors": 0, "seconds": 1},
                 attempt(seconds=nan), attempt(chars=nan), attempt(errors=nan), attempt(seconds=inf),
                 attempt(chars=inf), attempt(errors=-inf), attempt(chars=100.5), attempt(errors=0.5)):
@@ -349,6 +358,23 @@ def test_record_refuses_unknown_exercises_and_bad_numbers(store):
     entry = store.record(UID, "mini", "01-n1", attempt(chars=100.0, errors=2.0, seconds=60))
     assert entry["best"]["chars"] == 100 and isinstance(entry["best"]["chars"], int)
     assert entry["best"]["errors"] == 2 and isinstance(entry["best"]["errors"], int)
+
+
+def test_an_attempt_with_more_errors_than_characters_is_recorded_at_zero_accuracy(store):
+    """ The engine counts every wrong press (lesson-format.md section 4), so a 3-character exercise can end with 4 """
+    store.import_set(UID, minimal_set())
+    entry = store.record(UID, "mini", "01-n1", attempt(chars=3, errors=4, seconds=6))
+    assert entry["done"] is True
+    assert entry["best"] == {"at": "2026-10-22T07:40:12Z", "chars": 3, "errors": 4, "accuracy": 0.0, "wpm": 6.0,
+                             "seconds": 6}
+    assert entry["attempts"] == [entry["best"]]
+    # as many errors as characters is 0 % too, not -0.0; and the file holds what was returned
+    same = store.record(UID, "mini", "01-n1", attempt(chars=3, errors=3, seconds=6, at="t2"))
+    assert same["attempts"][-1]["accuracy"] == 0.0 and str(same["attempts"][-1]["accuracy"]) == "0.0"
+    assert store.progress(UID, "mini")["exercises"]["01-n1"] == same
+    # a cleaner attempt is the new best; the 0 % ones stay in the attempts
+    better = store.record(UID, "mini", "01-n1", attempt(chars=3, errors=1, seconds=6, at="t3"))
+    assert better["best"]["at"] == "t3" and better["best"]["accuracy"] == 66.7 and len(better["attempts"]) == 3
 
 
 def test_record_drops_the_progress_of_exercises_the_set_no_longer_has(store):
@@ -554,12 +580,16 @@ def test_progress_over_the_api(client):
     assert client.put("/api/learning/progress/corne-sim-en/99-x", json=attempt()).status_code == 404
     assert client.put("/api/learning/progress/other-set/01-n1", json=attempt()).status_code == 404
     assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(chars=0)).status_code == 422
-    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(errors=300)).status_code == 422
     assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(seconds=0)).status_code == 422
+    assert client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(errors=-1)).status_code == 422
     assert client.put("/api/learning/progress/corne-sim-en/01-n1",
                       json={**attempt(), "accuracy": 50}).status_code == 422
     assert client.get("/api/learning/progress/corne-sim-en").json() == progress
     assert client.get("/api/learning/progress/never").json()["exercises"] == {}
+    # more errors than characters is saved, at 0 % (every wrong press counts)
+    worst = client.put("/api/learning/progress/corne-sim-en/01-n1", json=attempt(errors=300, at="t3"))
+    assert worst.status_code == 200, worst.text
+    assert worst.json()["attempts"][-1]["accuracy"] == 0 and worst.json()["best"]["at"] == "t2"
 
 
 def test_settings_over_the_api(client):
