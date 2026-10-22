@@ -28,7 +28,7 @@ that doesn't validate is listed with its error and not opened.
 What the app knows about the keyboard, reduced to what lessons need. Until the app's Learning page exists,
 `util/learning/export_layout.py keyboard.json -o layout-export.json` makes one from a saved `GET /api/keyboard`
 reply (the same rules; it is the prototype of the server's export). `examples/corne-sim-layout-export.json` is
-the simulated Corne's. Example (two keys of it):
+the simulated Corne's, `examples/ansi-60-layout-export.json` a plain US QWERTY's. Example (two keys of it):
 
 ```json
 {

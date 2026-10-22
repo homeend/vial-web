@@ -38,7 +38,9 @@ releases, see [get.vial.today](https://get.vial.today/).
   Code, which writes a lesson set; import it, and type the lessons with the next key lit on the keyboard picture.
   Accuracy and speed are recorded per keyboard; a lesson passes at the pass accuracy, a star at the target speed;
   a set's progress can be reset (every attempt and best forgotten, the lessons kept). A set built for an earlier
-  layout (a character moved since) can be re-fitted to the layout as it is now, its lessons and progress kept
+  layout (a character moved since) can be re-fitted to the layout as it is now, its lessons and progress kept.
+  A ready course for a plain US QWERTY board, with a simulated board to type it on without hardware, is in
+  [`docs/learning/examples/`](docs/learning/examples/ansi-60/README.md)
   ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)).
   Nothing is written to the keyboard.
 - Several keyboards plugged in: choose which one to edit. Unlocking, when the keyboard asks for it.
