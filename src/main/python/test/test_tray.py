@@ -145,9 +145,12 @@ def test_an_icon_loop_that_returns_at_once_serves_in_the_main_thread(caplog):
 def test_a_stop_signal_calls_stop_from_a_thread_while_the_main_thread_is_busy():
     stopped = threading.Event()
     before = signal.pthread_sigmask(signal.SIG_BLOCK, set())
-    with tray._StopSignals(stopped.set):
+    with tray._StopSignals(stopped.set) as taken:
         assert signal.SIGTERM in signal.pthread_sigmask(signal.SIG_BLOCK, set())  # blocked here, taken by the thread
-        os.kill(os.getpid(), signal.SIGTERM)
+        # sent to the waiting thread itself: in Vial every thread is started after the block and inherits it, but
+        # the test runner's own threads (pytest-xdist's) don't block SIGTERM, and a signal sent to the whole process
+        # could end the runner through one of them
+        signal.pthread_kill(taken.thread.ident, signal.SIGTERM)
         assert stopped.wait(5)
     assert signal.pthread_sigmask(signal.SIG_BLOCK, set()) == before
 

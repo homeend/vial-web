@@ -97,6 +97,8 @@ class _StopSignals:
         self.stop = stop
         self.signals = set()
         self.previous_mask = None
+        self.thread = None
+        """ the thread waiting for the signals, once entered on a POSIX system """
 
     def __enter__(self):
         if not hasattr(signal, "pthread_sigmask") or not hasattr(signal, "sigwait"):
@@ -108,7 +110,8 @@ class _StopSignals:
         if not self.signals:
             return self
         self.previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, self.signals)
-        threading.Thread(target=self._wait, name="stop signals", daemon=True).start()
+        self.thread = threading.Thread(target=self._wait, name="stop signals", daemon=True)
+        self.thread.start()
         return self
 
     def _wait(self):
