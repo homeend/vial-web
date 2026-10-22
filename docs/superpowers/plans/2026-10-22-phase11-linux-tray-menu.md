@@ -28,5 +28,5 @@ Design: [`2026-10-22-linux-tray-menu-design.md`](../specs/2026-10-22-linux-tray-
 - [x] 8. **Full suites and CI.** pytest Windows 1302 passed / 15 skipped, WSL 1313 / 4; `main` merged in
   (phase 9); pushed: Build (the Linux executable with dbus-fast, its smoke test's `--self-check`, e2e) and
   Test green on three systems (`35379b5`; Linux artifact: run 39765183494).
-- [ ] 9. **Owner check** on GNOME with the AppIndicator extension: the icon, its menu (Open Vial, Quit Vial), the
-  notification when the last tab closes. Then the merge and a release.
+- [x] 9. **Owner check** on GNOME with the AppIndicator extension: the icon, its menu (Open Vial, Quit Vial), the
+  notification when the last tab closes (2026-10-22: "it works"). Then the merge and a release.
