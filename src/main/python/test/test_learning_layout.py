@@ -171,6 +171,29 @@ def test_qwerty_corne_has_five_home_row_letters_and_the_inner_ones_are_the_index
     assert by_tap["KC_SPACE"]["home"] and by_tap["KC_ENTER"]["home"]
 
 
+def test_a_plain_altgr_key_carries_its_hold_so_the_picture_can_light_it():
+    """ the QWERTY Corne's right inner thumb is KC_RALT: nothing to type, but the way to a Polish letter """
+    built = model_of(qwerty_corne)
+    export = learning_layout.export(built)
+    keys, ids = {k["id"]: k for k in export["keys"]}, ids_by_tap(built)
+    assert keys[ids["KC_RALT"]]["chars"] == {"0": {"hold": "AltGr"}}
+    assert keys[ids["KC_RALT"]]["row"] == "thumb"
+    # the other plain modifiers carry nothing, as before
+    assert keys[ids["KC_LALT"]]["chars"] == {} and keys[ids["KC_LGUI"]]["chars"] == {}
+    assert keys[ids["KC_LCTRL"]]["chars"] == {} and keys[ids["KC_LSHIFT"]]["chars"] == {}
+    # the right Alt alone with no key, as describe names it
+    assert learning_layout.describe_key({"code": "RALT(KC_NO)", "kind": "modifier", "legend": {"main": "AltGr"}}, []) \
+        == learning_layout.KeyOnLayer(None, "AltGr", None, False)
+    assert learning_layout.describe_key(describe.describe("RALT(KC_NO)"), []).hold == "AltGr"
+    # hold is not in the hash: the same keymap with a left Alt there hashes the same
+    swapped = json.loads(json.dumps(built))
+    for k in swapped["layers"][0]["keys"]:
+        if k["code"] == "KC_RALT":
+            k.update(describe.describe("KC_LALT"))
+    assert learning_layout.export(swapped)["hash"] == export["hash"]
+    assert learning_layout.export(swapped)["keys"] != export["keys"]
+
+
 def test_corne_proposal_matches_the_worked_example(corne_model):
     """ docs/learning/examples/corne-sim-layout-export.json was made by the verified prototype """
     with open(os.path.join(EXAMPLES, "corne-sim-layout-export.json"), encoding="utf-8") as inf:

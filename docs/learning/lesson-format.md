@@ -62,7 +62,9 @@ the simulated Corne's. Example (two keys of it):
   valid when a layer is renamed or a macro changes, and is marked **out of date** when a character moves. It doesn't
   cover `shiftKeys`: a Shift key moved or removed doesn't mark a set out of date.
 - `chars.<layer>` has `tap`, and `shift` / `altGr` when those differ; a key with no printable result on a layer is
-  left out of that layer. `hold` is a short label for what holding does (`"Shift"`, `"Ctrl"`, `"layer 2"`).
+  left out of that layer. `hold` is a short label for what holding does (`"Shift"`, `"Ctrl"`, `"layer 2"`). A plain
+  AltGr key (`KC_RALT`) types nothing but has `"0": { "hold": "AltGr" }`, so the picture can light it for an `altGr`
+  character.
 - Transparent keys are resolved: a layer-1 entry shows what the key does *when layer 1 is on*.
 - `x`, `y` are the key's centre in key units, for the generator's own sanity checks only.
 - The export, and so the hash, is made in the app's keyboard language (`language`): the legends differ between

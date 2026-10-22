@@ -35,6 +35,9 @@ SHIFT_CODES = ("KC_LSHIFT", "KC_RSHIFT")
 SHIFT_HOLDS = ("Shift", "LShift", "RShift")
 """ what a key that gives Shift alone is called: describe.mods_name of a lone left or right Shift (a mod-tap's hold,
 a one-shot modifier's legend) and the legends of KC_LSHIFT / KC_RSHIFT (a tap dance's hold). Ctrl+Shift is not one """
+ALT_GR_CODES = ("KC_RALT", "KC_ALGR", "KC_ROPT")
+ALT_GR = "AltGr"
+""" a plain right Alt: the keycode (and its aliases) and describe.mods_name of the modifier alone (RALT(KC_NO)) """
 
 
 def char_of(legend, code, tap_code):
@@ -116,7 +119,10 @@ def describe_key(k, tap_dances):
             hold = (h.get("legend") or {}).get("main")
         return KeyOnLayer(chars, hold, layer_key, False)
     if k.get("kind") == "modifier":
-        return KeyOnLayer(None, None, None, False)
+        # a plain modifier types nothing, and no lesson drills it; but AltGr reaches characters, so a plain AltGr key
+        # carries its hold for the picture to light (a mod-tap's AltGr hold comes with its characters below)
+        alt_gr = code in ALT_GR_CODES or (k.get("legend") or {}).get("main") == ALT_GR
+        return KeyOnLayer(None, ALT_GR if alt_gr else None, None, False)
     return KeyOnLayer(char_of(k.get("legend"), code, k.get("tapCode")), hold, layer_key, False)
 
 
