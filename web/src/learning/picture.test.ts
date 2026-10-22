@@ -28,6 +28,26 @@ describe("placeOfChars", () => {
     expect(places.get(" ")).toEqual({ key: "r3c4", layer: 0, via: "tap" });
     expect(placeOfChars(set, { ...layout, keys: [] }).has(" ")).toBe(false);
   });
+
+  it("keeps the lesson's own path label", () => {
+    const withPath = { ...set, lessons: [{ ...set.lessons[0], new: [{ char: "(", key: "r1c3", layer: 1, via: "tap" as const, path: "hold the left thumb" }] }] };
+    expect(placeOfChars(withPath, layout).get("(")).toEqual({ key: "r1c3", layer: 1, via: "tap", path: "hold the left thumb" });
+    expect(placeOfChars(set, layout).get("s")).not.toHaveProperty("path");
+  });
+
+  it("skips an entry without a key and defaults a missing layer and via, as the checker allows them", () => {
+    // the file's entries, not the type's: the server accepts a bare char
+    const loose = { ...set, lessons: [{ ...set.lessons[0], new: [{ char: "x" }, { char: "y", key: "r1c1" }] as never[] }] };
+    const got = placeOfChars(loose, layout);
+    expect(got.has("x")).toBe(false);
+    expect(got.get("y")).toEqual({ key: "r1c1", layer: 0, via: "tap" });
+    const picture = pictureFor("x", got, placement, layout, { fadeOthers: true });
+    expect(picture.highlights).not.toContain(true);
+    expect(picture.pressed).not.toContain(true);
+    expect(picture.faded).not.toContain(true);
+    expect(marked(pictureFor("y", got, placement, layout, { fadeOthers: false }).highlights)).toEqual(["r1c1"]);
+    expect(nextKeyLabel(got.get("y")!, layout)).toBe("S");
+  });
 });
 
 describe("keyIndex", () => {
@@ -100,6 +120,38 @@ describe("pictureFor", () => {
     expect(marked(picture.pressed)).toEqual(["r5c3"]);
   });
 
+  it("presses a plain AltGr key, which the export marks by its hold alone", () => {
+    const polish = new Map<string, PlaceOf>([["ą", { key: "r5c4", layer: 0, via: "altGr" }]]);
+    const altGrThumb = (chars: LayoutExport["keys"][number]["chars"]) => layout.keys.map((key) =>
+      key.id === "r7c5" ? { ...key, chars: { "0": { hold: "AltGr" } } } : key.id === "r5c3" ? { ...key, chars } : key);
+    // the right outer thumb is AltGr, E is a plain letter
+    let keys = altGrThumb({ "0": { tap: "e", shift: "E" } });
+    expect(marked(pictureFor("ą", polish, placement, { ...layout, keys }, { fadeOthers: false }).pressed)).toEqual(["r7c5"]);
+    // both: E is a resting key, so it wins over the thumb
+    keys = altGrThumb(layout.keys.find((key) => key.id === "r5c3")!.chars);
+    expect(marked(pictureFor("ą", polish, placement, { ...layout, keys }, { fadeOthers: false }).pressed)).toEqual(["r5c3"]);
+  });
+
+  it("prefers a resting key, then a thumb key, among several Shift or layer keys", () => {
+    // layer 2 is reached by B (top row) and by S (a resting key): S is pressed
+    const onLayer2 = new Map<string, PlaceOf>([["q", { key: "r4c5", layer: 2, via: "tap" }]]);
+    expect(marked(pictureFor("q", onLayer2, placement, layout, { fadeOthers: false }).pressed)).toEqual(["r1c1"]);
+    // the right-hand Shifts listed as the bottom-row Shift first, then I (hold), a resting key: I is pressed
+    const capitals = new Map<string, PlaceOf>([["S", { key: "r1c1", layer: 0, via: "shift" }]]);
+    const shiftsReversed = { ...layout, shiftKeys: [...layout.shiftKeys].reverse() };
+    expect(marked(pictureFor("S", capitals, placement, shiftsReversed, { fadeOthers: false }).pressed)).toEqual(["r5c1"]);
+    // no resting key among them: a thumb key, else the first listed
+    const reachedBy = (keys: string[]) => ({
+      ...layout, layers: layout.layers.map((l) => l.index === 2
+        ? { ...l, reachedBy: keys.map((key) => ({ key, how: "hold" as const, label: `hold ${key}` })) } : l),
+    });
+    expect(marked(pictureFor("q", onLayer2, placement, reachedBy(["r0c3", "r3c3", "r2c1"]), { fadeOthers: false }).pressed))
+      .toEqual(["r3c3"]);
+    expect(marked(pictureFor("q", onLayer2, placement, reachedBy(["r0c3", "r2c1"]), { fadeOthers: false }).pressed))
+      .toEqual(["r0c3"]);
+    expect(nextKeyLabel({ key: "r4c5", layer: 2, via: "tap" }, reachedBy(["r0c3", "r3c3"]))).toBe("hold r3c3 → Q");
+  });
+
   it("lights the space key", () => {
     const picture = pictureFor(" ", places, placement, layout, { fadeOthers: true });
     expect(marked(picture.highlights)).toEqual(["r3c4"]);
@@ -126,6 +178,16 @@ describe("nextKeyLabel", () => {
     expect(nextKeyLabel({ key: "r1c1", layer: 1, via: "shift" }, layout)).toBe("hold Space → Shift + `");
     expect(nextKeyLabel({ key: "r1c1", layer: 3, via: "tap" }, layout)).toBe("tap OSL 3 → 1");
     expect(nextKeyLabel({ key: "r1c1", layer: 0, via: "altGr" }, layout)).toBe("AltGr + S");
+    // the way to a layer is the key the picture presses: S (a resting key), not B
+    expect(nextKeyLabel({ key: "r4c5", layer: 2, via: "tap" }, layout)).toBe("hold S → Q");
+  });
+
+  it("names the way to a layer as the lesson's path when it has one", () => {
+    expect(nextKeyLabel({ key: "r1c3", layer: 1, via: "tap", path: "hold the left thumb" }, layout))
+      .toBe("hold the left thumb → (");
+    expect(nextKeyLabel({ key: "r1c1", layer: 7, via: "shift", path: "tap Fn" }, layout)).toBe("tap Fn → Shift + S");
+    // on layer 0 there is no way to name
+    expect(nextKeyLabel({ key: "r1c1", layer: 0, via: "tap", path: "hold Space" }, layout)).toBe("S");
   });
 
   it("says what it can about a key or layer the export doesn't have", () => {
