@@ -37,8 +37,9 @@ releases, see [get.vial.today](https://get.vial.today/).
 - **Tray icon** (new in 1.0.0): while Vial runs it shows an icon (Vial's logo on a light square) in the notification
   area (on Windows no console window opens any more). Its menu has **Open Vial**, which opens the page in the
   browser, and **Quit Vial**, which stops Vial. When the last tab closes, the icon says that Vial is still running.
-  On Linux and macOS the icon appears where the desktop has a tray or menu bar for it (see "Download and run");
-  without one, Vial runs as before, from the terminal.
+  On Linux the icon, with its menu, is in the panel's status area on every current desktop (KDE Plasma, GNOME with
+  its AppIndicator extension, XFCE, Cinnamon, MATE and others, on X11 and Wayland); on macOS it is in the menu bar.
+  Without a panel for it, Vial runs as before, from the terminal (see "Download and run").
 
 ## Status
 
@@ -54,6 +55,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 | 7 | Firmware flasher (its logic is in `src/main/python/protocol/flasher.py`, without a UI yet) | optional |
 | 8 | Arrange layers: move layers, every layer reference and name follows ([design](docs/superpowers/specs/2026-10-21-arrange-layers-design.md)) | done (0.9.0) |
 | 10 | Tray icon instead of the console window: Open Vial and Quit Vial on its menu; Windows build without a console ([design](docs/superpowers/specs/2026-10-22-tray-icon-design.md)) | done |
+| 11 | A menu on the Linux tray icon: Vial's own StatusNotifierItem over D-Bus, with notifications, on X11 and Wayland ([design](docs/superpowers/specs/2026-10-22-linux-tray-menu-design.md)) | done |
 
 Design: [`docs/superpowers/specs/2026-10-15-vial-web-ui-design.md`](docs/superpowers/specs/2026-10-15-vial-web-ui-design.md).
 Roadmap: [`docs/superpowers/plans/2026-10-15-roadmap-phases-2-7.md`](docs/superpowers/plans/2026-10-15-roadmap-phases-2-7.md).
@@ -83,11 +85,12 @@ Close Vial's Qt app or another configurator first: they would use the keyboard a
 - **Linux:** `vial`, built on Ubuntu 22.04 (it needs glibc 2.35 or newer). Unpack it and run it from a terminal:
   `tar -xzf vial-<version>-linux-x64.tar.gz && ./vial`. Vial needs a udev rule to see keyboards: add it as
   [get.vial.today's Linux instructions](https://get.vial.today/manual/linux-udev.html) say, then plug the keyboard in
-  again. The terminal shows the link as before; on an X11 session whose panel takes tray icons (XFCE, MATE,
-  Cinnamon, KDE Plasma, among others), Vial also shows its icon, which opens Vial when clicked (the executable's
-  icon has no menu on Linux: Quit is on the page, or Ctrl+C). On Wayland, or on GNOME without its AppIndicator
-  extension, there is no icon and Vial runs as before. Run from source with the system's PyGObject installed, the
-  icon has its menu too.
+  again. The terminal shows the link as before, and Vial's icon appears in the panel's status area, with **Open
+  Vial** and **Quit Vial** on its menu (the right button; a click opens Vial), on every desktop that takes
+  StatusNotifier icons: KDE Plasma, GNOME with its AppIndicator extension (without it, GNOME shows no status
+  icons at all), XFCE, Cinnamon, MATE, Budgie, LXQt, Waybar and others, on X11 and Wayland alike. On an older
+  panel that takes only XEmbed tray icons (X11), the icon shows without a menu: a click opens Vial, Quit is on the
+  page or Ctrl+C. Without any panel for it, there is no icon and Vial runs as before.
 - **macOS** (Apple silicon): `vial`, built as is and not tested beyond the CI's smoke test. It isn't signed with a
   developer certificate or notarized. Run `tar -xzf vial-<version>-macos-arm64.tar.gz && ./vial` in Terminal (for an
   artifact: `chmod +x vial && ./vial`); if macOS refuses to open it, run
@@ -117,9 +120,9 @@ macOS, `kill` (SIGTERM) and closing the terminal (SIGHUP) stop it cleanly as wel
 its cleanup, and the system releases the keyboard.
 
 Closing the browser tabs doesn't stop Vial: once the last one has closed, the tray icon shows a notification that
-Vial is still running (on Windows and macOS, and on Linux when run from source with PyGObject), and a console or
-terminal says so and prints the link to reopen it. **Open Vial** on the icon's menu opens the page again (on Windows
-and Linux, a click on the icon does the same).
+Vial is still running (except from an XEmbed-only icon on Linux), and a console or terminal says so and prints the
+link to reopen it. **Open Vial** on the icon's menu opens the page again (on Windows and Linux, a click on the icon
+does the same).
 
 ### Command-line options
 
@@ -240,8 +243,8 @@ packages of `requirements.txt`). Each system builds only its own executable: bui
    ```
 
    It is one file that you can copy anywhere and run: the Python runtime, hidapi, the web UI, `qmk_settings.json`
-   and the tray icon's libraries (pystray, Pillow) are inside it. On Windows it is a windowed app, without a
-   console, with Vial's icon and version info; on Linux and macOS a terminal program.
+   and the tray icon's libraries (pystray, Pillow; dbus-fast on Linux) are inside it. On Windows it is a windowed
+   app, without a console, with Vial's icon and version info; on Linux and macOS a terminal program.
    `vial.spec` refuses to build without the web UI of step 1. PyInstaller also leaves its working files in `build/`;
    you can delete that folder. The version is set in `src/main/python/version.py`.
 

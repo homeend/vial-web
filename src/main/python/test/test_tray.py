@@ -232,6 +232,43 @@ def test_the_tray_image_is_the_round_logo_on_a_light_square_with_rounded_corners
     assert logo.size == (256, 256)  # the logo isn't changed
 
 
+def test_on_linux_vials_own_statusnotifier_icon_comes_first(fake_pystray, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    made, opened, quit_used = [], [], []
+    own = object()
+
+    def make(name, image, title, items):
+        made.append((name, image, title, items))
+        return own, None
+    monkeypatch.setattr(tray.statusnotifier, "make", make)
+    assert tray.make("Vial", lambda: opened.append(True), lambda: quit_used.append(True)) is own
+    name, image, title, items = made[0]
+    assert (name, title, image.size) == (tray.ICON_NAME, "Vial", (tray.IMAGE_SIDE, tray.IMAGE_SIDE))
+    assert [(item.label, item.default) for item in items] == [(tray.OPEN, True), (tray.QUIT, False)]
+    items[0].action()
+    items[1].action()
+    assert opened == [True] and quit_used == [True]
+    assert fake_pystray.icons == []  # pystray wasn't asked
+
+
+def test_on_linux_without_a_statusnotifier_host_pystrays_icon_is_used(fake_pystray, monkeypatch, caplog):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(tray.statusnotifier, "make", lambda name, image, title, items: (None, "no watcher"))
+    with caplog.at_level(logging.INFO):
+        icon = tray.make("Vial", lambda: None, lambda: None)
+    assert icon is fake_pystray.icons[0]
+    assert "no StatusNotifier tray icon: no watcher; trying pystray" in caplog.text
+
+
+def test_elsewhere_the_statusnotifier_icon_is_not_asked_for(fake_pystray, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    def not_here(*args):
+        raise AssertionError("statusnotifier.make called off Linux")
+    monkeypatch.setattr(tray.statusnotifier, "make", not_here)
+    assert tray.make("Vial", lambda: None, lambda: None) is fake_pystray.icons[0]
+
+
 def test_the_icons_image_is_bundled():
     assert resources.ICON in resources.BUNDLED
     assert os.path.isfile(resources.path(resources.ICON))
