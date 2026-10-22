@@ -112,6 +112,30 @@ describe("request", () => {
     expect(error.detail).toBe("Field required; Input should be a valid integer");
   });
 
+  it("keeps the strings of the errors list a refusal gives, and nothing when there is no list", async () => {
+    fetchMock.mockResolvedValue(reply(422, { detail: "the set has errors", errors: ["a", 1, "b"] }));
+    expect((await failure(request("post", "/api/learning/sets", { raw: "{}" }))).errors).toEqual(["a", "b"]);
+    fetchMock.mockResolvedValue(reply(422, { detail: "the set has errors" }));
+    expect((await failure(request("post", "/api/learning/sets", { raw: "{}" }))).errors).toBeUndefined();
+    fetchMock.mockResolvedValue(reply(422, { detail: "the set has errors", errors: "a" }));
+    expect((await failure(request("post", "/api/learning/sets", { raw: "{}" }))).errors).toBeUndefined();
+  });
+
+  it("says which keyboard a delete is for", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    setRequestKeyboard("55d4:0461");
+    expect(await request("delete", "/api/learning/sets/{set}", { params: { set: "mini" } })).toBeNull();
+    const { url, init } = sent();
+    expect(url).toBe("/api/learning/sets/mini");
+    expect(init.method).toBe("DELETE");
+    expect(init.headers).toEqual({ "X-Vial-Keyboard": "55d4%3A0461" });
+  });
+
+  it("returns the JSON of a 201 reply", async () => {
+    fetchMock.mockResolvedValue(reply(201, { id: "mini", warnings: [] }));
+    expect(await request("post", "/api/learning/sets", { raw: "{}" })).toEqual({ id: "mini", warnings: [] });
+  });
+
   it("has no detail when the error reply isn't JSON", async () => {
     fetchMock.mockResolvedValue(new Response("Bad Gateway", { status: 502 }));
     const error = await failure(request("get", "/api/keyboard"));

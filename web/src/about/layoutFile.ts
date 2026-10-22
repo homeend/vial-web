@@ -4,6 +4,7 @@ import type {
   AltRepeatKey, Described, KeyboardModel, KeyOverride, LayoutFilePreview, LayoutOptions, SettingsDefinitions, TapDance,
 } from "../api/types";
 import { layoutChoices } from "../keyboard/geometry";
+import { safeFileName } from "../lib/fileName";
 import { memberName } from "../analysis/phrases";
 import type { Names } from "../keyboard/labels";
 import { refId } from "../keyboard/refs";
@@ -195,9 +196,7 @@ export function changeTotal(sections: PreviewSection[]): number {
   return sections.reduce((n, s) => n + s.count, 0);
 }
 
-/** The name to save a layout under when the server gives none: the keyboard's, without characters file systems
- * refuse */
+/** The name to save a layout under when the server gives none: the keyboard's, made safe for file systems */
 export function layoutFileName(keyboardName: string): string {
-  const name = keyboardName.replace(/[\u0000-\u001f<>:"/\\|?*]+/g, "_").replace(/^[\s._]+|[\s._]+$/g, "");
-  return `${name.slice(0, 100) || "keyboard"}.vil`;
+  return `${safeFileName(keyboardName)}.vil`;
 }

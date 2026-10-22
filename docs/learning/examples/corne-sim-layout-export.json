@@ -1,0 +1,894 @@
+{
+ "format": "vial-web-layout-export/1",
+ "keyboard": {
+  "name": "Simulated Corne",
+  "uid": "5EEDC0DE00420042"
+ },
+ "hash": "sha256:e435c3da038f9048",
+ "exportedAt": "2026-10-21T21:48:05Z",
+ "language": "en-us",
+ "layers": [
+  {
+   "index": 0,
+   "name": "Base",
+   "reachedBy": []
+  },
+  {
+   "index": 1,
+   "name": "Layer 1",
+   "reachedBy": [
+    {
+     "key": "r3c4",
+     "how": "hold",
+     "label": "hold Space"
+    }
+   ]
+  },
+  {
+   "index": 2,
+   "name": "Layer 2",
+   "reachedBy": [
+    {
+     "key": "r0c4",
+     "how": "hold",
+     "label": "hold B"
+    },
+    {
+     "key": "r1c1",
+     "how": "hold",
+     "label": "hold S"
+    }
+   ]
+  },
+  {
+   "index": 3,
+   "name": "Layer 3",
+   "reachedBy": [
+    {
+     "key": "r7c3",
+     "how": "oneShot",
+     "label": "tap OSL 3"
+    }
+   ]
+  }
+ ],
+ "shiftKeys": [
+  {
+   "key": "r1c4",
+   "hand": "left",
+   "label": "T (hold)"
+  },
+  {
+   "key": "r5c1",
+   "hand": "right",
+   "label": "I (hold)"
+  },
+  {
+   "key": "r2c0",
+   "hand": "left",
+   "label": "Shift"
+  },
+  {
+   "key": "r6c0",
+   "hand": "right",
+   "label": "Shift"
+  }
+ ],
+ "keys": [
+  {
+   "id": "r0c0",
+   "hand": "left",
+   "finger": "pinky",
+   "row": "top",
+   "reach": "outer",
+   "home": false,
+   "x": 0.5,
+   "y": 0.5,
+   "chars": {}
+  },
+  {
+   "id": "r0c1",
+   "hand": "left",
+   "finger": "pinky",
+   "row": "top",
+   "reach": "up",
+   "home": false,
+   "x": 1.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "w",
+     "shift": "W",
+     "hold": "Gui"
+    },
+    "1": {
+     "tap": "!"
+    }
+   }
+  },
+  {
+   "id": "r0c2",
+   "hand": "left",
+   "finger": "ring",
+   "row": "top",
+   "reach": "up",
+   "home": false,
+   "x": 2.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "l",
+     "shift": "L"
+    },
+    "1": {
+     "tap": "@"
+    }
+   }
+  },
+  {
+   "id": "r0c3",
+   "hand": "left",
+   "finger": "middle",
+   "row": "top",
+   "reach": "up",
+   "home": false,
+   "x": 3.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "r",
+     "shift": "R"
+    },
+    "1": {
+     "tap": "#"
+    }
+   }
+  },
+  {
+   "id": "r0c4",
+   "hand": "left",
+   "finger": "index",
+   "row": "top",
+   "reach": "up",
+   "home": false,
+   "x": 4.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "b",
+     "shift": "B",
+     "hold": "layer 2"
+    },
+    "1": {
+     "tap": "$"
+    },
+    "2": {
+     "tap": "b",
+     "shift": "B"
+    }
+   },
+   "layerKey": {
+    "layer": 2,
+    "how": "hold"
+   }
+  },
+  {
+   "id": "r0c5",
+   "hand": "left",
+   "finger": "index",
+   "row": "top",
+   "reach": "inner",
+   "home": false,
+   "x": 5.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "z",
+     "shift": "Z"
+    },
+    "1": {
+     "tap": "%"
+    }
+   }
+  },
+  {
+   "id": "r4c5",
+   "hand": "right",
+   "finger": "index",
+   "row": "top",
+   "reach": "inner",
+   "home": false,
+   "x": 9.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "q",
+     "shift": "Q"
+    },
+    "1": {
+     "tap": "^"
+    }
+   }
+  },
+  {
+   "id": "r4c4",
+   "hand": "right",
+   "finger": "index",
+   "row": "top",
+   "reach": "up",
+   "home": false,
+   "x": 10.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "u",
+     "shift": "U"
+    },
+    "1": {
+     "tap": "&"
+    }
+   }
+  },
+  {
+   "id": "r4c3",
+   "hand": "right",
+   "finger": "middle",
+   "row": "top",
+   "reach": "up",
+   "home": false,
+   "x": 11.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "d",
+     "shift": "D"
+    },
+    "1": {
+     "tap": "*"
+    }
+   }
+  },
+  {
+   "id": "r4c2",
+   "hand": "right",
+   "finger": "ring",
+   "row": "top",
+   "reach": "up",
+   "home": false,
+   "x": 12.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "j",
+     "shift": "J"
+    },
+    "1": {
+     "tap": "-",
+     "shift": "_"
+    }
+   }
+  },
+  {
+   "id": "r4c1",
+   "hand": "right",
+   "finger": "pinky",
+   "row": "top",
+   "reach": "up",
+   "home": false,
+   "x": 13.5,
+   "y": 0.5,
+   "chars": {
+    "0": {
+     "tap": "\\",
+     "shift": "|"
+    },
+    "1": {
+     "tap": "_"
+    }
+   }
+  },
+  {
+   "id": "r4c0",
+   "hand": "right",
+   "finger": "pinky",
+   "row": "top",
+   "reach": "outer",
+   "home": false,
+   "x": 14.5,
+   "y": 0.5,
+   "chars": {}
+  },
+  {
+   "id": "r1c0",
+   "hand": "left",
+   "finger": "pinky",
+   "row": "home",
+   "reach": "outer",
+   "home": false,
+   "x": 0.5,
+   "y": 1.5,
+   "chars": {}
+  },
+  {
+   "id": "r1c1",
+   "hand": "left",
+   "finger": "pinky",
+   "row": "home",
+   "reach": "rest",
+   "home": true,
+   "x": 1.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": "s",
+     "shift": "S",
+     "hold": "layer 2"
+    },
+    "1": {
+     "tap": "`",
+     "shift": "~"
+    },
+    "2": {
+     "tap": "s",
+     "shift": "S"
+    },
+    "3": {
+     "tap": "1",
+     "shift": "!"
+    }
+   },
+   "layerKey": {
+    "layer": 2,
+    "how": "hold"
+   }
+  },
+  {
+   "id": "r1c2",
+   "hand": "left",
+   "finger": "ring",
+   "row": "home",
+   "reach": "rest",
+   "home": true,
+   "x": 2.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": "h",
+     "shift": "H",
+     "hold": "Alt"
+    },
+    "1": {
+     "tap": "+"
+    },
+    "3": {
+     "tap": "2",
+     "shift": "@"
+    }
+   }
+  },
+  {
+   "id": "r1c3",
+   "hand": "left",
+   "finger": "middle",
+   "row": "home",
+   "reach": "rest",
+   "home": true,
+   "x": 3.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": "n",
+     "shift": "N",
+     "hold": "Ctrl"
+    },
+    "1": {
+     "tap": "("
+    },
+    "3": {
+     "tap": "3",
+     "shift": "#"
+    }
+   }
+  },
+  {
+   "id": "r1c4",
+   "hand": "left",
+   "finger": "index",
+   "row": "home",
+   "reach": "rest",
+   "home": true,
+   "x": 4.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": "t",
+     "shift": "T",
+     "hold": "Shift"
+    },
+    "1": {
+     "tap": ")"
+    },
+    "3": {
+     "tap": "4",
+     "shift": "$"
+    }
+   }
+  },
+  {
+   "id": "r1c5",
+   "hand": "left",
+   "finger": "index",
+   "row": "home",
+   "reach": "inner",
+   "home": false,
+   "x": 5.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": ",",
+     "shift": "<"
+    },
+    "1": {
+     "tap": "=",
+     "shift": "+"
+    },
+    "3": {
+     "tap": "5",
+     "shift": "%"
+    }
+   }
+  },
+  {
+   "id": "r5c5",
+   "hand": "right",
+   "finger": "index",
+   "row": "home",
+   "reach": "inner",
+   "home": false,
+   "x": 9.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": ".",
+     "shift": ">"
+    },
+    "1": {
+     "tap": ";",
+     "shift": ":"
+    },
+    "3": {
+     "tap": "6",
+     "shift": "^"
+    }
+   }
+  },
+  {
+   "id": "r5c4",
+   "hand": "right",
+   "finger": "index",
+   "row": "home",
+   "reach": "rest",
+   "home": true,
+   "x": 10.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": "a",
+     "shift": "A",
+     "hold": "RGui"
+    },
+    "1": {
+     "tap": ":"
+    },
+    "3": {
+     "tap": "7",
+     "shift": "&"
+    }
+   }
+  },
+  {
+   "id": "r5c3",
+   "hand": "right",
+   "finger": "middle",
+   "row": "home",
+   "reach": "rest",
+   "home": true,
+   "x": 11.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": "e",
+     "shift": "E",
+     "hold": "AltGr"
+    },
+    "1": {
+     "tap": "\""
+    },
+    "3": {
+     "tap": "8",
+     "shift": "*"
+    }
+   }
+  },
+  {
+   "id": "r5c2",
+   "hand": "right",
+   "finger": "ring",
+   "row": "home",
+   "reach": "rest",
+   "home": true,
+   "x": 12.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": "o",
+     "shift": "O",
+     "hold": "RCtrl"
+    },
+    "1": {
+     "tap": "|"
+    },
+    "3": {
+     "tap": "9",
+     "shift": "("
+    }
+   }
+  },
+  {
+   "id": "r5c1",
+   "hand": "right",
+   "finger": "pinky",
+   "row": "home",
+   "reach": "rest",
+   "home": true,
+   "x": 13.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": "i",
+     "shift": "I",
+     "hold": "RShift"
+    },
+    "1": {
+     "tap": "\\",
+     "shift": "|"
+    },
+    "3": {
+     "tap": "0",
+     "shift": ")"
+    }
+   }
+  },
+  {
+   "id": "r5c0",
+   "hand": "right",
+   "finger": "pinky",
+   "row": "home",
+   "reach": "outer",
+   "home": false,
+   "x": 14.5,
+   "y": 1.5,
+   "chars": {
+    "0": {
+     "tap": "'",
+     "shift": "\""
+    },
+    "1": {
+     "tap": "'",
+     "shift": "\""
+    },
+    "3": {
+     "tap": "'",
+     "shift": "\""
+    }
+   }
+  },
+  {
+   "id": "r2c0",
+   "hand": "left",
+   "finger": "pinky",
+   "row": "bottom",
+   "reach": "outer",
+   "home": false,
+   "x": 0.5,
+   "y": 2.5,
+   "chars": {}
+  },
+  {
+   "id": "r2c1",
+   "hand": "left",
+   "finger": "pinky",
+   "row": "bottom",
+   "reach": "down",
+   "home": false,
+   "x": 1.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "f",
+     "shift": "F"
+    },
+    "1": {
+     "tap": "~"
+    }
+   }
+  },
+  {
+   "id": "r2c2",
+   "hand": "left",
+   "finger": "ring",
+   "row": "bottom",
+   "reach": "down",
+   "home": false,
+   "x": 2.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "m",
+     "shift": "M"
+    },
+    "1": {
+     "tap": "{"
+    }
+   }
+  },
+  {
+   "id": "r2c3",
+   "hand": "left",
+   "finger": "middle",
+   "row": "bottom",
+   "reach": "down",
+   "home": false,
+   "x": 3.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "c",
+     "shift": "C"
+    },
+    "1": {
+     "tap": "}"
+    }
+   }
+  },
+  {
+   "id": "r2c4",
+   "hand": "left",
+   "finger": "index",
+   "row": "bottom",
+   "reach": "down",
+   "home": false,
+   "x": 4.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "v",
+     "shift": "V"
+    },
+    "1": {
+     "tap": "[",
+     "shift": "{"
+    }
+   }
+  },
+  {
+   "id": "r2c5",
+   "hand": "left",
+   "finger": "index",
+   "row": "bottom",
+   "reach": "inner",
+   "home": false,
+   "x": 5.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "/",
+     "shift": "?"
+    },
+    "1": {
+     "tap": "]",
+     "shift": "}"
+    }
+   }
+  },
+  {
+   "id": "r6c5",
+   "hand": "right",
+   "finger": "index",
+   "row": "bottom",
+   "reach": "inner",
+   "home": false,
+   "x": 9.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "g",
+     "shift": "G"
+    },
+    "1": {
+     "tap": "g",
+     "shift": "G"
+    }
+   }
+  },
+  {
+   "id": "r6c4",
+   "hand": "right",
+   "finger": "index",
+   "row": "bottom",
+   "reach": "down",
+   "home": false,
+   "x": 10.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "p",
+     "shift": "P"
+    },
+    "1": {
+     "tap": "p",
+     "shift": "P"
+    }
+   }
+  },
+  {
+   "id": "r6c3",
+   "hand": "right",
+   "finger": "middle",
+   "row": "bottom",
+   "reach": "down",
+   "home": false,
+   "x": 11.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "x",
+     "shift": "X"
+    },
+    "1": {
+     "tap": "x",
+     "shift": "X"
+    }
+   }
+  },
+  {
+   "id": "r6c2",
+   "hand": "right",
+   "finger": "ring",
+   "row": "bottom",
+   "reach": "down",
+   "home": false,
+   "x": 12.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "k",
+     "shift": "K"
+    },
+    "1": {
+     "tap": "k",
+     "shift": "K"
+    }
+   }
+  },
+  {
+   "id": "r6c1",
+   "hand": "right",
+   "finger": "pinky",
+   "row": "bottom",
+   "reach": "down",
+   "home": false,
+   "x": 13.5,
+   "y": 2.5,
+   "chars": {
+    "0": {
+     "tap": "y",
+     "shift": "Y"
+    },
+    "1": {
+     "tap": "y",
+     "shift": "Y"
+    }
+   }
+  },
+  {
+   "id": "r6c0",
+   "hand": "right",
+   "finger": "pinky",
+   "row": "bottom",
+   "reach": "outer",
+   "home": false,
+   "x": 14.5,
+   "y": 2.5,
+   "chars": {}
+  },
+  {
+   "id": "r3c3",
+   "hand": "left",
+   "finger": "thumb",
+   "row": "thumb",
+   "reach": "outer",
+   "home": false,
+   "x": 3.5,
+   "y": 3.5,
+   "chars": {}
+  },
+  {
+   "id": "r3c4",
+   "hand": "left",
+   "finger": "thumb",
+   "row": "thumb",
+   "reach": "rest",
+   "home": true,
+   "x": 4.5,
+   "y": 3.5,
+   "chars": {
+    "0": {
+     "tap": " ",
+     "hold": "layer 1"
+    },
+    "1": {
+     "tap": " "
+    },
+    "2": {
+     "tap": " "
+    },
+    "3": {
+     "tap": " "
+    }
+   },
+   "layerKey": {
+    "layer": 1,
+    "how": "hold"
+   }
+  },
+  {
+   "id": "r3c5",
+   "hand": "left",
+   "finger": "thumb",
+   "row": "thumb",
+   "reach": "inner",
+   "home": false,
+   "x": 5.5,
+   "y": 3.5,
+   "chars": {}
+  },
+  {
+   "id": "r7c5",
+   "hand": "right",
+   "finger": "thumb",
+   "row": "thumb",
+   "reach": "inner",
+   "home": false,
+   "x": 9.5,
+   "y": 3.5,
+   "chars": {}
+  },
+  {
+   "id": "r7c4",
+   "hand": "right",
+   "finger": "thumb",
+   "row": "thumb",
+   "reach": "rest",
+   "home": true,
+   "x": 10.5,
+   "y": 3.5,
+   "chars": {}
+  },
+  {
+   "id": "r7c3",
+   "hand": "right",
+   "finger": "thumb",
+   "row": "thumb",
+   "reach": "outer",
+   "home": false,
+   "x": 11.5,
+   "y": 3.5,
+   "chars": {},
+   "layerKey": {
+    "layer": 3,
+    "how": "oneShot"
+   }
+  }
+ ]
+}

@@ -10,15 +10,17 @@ import sys
 import urllib.parse
 from typing import Annotated, Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Path, Query, Request, WebSocket, \
+    WebSocketDisconnect
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import HTTPConnection
 
 from protocol.qmk_settings_codec import QmkSettingsCodec
-from server import arranger, device, edits, languages, model, schemas
+from server import arranger, device, edits, languages, learning_layout, model, schemas
 from server.describe import keyboard_language, parse
+from server.learning import FINGERS_FORMAT, LessonSetInvalid, NotFound as LearningNotFound
 from server.device import JumpUnanswered, KeyboardChanged, NotConnected, KeyboardLocked, KeyboardRefused, \
     UnknownKeyboard
 
@@ -26,6 +28,8 @@ log = logging.getLogger(__name__)
 
 MAX_LAYOUT_FILE = 1024 * 1024
 """ largest .vil upload, in bytes """
+MAX_LESSON_SET = 4 * 1024 * 1024
+""" largest lesson set import, in bytes (a 19-lesson course is about 130 KiB) """
 UNLOCK_POLL_INTERVAL = 0.2
 """ seconds between two readings of the unlock countdown, as upstream vial-gui's unlocker """
 MATRIX_POLL_INTERVAL = 0.05
@@ -340,13 +344,14 @@ class UnlockFollower:
 
 def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone=None,
                poll_interval=1.0, close_grace=3.0, instance_id=None, unlock_interval=UNLOCK_POLL_INTERVAL,
-               matrix_interval=MATRIX_POLL_INTERVAL, matrix_gap=MATRIX_POLL_GAP, on_stop=None):
+               matrix_interval=MATRIX_POLL_INTERVAL, matrix_gap=MATRIX_POLL_GAP, on_stop=None, learning=None):
     """
     manager: DeviceManager; names: NamesStore; token: session secret; port: the port the server listens on
     static_dir: built UI (web/dist) or None for a placeholder page
     on_all_clients_gone: called once the last UI tab has been closed for close_grace seconds
     on_stop: stops the server (uvicorn's should_exit), called once POST /api/shutdown has answered; None: that route
     refuses (501)
+    learning: learning.LearningStore, the Learning feature's files; None: the /api/learning routes refuse (501)
     poll_interval: seconds between hot-plug checks (0: none); unlock_interval: between readings of an unlock countdown
     matrix_interval, matrix_gap: the matrix tester's readings (MatrixWatcher)
     """
@@ -525,6 +530,15 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         # couldn't store what the request needed), not the keyboard failing (502) nor gone (503)
         log.error("%s", exc, exc_info=exc.__cause__)
         return JSONResponse({"detail": str(exc)}, status_code=507)
+
+    @app.exception_handler(LearningNotFound)
+    async def learning_not_found(request, exc):
+        return JSONResponse({"detail": str(exc)}, status_code=404)
+
+    @app.exception_handler(LessonSetInvalid)
+    async def lesson_set_invalid(request, exc):
+        # the checker's findings with the message, for the page to list them
+        return JSONResponse({"detail": str(exc), "errors": exc.errors, "warnings": exc.warnings}, status_code=422)
 
     @app.exception_handler(KeyboardRefused)
     async def refused(request, exc):
@@ -875,6 +889,145 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         404 when none is unfinished. It can be asked again after a failure. """
         return await arranging(lambda kb: arranger.resume(kb, manager.open_id, arrangements, names, finish=False),
                                lang)
+
+    # ---------- learning (docs/learning/lesson-format.md) ----------
+
+    def learning_store():
+        if learning is None:
+            raise HTTPException(501, "this server has no learning store")
+        return learning
+
+    def keyboard_dict(lang=languages.DEFAULT):
+        """ (uid, model) of the keyboard open, the model as a dict: what the learning export and the finger proposal
+        are built from. 503 when none is open. """
+        return read(lambda kb: (model.uid_of(kb), model.build(kb, names_for(kb), manager.unlocked).model_dump()), lang)
+
+    def fingers_of(store, uid, built):
+        """ The finger proposal of the keyboard with the user's corrections on top -> schemas.Fingers """
+        saved = store.fingers(uid)
+        keys = learning_layout.apply_fingers(learning_layout.proposal(built), saved)
+        return schemas.Fingers(format=FINGERS_FORMAT, keys=keys,
+                               home=[kid for kid, key in keys.items() if key["home"]], proposal=saved is None)
+
+    @app.get("/api/learning/fingers", response_model=schemas.Fingers)
+    def get_fingers(lang: Lang = languages.DEFAULT):
+        """ Which finger types each key of the keyboard open: the app's proposal from the key positions and what layer
+        0 types in the keyboard language lang (lesson-rules.md section 2; the export, the listing and the import use
+        the same), with the user's corrections (PUT) on top """
+        store = learning_store()
+        uid, built = keyboard_dict(lang)
+        return fingers_of(store, uid, built)
+
+    @app.put("/api/learning/fingers", response_model=schemas.Fingers)
+    def set_fingers(body: schemas.FingersIn, lang: Lang = languages.DEFAULT):
+        """ Save the user's corrections for this keyboard (learning/<uid>/fingers.json), replacing those saved before;
+        returns the result as GET does """
+        store = learning_store()
+        uid, built = keyboard_dict(lang)
+        store.set_fingers(uid, body.model_dump())
+        return fingers_of(store, uid, built)
+
+    @app.delete("/api/learning/fingers", response_model=schemas.Fingers)
+    def clear_fingers(lang: Lang = languages.DEFAULT):
+        """ Forget the user's corrections: back to the app's proposal (as GET gives it) """
+        store = learning_store()
+        uid, built = keyboard_dict(lang)
+        store.clear_fingers(uid)
+        return fingers_of(store, uid, built)
+
+    @app.get("/api/learning/export", response_model=schemas.LayoutExport)
+    def learning_export(lang: Lang = languages.DEFAULT):
+        """ The layout export of the keyboard open for the lesson generator (lesson-format.md section 2), with the
+        user's finger corrections; also saved as learning/<uid>/layout-export.json """
+        store = learning_store()
+        uid, built = keyboard_dict(lang)
+        return store.export(uid, built, lang)
+
+    def summaries(store, uid, built, entries, lang):
+        """ The listing entries with outOfDate: the keyboard's hash now, computed once, against each set's """
+        current = learning_layout.export(built, store.fingers(uid), lang)["hash"]
+        return [schemas.LessonSetSummary(**entry, outOfDate=entry["layoutHash"] is not None
+                                         and entry["layoutHash"] != current) for entry in entries]
+
+    @app.get("/api/learning/sets", response_model=list[schemas.LessonSetSummary])
+    def lesson_sets(lang: Lang = languages.DEFAULT):
+        """ The lesson sets of the keyboard open (learning/<uid>/sets/*.json), each with whether it was made from
+        another character map than the keyboard has now (outOfDate, for the characters of the keyboard language lang);
+        a file that isn't a lesson set is listed with its error """
+        store = learning_store()
+        uid, built = keyboard_dict(lang)
+        return summaries(store, uid, built, store.sets(uid), lang)
+
+    @app.post("/api/learning/sets", response_model=schemas.LessonSetImported, status_code=201)
+    async def import_lesson_set(request: Request, lang: Lang = languages.DEFAULT):
+        """ Import a lesson set (the body is the file): checked as util/learning/check_lessons.py checks it, against
+        the keyboard's export in the keyboard language lang, and saved as sets/<its id>.json (replacing one of that
+        id). 422 with the checker's errors (and warnings) when it fails; the warnings of one that passes come back
+        with its listing entry. """
+        languages.overrides(lang)  # an unknown language is refused before the file is read
+        store = learning_store()
+        raw = await read_limited(request, MAX_LESSON_SET)
+
+        def do():
+            try:
+                data = json.loads(raw.decode("utf-8-sig"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                raise HTTPException(422, "the file isn't JSON: {}".format(e))
+            if not isinstance(data, dict):
+                raise HTTPException(422, "the file isn't a JSON object")
+            uid, built = keyboard_dict(lang)
+            export = learning_layout.export(built, store.fingers(uid), lang)
+            entry = store.import_set(uid, data, export)
+            return schemas.LessonSetImported(**entry, outOfDate=entry["layoutHash"] != export["hash"])
+        return await asyncio.to_thread(do)
+
+    SetId = Annotated[str, Path(alias="set", max_length=64)]
+    ExerciseId = Annotated[str, Path(alias="exercise", max_length=64)]
+
+    @app.get("/api/learning/sets/{set}", response_model=schemas.LessonSet)
+    def lesson_set(set_id: SetId):
+        """ One lesson set, whole; 404 when there is none, 422 when the file isn't a lesson set """
+        store = learning_store()
+        uid = read(model.uid_of)
+        return store.set(uid, set_id)
+
+    @app.delete("/api/learning/sets/{set}", status_code=204, response_class=Response)
+    def delete_lesson_set(set_id: SetId):
+        """ Remove the lesson set; its progress stays (for the set imported again). 404 when there is none. """
+        store = learning_store()
+        uid = read(model.uid_of)
+        store.delete_set(uid, set_id)
+        return Response(status_code=204)
+
+    @app.get("/api/learning/progress/{set}", response_model=schemas.Progress)
+    def lesson_progress(set_id: SetId):
+        """ The progress on a lesson set (lesson-format.md section 4): empty when nothing was recorded (also for a set
+        that doesn't exist) """
+        store = learning_store()
+        uid = read(model.uid_of)
+        return store.progress(uid, set_id)
+
+    @app.put("/api/learning/progress/{set}/{exercise}", response_model=schemas.ExerciseProgress)
+    def record_attempt(set_id: SetId, exercise_id: ExerciseId, body: schemas.AttemptIn):
+        """ Record an attempt at an exercise typed to the end: the server computes accuracy and WPM, keeps the best
+        attempt and the last 50. 404 when the set has no such exercise. """
+        store = learning_store()
+        uid = read(model.uid_of)
+        return store.record(uid, set_id, exercise_id, body.model_dump())
+
+    @app.get("/api/learning/settings", response_model=schemas.LearningSettings)
+    def learning_settings():
+        """ The pass accuracy, the target WPM and whether the picture shows in word exercises """
+        store = learning_store()
+        uid = read(model.uid_of)
+        return store.settings(uid)
+
+    @app.put("/api/learning/settings", response_model=schemas.LearningSettings)
+    def set_learning_settings(body: schemas.LearningSettingsIn):
+        """ Saves them; 422 outside their ranges """
+        store = learning_store()
+        uid = read(model.uid_of)
+        return store.set_settings(uid, body.model_dump())
 
     @app.post("/api/unlock/start", response_model=schemas.UnlockState)
     async def start_unlock():

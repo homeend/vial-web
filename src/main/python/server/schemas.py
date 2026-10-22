@@ -2,7 +2,7 @@
 """ Shapes of everything the API sends and accepts. The UI's TypeScript types are generated from these. """
 from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 # ---------- responses ----------
 
@@ -503,6 +503,123 @@ class Names(BaseModel):
     macros: dict[str, str]
 
 
+# ---------- learning (docs/learning/lesson-format.md) ----------
+
+Hand = Literal["left", "right"]
+Finger = Literal["index", "middle", "ring", "pinky", "thumb"]
+Reach = Literal["rest", "up", "down", "inner", "outer"]
+KeyRow = Literal["number", "top", "home", "bottom", "thumb"]
+
+
+class FingerKey(BaseModel):
+    """ Which finger types a key, and from where (lesson-rules.md section 2) """
+    hand: Hand
+    finger: Finger
+    row: KeyRow
+    reach: Reach
+    home: bool
+    """ a resting key: the finger rests on it """
+
+
+class Fingers(BaseModel):
+    """ The app's finger proposal for the keyboard open, with the user's corrections on top """
+    format: str
+    keys: dict[str, FingerKey]
+    """ by key id ("r1c4": matrix row 1, column 4) """
+    home: list[str]
+    """ the resting keys' ids """
+    proposal: bool
+    """ nothing is saved: this is the app's proposal alone """
+
+
+class ExportKeyboard(BaseModel):
+    name: str
+    uid: str
+
+
+class LayoutExport(BaseModel):
+    """ The layout export the lesson generator reads (lesson-format.md section 2); layers, shiftKeys and keys are as
+    the format describes them """
+    format: str
+    keyboard: ExportKeyboard
+    hash: str
+    """ "sha256:…" over the character map: what a lesson set is valid for """
+    exportedAt: str
+    language: str
+    """ the keyboard language the characters are of (KeyboardLanguage.id) """
+    layers: list[dict]
+    shiftKeys: list[dict]
+    keys: list[dict]
+
+
+class LessonSetSummary(BaseModel):
+    """ A lesson set file of the keyboard open (learning/<uid>/sets/<id>.json) """
+    id: str
+    title: str
+    """ the file name when the file can't be read """
+    language: str
+    lessons: int
+    layoutHash: Optional[str] = None
+    """ the hash of the layout export it was made from """
+    outOfDate: bool
+    """ its layoutHash isn't the keyboard's now: a character moved since (it still opens) """
+    error: Optional[str] = None
+    """ the first thing wrong with the file, when it isn't a lesson set the app can open """
+
+
+class LessonSetImported(LessonSetSummary):
+    warnings: list[str]
+    """ what the checker would rather have otherwise (the set was saved all the same) """
+
+
+class LessonSet(BaseModel):
+    """ A lesson set, as its file has it (lesson-format.md section 3); fields the format doesn't require are kept """
+    model_config = ConfigDict(extra="allow")
+    format: str
+    id: str
+    title: str
+    language: str
+    layout: dict
+    lessons: list[dict]
+
+
+class Attempt(BaseModel):
+    """ An exercise typed to the end """
+    at: str
+    chars: int
+    errors: int
+    accuracy: float
+    """ 100 × (chars − errors) / chars, one decimal """
+    wpm: float
+    """ chars / 5 / minutes, one decimal """
+    seconds: float
+
+
+class ExerciseProgress(BaseModel):
+    done: bool
+    best: Optional[Attempt] = None
+    """ the attempt with the highest accuracy, then the highest WPM """
+    attempts: list[Attempt]
+    """ the last 50 """
+
+
+class Progress(BaseModel):
+    """ The progress on one lesson set (lesson-format.md section 4) """
+    format: str
+    lessonSet: str
+    layoutHash: Optional[str] = None
+    exercises: dict[str, ExerciseProgress]
+
+
+class LearningSettings(BaseModel):
+    passAccuracy: int
+    """ the accuracy, in percent, that passes an exercise """
+    targetWpm: int
+    """ the speed that earns a star """
+    pictureInWords: bool
+    """ show the keyboard picture in word exercises too """
+
+
 # ---------- requests ----------
 
 KEYCODE_MAX_LENGTH = 200
@@ -672,3 +789,38 @@ class SelectKeyboard(Request):
 
 class NameIn(Request):
     name: Optional[str] = Field(default=None, max_length=40)
+
+
+LEARNING_KEYS_MAX = 1000
+""" more keys than any keyboard has """
+
+
+class FingerFix(Request):
+    """ The user's say on one key """
+    finger: Finger
+    reach: Reach
+
+
+class FingersIn(Request):
+    """ The user's finger corrections (PUT /api/learning/fingers): replaces what was saved """
+    keys: dict[str, FingerFix] = Field(max_length=LEARNING_KEYS_MAX)
+    """ by key id; keys the keyboard doesn't have are ignored """
+    home: list[Annotated[str, Field(max_length=20)]] = Field(max_length=LEARNING_KEYS_MAX)
+    """ the resting keys' ids: these and no others """
+
+
+class AttemptIn(Request):
+    """ An exercise typed to the end (PUT /api/learning/progress/{set}/{exercise}); accuracy and WPM are computed by
+    the server """
+    at: str = Field(max_length=40)
+    """ when, as the page tells it (ISO 8601) """
+    chars: int = Field(ge=1, le=1_000_000)
+    errors: int = Field(ge=0, le=1_000_000)
+    """ wrong characters typed (a corrected mistake still counts one) """
+    seconds: float = Field(gt=0, le=86_400)
+
+
+class LearningSettingsIn(Request):
+    passAccuracy: StrictInt = Field(ge=50, le=100)
+    targetWpm: StrictInt = Field(ge=1, le=300)
+    pictureInWords: StrictBool

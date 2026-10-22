@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/homeend/vial-web/docs/learning/lesson-set.schema.json",
+  "title": "Vial web lesson set",
+  "description": "A typing course generated for one keyboard layout. See docs/learning/lesson-format.md. The server's structural checks (src/main/python/server/learning_check.py, also run by util/learning/check_lessons.py) are the authority on what a set must hold; this schema restates them for editors and generators, and the checker uses it only when the optional `jsonschema` package is installed. Properties not listed here are allowed everywhere: a generator may add its own, and the server keeps them.",
+  "type": "object",
+  "required": ["format", "id", "title", "language", "layout", "lessons"],
+  "properties": {
+    "format": { "const": "vial-web-lessons/1" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "language": { "type": "string", "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+    "layout": {
+      "type": "object",
+      "required": ["name", "uid", "hash"],
+      "properties": {
+        "name": { "type": "string" },
+        "uid": { "type": "string", "pattern": "^[0-9A-Fa-f]{16}$" },
+        "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{8,64}$" }
+      }
+    },
+    "generatedBy": {
+      "type": "object",
+      "properties": {
+        "tool": { "type": "string" },
+        "model": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "notes": { "type": "string" },
+    "lessons": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/lesson" }
+    }
+  },
+  "$defs": {
+    "lesson": {
+      "type": "object",
+      "required": ["id", "title", "guidance", "exercises"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "review": { "type": "boolean" },
+        "new": {
+          "description": "The characters this lesson teaches. Optional: a missing list means none (default: []), as in a review lesson.",
+          "type": "array",
+          "default": [],
+          "items": { "$ref": "#/$defs/newChar" }
+        },
+        "guidance": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "exercises": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/exercise" }
+        }
+      }
+    },
+    "newChar": {
+      "type": "object",
+      "required": ["char"],
+      "properties": {
+        "char": { "type": "string", "minLength": 1, "maxLength": 1, "not": { "const": " " } },
+        "key": { "type": "string", "pattern": "^r[0-9]+c[0-9]+$" },
+        "layer": { "type": "integer", "minimum": 0, "maximum": 31 },
+        "via": { "enum": ["tap", "shift", "altGr"] },
+        "path": { "type": "string", "maxLength": 80 }
+      }
+    },
+    "exercise": {
+      "type": "object",
+      "required": ["id", "kind", "title", "lines"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$" },
+        "kind": { "enum": ["new-keys", "keys", "words", "blind", "text", "extra-keys", "extra-words"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^\\S(.*\\S)?$" }
+        }
+      }
+    }
+  }
+}
