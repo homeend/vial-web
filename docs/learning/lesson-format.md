@@ -17,6 +17,7 @@ learning/
     layout-export.json        the last export (also offered as a download)
     sets/<set id>.json        lesson sets, imported or dropped in by hand
     progress/<set id>.json    progress per lesson set
+    settings.json             the pass accuracy, the target WPM, the picture in word exercises (section 4)
 ```
 
 Everything is plain JSON, UTF-8, written the way `names.json` is (temp file, fsync, replace). A lesson set file
@@ -64,6 +65,10 @@ the simulated Corne's. Example (two keys of it):
   left out of that layer. `hold` is a short label for what holding does (`"Shift"`, `"Ctrl"`, `"layer 2"`).
 - Transparent keys are resolved: a layer-1 entry shows what the key does *when layer 1 is on*.
 - `x`, `y` are the key's centre in key units, for the generator's own sanity checks only.
+- The export, and so the hash, is made in the app's keyboard language (`language`): the legends differ between
+  `en-us` and `polish-qwerty`. The app sends its one keyboard language with every Learning request, so a lesson
+  set's hash is compared in the language it was exported in; switching the keyboard language marks the sets out
+  of date until it is switched back.
 
 ### 2.3 `fingers.json`
 
@@ -122,10 +127,13 @@ How the app shows each kind:
 
 | kind | Picture | Next key lit | Typing | Lines |
 |---|---|---|---|---|
-| `new-keys`, `keys`, `extra-keys` | shown | yes | character by character; Backspace inside the current group | joined by one space, wrapped |
-| `words`, `extra-words` | shown | no | word by word; a space ends the word | joined by one space, wrapped |
+| `new-keys`, `keys`, `extra-keys` | shown | yes | character by character; a space ends the group; Backspace inside the current group only | joined by one space, wrapped |
+| `words`, `extra-words` | shown | no | character by character; a space ends the word; Backspace inside the current word only | joined by one space, wrapped |
 | `blind` | **hidden** | no | as `words` | as `words` |
 | `text` | shown | no | as `words`; Enter ends a line | one under another |
+
+A wrong key counts one error and the position stays until the right key is typed; every wrong press counts, so
+`errors` can exceed the number of characters.
 
 Known characters at lesson *n* = space + the `new` characters of lessons 1…n. Every character in every line of
 lesson *n* must be known at *n*; the checker enforces it. A file holding only some lessons of a course (a batch
@@ -141,7 +149,6 @@ size range, when a `new-keys` exercise has under 40 % new characters, when a gro
   "format": "vial-web-progress/1",
   "lessonSet": "corne-sim-en",
   "layoutHash": "sha256:3f1c…",
-  "settings": { "passAccuracy": 95, "targetWpm": 30 },
   "exercises": {
     "01-n1": {
       "done": true,
@@ -153,10 +160,17 @@ size range, when a `new-keys` exercise has under 40 % new characters, when a gro
 ```
 
 - An attempt is recorded when the exercise is typed to the end (abandoned attempts are not kept).
-- `errors` = wrong characters typed (a corrected mistake still counts one error); `accuracy` = 100 × (chars −
-  errors) / chars, one decimal; `wpm` = chars / 5 / minutes, one decimal; `best` is the attempt with the highest
-  accuracy, then the highest WPM. The last 50 attempts of an exercise are kept.
+- `errors` = wrong keys pressed (a corrected mistake still counts one error; more errors than characters is
+  possible); `accuracy` = 100 × (chars − errors) / chars, one decimal, never below 0; `wpm` = chars / 5 / minutes,
+  one decimal; the server computes both from `chars`, `errors` and `seconds`. `best` is the attempt with the
+  highest accuracy, then the highest WPM, **over all time**: the last 50 attempts of an exercise are kept, and the
+  best stays even when it is no longer among them. `done` means there is a best.
 - A lesson is **passed** when every exercise of kinds `new-keys`, `keys`, `words`, `blind`, `text` has a `best`
   with `accuracy ≥ passAccuracy`; it gets a **star** when each of those also has `wpm ≥ targetWpm`. Extras don't
   count. Nothing is locked: any lesson can be opened at any time.
-- The file is per lesson set, so a regenerated set with a new `id` starts fresh and the old progress stays.
+- `passAccuracy` (default 95), `targetWpm` (default 30) and `pictureInWords` (default true) are the user's
+  settings for the keyboard, in `settings.json` next to the `sets/` and `progress/` folders, not in the progress
+  file.
+- The file is per lesson set, so a regenerated set with a new `id` starts fresh and the old progress stays. A set
+  imported again under the same `id` keeps its progress; entries for exercises the set no longer has are dropped
+  at the next recorded attempt. A hand-edited file is read for what is valid in it.
