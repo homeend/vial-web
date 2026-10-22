@@ -207,13 +207,29 @@ def test_the_icon_has_vials_image_and_a_menu_that_opens_and_quits(fake_pystray, 
     icon = tray.make("Vial (simulated keyboard)", lambda: opened.append(True), lambda: quit_used.append(True))
     assert icon is fake_pystray.icons[0]
     assert icon.name == tray.ICON_NAME and icon.title == "Vial (simulated keyboard)"
-    assert icon.image.size[0] > 0  # src/main/icons/Icon.ico, loaded
+    assert icon.image.size == (tray.IMAGE_SIDE, tray.IMAGE_SIDE)  # square(): src/main/icons/Icon.ico on the square
+    assert icon.image.getpixel((2, tray.IMAGE_SIDE // 2)) == tray.IMAGE_BACKGROUND
     open_item, quit_item = icon.menu.items
     assert (open_item.text, open_item.default) == (tray.OPEN, True)  # a click on the icon opens Vial
     assert (quit_item.text, quit_item.default) == (tray.QUIT, False)
     open_item.action(icon, open_item)
     quit_item.action(icon, quit_item)
     assert opened == [True] and quit_used == [True]
+
+
+def test_the_tray_image_is_the_round_logo_on_a_light_square_with_rounded_corners():
+    from PIL import Image
+    logo = Image.open(resources.path(resources.ICON))
+    assert logo.getpixel((0, 0))[3] == 0  # the logo is round: transparent outside the disk
+    image = tray.square(logo, Image)
+    side = tray.IMAGE_SIDE
+    assert image.size == (side, side) and image.mode == "RGBA"
+    assert image.getpixel((0, 0))[3] == 0  # the corners are rounded off
+    assert image.getpixel((2, side // 2)) == tray.IMAGE_BACKGROUND  # the square's edge, where the logo was transparent
+    assert image.getpixel((side // 2, 2)) == tray.IMAGE_BACKGROUND
+    centre = image.getpixel((side // 2, side // 2))
+    assert centre[3] == 255 and centre[2] > centre[0] + 50  # the logo's blue, over the square
+    assert logo.size == (256, 256)  # the logo isn't changed
 
 
 def test_the_icons_image_is_bundled():
