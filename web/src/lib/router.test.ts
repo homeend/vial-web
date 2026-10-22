@@ -48,11 +48,11 @@ describe("Router", () => {
   it("starts on what the address says, and follows it until stopped", async () => {
     const address = fakeAddress("#combos/2");
     const router = new Router();
-    expect(router.route).toEqual({ section: "combos", item: 2 });
+    expect(router.route).toEqual({ section: "combos", item: 2, path: [] });
     const stop = router.start();
     address.visit("#macros");
     await settle();
-    expect(router.route).toEqual({ section: "macros", item: null });
+    expect(router.route).toEqual({ section: "macros", item: null, path: [] });
     stop();
     expect(address.listeners.size).toBe(0);
     address.visit("#tap-dance");
@@ -69,7 +69,7 @@ describe("Router", () => {
     await settle();
     expect(location.hash).toBe("#tap-dance/5");
     expect(address.counts()).toEqual({ pushes: 1, replaces: 1 });
-    expect(router.route).toEqual({ section: "tap-dance", item: 5 });
+    expect(router.route).toEqual({ section: "tap-dance", item: 5, path: [] });
   });
 
   it("doesn't set the route again when its own address change comes back", async () => {
@@ -128,7 +128,7 @@ describe("Router", () => {
     const address = fakeAddress("#lighting/3");
     const router = new Router();
     router.start();
-    expect(router.route).toEqual({ section: "lighting", item: null });
+    expect(router.route).toEqual({ section: "lighting", item: null, path: [] });
     expect(location.hash).toBe("#lighting");
     expect(address.counts()).toEqual({ pushes: 0, replaces: 1 });
     address.visit("#keyboard/0");
@@ -146,12 +146,42 @@ describe("Router", () => {
   it("keeps no entry for a section that shows one page", () => {
     const router = new Router();
     router.go("lighting", 3);
-    expect(router.route).toEqual({ section: "lighting", item: null });
+    expect(router.route).toEqual({ section: "lighting", item: null, path: [] });
+  });
+
+  it("goes to a Learning view by its path, and follows one from the address", async () => {
+    const address = fakeAddress("#learning/fingers");
+    const router = new Router();
+    router.start();
+    expect(router.route).toEqual({ section: "learning", item: null, path: ["fingers"] });
+    router.go("learning", null, { path: ["corne-sim-en", "01"] });
+    await settle();
+    expect(location.hash).toBe("#learning/corne-sim-en/01");
+    expect(router.route).toEqual({ section: "learning", item: null, path: ["corne-sim-en", "01"] });
+    // an entry number means nothing to it
+    router.go("learning", 3);
+    expect(router.route).toEqual({ section: "learning", item: null, path: [] });
+    expect(location.hash).toBe("#learning");
+    // its own address change changes nothing; a path that can't be read is the list, and the address says so
+    const shown = router.route;
+    await settle();
+    expect(router.route).toBe(shown);
+    address.visit("#learning/a/b/c/d");
+    await settle();
+    expect(router.route).toEqual({ section: "learning", item: null, path: [] });
+    expect(location.hash).toBe("#learning");
+    address.visit("#learning/corne-sim-en/01/01-n1");
+    await settle();
+    expect(router.route.path).toEqual(["corne-sim-en", "01", "01-n1"]);
+    expect(router.fromAddress).toBe(true);
+    // a path given to another section is dropped
+    router.go("combos", 2, { path: ["x"] });
+    expect(router.route).toEqual({ section: "combos", item: 2, path: [] });
   });
 
   it("keeps the route without an address", () => {
     const router = new Router();
     router.go("macros", 0);
-    expect(router.route).toEqual({ section: "macros", item: 0 });
+    expect(router.route).toEqual({ section: "macros", item: 0, path: [] });
   });
 });
