@@ -208,7 +208,22 @@ changes to `web/`. See [`web/README.md`](web/README.md).
 
 ### Building the executable
 
-Run these from the repository root, with the venv active (see above: its Python has PyInstaller and the other
+In one go, with Python 3.13 and Node 24 installed:
+
+```sh
+build-local.cmd       # Windows (cmd or PowerShell): dist\Vial.exe
+./build-local.sh      # Linux, macOS: dist/vial
+```
+
+Each script activates the venv `.venv`, creating it when there is none, and installs the Python requirements when
+they changed since they were last installed. On Windows `build-local.cmd` does this with `use-python.cmd` (scoop's
+Python 3.13, or the one `VIAL_PYTHON_HOME` names); `build-local.sh` uses `python3.13`, or the Python that `PYTHON`
+names (`PYTHON=/path/to/python3.13 ./build-local.sh`). It then runs `npm ci` in `web/` when `web/package-lock.json`
+changed since it last ran, and does steps 1–3 below. It stops at the first step that fails and says which one; on
+success it prints where the executable is. On Debian and Ubuntu, creating the venv needs the `python3.13-venv`
+package.
+
+The same steps by hand, from the repository root, with the venv active (see above: its Python has PyInstaller and the other
 packages of `requirements.txt`). Each system builds only its own executable: build the Linux one on Linux.
 
 1. Build the web UI. The executable carries it inside, so build it again after changes to `web/`:

@@ -1,1 +1,2 @@
 *.cmd text eol=crlf
+build-local.sh text eol=lf
