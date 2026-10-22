@@ -37,7 +37,8 @@ releases, see [get.vial.today](https://get.vial.today/).
   reaches each key (correct it where it is wrong) and exports the layout for the `generate-lessons` skill in Claude
   Code, which writes a lesson set; import it, and type the lessons with the next key lit on the keyboard picture.
   Accuracy and speed are recorded per keyboard; a lesson passes at the pass accuracy, a star at the target speed;
-  a set's progress can be reset (every attempt and best forgotten, the lessons kept)
+  a set's progress can be reset (every attempt and best forgotten, the lessons kept). A set built for an earlier
+  layout (a character moved since) can be re-fitted to the layout as it is now, its lessons and progress kept
   ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)).
   Nothing is written to the keyboard.
 - Several keyboards plugged in: choose which one to edit. Unlocking, when the keyboard asks for it.

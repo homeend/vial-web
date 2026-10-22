@@ -15,7 +15,7 @@ import {
   readLayoutExport, readLessonSet, type Fingers, type LayoutExport, type LearningSettings, type LessonSet, type Progress,
 } from "./types";
 
-/** what an import came to: the set's listing entry, or the checker's findings */
+/** what an import, or a re-fit, came to: the set's listing entry, or the checker's findings */
 export type ImportOutcome = { ok: true; entry: LessonSetSummary; warnings: string[] } | { ok: false; errors: string[] };
 
 /** Why a read failed: the server's answer, or what is wrong with the shape of a file it passed through (a plain Error
@@ -183,6 +183,31 @@ export class LearningState {
         return { ok: false, errors: error.errors?.length ? error.errors : [error.detail ?? "the file isn't a lesson set"] };
       }
       toasts.error(failureMessage("Importing the lesson set", error));
+      return null;
+    }
+  }
+
+  /** Re-fits the set open to the layout as it is now: the server moves every `new` entry to the key that types its
+   * character and gives the set the export's hash; its listing entry is replaced and it is opened again, so the new
+   * keys show (the progress stays). The checker's findings come back when a character is typed by no key (the file
+   * stays as it was); any other failure is a toast. */
+  async refitSet(): Promise<ImportOutcome | null> {
+    const read = this.#reads;
+    const id = this.chosen;
+    if (id === null) return null;
+    try {
+      const entry = await api.refitLearningSet(id);
+      if (this.#reading) await this.#reading; // a listing asked before the re-fit has the set as it was
+      if (read !== this.#reads) return null;
+      this.sets = [...this.sets.filter((s) => s.id !== entry.id), entry].sort((a, b) => a.id.localeCompare(b.id));
+      await this.open(entry.id);
+      return { ok: true, entry, warnings: entry.warnings };
+    } catch (error) {
+      if (read !== this.#reads) return null;
+      if (error instanceof ApiError && error.status === 422) {
+        return { ok: false, errors: error.errors?.length ? error.errors : [error.detail ?? "a character of the set is typed by no key"] };
+      }
+      toasts.error(failureMessage("Re-fitting the lesson set", error));
       return null;
     }
   }

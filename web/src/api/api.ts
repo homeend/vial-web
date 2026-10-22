@@ -77,6 +77,10 @@ export const api = {
   learningSet: (set: string) => request("get", "/api/learning/sets/{set}", { params: { set } }),
   /** removes the set; its progress stays */
   deleteLearningSet: (set: string) => request("delete", "/api/learning/sets/{set}", { params: { set } }),
+  /** re-fits the set to the layout as it is now: every `new` entry moved to the key that types its character, the
+   * export's hash taken; answers as importLearningSet does. 422 (ApiError.errors) when a character is typed by no key,
+   * or the set is listed with an error: the file stays as it was */
+  refitLearningSet: (set: string) => request("post", "/api/learning/sets/{set}/refit", { params: { set } }),
   /** the exercises typed so far in a set, each with its best and attempts; empty for a set never recorded, also for one
    * that doesn't exist */
   learningProgress: (set: string) => request("get", "/api/learning/progress/{set}", { params: { set } }),

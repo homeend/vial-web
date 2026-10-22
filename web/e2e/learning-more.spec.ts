@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { api, expect, open, openSection, restoreAll, serverUrl, test } from "./fixtures";
@@ -8,8 +8,8 @@ import { api, expect, open, openSection, restoreAll, serverUrl, test } from "./f
 // and the back button, a set file that isn't a lesson set, what a keydown means in the typing area, the picture in
 // word exercises, Escape saving nothing, Next at the end of a lesson and of the set, a failed save, a lesson file's
 // oddities (a character listed twice, a new entry without a key, long titles), the import's findings, the settings
-// dialog's refusal, the out-of-date banner while the export loads, the Fingers view's resting switch and failures, and
-// Reset progress.
+// dialog's refusal, the out-of-date banner while the export loads, the Fingers view's resting switch and failures,
+// Reset progress, and Re-fit to this layout.
 // The keys are typed as keydown events dispatched on the typing area (keys.ts decides what counts), so an exercise is
 // typed in a moment. Nothing touches the keyboard; the sets, the fingers and the settings are put back after each test.
 
@@ -404,6 +404,74 @@ test("Reset progress forgets every attempt of the set, goes once there is nothin
     await putBack(app);
   }
 });
+
+test("Re-fit moves a set's keys to where its characters are now, the progress kept; a character no key types is refused",
+  async ({ page, ownServer }) => {
+    await open(page, ownServer.url);
+    const uid = (await (await api(page).get("/api/keyboard")).json()).uid as string;
+    const setsDir = join(ownServer.dataDir, "fake", "learning", uid, "sets");
+    mkdirSync(setsDir, { recursive: true });
+    // two sets built for another layout (their hash): one says = is on r1c1 of layer 0, where this keyboard has s (r1c5
+    // of layer 1 types =); the other teaches €, which no key types. Dropped into the sets folder: the import would
+    // refuse a key that doesn't type its character
+    const layout = await (await api(page).get("/api/learning/export")).json();
+    const hash = "sha256:0123456789abcdef";
+    const wrong = { char: "=", key: "r1c1", layer: 0, via: "tap" };
+    const exercise = (text: string) => [{ id: "e1", kind: "new-keys", title: "An exercise", lines: [text] }];
+    writeFileSync(join(setsDir, "refit.json"), JSON.stringify(await smallSet(page, "refit",
+      { hash, lesson: { new: [wrong], exercises: exercise("== == == ==") } })));
+    writeFileSync(join(setsDir, "euro.json"), JSON.stringify(await smallSet(page, "euro",
+      { hash, lesson: { new: [{ ...wrong, char: "€" }], exercises: exercise("€€ €€ €€ €€") } })));
+    await openSection(page, "Learning");
+    const select = page.getByRole("combobox", { name: "Lesson set" });
+    const banner = page.getByText("Built for another layout.");
+    const refit = page.getByRole("button", { name: "Re-fit to this layout" });
+    await select.selectOption("refit");
+    await expect(banner).toBeVisible();
+    const attempt = { at: new Date().toISOString(), chars: 11, errors: 0, seconds: 5 };
+    expect((await api(page).put("/api/learning/progress/refit/e1", attempt)).ok()).toBe(true);
+
+    await refit.click();
+    const dialog = page.getByRole("dialog", { name: "Re-fit Set refit to the keyboard as it is now?" });
+    await expect(dialog.getByText("The lessons and your progress stay; the keys they point at follow the layout.")).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(refit).toBeFocused(); // cancelled: back on the button, which stays
+    // a re-fit the server can't do: a toast, the dialog stays, the set as it was
+    await page.route(/\/api\/learning\/sets\/refit\/refit(\?|$)/, (route) => route.fulfill(FAILING));
+    await refit.click();
+    await dialog.getByRole("button", { name: "Re-fit" }).click();
+    await expect(page.getByRole("region", { name: "Notifications" }).getByText(/^Re-fitting the lesson set failed/)).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await page.unrouteAll();
+    await dialog.getByRole("button", { name: "Re-fit" }).click();
+    await expect(dialog).toBeHidden();
+    // re-fitted: the banner gone, the selector focused, the file's key and hash the keyboard's, the attempt kept
+    await expect(banner).toHaveCount(0);
+    await expect(select).toBeFocused();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    const refitted = await (await api(page).get("/api/learning/sets/refit")).json();
+    expect(refitted.layout.hash).toBe(layout.hash);
+    expect(refitted.lessons[0].new[0]).toMatchObject({ char: "=", key: "r1c5", layer: 1, via: "tap" });
+    expect((await (await api(page).get("/api/learning/progress/refit")).json()).exercises.e1.attempts).toHaveLength(1);
+    // the set open anew: the lesson says where = is now (a place: the key was r1c1, which types s)
+    await lessonRow(page, { id: "01", title: "A lesson", exercises: [] }).click();
+    await expect(page.getByRole("list", { name: "New characters" }).getByRole("listitem")).toHaveText([/^=\s*— .+/]);
+    await page.getByRole("button", { name: "Back to lessons" }).click();
+
+    // a character no key types: the errors box lists it, the banner stays, the file too
+    await select.selectOption("euro");
+    await expect(banner).toBeVisible();
+    await refit.click();
+    await page.getByRole("dialog", { name: "Re-fit Set euro to the keyboard as it is now?" }).getByRole("button", { name: "Re-fit" }).click();
+    const errors = page.getByRole("alert").filter({ hasText: "Set euro can't be re-fitted:" });
+    await expect(errors).toBeVisible();
+    await expect(errors.getByRole("listitem").filter({ hasText: "€" }).first()).toBeVisible();
+    await expect(banner).toBeVisible();
+    await expect(refit).toBeFocused();
+    expect((await (await api(page).get("/api/learning/sets/euro")).json()).layout.hash).toBe(hash);
+  });
 
 test("a lesson listing a character twice, and a new entry without a key, shows as it is", async ({ app }) => {
   const s = { char: "s", key: "r1c1", layer: 0, via: "tap" };
