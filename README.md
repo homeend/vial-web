@@ -16,7 +16,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 ## What it does
 
 - **Keymap:** every key on every layer. Click a key to see what it does on tap and on hold, and change it from a
-  picker. Pointing at a key (or moving to it with Tab or the arrow keys) shows a tip at once, in place of the
+  picker. Pointing at a key (or moving to it with Tab or the arrow keys) shows a tip at once (new in 1.1.0), in place of the
   browser's tooltip: what the key does, where it is, its keycode; a mod-tap's or layer-tap's tap and hold; a tap
   dance's four ways of pressing or a macro's steps, as coloured keycaps; the combos it is in. The same tip shows on
   the picker's keys and on the slot buttons of the Tap dance, Combos, Key overrides and Alt-repeat pages. The
