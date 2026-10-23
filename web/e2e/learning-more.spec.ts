@@ -611,7 +611,7 @@ test("the Resting switch makes a key a resting one, saved at once, with the rest
     await app.getByRole("button", { name: "Fingers…" }).click();
     await expect(app.getByText(/saved at once/)).toBeVisible();
     // a key that isn't a resting one, and isn't a thumb's (a resting thumb key keeps its reach)
-    await app.locator('.board .key[aria-pressed="false"]:not([title*="thumb"])').first().click();
+    await app.locator('.board .key[aria-pressed="false"]:not([aria-label*="thumb"])').first().click();
     const key = app.locator(".board .key.selected");
     await expect(key).toHaveAttribute("aria-pressed", "false");
     await app.getByRole("switch", { name: "Resting key" }).click();

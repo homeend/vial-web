@@ -4,9 +4,11 @@ test.describe("width and fit", () => {
   test("1280 x 800: every label fits on its key", async ({ app }) => {
     await screenshots(app, "keymap-1280", { fullPage: true });
     expect(await labelsCutOff(app)).toEqual([]);
-    // the whole name is in the tooltip
-    await expect(app.getByRole("button", { name: /^Tap dance 0 · Tab \/ Caps Lock/ })).toHaveAttribute(
-      "title", /Tab \/ Caps Lock/);
+    // the whole name is in the tip (no browser tooltip)
+    const key = app.getByRole("button", { name: /^Tap dance 0 · Tab \/ Caps Lock/ });
+    await expect(key).not.toHaveAttribute("title");
+    await key.hover();
+    await expect(app.locator(".tip")).toContainText("Tab / Caps Lock", { timeout: 300 });
   });
 
   test("2560 x 1440: content stays at most 1100 px wide, and the keyboard fills its card", async ({ app }) => {
@@ -87,6 +89,44 @@ test.describe("Inspector and picker", () => {
     await app.getByRole("button", { name: "Change key" }).click();
     await expect(app.getByRole("dialog")).toBeVisible();
     await screenshots(app, "picker");
+  });
+
+  test("pointing at a key shows a tip at once: what it does, where it is; a tap dance's four ways", async ({ app }) => {
+    const tip = app.locator(".tip");
+    const space = app.locator(`[data-ref="key:${await keyIndex(app, 3, 4)}"]`); // Space, Layer 1 on hold
+    await expect(space).not.toHaveAttribute("title");
+    await expect(tip).toBeHidden();
+    await space.hover();
+    await expect(tip).toBeVisible({ timeout: 300 });
+    await expect(tip).toContainText("Space — hold for Layer 1");
+    await expect(tip).toContainText("row 3 · column 4 · Base layer");
+    expect((await tip.locator(".ways .label").allTextContents()).map((t) => t.trim())).toEqual(["Tap", "Hold"]);
+    await expect(tip).toContainText("Layer 1, while held");
+    await expect(tip.locator("code")).toHaveText(/^LT1?\(/);
+    await expect(tip).toHaveAttribute("aria-hidden", "true");
+    await screenshots(app, "keymap-tip-layer-tap");
+
+    const tapDance = app.getByRole("button", { name: /^Tap dance 0/ });
+    await tapDance.hover();
+    await expect(tip).toContainText("Tap dance 0 · Tab / Caps Lock", { timeout: 300 });
+    expect((await tip.locator(".ways .label").allTextContents()).map((t) => t.trim()))
+      .toEqual(["Tap", "Hold", "Double tap", "Tap, then hold"]);
+    await expect(tip.locator(".chip")).toHaveCount(2); // Tab and Caps Lock; the two empty ways show a dash
+    await expect(tip).toContainText("tapping term 200 ms");
+    await screenshots(app, "keymap-tip-tap-dance");
+
+    // a click takes the tip away, as a browser tooltip goes; leaving the key too
+    await tapDance.click();
+    await expect(tip).toBeHidden();
+    await space.hover();
+    await expect(tip).toBeVisible({ timeout: 300 });
+    await app.getByRole("heading", { name: "Keymap" }).hover();
+    await expect(tip).toBeHidden();
+
+    // reached with the keyboard, the key shows its tip too
+    await space.focus();
+    await app.keyboard.press("ArrowLeft");
+    await expect(tip).toBeVisible({ timeout: 300 });
   });
 
   test("a tap dance key is explained in place", async ({ app }) => {

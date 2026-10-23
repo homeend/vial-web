@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PlacedKey } from "./geometry";
   import { compactLegendSize, legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
+  import { tipHandlers } from "../ui/tipping";
   import { refId } from "./refs";
   import { legendFont } from "./textWidth.svelte";
 
@@ -23,12 +24,16 @@
     /** a small knob showing its main legend only, as large as it fits */
     compact?: boolean;
     onselect: () => void;
+    /** the knob is pointed at or reached with the keyboard (its element), or no longer: its tip shows, or goes */
+    ontip?: (anchor: HTMLElement | null) => void;
   }
 
   let {
     item, face, u, selected, label, focusable, found = false, faded = false, chosen, interactive = true,
-    compact = false, onselect,
+    compact = false, onselect, ontip,
   }: Props = $props();
+
+  const tipping = tipHandlers((el) => ontip?.(el), () => ontip?.(null));
 
   const clockwise = $derived(item.geometry.direction === 1);
   const size = $derived(Math.min(item.w, item.h) * u * 0.91);
@@ -76,11 +81,11 @@
     class:faded
     {style}
     aria-label={label}
-    title={label}
     aria-pressed={chosen ?? selected}
     tabindex={focusable ? 0 : -1}
     data-ref={refId(item)}
     onclick={onselect}
+    {...tipping}
   >
     {@render knob()}
   </button>

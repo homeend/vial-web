@@ -226,14 +226,15 @@ test("the picker offers only the tap dances and macros set up, each with a card 
   await app.getByRole("button", { name: "Change key" }).click();
   const picker = app.getByRole("dialog", { name: "Choose a keycode" });
   await expect(picker).toBeVisible();
-  const card = picker.locator(".entry-card");
+  const card = picker.locator(".tip");
 
   await picker.getByRole("tab", { name: "Tap dance" }).click();
   const tdKeys = picker.locator(".grid .kc");
   await expect(tdKeys).toHaveCount(tapDances.length);
   await expect(picker.getByText("Only the tap dances set up are shown.")).toBeVisible();
-  // no browser tooltip, which comes late: a card at once, without the key's own TD(n)
+  // no browser tooltip, which comes late: a tip at once, without the key's own TD(n)
   await expect(tdKeys.first()).not.toHaveAttribute("title");
+  await expect(card).toBeHidden();
   await tdKeys.first().hover();
   await expect(card).toBeVisible({ timeout: 300 });
   await expect(card).toContainText(`tapping term ${tapDances[0].tappingTerm} ms`);
@@ -259,9 +260,11 @@ test("the picker offers only the tap dances and macros set up, each with a card 
   await expect(card).toBeVisible({ timeout: 300 });
   await expect(card.locator(".steps li").first()).toBeVisible();
   await screenshots(app, "picker-macro-card");
-  // the dynamic macro keys keep the browser's tooltip, and get no card
+  // the dynamic macro keys get a tip too (no browser tooltip): what the key does, not a macro's steps
   await picker.getByRole("button", { name: /DYN_REC_START1/ }).hover();
-  await expect(card).toBeHidden();
-  await expect(picker.getByRole("button", { name: /DYN_REC_START1/ })).toHaveAttribute("title", /DYN_REC_START1/);
+  await expect(card).toBeVisible({ timeout: 300 });
+  await expect(card).not.toContainText("DYN_REC_START1"); // the key shows its keycode itself
+  await expect(card.locator(".steps")).toHaveCount(0);
+  await expect(picker.getByRole("button", { name: /DYN_REC_START1/ })).not.toHaveAttribute("title");
   await picker.getByRole("button", { name: "Close" }).click();
 });

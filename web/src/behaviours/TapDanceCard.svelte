@@ -1,7 +1,10 @@
 <script lang="ts">
   import type { Use } from "../analysis/usage";
   import type { Described, KeyboardModel, TapDance } from "../api/types";
+  import KeyTipCard from "../keyboard/KeyTipCard.svelte";
   import { keyFace, keyTitle, type Names } from "../keyboard/labels";
+  import { slotTip } from "../keyboard/tip";
+  import { tipHandlers } from "../ui/tipping";
   import { tapDanceSlots, type SlotLabel } from "../keymap/tapdance";
   import EntryHead from "./EntryHead.svelte";
   import { replayed } from "./target.svelte";
@@ -54,6 +57,9 @@
   let termInvalid = $state(false);
   /** each slot's choose button, by its label */
   const chooseButtons: Partial<Record<SlotLabel, HTMLButtonElement>> = {};
+  /** the slot button pointed at or reached with the keyboard, and its tip */
+  let tipped = $state<{ slot: SlotLabel; anchor: HTMLElement } | null>(null);
+  const tippedSlot = $derived(slots.find((s) => s.label === tipped?.slot));
 
   /** what a slot does, the hold too: "A — hold for Layer 2" */
   function what(d: Described): string {
@@ -118,10 +124,11 @@
           disabled={!canEdit}
           aria-disabled={busy || undefined}
           aria-label="{slot.label}: {set ? what(slot.action) : 'nothing'} · change it"
-          title="{slot.label}: {set ? `${what(slot.action)} (${slot.action.code})` : 'nothing'} · click to change"
           onclick={() => {
             if (!busy) onpickslot(slot.label);
           }}
+          {...tipHandlers((el) => (tipped = { slot: slot.label, anchor: el }),
+            () => tipped?.slot === slot.label && (tipped = null))}
         >
           <span class="how">{slot.label}</span>
           <span class="what tone-{face.tone}" data-tone={face.tone}>{set ? face.main || slot.action.code : "nothing"}</span>
@@ -143,6 +150,9 @@
       </li>
     {/each}
   </ul>
+  {#if tipped && tippedSlot}
+    <KeyTipCard tip={slotTip(tippedSlot.label, tippedSlot.action, names)} anchor={tipped.anchor} {names} />
+  {/if}
 
   <div class="foot">
     <label class="term">

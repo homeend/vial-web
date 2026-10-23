@@ -2,8 +2,10 @@
   import { tick } from "svelte";
   import type { CatalogueKeycode, Described } from "../api/types";
   import { keyFace, type Names } from "../keyboard/labels";
+  import KeyTipCard from "../keyboard/KeyTipCard.svelte";
+  import { catalogueTip, entryTip, type KeyTip } from "../keyboard/tip";
+  import { tipHandlers } from "../ui/tipping";
   import AnyKeycode from "./AnyKeycode.svelte";
-  import EntryCard from "./EntryCard.svelte";
   import { categoryIndex, type EntryDetail, type OfferedCategory } from "./offered";
   import { searchKeycodes, searchTemplates } from "./search";
   import { fillTemplate } from "./template";
@@ -43,12 +45,13 @@
 
   /** each tap dance's and macro's card, by keycode, from every category (a search finds them too) */
   const details = $derived(new Map<string, EntryDetail>(categories.flatMap((c) => [...(c.details ?? [])])));
-  /** the key whose card is shown: pointed at, or with the focus (the last of the two) */
-  let carded = $state<{ code: string; anchor: HTMLElement } | null>(null);
-  const cardDetail = $derived(carded ? (details.get(carded.code) ?? null) : null);
+  /** the key whose tip is shown: pointed at, or reached with the keyboard (the last of the two), and what it says: a
+   * tap dance's ways or a macro's steps, else the keycode and its description */
+  let carded = $state<{ code: string; anchor: HTMLElement; tip: KeyTip } | null>(null);
 
-  function showCard(code: string, anchor: HTMLElement) {
-    carded = details.has(code) ? { code, anchor } : null;
+  function showCard(k: CatalogueKeycode, anchor: HTMLElement) {
+    const detail = details.get(k.code);
+    carded = { code: k.code, anchor, tip: detail ? entryTip(k, names, detail) : catalogueTip(k, names) };
   }
 
   function hideCard(code: string) {
@@ -201,14 +204,10 @@
             data-tone={face.tone}
             class:current={k.code === current}
             aria-current={k.code === current ? "true" : undefined}
-            title={details.has(k.code) ? undefined : k.description ? `${k.code}: ${k.description}` : k.code}
             aria-label="{k.tap || k.code} ({k.code})"
             aria-describedby={k.description ? `picker-description-${i}` : undefined}
             onclick={() => pick(k.code, k)}
-            onpointerenter={(e) => showCard(k.code, e.currentTarget)}
-            onpointerleave={() => hideCard(k.code)}
-            onfocus={(e) => showCard(k.code, e.currentTarget)}
-            onblur={() => hideCard(k.code)}
+            {...tipHandlers((el) => showCard(k, el), () => hideCard(k.code))}
           >
             {#if face.altGr}<span class="alt-gr">{face.altGr}</span>{/if}
             {#if face.shifted}<span class="kc-shifted">{face.shifted}</span>{/if}
@@ -235,8 +234,8 @@
       <AnyKeycode bind:value={anyKeycode} onpick={pick} />
     </footer>
   </div>
-  {#if carded && cardDetail}
-    <EntryCard detail={cardDetail} anchor={carded.anchor} {names} />
+  {#if carded}
+    <KeyTipCard tip={carded.tip} anchor={carded.anchor} {names} />
   {/if}
 </dialog>
 

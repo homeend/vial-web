@@ -2,15 +2,22 @@
   import Encoder from "./Encoder.svelte";
   import { encoderKnobs, type Placement } from "./geometry";
   import Key from "./Key.svelte";
-  import type { KeyFace } from "./labels";
+  import KeyTipCard from "./KeyTipCard.svelte";
+  import type { KeyFace, Names } from "./labels";
   import { refId } from "./refs";
+  import type { KeyTip } from "./tip";
 
   interface Props {
     placement: Placement;
     /** what each placed key shows, aligned with placement.items */
     faces: KeyFace[];
-    /** what a screen reader says for each placed key */
+    /** what a screen reader says for each placed key; without `tips`, also what the tip on it says */
     labels: string[];
+    /** the tip on each placed key (shown at once while it is pointed at or reached with Tab), aligned with
+     * placement.items; a key without one gets its label as the tip */
+    tips?: (KeyTip | null | undefined)[];
+    /** names of layers, tap dances and macros, for the keycaps a tip draws */
+    names?: Names;
     /** index into placement.items, or -1 */
     selected: number;
     onselect: (index: number) => void;
@@ -44,9 +51,30 @@
   }
 
   let {
-    placement, faces, labels, selected, onselect, maxUnit = 72, combos = [], interactive = true, compact = false,
-    highlights = [], rings = [], faded = [], pressed = [], chosen, tabStop, label = "Keyboard", describedby,
+    placement, faces, labels, tips, names, selected, onselect, maxUnit = 72, combos = [], interactive = true,
+    compact = false, highlights = [], rings = [], faded = [], pressed = [], chosen, tabStop, label = "Keyboard",
+    describedby,
   }: Props = $props();
+
+  /** the key whose tip shows: pointed at, or reached with the keyboard (the last of the two) */
+  let tipped = $state<{ index: number; anchor: HTMLElement } | null>(null);
+  const tip = $derived.by((): KeyTip | null => {
+    if (!tipped) return null;
+    return tips?.[tipped.index] ?? (labels[tipped.index] ? { title: labels[tipped.index] } : null);
+  });
+  /** a board without names draws no keycaps that need them (its tips are labels) */
+  const NO_NAMES: Names = { layer: (i) => `Layer ${i}`, layerIsNamed: () => false, tapDance: () => "", macro: () => "" };
+
+  function onTip(index: number, anchor: HTMLElement | null) {
+    if (anchor) tipped = { index, anchor };
+    else if (tipped?.index === index) tipped = null;
+  }
+
+  // another keyboard, or other layout options: the key the tip was on may be gone
+  $effect(() => {
+    void placement;
+    tipped = null;
+  });
 
   let width = $state(0);
   // as big as fits the width, never bigger than maxUnit
@@ -80,16 +108,23 @@
         {#if item.kind === "key"}
           <Key {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
             combos={combos[i] ?? []} found={highlights[i] ?? false} ring={rings[i] ?? null} faded={faded[i] ?? false}
-            pressed={pressed[i] ?? false} chosen={chosen?.[i]} {interactive} {compact} onselect={() => onselect(i)} />
+            pressed={pressed[i] ?? false} chosen={chosen?.[i]} {interactive} {compact} onselect={() => onselect(i)}
+            ontip={(a) => onTip(i, a)} />
         {:else}
           <Encoder {item} face={faces[i]} {u} selected={i === selected} label={labels[i]} focusable={i === focusIndex}
             found={highlights[i] ?? false} faded={faded[i] ?? false} chosen={chosen?.[i]} {interactive} {compact}
-            onselect={() => onselect(i)} />
+            onselect={() => onselect(i)} ontip={(a) => onTip(i, a)} />
         {/if}
       {/each}
     {/if}
   </div>
+  {#if tipped && tip}
+    <KeyTipCard {tip} anchor={tipped.anchor} names={names ?? NO_NAMES} />
+  {/if}
 </div>
+
+<!-- the page or a panel scrolled: the tip would stay where the key was -->
+<svelte:window onscrollcapture={() => (tipped = null)} />
 
 <style>
   .keyboard {

@@ -32,7 +32,7 @@ export const MACROS_CATEGORY = "Macros";
 /** The longest description in words (detailText), in characters */
 const LONGEST_MACRO = 200;
 
-/** What a tap dance or macro does, for the picker's card on it (EntryCard.svelte): its name when one was given (not
+/** What a tap dance or macro does, for the picker's tip on it (keyboard/tip.ts entryTip): its name when one was given (not
  * one made from what it does, which would only say it again), and its slots or steps */
 export type EntryDetail =
   | { kind: "tap-dance"; name: string; slots: { label: SlotLabel; action: Described | null }[]; tappingTerm: number }

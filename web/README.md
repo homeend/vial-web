@@ -117,7 +117,7 @@ in the page.
 
 | Spec | What it tests |
 |---|---|
-| `keymap`, `find`, `overview`, `display`, `theme` | The Keymap's Edit and Overview views, the find box, sizes and fonts, the theme |
+| `keymap`, `find`, `overview`, `display`, `theme` | The Keymap's Edit and Overview views, the find box, the tips on keys and in the picker, sizes and fonts, the theme |
 | `arrange` | Arrange layers: layers reordered with the keyboard (Home, End) and by drag (Esc putting the row back), applied (tabs, names and keys following, the Edit view staying on its layer) and undone (the whole layout as it was); Esc, Cancel and Reset writing nothing; an arrange stopped partway (the fail-write hook) finished from the dialog, the failure said once, and one cut short by an unplug put back from the bar after a replug and a reload; an Apply the layers changed under (another arrange through the API) refused, writing nothing, and said; the layers arranged elsewhere while the dialog is open; Undo gone once they are; the start-up layer a PDF key saved warned of; Finish keeping a key changed since the stop, and saying so; only the layer names left to save (a names file that can't be written), then saved by Finish; work not saved asked about first; the Overview's button; the dialog with the tri-layer warning (8 layers, long names), with a problem (20 layers) and stopped, and the bar, at five window sizes |
 | `move` | Dragging a key onto another with the mouse (Replace, Swap both, Undo, Esc), the Inspector's Copy and Swap without a mouse, the drop menu in a 1080p window |
 | `macropad` | Another keyboard: encoders, rotated keys, an ISO Enter, a decal, a layout option |
@@ -155,7 +155,7 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 |---|---|
 | `src/api/` | Typed HTTP client, error messages, WebSocket events, generated schema types |
 | `src/lib/` | The keyboard store (loaded model, connection, edits, the keys held for the matrix tester, switching keyboards), the keyboard selector's choices and why a keyboard can't be read (`keyboards.ts`), the work not saved that switching keyboards and Quit Vial ask about (`unsaved.ts`), unlocking, keys doing nothing on the page (`keyGuard.ts`), the section shown (the address's `#combos/2`), toasts, sentence helpers (`text.ts`), and the theme (System, Light, Dark) |
-| `src/keyboard/` | Drawing any keyboard from its geometry (and the layout options' choices, `geometry.ts`); key labels; combo marks on keys (`marks.ts`: underlines and dots) |
+| `src/keyboard/` | Drawing any keyboard from its geometry (and the layout options' choices, `geometry.ts`); key labels; combo marks on keys (`marks.ts`: underlines and dots); the tip on a key, shown at once in place of the browser's tooltip (`tip.ts` what it says, `KeyTipCard.svelte`) |
 | `src/layout/` | The Layout page: the keyboard's layout options |
 | `src/lighting/` | The Lighting page: effects by name, colours, changes sent without flooding the keyboard (`writer.ts`), Save and Undo |
 | `src/matrix/` | The Matrix tester page: the keys held and pressed, the switch matrix |
@@ -166,4 +166,4 @@ development machine, so no browser is downloaded there. CI installs that Chromiu
 | `src/about/` | The Keyboard page: what the keyboard is (Qt's About keyboard), saving and loading `.vil` layout files with a preview of what changes, and reboot to bootloader |
 | `src/picker/` | Keycode picker: search, categories (no Lighting category on a keyboard without lighting, `offered.ts`), any-keycode entry |
 | `src/shell/` | Top bar (with the keyboard selector, shown while there is more than one keyboard to choose from, the Lock/Unlock control and Quit Vial), navigation, banners, toasts, the unlock dialog, the page shown once Vial has stopped |
-| `src/ui/` | Small shared controls (a switch, a list, a slider, the Save bar), the name dialog (layers, tap dances, macros) and a confirmation dialog |
+| `src/ui/` | Small shared controls (a switch, a list, a slider, the Save bar), the name dialog (layers, tap dances, macros), a confirmation dialog, and the tip card next to an element (`Tip.svelte`, with `tipping.ts` saying when it shows and goes) |
