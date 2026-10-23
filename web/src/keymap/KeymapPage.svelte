@@ -9,7 +9,8 @@
   import Keyboard from "../keyboard/Keyboard.svelte";
   import KeyCap from "../keyboard/KeyCap.svelte";
   import { EMPTY_FACE, keyFace, keyLabel, layerLabel, namesOf } from "../keyboard/labels";
-  import { actionAt, refId, whereIs } from "../keyboard/refs";
+  import { actionAt, positionLine, refId, whereIs } from "../keyboard/refs";
+  import { keyTip } from "../keyboard/tip";
   import { keyboard } from "../lib/keyboard.svelte";
   import { router } from "../lib/router.svelte";
   import { browserStorage } from "../lib/theme";
@@ -76,6 +77,14 @@
       const { what, where } = whereIs(model, item);
       const label = keyLabel(actions[i], names, `${what.toLowerCase()} ${where}`);
       return `${label}${comboMarkLabel(comboMarks.combos[i])}${highlights[i] ? " · matches the search" : ""}`;
+    }),
+  );
+  // the tip on each key, shown at once while it is pointed at: what it does, with a tap dance's ways and a macro's
+  // steps drawn, where it is, its combos and whether it matches the search
+  const tips = $derived(
+    placement.items.map((item, i) => {
+      const notes = [comboMarkLabel(comboMarks.combos[i]).replace(/^ · /, ""), highlights[i] ? "matches the search" : ""];
+      return keyTip(actions[i], names, positionLine(model, item, names.layer(kept.layer)), model, notes.filter(Boolean));
     }),
   );
   const selectedIndex = $derived.by(() => {
@@ -325,7 +334,8 @@
               onclickcapture={(e) => mover.clickCapture(e)}
               oncontextmenu={(e) => mover.contextMenu(e)}
             >
-              <Keyboard {placement} {faces} {labels} combos={comboMarks.colours} {highlights} selected={selectedIndex}
+              <Keyboard {placement} {faces} {labels} {tips} {names} combos={comboMarks.colours} {highlights}
+                selected={selectedIndex}
                 rings={mover.rings} faded={mover.faded} tabStop={mover.picking?.cursor}
                 onselect={(i) => mover.click(i) || select(i)} />
               {#if mover.drop && mover.area}

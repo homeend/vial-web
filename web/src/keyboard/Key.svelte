@@ -2,6 +2,7 @@
   import type { PlacedKey } from "./geometry";
   import { compactLegendSize, legendSizes, PLUS_BREAK, type KeyFace } from "./labels";
   import { comboMarks, dotSizes } from "./marks";
+  import { tipHandlers } from "../ui/tipping";
   import { refId } from "./refs";
   import { legendFont } from "./textWidth.svelte";
 
@@ -11,7 +12,7 @@
     /** pixels per key unit */
     u: number;
     selected: boolean;
-    /** everything the key says, in words: for screen readers, and the tooltip */
+    /** everything the key says, in words: for screen readers */
     label: string;
     /** reaches the key with Tab (the selected one, or the first) */
     focusable: boolean;
@@ -34,12 +35,17 @@
     /** a small key showing its main legend only, as large as it fits */
     compact?: boolean;
     onselect: () => void;
+    /** the key is pointed at or reached with the keyboard (its element), or no longer: its tip shows, or goes. A
+     * click takes the tip away, as a browser tooltip goes */
+    ontip?: (anchor: HTMLElement | null) => void;
   }
 
   let {
     item, face, u, selected, label, focusable, combos = [], found = false, ring = null, faded = false, pressed = false,
-    chosen, interactive = true, compact = false, onselect,
+    chosen, interactive = true, compact = false, onselect, ontip,
   }: Props = $props();
+
+  const tipping = tipHandlers((el) => ontip?.(el), () => ontip?.(null));
 
   const combo = $derived(combos.length > 0);
 
@@ -203,11 +209,11 @@
     class:faded
     {style}
     aria-label={label}
-    title={label}
     aria-pressed={chosen ?? selected}
     tabindex={focusable ? 0 : -1}
     data-ref={refId(item)}
     onclick={onselect}
+    {...tipping}
   >
     {@render cap()}
   </button>

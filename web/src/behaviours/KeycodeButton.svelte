@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { Described } from "../api/types";
+  import KeyTipCard from "../keyboard/KeyTipCard.svelte";
   import { keyFace, keyTitle, type Names } from "../keyboard/labels";
+  import { slotTip } from "../keyboard/tip";
+  import { tipHandlers } from "../ui/tipping";
 
   interface Props {
     id?: string;
@@ -19,6 +22,9 @@
   const face = $derived(keyFace(action, names));
   /** what it does, the hold too: "A — hold for Layer 2" */
   const what = $derived(set ? keyTitle(action, names) : "nothing");
+  /** the button, while it is pointed at or reached with the keyboard: its tip shows */
+  let tipped = $state<HTMLElement | null>(null);
+  const tipping = tipHandlers((el) => (tipped = el), () => (tipped = null));
 </script>
 
 <button
@@ -27,16 +33,19 @@
   class="slot"
   class:set
   aria-label="{label}: {what} · change it"
-  title="{label}: {set ? `${what} (${action.code})` : 'nothing'} · click to change"
   aria-disabled={busy || undefined}
   onclick={() => {
     if (!busy) onpick();
   }}
+  {...tipping}
 >
   <span class="how">{label}</span>
   <span class="what tone-{face.tone}" data-tone={face.tone}>{set ? face.main || action.code : "nothing"}</span>
   {#if set && face.hold}<span class="hold">{face.hold}</span>{/if}
 </button>
+{#if tipped}
+  <KeyTipCard tip={slotTip(label, action, names)} anchor={tipped} {names} />
+{/if}
 
 <style>
   /* as a tap dance's slots */
