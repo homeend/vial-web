@@ -80,7 +80,7 @@
   }}>
   <!-- the heading on a line of its own, aligned with the lesson tiles' text; the chevron at the right, as the
        header's buttons are -->
-  <summary>
+  <summary title={open ? "Click to fold it away" : "Click to see more"}>
     <span class="heading">How to generate a lesson set</span>
     <span class="hint">An LLM writes the course for this keyboard from the layout export and the files below. Vial
       calls no LLM itself: the files are downloaded from here and given to one.</span>

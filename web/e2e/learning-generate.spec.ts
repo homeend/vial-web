@@ -76,10 +76,12 @@ test("the Generate section is unfolded without a set, shows both recipes and the
       await app.locator('input[type="file"]').setInputFiles(EXAMPLE);
       await expect(app.getByRole("combobox", { name: "Lesson set" })).toHaveValue(SET, { timeout: 15_000 });
       await expect(section).toHaveJSProperty("open", false);
+      await expect(section.locator("summary")).toHaveAttribute("title", "Click to see more");
       await expect(section.getByRole("heading", { level: 3 })).toHaveCount(0);
       await screenshots(app, "learning-generate-folded");
       await section.locator("summary").click();
       await expect(section).toHaveJSProperty("open", true);
+      await expect(section.locator("summary")).toHaveAttribute("title", "Click to fold it away");
       await expect(section.locator("pre")).toContainText("You write a touch-typing course");
     } finally {
       await putBack(app);
