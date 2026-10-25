@@ -57,5 +57,7 @@ export type ServerEvent = Schemas["Event"];
 export type FingersIn = Schemas["FingersIn"];
 export type LessonSetSummary = Schemas["LessonSetSummary"];
 export type GeneratorFile = Schemas["GeneratorFile"];
+/** what this Vial is (the Version page) */
+export type VersionInfo = Schemas["VersionInfo"];
 export type AttemptIn = Schemas["AttemptIn"];
 export type LearningSettingsIn = Schemas["LearningSettingsIn"];

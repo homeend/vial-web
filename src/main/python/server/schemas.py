@@ -449,6 +449,61 @@ class Session(BaseModel):
     loaded (POST /api/layout-file). Edits of keys, macros and the like leave it. Kept in memory only. """
 
 
+class BuildInfo(BaseModel):
+    """ How the executable was built (buildinfo.describe, recorded by vial.spec as build-info.json) """
+    builtAt: str
+    """ ISO 8601, UTC """
+    commit: Optional[str] = None
+    branch: Optional[str] = None
+    dirty: Optional[bool] = None
+    """ tracked files differed from the commit when it was built; None when unknown """
+    ciRun: Optional[str] = None
+    """ the GitHub Actions run that built it, with its page and the ref (a branch or tag) it was run for """
+    ciUrl: Optional[str] = None
+    ciRef: Optional[str] = None
+    runner: Optional[str] = None
+    """ the CI runner's system (RUNNER_OS) """
+    builderSystem: str
+    """ the system it was built on (platform.platform()) """
+    builderPython: str
+    pyinstaller: Optional[str] = None
+    webUiBuiltAt: Optional[str] = None
+    """ when the bundled web UI was built (web/dist/index.html's time) """
+
+
+class VersionInfo(BaseModel):
+    """ What this Vial is (GET /api/version, the Version page; buildinfo.info) """
+    product: str
+    version: str
+    kind: Literal["executable", "source"]
+    """ the one-file executable, or vial_web.py run from a checkout """
+    executable: Optional[str] = None
+    """ the executable's path (kind executable) """
+    sourceRoot: Optional[str] = None
+    """ the checkout (kind source) """
+    commit: Optional[str] = None
+    """ the checkout's commit from source, the build's from the executable; None when unknown (no git, or an
+    executable without a build record) """
+    branch: Optional[str] = None
+    dirty: Optional[bool] = None
+    build: Optional[BuildInfo] = None
+    """ the executable's build record; None from source, and in an executable built before the record existed """
+    python: str
+    """ the Python this runs on, implementation and version """
+    platform: str
+    """ sys.platform """
+    system: str
+    """ the operating system this runs on (platform.platform()) """
+    startedAt: str
+    """ when this Vial started, ISO 8601 UTC """
+    fake: bool
+    """ a simulated keyboard (--fake) """
+    dataDir: Optional[str] = None
+    """ the folder of the lock, session file and log, and of the names and Learning files on Windows; None when the
+    server runs without one (the tests) """
+    logFile: Optional[str] = None
+
+
 class KeyboardEntry(BaseModel):
     """ A Vial keyboard plugged in, or the chosen one while it is unplugged """
     id: str

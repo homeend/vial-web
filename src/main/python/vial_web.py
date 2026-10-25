@@ -656,7 +656,8 @@ def serve(args, manager, sock):
     web_ui = None if missing_ui else resources.path(resources.WEB_DIST)
     app = create_app(manager, names, token, port, static_dir=web_ui,
                      on_all_clients_gone=all_tabs_closed, instance_id=instance, on_stop=quit_from_page,
-                     learning=LearningStore(learning_dir(args.fake)))
+                     learning=LearningStore(learning_dir(args.fake)), data_dir=data_dir(args.fake),
+                     log_file=log_file(args.fake))
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning", log_config=UVICORN_LOGGING,
                                            timeout_graceful_shutdown=SHUTDOWN_GRACE))
 

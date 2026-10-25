@@ -54,6 +54,10 @@ releases, see [get.vial.today](https://get.vial.today/).
   [`docs/learning/examples/`](docs/learning/examples/ansi-60/README.md)
   ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)).
   Nothing is written to the keyboard.
+- **Version** (`#version`, last in the list of sections, there with or without a keyboard): what this Vial is. Its
+  version; whether it runs as the executable or from source, and from which commit; how the executable was built
+  (when, by which CI run, with which Python and PyInstaller, on what system); the system and Python it runs on;
+  when it started; and where its data folder and log file are. Each line can be copied, or all of them at once.
 - Several keyboards plugged in: choose which one to edit. Unlocking, when the keyboard asks for it.
 - Light and dark themes; key legends in your keyboard language.
 - **Tray icon** (new in 1.0.0): while Vial runs it shows an icon (Vial's logo on a light square) in the notification
@@ -266,9 +270,10 @@ packages of `requirements.txt`). Each system builds only its own executable: bui
    ```
 
    It is one file that you can copy anywhere and run: the Python runtime, hidapi, the web UI, `qmk_settings.json`,
-   the lesson generator's files (`docs/learning/`, the `generate-lessons` skill) and the tray icon's libraries
-   (pystray, Pillow; dbus-fast on Linux) are inside it. On Windows it is a windowed app, without a console, with
-   Vial's icon and version info; on Linux and macOS a terminal program.
+   the lesson generator's files (`docs/learning/`, the `generate-lessons` skill), a record of the build (the commit,
+   the CI run, when and with what it was built: the Version page shows it) and the tray icon's libraries (pystray,
+   Pillow; dbus-fast on Linux) are inside it. On Windows it is a windowed app, without a console, with Vial's icon
+   and version info; on Linux and macOS a terminal program.
    `vial.spec` refuses to build without the web UI of step 1. PyInstaller also leaves its working files in `build/`;
    you can delete that folder. The version is set in `src/main/python/version.py`.
 

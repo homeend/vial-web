@@ -15,6 +15,7 @@ ROOT = os.path.abspath(SPECPATH)  # noqa: F821 (PyInstaller defines SPECPATH)
 PYTHON = os.path.join(ROOT, "src", "main", "python")
 sys.path.insert(0, PYTHON)
 
+import buildinfo  # noqa: E402
 import resources  # noqa: E402
 import version  # noqa: E402
 
@@ -77,10 +78,15 @@ def windows_version_info():
     )
 
 
+# the build record the Version page shows (commit, branch, CI run, when and with what it was built): written now,
+# bundled at the top of the unpacked folder
+BUILD_INFO = os.path.join(ROOT, "build", buildinfo.FILE_NAME)
+buildinfo.write(ROOT, BUILD_INFO)
+
 a = Analysis(  # noqa: F821
     [os.path.join(PYTHON, "vial_web.py")],
     pathex=[PYTHON],
-    datas=resources.pyinstaller_datas(),
+    datas=resources.pyinstaller_datas() + [(BUILD_INFO, ".")],
     hiddenimports=HIDDEN_IMPORTS,
     excludes=EXCLUDES,
     noarchive=False,

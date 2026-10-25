@@ -12,6 +12,7 @@ def test_dump_openapi_writes_the_schema_without_qt_hidapi_or_a_server(tmp_path):
     schema = json.loads(out.read_text(encoding="utf-8"))
     assert schema["info"]["title"] == "Vial"
     assert "/api/keyboard" in schema["paths"] and "/api/keyboard-languages" in schema["paths"]
+    assert "/api/version" in schema["paths"] and {"VersionInfo", "BuildInfo"} <= set(schema["components"]["schemas"])
     assert "KeyboardModel" in schema["components"]["schemas"]
     keycodes = schema["paths"]["/api/keycodes"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
     assert keycodes == {"type": "array", "items": {"$ref": "#/components/schemas/KeycodeCategory"},

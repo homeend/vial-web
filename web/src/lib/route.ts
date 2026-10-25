@@ -5,15 +5,15 @@
 
 export type SectionId =
   | "keymap" | "layout" | "tap-dance" | "combos" | "macros" | "learning" | "key-overrides" | "alt-repeat" | "settings"
-  | "lighting" | "matrix" | "keyboard";
+  | "lighting" | "matrix" | "keyboard" | "version";
 
 export const SECTIONS: readonly SectionId[] = [
   "keymap", "layout", "tap-dance", "combos", "macros", "learning", "key-overrides", "alt-repeat", "settings", "lighting",
-  "matrix", "keyboard",
+  "matrix", "keyboard", "version",
 ];
 
 /** sections that show one page of their own, with no entries for the address to name */
-const WHOLE: readonly SectionId[] = ["keymap", "layout", "settings", "lighting", "matrix", "keyboard"];
+const WHOLE: readonly SectionId[] = ["keymap", "layout", "settings", "lighting", "matrix", "keyboard", "version"];
 
 /** the section whose address holds a path of names, not an entry number */
 const PATHED: SectionId = "learning";

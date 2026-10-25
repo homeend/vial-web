@@ -7,6 +7,7 @@ import logging
 import os
 import secrets
 import sys
+import time
 import urllib.parse
 from typing import Annotated, Literal
 
@@ -17,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import HTTPConnection
 
+import buildinfo
 from protocol.qmk_settings_codec import QmkSettingsCodec
 from server import arranger, device, edits, languages, learning_generator, learning_layout, model, schemas
 from server.describe import keyboard_language, parse
@@ -344,7 +346,8 @@ class UnlockFollower:
 
 def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone=None,
                poll_interval=1.0, close_grace=3.0, instance_id=None, unlock_interval=UNLOCK_POLL_INTERVAL,
-               matrix_interval=MATRIX_POLL_INTERVAL, matrix_gap=MATRIX_POLL_GAP, on_stop=None, learning=None):
+               matrix_interval=MATRIX_POLL_INTERVAL, matrix_gap=MATRIX_POLL_GAP, on_stop=None, learning=None,
+               data_dir=None, log_file=None):
     """
     manager: DeviceManager; names: NamesStore; token: session secret; port: the port the server listens on
     static_dir: built UI (web/dist) or None for a placeholder page
@@ -352,9 +355,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     on_stop: stops the server (uvicorn's should_exit), called once POST /api/shutdown has answered; None: that route
     refuses (501)
     learning: learning.LearningStore, the Learning feature's files; None: the /api/learning routes refuse (501)
+    data_dir, log_file: where this Vial keeps its files, said on the Version page (None: not said)
     poll_interval: seconds between hot-plug checks (0: none); unlock_interval: between readings of an unlock countdown
     matrix_interval, matrix_gap: the matrix tester's readings (MatrixWatcher)
     """
+    started_at = time.time()
     allowed_hosts = {"127.0.0.1:{}".format(port), "localhost:{}".format(port)}
     allowed_origins = {"http://" + h for h in allowed_hosts}
     hub = EventHub(on_all_clients_gone, close_grace)
@@ -613,6 +618,13 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         """ The layout version of the keyboard loaded, or None; the device lock held """
         kb = manager.keyboard
         return None if kb is None else arranger.layout_version(kb, manager.open_id, arrangements)
+
+    @app.get("/api/version", response_model=schemas.VersionInfo)
+    def version_info():
+        """ What this Vial is: product and version, the executable or the checkout it runs from with its commit, the
+        executable's build record, the Python and system it runs on, when it started, and where its files are. No
+        keyboard is needed. """
+        return schemas.VersionInfo(**buildinfo.info(started_at, manager.backend.fake, data_dir, log_file))
 
     @app.get("/api/session", response_model=schemas.Session)
     def session():

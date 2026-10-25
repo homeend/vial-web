@@ -18,6 +18,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Version Info
+         * @description What this Vial is: product and version, the executable or the checkout it runs from with its commit, the
+         *     executable's build record, the Python and system it runs on, when it started, and where its files are. No
+         *     keyboard is needed.
+         */
+        get: operations["version_info_api_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session": {
         parameters: {
             query?: never;
@@ -1141,6 +1163,36 @@ export interface components {
             /** Effect */
             effect?: number | null;
         };
+        /**
+         * BuildInfo
+         * @description How the executable was built (buildinfo.describe, recorded by vial.spec as build-info.json)
+         */
+        BuildInfo: {
+            /** Builtat */
+            builtAt: string;
+            /** Commit */
+            commit?: string | null;
+            /** Branch */
+            branch?: string | null;
+            /** Dirty */
+            dirty?: boolean | null;
+            /** Cirun */
+            ciRun?: string | null;
+            /** Ciurl */
+            ciUrl?: string | null;
+            /** Ciref */
+            ciRef?: string | null;
+            /** Runner */
+            runner?: string | null;
+            /** Buildersystem */
+            builderSystem: string;
+            /** Builderpython */
+            builderPython: string;
+            /** Pyinstaller */
+            pyinstaller?: string | null;
+            /** Webuibuiltat */
+            webUiBuiltAt?: string | null;
+        };
         /** CatalogueKeycode */
         CatalogueKeycode: {
             /** Code */
@@ -2113,6 +2165,46 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /**
+         * VersionInfo
+         * @description What this Vial is (GET /api/version, the Version page; buildinfo.info)
+         */
+        VersionInfo: {
+            /** Product */
+            product: string;
+            /** Version */
+            version: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "executable" | "source";
+            /** Executable */
+            executable?: string | null;
+            /** Sourceroot */
+            sourceRoot?: string | null;
+            /** Commit */
+            commit?: string | null;
+            /** Branch */
+            branch?: string | null;
+            /** Dirty */
+            dirty?: boolean | null;
+            build?: components["schemas"]["BuildInfo"] | null;
+            /** Python */
+            python: string;
+            /** Platform */
+            platform: string;
+            /** System */
+            system: string;
+            /** Startedat */
+            startedAt: string;
+            /** Fake */
+            fake: boolean;
+            /** Datadir */
+            dataDir?: string | null;
+            /** Logfile */
+            logFile?: string | null;
+        };
         /** VialRgb */
         VialRgb: {
             /** Mode */
@@ -2191,6 +2283,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    version_info_api_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionInfo"];
                 };
             };
         };
