@@ -37,7 +37,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 - **Learning** (first in the list of sections, above the editing pages): a typing course for your own layout. The
   Fingers view proposes which finger rests on and reaches each key (correct it where it is wrong) and exports the
   layout for the lesson generator: an LLM, which writes the lesson set. Vial calls no LLM itself; the page's
-  **Generate a lesson set** section (unfolded while the keyboard has no lesson set, folded once it has one) says
+  **How to generate a lesson set** section (unfolded while the keyboard has no lesson set, folded once it has one) says
   how, two ways. With a chat LLM (Claude, ChatGPT, Gemini…): download the **generator pack** from the running Vial,
   a zip of the recipe ([`PROMPT.md`](docs/learning/PROMPT.md)), the instructions
   ([`GENERATE.md`](docs/learning/GENERATE.md)), the rules, the file format and its JSON Schema, an example set and

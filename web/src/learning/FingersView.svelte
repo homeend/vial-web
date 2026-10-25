@@ -130,7 +130,7 @@
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
-      exported = `Saved ${name}. Give it to an LLM with the generator files (Learning → Generate a lesson set), then Import the lesson set it writes.`;
+      exported = `Saved ${name}. Give it to an LLM with the generator files (Learning → How to generate a lesson set), then Import the lesson set it writes.`;
     } catch (error) {
       toasts.error(`Exporting the layout failed: ${causeMessage(error)}`);
     } finally {

@@ -261,7 +261,7 @@ test("the Fingers view rings every key by finger, and the export downloads the l
     const layout = JSON.parse(text);
     expect(layout.format).toBe("vial-web-layout-export/1");
     expect(layout.keys.length).toBeGreaterThan(0);
-    await expect(app.getByRole("status").filter({ hasText: "Generate a lesson set" })).toBeVisible();
+    await expect(app.getByRole("status").filter({ hasText: "How to generate a lesson set" })).toBeVisible();
     expect(await sidewaysScroll(app)).toBeLessThanOrEqual(0);
     await screenshots(app, "learning-fingers");
   } finally {

@@ -1,4 +1,4 @@
-// The "Generate a lesson set" section's helpers: the prompt to paste into a chat LLM, read out of PROMPT.md (served by
+// The "How to generate a lesson set" section's helpers: the prompt to paste into a chat LLM, read out of PROMPT.md (served by
 // GET /api/learning/generator/PROMPT.md), and sizes for its list of files.
 
 /** The prompt of docs/learning/PROMPT.md: its first ```text fenced block, without the fences, each paragraph on one

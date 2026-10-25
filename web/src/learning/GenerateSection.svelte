@@ -78,11 +78,13 @@
     const now = (event.currentTarget as HTMLDetailsElement).open;
     if (now !== open) ontoggle(now);
   }}>
+  <!-- the heading on a line of its own, aligned with the lesson tiles' text; the chevron at the right, as the
+       header's buttons are -->
   <summary>
-    <span class="chevron" aria-hidden="true"></span>
-    <span class="heading">Generate a lesson set</span>
+    <span class="heading">How to generate a lesson set</span>
     <span class="hint">An LLM writes the course for this keyboard from the layout export and the files below. Vial
       calls no LLM itself: the files are downloaded from here and given to one.</span>
+    <span class="chevron" aria-hidden="true"></span>
   </summary>
   <div class="body">
     <p class="first">
@@ -185,11 +187,15 @@
   }
 
   summary {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 6px 10px;
-    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "heading chevron"
+      "hint chevron";
+    align-items: center;
+    column-gap: 14px;
+    row-gap: 4px;
+    padding: 16px 18px 16px 14px;
     cursor: pointer;
     list-style: none;
   }
@@ -205,25 +211,28 @@
   }
 
   .chevron {
+    grid-area: chevron;
     width: 0;
     height: 0;
-    border-top: 5px solid transparent;
-    border-bottom: 5px solid transparent;
-    border-left: 6px solid var(--text-3);
-    transform: translateY(-1px);
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 7px solid var(--text-3);
   }
 
   .generate[open] .chevron {
-    transform: translateY(1px) rotate(90deg);
+    transform: rotate(90deg);
   }
 
   .heading {
+    grid-area: heading;
+    font-size: 15px;
     font-weight: 600;
   }
 
   .hint {
-    flex: 1 1 300px;
+    grid-area: hint;
     color: var(--text-2);
+    font-size: 13px;
   }
 
   .body {

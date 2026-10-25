@@ -543,7 +543,7 @@ test("the import lists the checker's errors, gone with the next import, and a ta
     await app.locator('input[type="file"]').setInputFiles({ name: "Vial.exe", mimeType: "application/octet-stream",
                                                             buffer: Buffer.alloc(5 * 1024 * 1024) });
     const notJson = app.getByRole("alert").filter({ hasText: "Vial.exe wasn't imported:" });
-    await expect(notJson.getByRole("listitem")).toHaveText(["not a lesson set: a lesson set is a .json file, written by an LLM from the layout export (see Generate a lesson set)"]);
+    await expect(notJson.getByRole("listitem")).toHaveText(["not a lesson set: a lesson set is a .json file, written by an LLM from the layout export (see How to generate a lesson set)"]);
     await app.locator('input[type="file"]').setInputFiles({ name: "huge.json", mimeType: "application/json",
                                                             buffer: Buffer.alloc(5 * 1024 * 1024, 32) });
     await expect(app.getByRole("alert").filter({ hasText: "huge.json wasn't imported:" }).getByRole("listitem"))

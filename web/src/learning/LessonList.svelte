@@ -53,7 +53,7 @@
   /** around the out-of-date banner, for its button to get the focus back */
   let staleBanner = $state<HTMLDivElement>();
   let settingsOpen = $state(false);
-  /** the "Generate a lesson set" section as the user left it; null: as the page decides (unfolded while the keyboard
+  /** the "How to generate a lesson set" section as the user left it; null: as the page decides (unfolded while the keyboard
    * has no lesson set, folded once it has one) */
   let generateToggled = $state<boolean | null>(null);
   const generateOpen = $derived(generateToggled ?? (learning.loaded && !learning.error && sets.length === 0));
@@ -73,7 +73,7 @@
       // the picker asks for .json, but any file can be chosen: say what a lesson set is before anything else
       if (!/\.json$/i.test(file.name)) {
         findings = { tone: "errors", heading: refused,
-                     lines: ["not a lesson set: a lesson set is a .json file, written by an LLM from the layout export (see Generate a lesson set)"] };
+                     lines: ["not a lesson set: a lesson set is a .json file, written by an LLM from the layout export (see How to generate a lesson set)"] };
         return;
       }
       if (file.size > MAX_BYTES) {
@@ -180,8 +180,8 @@
   <p class="empty">Reading the lessons…</p>
 {:else if sets.length === 0 && learning.loaded && !learning.error}
   <p class="empty">
-    No lesson set yet? <strong>Generate a lesson set</strong> above says how: an LLM writes the course from the layout
-    export and the files served there; then <strong>Import…</strong> the file it writes.
+    No lesson set yet? See <strong>How to generate a lesson set</strong> above: an LLM writes the course from the
+    layout export and the files served there; then <strong>Import…</strong> the file it writes.
   </p>
 {:else if set}
   <ol class="lessons" aria-label="Lessons of {set.title}">

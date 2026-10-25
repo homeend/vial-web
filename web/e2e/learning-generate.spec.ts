@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { api, expect, openSection, restoreAll, screenshots, test } from "./fixtures";
 
-// The "Generate a lesson set" section of the Learning page: unfolded while the keyboard has no lesson set, folded once
+// The "How to generate a lesson set" section of the Learning page: unfolded while the keyboard has no lesson set, folded once
 // it has one, the two recipes, the prompt read out of the real PROMPT.md, the file list served by the app, and the
 // generator pack downloaded with this keyboard's export in it. Nothing touches the keyboard.
 
@@ -49,7 +49,8 @@ test("the Generate section is unfolded without a set, shows both recipes and the
       await expect(items.nth(7)).toContainText("18 lessons");
       // the agent recipe links the skill file; the empty state points at the section
       await expect(section.getByRole("link", { name: "SKILL.md" }).first()).toHaveAttribute("href", "/api/learning/generator/SKILL.md");
-      await expect(app.locator(".empty")).toContainText("Generate a lesson set");
+      await expect(app.locator(".empty")).toContainText("How to generate a lesson set");
+      await expect(section.locator("summary .heading")).toHaveText("How to generate a lesson set");
 
       // every file downloads from this server, as an attachment of its name
       for (const name of FILES) {
@@ -76,6 +77,7 @@ test("the Generate section is unfolded without a set, shows both recipes and the
       await expect(app.getByRole("combobox", { name: "Lesson set" })).toHaveValue(SET, { timeout: 15_000 });
       await expect(section).toHaveJSProperty("open", false);
       await expect(section.getByRole("heading", { level: 3 })).toHaveCount(0);
+      await screenshots(app, "learning-generate-folded");
       await section.locator("summary").click();
       await expect(section).toHaveJSProperty("open", true);
       await expect(section.locator("pre")).toContainText("You write a touch-typing course");
