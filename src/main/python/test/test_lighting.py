@@ -341,9 +341,9 @@ def test_a_failed_write_leaves_the_model_as_the_keyboard_shows(lit):
 
 
 @pytest.mark.parametrize("lit", ["qmk_backlight_rgblight"], indirect=True)
-def test_a_keyboard_unplugged_during_a_write_is_read_back_once_at_most(lit):
-    """ The read-back after a failed write runs with the device lock held, before the unplug is noticed: each query is
-    tried once, not with the protocol's 20 retries (about 10 s with the lock held for a keyboard that is gone) """
+def test_a_keyboard_unplugged_during_a_write_is_not_retried_nor_read_back(lit):
+    """ A keyboard that is gone is known to be gone at the first failure (CheckedDevice.gone): neither the protocol's
+    20 retries (about 10 s with the device lock held) nor the read-back after the failed write query it """
     client, virtual = lit
     process = virtual.process
     after = []
@@ -356,9 +356,9 @@ def test_a_keyboard_unplugged_during_a_write_is_read_back_once_at_most(lit):
         return process(msg)
     virtual.process = unplugging
     assert client.put("/api/lighting", json={"backlight": {"brightness": 0}}).status_code == 503
-    # the write itself (with the protocol's own retries), then one query of the read-back, which fails
+    # the write's first attempt alone reached the unplugged keyboard
     write = bytes([CMD_VIA_LIGHTING_SET_VALUE, QMK_BACKLIGHT_BRIGHTNESS])
-    assert [m for m in after if m != write] == [after[-1]] and after[-1] != write
+    assert after == [write]
     assert client.get("/api/session").json()["status"] == "disconnected"
 
 

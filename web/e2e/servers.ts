@@ -233,12 +233,18 @@ function waitForUrl(
 /** A test server: its link, what stops it, its exit code once it exits (by itself: Quit Vial), and what it printed */
 export interface TestServer {
   url: string;
+  /** which server: its name in SERVERS ("corne", "macropad"...), else its extra arguments; names the logs attached to
+   * a failed test */
+  label: string;
   /** the server's --data-dir (fake mode keeps its files in its "fake" folder): removed once it is stopped */
   dataDir: string;
   stop: () => Promise<void>;
   exited: Promise<number | null>;
   output: () => string;
 }
+
+/** The servers started by this worker and still running: a failed test gets their logs (fixtures.ts) */
+export const startedServers: TestServer[] = [];
 
 export async function startServer(extraArgs: string[]): Promise<TestServer> {
   const vial = vialCommand();
@@ -268,10 +274,13 @@ export async function startServer(extraArgs: string[]): Promise<TestServer> {
     const exited = new Promise<number | null>((resolve) => running.once("exit", (code) => resolve(code)));
     const closed = new Promise<void>((resolve) => running.once("close", () => resolve()));
     const url = await waitForUrl(running, vial.name, output, closed);
-    return {
+    const started: TestServer = {
       url,
+      label: Object.entries(SERVERS).find(([, args]) => args === extraArgs)?.[0]
+        ?? extraArgs.join(" ").replace(/[^\w.-]+/g, "_"),
       dataDir,
       stop: async () => {
+        startedServers.splice(startedServers.indexOf(started), 1);
         // asked to quit first, as Quit Vial does; ended if it can't be asked. Failures are reported only after the
         // server is ended and its data dir removed, so nothing is left behind.
         const asked: Asked = hasExited(running) ? { result: "gone" } : await askToQuit(url);
@@ -297,6 +306,8 @@ export async function startServer(extraArgs: string[]): Promise<TestServer> {
       // waitForUrl keeps reading what it prints
       output: () => output.text,
     };
+    startedServers.push(started);
+    return started;
   } catch (error) {
     // never leave a half-started server or its data dir behind
     if (server) await stopProcess(server);

@@ -1,8 +1,9 @@
 import { test as base, expect, type Page } from "@playwright/test";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Lighting } from "../src/api/types";
-import { SERVER_FIXTURE_MS, SERVERS, startServer, type TestServer } from "./servers";
+import { SERVER_FIXTURE_MS, SERVERS, startedServers, startServer, type TestServer } from "./servers";
 
 /** e2e/screenshots/, wherever the tests are run from */
 const SCREENSHOTS = fileURLToPath(new URL("./screenshots/", import.meta.url));
@@ -42,7 +43,7 @@ function serverOf(
 export const test = base.extend<
   {
     app: Page; macropad: Page; eightLayers: Page; twentyLayers: Page; qmkLighting: Page; twoKeyboards: Page;
-    ownServer: TestServer;
+    ownServer: TestServer; serverLogs: void;
   },
   {
     corneUrl: string; macropadUrl: string; eightLayersUrl: string; twentyLayersUrl: string; qmkLightingUrl: string;
@@ -73,6 +74,26 @@ export const test = base.extend<
   twoKeyboards: async ({ page, twoKeyboardsUrl }, use) => {
     await use(await open(page, twoKeyboardsUrl));
   },
+  // a test that failed gets what its worker's servers logged (vial.log in each data dir, which goes when the server
+  // stops) and printed: the server's side of the failure, in test-results/ and CI's e2e-results artifact
+  serverLogs: [
+    async ({}, use, testInfo) => {
+      await use();
+      if (testInfo.status === testInfo.expectedStatus) return;
+      for (const server of startedServers) {
+        const log = join(server.dataDir, "fake", "vial.log");
+        if (existsSync(log)) await testInfo.attach(`${server.label}-vial.log`, { path: log, contentType: "text/plain" });
+        const printed = server.output();
+        if (printed) {
+          // as a file: an attachment given as a body isn't written under test-results/ (CI's artifact)
+          const file = testInfo.outputPath(`${server.label}-output.txt`);
+          writeFileSync(file, printed);
+          await testInfo.attach(`${server.label}-output.txt`, { path: file, contentType: "text/plain" });
+        }
+      }
+    },
+    { auto: true },
+  ],
   ownServer: [
     async ({}, use) => {
       const server = await startServer(SERVERS.corne);

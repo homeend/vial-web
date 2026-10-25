@@ -249,7 +249,9 @@ test("an arrange cut short by an unplug is put back from the bar, after a replug
     await expect(dialog.locator(".summary")).toContainText("Will change: 2 layers move");
     await api(app).put("/api/simulator/fail-write", { after: 20, unplug: true });
     await dialog.getByRole("button", { name: "Apply", exact: true }).click();
-    await expect(dialog.getByRole("alert")).toContainText("Arranging the layers failed");
+    // the failure is known once the server has given the unplugged keyboard up: at once now, but a slow runner once
+    // took the transport's whole retry ladder (9.5 s) here, so the wait matches the bar's below
+    await expect(dialog.getByRole("alert")).toContainText("Arranging the layers failed", { timeout: 15_000 });
     await expect(dialog.getByRole("button", { name: "Apply", exact: true })).toBeFocused();
     await app.keyboard.press("Escape");
     await expect(dialog).toBeHidden();

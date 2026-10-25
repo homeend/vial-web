@@ -178,7 +178,10 @@ class CheckedDevice:
       from a request that failed for another reason.
     - Once a request has failed on it while it wasn't working (broken), every further exchange fails at once,
       instead of going through the protocol's retries (seconds each, holding the device lock) until the hot-plug
-      poll reopens it. Within one request the retries still run, so a handle that recovers is kept.
+      poll reopens it. Within one request the retries still run, so a handle that recovers is kept, unless the
+      keyboard is gone: an OSError from the device while the backend no longer lists the keyboard (gone) ends the
+      request at once (DeviceIOError, broken), as no retry can reach an unplugged keyboard, and the request held
+      the device lock for the whole ladder (19 x 0.5 s) while every other request, and the hot-plug poll, waited.
     - A reply that comes after its read gave up (the protocol then sends the request again, or fails) would be read
       as the reply to the next request. So once a request has gone unanswered, the reports queued meanwhile are
       dropped before the next one is sent.
@@ -187,10 +190,13 @@ class CheckedDevice:
     DRAIN_MAX = 16
     """ reports dropped at most before a request: more means the keyboard keeps sending, and the request goes ahead """
 
-    def __init__(self, dev):
+    def __init__(self, dev, gone=None):
         self.dev = dev
         self.healthy = True
         self.broken = False
+        self.gone = gone
+        """ whether the keyboard has been unplugged, asked when the device raises (DeviceManager._gone); None: never
+        known, the protocol's retries run as they would """
         self.unanswered = 0
         """ requests sent whose reply hasn't been read: theirs may still come """
 
@@ -198,14 +204,22 @@ class CheckedDevice:
         if self.broken:
             raise DeviceIOError("the connection to the keyboard is broken; waiting for it to be reopened")
 
+    def _failed(self, error):
+        """ The device raised OSError: the handle isn't healthy; when the keyboard is gone, it is broken for good and
+        the request ends now (DeviceIOError, which the transport doesn't retry) """
+        self.healthy = False
+        if self.gone is not None and self.gone():
+            self.broken = True
+            raise DeviceIOError("the keyboard is unplugged ({})".format(error)) from error
+
     def _read(self, length, timeout_ms):
         try:
             return self.dev.read(length, timeout_ms=timeout_ms)
         except ValueError as e:
             self.healthy = False
             raise DeviceIOError("the connection to the keyboard is broken ({})".format(e)) from e
-        except OSError:
-            self.healthy = False
+        except OSError as e:
+            self._failed(e)
             raise
 
     def _drop_late_replies(self):
@@ -227,8 +241,8 @@ class CheckedDevice:
         except ValueError as e:
             self.healthy = False
             raise DeviceIOError("the connection to the keyboard is broken ({})".format(e)) from e
-        except OSError:
-            self.healthy = False
+        except OSError as e:
+            self._failed(e)
             raise
         if written != len(data):
             self.healthy = False
@@ -703,7 +717,7 @@ class DeviceManager:
                 unlocked = False
                 try:
                     dev, title = self.backend.open(candidate)
-                    handle = CheckedDevice(dev)
+                    handle = CheckedDevice(dev, gone=lambda candidate=candidate: self._gone(candidate))
                     keyboard = Keyboard(handle)
                     unlock_keys = interrupted_unlock_keys(keyboard)
                     if unlock_keys is not None:
@@ -1042,12 +1056,17 @@ class DeviceManager:
         self._close()
         self.pending_events.append("disconnected" if was_loaded else "unlock")
 
-    def _present(self):
-        """ Whether the open keyboard is still plugged in, or None when the backend can't tell (it raised). Unknown
-        keeps the keyboard: treating it as unplugged would close and reload it on every poll while it works. An
-        unplug still shows up as a dead handle, which check() reopens. """
+    def _gone(self, candidate):
+        """ Whether the keyboard opened from candidate is known to be unplugged (CheckedDevice.gone): False when it is
+        there or the backend can't tell """
+        return self._present(candidate) is False
+
+    def _present(self, candidate=None):
+        """ Whether the open keyboard (or the one opened from candidate) is still plugged in, or None when the backend
+        can't tell (it raised). Unknown keeps the keyboard: treating it as unplugged would close and reload it on every
+        poll while it works. An unplug still shows up as a dead handle, which check() reopens. """
         try:
-            return bool(self.backend.present(self.candidate))
+            return bool(self.backend.present(self.candidate if candidate is None else candidate))
         except Exception:
             now = self.clock()
             if self.present_error_logged is None or now - self.present_error_logged >= PRESENT_ERROR_LOG_INTERVAL:

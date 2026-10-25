@@ -143,7 +143,9 @@ in the page.
 
 The tests run in parallel: half the cores by default, or `E2E_WORKERS=<n> npx playwright test`
 (`E2E_WORKERS=1` runs them one after another). A worker runs its tests one at a time on its own servers,
-so tests running at the same time never share a keyboard; each test puts back what it changed. The
+so tests running at the same time never share a keyboard; each test puts back what it changed. A test
+that fails gets its servers' `vial.log` and console output attached (under `test-results/`, in CI's
+`e2e-results-*` artifact), the server's side of the failure. The
 tests that unlock the keyboard keep the firmware's timing with a short countdown
 (`--unlock-counter 10`): about 2 s each.
 

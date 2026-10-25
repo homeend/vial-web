@@ -57,11 +57,39 @@ def test_unplug_and_replug_are_reported(manager):
     assert manager.connected
 
 
-def test_unplug_during_write_raises_not_connected(manager):
+def test_unplug_during_write_raises_not_connected_at_once(manager, monkeypatch):
+    """ The transport's retries (20, 0.5 s apart) can't reach an unplugged keyboard: the first failure ends the
+    request, without a sleep (the request would hold the device lock for 9.5 s otherwise, every other request and
+    the hot-plug poll waiting behind it) """
+    sleeps = []
+    monkeypatch.setattr(transport.time, "sleep", sleeps.append)
     manager.backend.virtual.connected = False
     with pytest.raises(NotConnected):
         manager.run(lambda kb: kb.set_key(0, 0, 0, "KC_B"))
+    assert sleeps == []
     assert manager.check() == ["disconnected"]
+
+
+def test_unplug_during_a_reload_raises_not_connected_at_once(manager, monkeypatch):
+    """ The re-read after a failed write (app.resync), the hot-plug poll's check and the unlock poll read too """
+    sleeps = []
+    monkeypatch.setattr(transport.time, "sleep", sleeps.append)
+    manager.backend.virtual.connected = False
+    with pytest.raises(NotConnected):
+        manager.reload()
+    assert sleeps == []
+    assert not manager.connected
+
+
+def test_an_unplug_in_real_time_answers_within_a_second():
+    """ with the transport's real sleeps: what the e2e servers and the executable run """
+    m = DeviceManager(FakeBackend(make_corne))
+    assert m.connect()
+    m.backend.virtual.connected = False
+    started = time.monotonic()
+    with pytest.raises(NotConnected):
+        m.run(lambda kb: kb.set_key(0, 0, 0, "KC_B"))
+    assert time.monotonic() - started < 1.0
 
 
 def test_write_error_while_present_is_reraised(manager):
