@@ -3,11 +3,13 @@
 or opened: no keyboard is looked for. The CI's smoke test runs it on every built executable. """
 import importlib
 import json
+import os
 import sys
 
 import resources
 import tray
 import version
+from server import learning_generator
 
 SERVER_MODULES = (
     "server.app",
@@ -57,6 +59,10 @@ def problems(import_module=importlib.import_module, platform=sys.platform, load_
             json.load(inf)
     except (OSError, ValueError) as e:
         found.append("the QMK settings can't be read: {}".format(e))
+    # the Learning page offers them for download: a build without one answers 404 there
+    missing_files = [f.name for f in learning_generator.FILES if not os.path.isfile(learning_generator.path_of(f))]
+    if missing_files:
+        found.append("the lesson generator's files are missing: {}".format(", ".join(missing_files)))
     return found
 
 
@@ -69,6 +75,6 @@ def main():
         for problem in found:
             print("  - " + problem)
         return 1
-    print("{}: this build has everything it needs (hidapi, the server, the web UI, the QMK settings, the tray icon's "
-          "libraries). No keyboard was looked for.".format(name))
+    print("{}: this build has everything it needs (hidapi, the server, the web UI, the QMK settings, the lesson "
+          "generator's files, the tray icon's libraries). No keyboard was looked for.".format(name))
     return 0

@@ -35,9 +35,18 @@ releases, see [get.vial.today](https://get.vial.today/).
 - **QMK settings, lighting, layout options, matrix tester, reboot to bootloader.**
 - **Layout files:** save the whole layout to a `.vil` file and load one back, with a preview of what it changes.
 - **Learning** (first in the list of sections, above the editing pages): a typing course for your own layout. The
-  Fingers view proposes which finger rests on and
-  reaches each key (correct it where it is wrong) and exports the layout for the `generate-lessons` skill in Claude
-  Code, which writes a lesson set; import it, and type the lessons with the next key lit on the keyboard picture.
+  Fingers view proposes which finger rests on and reaches each key (correct it where it is wrong) and exports the
+  layout for the lesson generator: an LLM, which writes the lesson set. Vial calls no LLM itself; the page's
+  **Generate a lesson set** section (unfolded while the keyboard has no lesson set, folded once it has one) says
+  how, two ways. With a chat LLM (Claude, ChatGPT, Gemini…): download the **generator pack** from the running Vial,
+  a zip of the recipe ([`PROMPT.md`](docs/learning/PROMPT.md)), the instructions
+  ([`GENERATE.md`](docs/learning/GENERATE.md)), the rules, the file format and its JSON Schema, an example set and
+  this keyboard's layout export; attach the files to a new chat and send the prompt the section shows (**Copy the
+  prompt**). With Claude Code or another agent that runs programs: the `generate-lessons` skill in a checkout of
+  this repository, or the skill file downloaded from the section with the pack. The section lists every file with
+  its size; each is served by Vial itself (`/api/learning/generator/…`, from inside the executable too). Import the
+  file the LLM writes: Vial checks it and lists what it refuses, which goes back to the LLM. Then type the lessons
+  with the next key lit on the keyboard picture.
   Accuracy and speed are recorded per keyboard; a lesson passes at the pass accuracy, a star at the target speed;
   a set's progress can be reset (every attempt and best forgotten, the lessons kept). A set built for an earlier
   layout (a character moved since) can be re-fitted to the layout as it is now, its lessons and progress kept.
@@ -67,7 +76,7 @@ releases, see [get.vial.today](https://get.vial.today/).
 | 6 | One executable per system (PyInstaller); Qt and fbs removed; Quit Vial; CI on Windows, Linux and macOS | done |
 | 7 | Firmware flasher (its logic is in `src/main/python/protocol/flasher.py`, without a UI yet) | optional |
 | 8 | Arrange layers: move layers, every layer reference and name follows ([design](docs/superpowers/specs/2026-10-21-arrange-layers-design.md)) | done (0.9.0) |
-| 9 | Learning: a typing course generated from the layout ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)) | done |
+| 9 | Learning: a typing course generated from the layout by an LLM, the generator's files served by the app ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)) | done |
 | 10 | Tray icon instead of the console window: Open Vial and Quit Vial on its menu; Windows build without a console ([design](docs/superpowers/specs/2026-10-22-tray-icon-design.md)) | done |
 | 11 | A menu on the Linux tray icon: Vial's own StatusNotifierItem over D-Bus, with notifications, on X11 and Wayland ([design](docs/superpowers/specs/2026-10-22-linux-tray-menu-design.md)) | done |
 
@@ -154,7 +163,7 @@ does the same).
 | `--no-tray` | Don't show the tray icon; the link is printed and in `vial.log`. The tests and the smoke test use it |
 | `--dry-run` | Connect, print a summary of the keyboard and exit |
 | `--data-dir DIR` | Keep the lock, session file, log, names and Learning files in `DIR` instead of the user folders (below); a `--fake` Vial keeps them in `DIR/fake` |
-| `--self-check` | Check that this build has everything it needs (hidapi, the server, the web UI, the tray icon's libraries) and exit, without looking for any keyboard |
+| `--self-check` | Check that this build has everything it needs (hidapi, the server, the web UI, the lesson generator's files, the tray icon's libraries) and exit, without looking for any keyboard |
 | `--version` | Print Vial's version and exit |
 
 The server listens on `127.0.0.1` only, and answers (apart from a health check) only pages opened through the
@@ -256,9 +265,10 @@ packages of `requirements.txt`). Each system builds only its own executable: bui
    python -m PyInstaller vial.spec
    ```
 
-   It is one file that you can copy anywhere and run: the Python runtime, hidapi, the web UI, `qmk_settings.json`
-   and the tray icon's libraries (pystray, Pillow; dbus-fast on Linux) are inside it. On Windows it is a windowed
-   app, without a console, with Vial's icon and version info; on Linux and macOS a terminal program.
+   It is one file that you can copy anywhere and run: the Python runtime, hidapi, the web UI, `qmk_settings.json`,
+   the lesson generator's files (`docs/learning/`, the `generate-lessons` skill) and the tray icon's libraries
+   (pystray, Pillow; dbus-fast on Linux) are inside it. On Windows it is a windowed app, without a console, with
+   Vial's icon and version info; on Linux and macOS a terminal program.
    `vial.spec` refuses to build without the web UI of step 1. PyInstaller also leaves its working files in `build/`;
    you can delete that folder. The version is set in `src/main/python/version.py`.
 

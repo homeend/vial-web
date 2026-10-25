@@ -552,6 +552,19 @@ class LayoutExport(BaseModel):
     keys: list[dict]
 
 
+class GeneratorFile(BaseModel):
+    """ One of the lesson generator's files the Learning page offers for download (GET /api/learning/generator/{name};
+    server.learning_generator) """
+    name: str
+    """ the file name, as downloaded and as the route takes it """
+    description: str
+    """ what it is, in a few words """
+    size: int
+    """ bytes """
+    packed: bool
+    """ whether the generator pack (GET /api/learning/generator/pack) holds it """
+
+
 class LessonSetSummary(BaseModel):
     """ A lesson set file of the keyboard open (learning/<uid>/sets/<id>.json) """
     id: str

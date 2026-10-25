@@ -56,5 +56,6 @@ export type ServerEvent = Schemas["Event"];
 // read them from their files, and learning/types.ts says their shape (readLessonSet, LayoutExport)
 export type FingersIn = Schemas["FingersIn"];
 export type LessonSetSummary = Schemas["LessonSetSummary"];
+export type GeneratorFile = Schemas["GeneratorFile"];
 export type AttemptIn = Schemas["AttemptIn"];
 export type LearningSettingsIn = Schemas["LearningSettingsIn"];

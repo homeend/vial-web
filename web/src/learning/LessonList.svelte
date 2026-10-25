@@ -9,6 +9,7 @@
   import ConfirmDialog from "../ui/ConfirmDialog.svelte";
   import SelectField from "../ui/SelectField.svelte";
   import { lessonStateText, listedErrors } from "./format";
+  import GenerateSection from "./GenerateSection.svelte";
   import { learning, type ImportOutcome } from "./learning.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
   import { hasAnyProgress, lessonStatus, outOfDate } from "./state";
@@ -52,6 +53,10 @@
   /** around the out-of-date banner, for its button to get the focus back */
   let staleBanner = $state<HTMLDivElement>();
   let settingsOpen = $state(false);
+  /** the "Generate a lesson set" section as the user left it; null: as the page decides (unfolded while the keyboard
+   * has no lesson set, folded once it has one) */
+  let generateToggled = $state<boolean | null>(null);
+  const generateOpen = $derived(generateToggled ?? (learning.loaded && !learning.error && sets.length === 0));
 
   /** What an outcome shows in the findings box: the errors, the warnings when there are any, or nothing */
   function showOutcome(outcome: ImportOutcome, done: string, refused: string) {
@@ -68,7 +73,7 @@
       // the picker asks for .json, but any file can be chosen: say what a lesson set is before anything else
       if (!/\.json$/i.test(file.name)) {
         findings = { tone: "errors", heading: refused,
-                     lines: ["not a lesson set: a lesson set is a .json file, written by the generate-lessons skill from the layout export"] };
+                     lines: ["not a lesson set: a lesson set is a .json file, written by an LLM from the layout export (see Generate a lesson set)"] };
         return;
       }
       if (file.size > MAX_BYTES) {
@@ -120,6 +125,8 @@
 </PageHeader>
 
 {#if note}<p class="note" role="status">{note}</p>{/if}
+
+<GenerateSection open={generateOpen} ontoggle={(open) => (generateToggled = open)} />
 
 <div class="row">
   <div class="select">
@@ -173,8 +180,8 @@
   <p class="empty">Reading the lessons…</p>
 {:else if sets.length === 0 && learning.loaded && !learning.error}
   <p class="empty">
-    No lesson set yet? <strong>Fingers…</strong> → Export, then run the <code>generate-lessons</code> skill in Claude
-    Code and <strong>Import</strong> the file it writes.
+    No lesson set yet? <strong>Generate a lesson set</strong> above says how: an LLM writes the course from the layout
+    export and the files served there; then <strong>Import…</strong> the file it writes.
   </p>
 {:else if set}
   <ol class="lessons" aria-label="Lessons of {set.title}">
@@ -309,10 +316,6 @@
     color: var(--text-2);
     font-size: 13.5px;
     text-align: center;
-  }
-
-  .empty code {
-    font-family: var(--mono);
   }
 
   .lessons {

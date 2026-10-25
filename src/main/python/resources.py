@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-""" Where Vial's bundled files are: the built web UI and the QMK settings definitions.
+""" Where Vial's bundled files are: the built web UI, the QMK settings definitions, the icon and the lesson
+generator's files.
 
 From source they are read from the repository. In the one-file executable they are read from the folder PyInstaller
 unpacks it to at start (sys._MEIPASS), where vial.spec puts each one at its `bundled` path. That folder is temporary:
@@ -26,7 +27,12 @@ QMK_SETTINGS = Resource("src/main/resources/base/qmk_settings.json", "qmk_settin
 """ the QMK settings Vial knows, grouped as the Settings page shows them """
 ICON = Resource("src/main/icons/Icon.ico", "Icon.ico")
 """ Vial's icon, shown in the notification area while it runs (tray.py); on Windows it is the executable's too """
-BUNDLED = (WEB_DIST, QMK_SETTINGS, ICON)
+LEARNING_DOCS = Resource("docs/learning", "docs/learning")
+""" the lesson generator's documents and examples, which the Learning page offers for download
+(server.learning_generator) """
+GENERATE_SKILL = Resource(".claude/skills/generate-lessons/SKILL.md", "skills/generate-lessons/SKILL.md")
+""" the Claude Code skill that wraps docs/learning/GENERATE.md, offered for download as well """
+BUNDLED = (WEB_DIST, QMK_SETTINGS, ICON, LEARNING_DOCS, GENERATE_SKILL)
 """ every file or folder vial.spec bundles """
 
 

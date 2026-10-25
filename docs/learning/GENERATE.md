@@ -1,7 +1,9 @@
 # Generating a lesson set — instructions for an agent
 
 _The prompt. Give an LLM or a Claude Code agent this file, the layout export, and the two documents it names, and
-it writes a lesson set the app can load. The Claude Code skill `generate-lessons` wraps these steps._
+it writes a lesson set the app can load. The Claude Code skill `generate-lessons` wraps these steps. The app's
+Learning page offers these files for download, one by one and as the **generator pack** (a zip with the keyboard's
+export in it); [PROMPT.md](PROMPT.md) is the recipe for a chat LLM that can run nothing._
 
 ## Inputs
 
@@ -35,7 +37,9 @@ it writes a lesson set the app can load. The Claude Code skill `generate-lessons
 5. **Fill the header**: `format`, `id`, `title`, `language`, `layout` (name, uid and **hash copied from the
    export**), `generatedBy`, `notes` (what was left out and why: combos, macros, toggle layers).
 6. **Check**: `python util/learning/check_lessons.py <set>.json --layout layout-export.json`. Fix every error and
-   every warning you can; a warning you keep gets a line in `notes`.
+   every warning you can; a warning you keep gets a line in `notes`. The checker lives in the vial-web repository
+   (`util/learning/`); without it, check the rules and the schema yourself: the app runs the same checks on import
+   and lists what it refuses, which the user can bring back.
 7. **Deliver** the file as `<id>.json`. The user puts it in `learning/<uid>/sets/` or imports it in the app.
 
 ## Rules of thumb

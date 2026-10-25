@@ -28,6 +28,12 @@ export function setRequestKeyboard(id: string | null): void {
   keyboardMeant = id;
 }
 
+/** A route's address with the keyboard language the page shows, for a link the browser follows itself (a download);
+ * params fill its {placeholders} */
+export function apiUrl(path: string, params?: Record<string, string | number>): string {
+  return url(path, params);
+}
+
 function url(path: string, params: Record<string, string | number> | undefined): string {
   const filled = path.replace(/\{(\w+)\}/g, (_, name: string) => encodeURIComponent(String(params?.[name])));
   return language === DEFAULT_LANGUAGE ? filled : `${filled}?lang=${encodeURIComponent(language)}`;

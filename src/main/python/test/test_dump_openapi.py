@@ -25,9 +25,12 @@ def test_dump_openapi_writes_the_schema_without_qt_hidapi_or_a_server(tmp_path):
     # the Learning feature (its store isn't configured for the dump: the routes are described all the same)
     assert {"/api/learning/fingers", "/api/learning/export", "/api/learning/sets", "/api/learning/sets/{set}",
             "/api/learning/progress/{set}", "/api/learning/progress/{set}/{exercise}",
-            "/api/learning/settings"} <= set(schema["paths"])
+            "/api/learning/settings", "/api/learning/generator", "/api/learning/generator/pack",
+            "/api/learning/generator/{name}"} <= set(schema["paths"])
+    pack = schema["paths"]["/api/learning/generator/pack"]["get"]["responses"]["200"]
+    assert pack["content"] == {"application/zip": {}}
     assert set(schema["paths"]["/api/learning/fingers"]) == {"get", "put", "delete"}
-    assert {"Fingers", "FingerKey", "FingersIn", "LayoutExport", "LessonSetSummary", "LessonSetImported",
+    assert {"Fingers", "FingerKey", "FingersIn", "LayoutExport", "LessonSetSummary", "LessonSetImported", "GeneratorFile",
             "LessonSet", "Progress", "ExerciseProgress", "Attempt", "AttemptIn", "LearningSettings",
             "LearningSettingsIn"} <= set(schema["components"]["schemas"])
     imported = schema["paths"]["/api/learning/sets"]["post"]["responses"]["201"]["content"]["application/json"]

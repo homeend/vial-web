@@ -640,6 +640,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/learning/generator": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Generator Files
+         * @description The lesson generator's files the page offers for download (docs/learning and the generate-lessons skill), in
+         *     the order to list them: GET /api/learning/generator/{name} serves each. Vial calls no LLM itself: the user gives
+         *     these files and the layout export to one. No learning store is needed.
+         */
+        get: operations["generator_files_api_learning_generator_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/generator/pack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Generator Pack
+         * @description The generator pack: a zip of the files a chat LLM needs (those listed with packed) and the layout export of
+         *     the keyboard open as layout-export.json, in the keyboard language lang; the export is saved as
+         *     /api/learning/export saves it. Named <keyboard>-lesson-generator.zip.
+         */
+        get: operations["generator_pack_api_learning_generator_pack_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning/generator/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Generator File
+         * @description One of the lesson generator's files, by its listed name, as an attachment of that name
+         */
+        get: operations["generator_file_api_learning_generator__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/learning/sets": {
         parameters: {
             query?: never;
@@ -1260,6 +1324,21 @@ export interface components {
             };
             /** Home */
             home: string[];
+        };
+        /**
+         * GeneratorFile
+         * @description One of the lesson generator's files the Learning page offers for download (GET /api/learning/generator/{name};
+         *     server.learning_generator)
+         */
+        GeneratorFile: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Size */
+            size: number;
+            /** Packed */
+            packed: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -3202,6 +3281,97 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["LayoutExport"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generator_files_api_learning_generator_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneratorFile"][];
+                };
+            };
+        };
+    };
+    generator_pack_api_learning_generator_pack_get: {
+        parameters: {
+            query?: {
+                /** @description keyboard language the keys are labelled in, from /api/keyboard-languages */
+                lang?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the file, as an attachment (Content-Disposition names it) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generator_file_api_learning_generator__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description the file, as an attachment (Content-Disposition names it) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown; charset=utf-8": unknown;
+                    "application/json": unknown;
+                };
+            };
+            /** @description no file of that name is listed */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -14,12 +14,15 @@ Short form:
    `learning/<uid>/layout-export.json` in the app's config folder; until the app has that page:
    `python util/learning/export_layout.py keyboard.json -o layout-export.json` from a saved `GET /api/keyboard`
    reply). Never work from a `.vil` file or guess fingers. Never read the owner's keyboard yourself unless told to.
-2. Read the three documents in `docs/learning/`. Build the teachable-character list, then the course table
-   (lesson-rules.md § 4), and show the table to the user before writing the exercises.
+2. Read the three documents in `docs/learning/`. When this project isn't the vial-web repository, the user has them
+   from the app's Learning page (the generator pack: `GENERATE.md`, `lesson-rules.md`, `lesson-format.md`,
+   `lesson-set.schema.json` and the export in one zip); ask where they are. Build the teachable-character list,
+   then the course table (lesson-rules.md § 4), and show the table to the user before writing the exercises.
 3. Write the lesson set JSON (lesson-format.md § 3) with every exercise of lesson-rules.md § 5, known characters
    only, real words, sentences once capitals and the full stop are known.
 4. Run `python util/learning/check_lessons.py <set>.json --layout <export>.json`; fix errors, then warnings;
-   keep what remains in `notes`.
+   keep what remains in `notes`. Without the repository there is no checker: check the rules and the schema
+   yourself, and say that the app checks the file on import and lists what it refuses.
 5. Save as `<id>.json` where the user wants it (default: next to the export) and say how to load it.
 
 An example with the first two lessons of the simulated Corne: `docs/learning/examples/corne-sim-en.json`. A full

@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.requests import HTTPConnection
 
 from protocol.qmk_settings_codec import QmkSettingsCodec
-from server import arranger, device, edits, languages, learning_layout, model, schemas
+from server import arranger, device, edits, languages, learning_generator, learning_layout, model, schemas
 from server.describe import keyboard_language, parse
 from server.learning import FINGERS_FORMAT, LessonSetInvalid, NotFound as LearningNotFound
 from server.device import JumpUnanswered, KeyboardChanged, NotConnected, KeyboardLocked, KeyboardRefused, \
@@ -942,6 +942,40 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         store = learning_store()
         uid, built = keyboard_dict(lang)
         return store.export(uid, built, lang)
+
+    @app.get("/api/learning/generator", response_model=list[schemas.GeneratorFile])
+    def generator_files():
+        """ The lesson generator's files the page offers for download (docs/learning and the generate-lessons skill), in
+        the order to list them: GET /api/learning/generator/{name} serves each. Vial calls no LLM itself: the user gives
+        these files and the layout export to one. No learning store is needed. """
+        return [schemas.GeneratorFile(name=f.name, description=f.description, size=learning_generator.size(f),
+                                      packed=f.packed) for f in learning_generator.FILES]
+
+    ATTACHMENT = {"description": "the file, as an attachment (Content-Disposition names it)"}
+
+    @app.get("/api/learning/generator/pack", response_class=Response,
+             responses={200: {"content": {learning_generator.ZIP: {}}, **ATTACHMENT}})
+    def generator_pack(lang: Lang = languages.DEFAULT):
+        """ The generator pack: a zip of the files a chat LLM needs (those listed with packed) and the layout export of
+        the keyboard open as layout-export.json, in the keyboard language lang; the export is saved as
+        /api/learning/export saves it. Named <keyboard>-lesson-generator.zip. """
+        store = learning_store()
+        uid, built = keyboard_dict(lang)
+        export = store.export(uid, built, lang)
+        name = learning_generator.pack_name(export["keyboard"]["name"])
+        return Response(learning_generator.pack(export), media_type=learning_generator.ZIP,
+                        headers={"Content-Disposition": learning_generator.attachment(name)})
+
+    @app.get("/api/learning/generator/{name}", response_class=Response,
+             responses={200: {"content": {learning_generator.MARKDOWN: {}, learning_generator.JSON: {}}, **ATTACHMENT},
+                        404: {"description": "no file of that name is listed"}})
+    def generator_file(name: Annotated[str, Path(max_length=64)]):
+        """ One of the lesson generator's files, by its listed name, as an attachment of that name """
+        file = learning_generator.BY_NAME.get(name)
+        if file is None:
+            raise HTTPException(404, "no generator file {!r}: see /api/learning/generator".format(name))
+        return Response(learning_generator.read(file), media_type=file.media_type,
+                        headers={"Content-Disposition": learning_generator.attachment(file.name)})
 
     def summaries(store, uid, built, entries, lang):
         """ The listing entries with outOfDate: the keyboard's hash now, computed once, against each set's """

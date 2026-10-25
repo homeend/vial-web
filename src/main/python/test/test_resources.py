@@ -34,6 +34,12 @@ def source_root(monkeypatch, tmp_path):
     icons = tmp_path / "src" / "main" / "icons"
     icons.mkdir(parents=True)
     (icons / "Icon.ico").write_bytes(b"")
+    docs = tmp_path / "docs" / "learning"
+    docs.mkdir(parents=True)
+    (docs / "GENERATE.md").write_text("# Generating a lesson set", encoding="utf-8")
+    skill = tmp_path / ".claude" / "skills" / "generate-lessons"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: generate-lessons\n---", encoding="utf-8")
     return tmp_path
 
 
@@ -120,6 +126,9 @@ def test_pyinstaller_datas_put_each_resource_at_its_bundled_path(from_source, so
         (os.path.join(str(source_root), "web", "dist"), "web"),
         (os.path.join(str(source_root), "src", "main", "resources", "base", "qmk_settings.json"), "."),
         (os.path.join(str(source_root), "src", "main", "icons", "Icon.ico"), "."),
+        (os.path.join(str(source_root), "docs", "learning"), "docs/learning"),
+        (os.path.join(str(source_root), ".claude", "skills", "generate-lessons", "SKILL.md"),
+         "skills/generate-lessons"),
     ]
 
 

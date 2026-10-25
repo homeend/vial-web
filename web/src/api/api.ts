@@ -69,6 +69,8 @@ export const api = {
   resetLearningFingers: () => request("delete", "/api/learning/fingers"),
   /** the layout export for the lesson generator, in the keyboard language shown */
   learningExport: () => request("get", "/api/learning/export"),
+  /** the lesson generator's files offered for download (GET /api/learning/generator/{name} serves each) */
+  learningGenerator: () => request("get", "/api/learning/generator"),
   /** the lesson sets of this keyboard, each with whether it is out of date */
   learningSets: () => request("get", "/api/learning/sets"),
   /** a lesson set file, checked and saved (201); 422 lists what is wrong with it (ApiError.errors) */

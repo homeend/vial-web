@@ -76,12 +76,31 @@ def test_the_self_check_loads_the_tray_as_vial_does():
         assert loaded is not None, problem
 
 
-def test_the_web_ui_or_the_settings_missing_is_a_problem(monkeypatch, tmp_path):
+def test_the_web_ui_the_settings_or_the_generator_files_missing_is_a_problem(monkeypatch, tmp_path):
     monkeypatch.setattr(resources, "SOURCE_ROOT", str(tmp_path))  # a checkout with nothing built or bundled
     found = selfcheck.problems(Imports(), platform="win32", load_tray=tray_loads)
-    assert len(found) == 2
+    assert len(found) == 3
     assert "the web UI isn't built" in found[0]
     assert found[1].startswith("the QMK settings can't be read")
+    assert found[2] == "the lesson generator's files are missing: PROMPT.md, GENERATE.md, lesson-rules.md, " \
+        "lesson-format.md, lesson-set.schema.json, corne-sim-en.json, corne-sim-layout-export.json, ansi-60-en.json, " \
+        "course-method.md, SKILL.md"
+
+
+def test_one_generator_file_missing_is_named(monkeypatch, tmp_path, web_ui_built):
+    import shutil
+    root = tmp_path / "repo"
+    shutil.copytree(os.path.join(resources.SOURCE_ROOT, "docs", "learning"), root / "docs" / "learning")
+    shutil.copytree(os.path.join(resources.SOURCE_ROOT, ".claude", "skills"), root / ".claude" / "skills")
+    settings = root / "src" / "main" / "resources" / "base"
+    settings.mkdir(parents=True)
+    shutil.copy(resources.path(resources.QMK_SETTINGS), settings / "qmk_settings.json")
+    monkeypatch.setattr(resources, "SOURCE_ROOT", str(root))
+    assert selfcheck.problems(Imports(), platform="win32", load_tray=tray_loads) == []
+    (root / "docs" / "learning" / "examples" / "ansi-60-en.json").unlink()
+    (root / ".claude" / "skills" / "generate-lessons" / "SKILL.md").unlink()
+    assert selfcheck.problems(Imports(), platform="win32", load_tray=tray_loads) == [
+        "the lesson generator's files are missing: ansi-60-en.json, SKILL.md"]
 
 
 @pytest.mark.parametrize("found, code", [([], 0), (["hidapi can't be loaded: no"], 1)])
