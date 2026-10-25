@@ -43,15 +43,17 @@
 
   // sections the keyboard's firmware doesn't have (no layout options, tap dances, combos, macros, key overrides,
   // alt-repeat keys, QMK settings, lighting or matrix tester) are left out
-  /** last: what this Vial is, there with or without a keyboard */
+  /** last, under a line of its own: what this Vial is, there with or without a keyboard */
   const VERSION: Section = { id: "version", label: "Version" };
+  const withVersion = (list: Section[]): Section[] =>
+    [...list.slice(0, -1), { ...list[list.length - 1], lineAfter: true }, VERSION];
   const sections = $derived.by<Section[]>(() => {
     const model = keyboard.model;
     // Learning first, a line under it: every keyboard has it (the lessons are the app's files, nothing of the
     // firmware's), and it is the page used daily; the editing pages follow, Keymap still the one shown by default
     const list: Section[] = [{ id: "learning", label: "Learning", lineAfter: true },
                              { id: "keymap", label: "Keymap", count: model?.layers.length }];
-    if (!model) return [...list, VERSION];
+    if (!model) return withVersion(list);
     if (model.layoutOptions) list.push({ id: "layout", label: "Layout" });
     const counts = behaviourCounts(model);
     if (counts.tapDance !== null) list.push({ id: "tap-dance", label: "Tap dance", count: counts.tapDance });
@@ -62,8 +64,8 @@
     if (model.settings.length > 0) list.push({ id: "settings", label: "Settings" });
     if (hasLighting(model.lighting)) list.push({ id: "lighting", label: "Lighting" });
     if (model.matrixTester) list.push({ id: "matrix", label: "Matrix tester" });
-    list.push({ id: "keyboard", label: "Keyboard" }, VERSION);
-    return list;
+    list.push({ id: "keyboard", label: "Keyboard" });
+    return withVersion(list);
   });
   // a section this keyboard doesn't have shows the keymap
   const section = $derived<SectionId>(

@@ -37,7 +37,8 @@ releases, see [get.vial.today](https://get.vial.today/).
 - **Learning** (first in the list of sections, above the editing pages): a typing course for your own layout. The
   Fingers view proposes which finger rests on and reaches each key (correct it where it is wrong) and exports the
   layout for the lesson generator: an LLM, which writes the lesson set. Vial calls no LLM itself; the page's
-  **How to generate a lesson set** section (unfolded while the keyboard has no lesson set, folded once it has one) says
+  **How to generate a lesson set** section (new in 1.2.0; unfolded while the keyboard has no lesson set, folded once it
+  has one) says
   how, two ways. With a chat LLM (Claude, ChatGPT, Gemini…): download the **generator pack** from the running Vial,
   a zip of the recipe ([`PROMPT.md`](docs/learning/PROMPT.md)), the instructions
   ([`GENERATE.md`](docs/learning/GENERATE.md)), the rules, the file format and its JSON Schema, an example set and
@@ -54,7 +55,8 @@ releases, see [get.vial.today](https://get.vial.today/).
   [`docs/learning/examples/`](docs/learning/examples/ansi-60/README.md)
   ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)).
   Nothing is written to the keyboard.
-- **Version** (`#version`, last in the list of sections, there with or without a keyboard): what this Vial is. Its
+- **Version** (new in 1.2.0; `#version`, last in the list of sections, under a line, there with or without a
+  keyboard): what this Vial is. Its
   version; whether it runs as the executable or from source, and from which commit; how the executable was built
   (when, by which CI run, with which Python and PyInstaller, on what system); the system and Python it runs on;
   when it started; and where its data folder and log file are. Each line can be copied, or all of them at once.
