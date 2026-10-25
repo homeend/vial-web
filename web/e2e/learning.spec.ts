@@ -79,11 +79,13 @@ test("Learning is the first section, a line under it, and Keymap still the one s
   await expect(nav.getByRole("button").nth(1)).toHaveText(/^Keymap/);
   await expect(nav.getByRole("button").nth(1)).toHaveAttribute("aria-current", "page"); // the default section
   await expect(app.getByRole("heading", { level: 1, name: "Keymap" })).toBeVisible();
-  // the line sits between them, decoration only (not in the accessibility tree)
+  // the line sits between them, decoration only (not in the accessibility tree); a second line sits above Version
   const items = nav.locator("ul > li");
   await expect(items.nth(1)).toHaveClass(/line/);
   await expect(items.nth(1)).toHaveAttribute("aria-hidden", "true");
-  await expect(nav.getByRole("listitem")).toHaveCount((await items.count()) - 1);
+  const lines = nav.locator("ul > li.line");
+  await expect(lines).toHaveCount(2);
+  await expect(nav.getByRole("listitem")).toHaveCount((await items.count()) - 2);
   expect(await items.nth(1).evaluate((el) => getComputedStyle(el).height)).toBe("1px");
   await screenshots(app, "learning-nav");
   // a narrow window wraps the sections into rows: the line takes a row of its own, 1 px tall, and nothing is hidden
