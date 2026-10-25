@@ -63,7 +63,7 @@ releases, see [get.vial.today](https://get.vial.today/).
   that a stale copy never overwrites another tab's work (Arrange layers and layout files were guarded the same way
   already). Two copies of Vial never run at once: the second one opens the running one in the browser. Another
   configurator open next to Vial (Qt Vial, VIA) can't be fenced off: close it first.
-- **Unplugged mid-write:** when the keyboard goes away while Vial is writing to it (a cable pulled during an arrange,
+- **Unplugged mid-write** (new in 1.2.2): when the keyboard goes away while Vial is writing to it (a cable pulled during an arrange,
   say), Vial notices at the first failed exchange and says so at once, instead of retrying for ten seconds with the
   keyboard locked for every other request.
 - **Version** (new in 1.2.0; `#version`, last in the list of sections, under a line, there with or without a
