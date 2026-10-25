@@ -22,6 +22,11 @@ export function setRequestLanguage(lang: string): void {
 
 let keyboardMeant: string | null = null;
 
+/** This tab, for the server to name in the "changed" event it sends every tab after a write (the X-Vial-Tab header):
+ * the writing tab has the reply already and skips the re-read the others do */
+export const TAB_ID: string = typeof crypto !== "undefined" && "randomUUID" in crypto
+  ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
 /** The keyboard (KeyboardEntry.id) the page shows: every change is sent for it (the X-Vial-Keyboard header), and the
  * server refuses one (409) while another keyboard is open, opened from another tab meanwhile. null: any keyboard. */
 export function setRequestKeyboard(id: string | null): void {
@@ -75,6 +80,7 @@ export async function request<P extends keyof paths, M extends Method>(
   const headers: Record<string, string> = body === undefined ? {} : { "Content-Type": "application/json" };
   // a header value can't hold every character a keyboard's name can: percent-encoded
   if (method !== "get" && keyboardMeant !== null) headers["X-Vial-Keyboard"] = encodeURIComponent(keyboardMeant);
+  if (method !== "get") headers["X-Vial-Tab"] = TAB_ID;
   const response = await send(url(path, options.params as Record<string, string | number> | undefined), {
     method: method.toUpperCase(),
     headers,

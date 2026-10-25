@@ -137,7 +137,7 @@ export function corne(setup: Setup): KeyboardModel {
       enabled: true,
     })),
     macros: {
-      count: (setup.macros ?? []).length, memory: 900, used: 0,
+      count: (setup.macros ?? []).length, memory: 900, used: 0, version: 0,
       items: (setup.macros ?? []).map((steps, index) => ({
         index, name: "", customName: false,
         actions: Array.from({ length: steps }, () => ({ type: "tap" as const, keys: [described("KC_A")] })),

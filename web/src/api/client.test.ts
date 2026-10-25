@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { attachmentName, DEFAULT_LANGUAGE, download, request, setRequestKeyboard, setRequestLanguage } from "./client";
+import { attachmentName, DEFAULT_LANGUAGE, download, request, setRequestKeyboard, setRequestLanguage, TAB_ID } from "./client";
 import { ApiError } from "./errors";
 
 function reply(status: number, body: unknown): Response {
@@ -41,7 +41,7 @@ describe("request", () => {
     const { url, init } = sent();
     expect(url).toBe("/api/keymap/1/2/3");
     expect(init.method).toBe("PUT");
-    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(init.headers).toEqual({ "Content-Type": "application/json", "X-Vial-Tab": TAB_ID });
     expect(init.body).toBe(JSON.stringify({ code: "KC_A" }));
     expect(result).toEqual({ ok: true });
   });
@@ -64,17 +64,18 @@ describe("request", () => {
       params: { layer: 0, row: 0, col: 0 },
       body: { code: "KC_A" },
     });
-    expect(sent().init.headers).toEqual({ "Content-Type": "application/json", ...meant });
+    expect(sent().init.headers).toEqual({ "Content-Type": "application/json", ...meant, "X-Vial-Tab": TAB_ID });
     fetchMock.mockClear();
     await request("post", "/api/unlock/start");
-    expect(sent().init.headers).toEqual(meant);
+    expect(sent().init.headers).toEqual({ ...meant, "X-Vial-Tab": TAB_ID });
     fetchMock.mockClear();
     await request("get", "/api/keyboard");
     expect(sent().init.headers).toEqual({});
     fetchMock.mockClear();
     setRequestKeyboard(null);
     await request("post", "/api/unlock/start");
-    expect(sent().init.headers).toEqual({});
+    expect(sent().init.headers).toEqual({ "X-Vial-Tab": TAB_ID });
+    expect(TAB_ID.length).toBeGreaterThan(8);
   });
 
   it("asks for the keyboard language when it isn't the default", async () => {
@@ -128,7 +129,7 @@ describe("request", () => {
     const { url, init } = sent();
     expect(url).toBe("/api/learning/sets/mini");
     expect(init.method).toBe("DELETE");
-    expect(init.headers).toEqual({ "X-Vial-Keyboard": "55d4%3A0461" });
+    expect(init.headers).toEqual({ "X-Vial-Keyboard": "55d4%3A0461", "X-Vial-Tab": TAB_ID });
   });
 
   it("returns the JSON of a 201 reply", async () => {
@@ -158,7 +159,7 @@ describe("raw bodies and downloads", () => {
     const { url, init } = sent();
     expect(url).toBe("/api/layout-file/preview");
     expect(init.method).toBe("POST");
-    expect(init.headers).toEqual({ "Content-Type": "application/json" });
+    expect(init.headers).toEqual({ "Content-Type": "application/json", "X-Vial-Tab": TAB_ID });
     expect(init.body).toBe('{"layout": []}');
   });
 

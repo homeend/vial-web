@@ -313,7 +313,12 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Set Macros */
+        /**
+         * Set Macros
+         * @description Write the macros (those that differ); 409 with code "macrosChanged" (nothing written) when `expect` isn't
+         *     the keyboard's macros version (Macros.version): they were written since the tab read them. The reply carries
+         *     the version after the write.
+         */
         put: operations["set_macros_api_macros_put"];
         post?: never;
         delete?: never;
@@ -1891,11 +1896,18 @@ export interface components {
             used: number;
             /** Items */
             items: components["schemas"]["Macro"][];
+            /**
+             * Version
+             * @default 0
+             */
+            version: number;
         };
         /** MacrosIn */
         MacrosIn: {
             /** Items */
             items: components["schemas"]["MacroActionIn"][][];
+            /** Expect */
+            expect?: number | null;
         };
         /** MatrixPosition */
         MatrixPosition: {
@@ -2252,11 +2264,21 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "connected" | "disconnected" | "reloaded" | "unlock" | "matrix" | "keyboards" | "stopped";
+            type: "connected" | "disconnected" | "reloaded" | "unlock" | "matrix" | "keyboards" | "stopped" | "changed";
             /** @default null */
             unlock: components["schemas"]["UnlockState"] | null;
             /** @default null */
             matrix: components["schemas"]["MatrixState"] | null;
+            /**
+             * What
+             * @default null
+             */
+            what: string | null;
+            /**
+             * Tab
+             * @default null
+             */
+            tab: string | null;
         };
     };
     responses: never;

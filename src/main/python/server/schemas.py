@@ -139,6 +139,9 @@ class Macros(BaseModel):
     memory: int
     used: int
     items: list[Macro]
+    version: int = 0
+    """ how many times the keyboard's macros were written since Vial started (by a tab, a layout file, an arrange,
+    or read again): a save sends it back as MacrosIn.expect, and is refused when the macros changed since """
 
 
 class QmkSetting(BaseModel):
@@ -243,11 +246,17 @@ class Event(BaseModel):
     keyboards plugged in, the one chosen or open, or why none could be read (Session.error) changed ("keyboards":
     GET /api/keyboards and /api/session tell how); to a tab that asked for it ({"type": "matrix", "watch": true}), the
     keys held, at every change; and Vial is stopping, as Quit Vial was used in a tab ("stopped": the last event) """
-    type: Literal["connected", "disconnected", "reloaded", "unlock", "matrix", "keyboards", "stopped"]
+    type: Literal["connected", "disconnected", "reloaded", "unlock", "matrix", "keyboards", "stopped", "changed"]
     unlock: Optional[UnlockState] = None
     """ with "unlock": the new state; sent at every change, and with each reading of the countdown """
     matrix: Optional[MatrixState] = None
     """ with "matrix": the keys held now """
+    what: Optional[str] = None
+    """ with "changed": what a tab wrote to the keyboard (the route's name after /api/: "keymap", "encoders",
+    "layout-options", "tap-dance", "combos", "key-overrides", "alt-repeat", "macros", "qmk-settings", "lighting",
+    "names"); the other tabs read the keyboard model again """
+    tab: Optional[str] = None
+    """ with "changed": the tab that wrote it (its X-Vial-Tab header), which needs no re-read; None when unknown """
 
 
 class LayoutOptions(BaseModel):
@@ -772,6 +781,9 @@ class MacroTextIn(Request):
 
 class MacrosIn(Request):
     items: list[Annotated[list[MacroActionIn], Field(max_length=MACRO_BUFFER_MAX)]] = Field(max_length=MACROS_MAX)
+    expect: Optional[int] = None
+    """ the macros version (Macros.version) the items were edited from: refused (409, code "macrosChanged", nothing
+    written) when the keyboard's macros were written since; None: whatever they are """
 
 
 class SettingIn(Request):

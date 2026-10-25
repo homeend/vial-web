@@ -38,7 +38,8 @@ vi.mock("../api/api", () => ({
   },
 }));
 vi.mock("../api/events", () => ({ connectEvents: vi.fn(() => ({ close: vi.fn(), send: vi.fn() })) }));
-vi.mock("../api/client", () => ({ DEFAULT_LANGUAGE: "en-us", setRequestLanguage: vi.fn(), setRequestKeyboard: vi.fn() }));
+vi.mock("../api/client", () => ({ DEFAULT_LANGUAGE: "en-us", setRequestLanguage: vi.fn(), setRequestKeyboard: vi.fn(),
+                                  TAB_ID: "this-tab" }));
 
 const { api } = await import("../api/api");
 const { connectEvents } = await import("../api/events");
@@ -83,7 +84,7 @@ function model(code: string): KeyboardModel {
     combos: [],
     keyOverrides: [],
     altRepeatKeys: [],
-    macros: { count: 0, memory: 0, used: 0, items: [] },
+    macros: { count: 0, memory: 0, used: 0, items: [], version: 3 },
   } as unknown as KeyboardModel;
 }
 
@@ -124,7 +125,8 @@ function started() {
   const events = vi.mocked(connectEvents).mock.results.at(-1)!.value as { send: ReturnType<typeof vi.fn> };
   onLink("open");
   // the server leaves out what an event doesn't carry
-  const send = (event: Pick<ServerEvent, "type"> & Partial<ServerEvent>) => onEvent({ unlock: null, matrix: null, ...event });
+  const send = (event: Pick<ServerEvent, "type"> & Partial<ServerEvent>) =>
+    onEvent({ unlock: null, matrix: null, what: null, tab: null, ...event });
   return { store, emit: (type: ServerEvent["type"]) => send({ type }), send, link: onLink,
     sent: events.send };
 }
@@ -409,7 +411,8 @@ describe("behaviour edits", () => {
 
   it("name a tap dance or a macro", async () => {
     const { store } = await loaded();
-    store.model!.macros = { count: 1, memory: 100, used: 1, items: [{ index: 0, name: "", customName: false, actions: [] }] };
+    store.model!.macros = { count: 1, memory: 100, used: 1, items: [{ index: 0, name: "", customName: false, actions: [] }],
+                            version: 0 };
     mocked.setName.mockResolvedValueOnce({ kind: "macros", index: 0, name: "git status", customName: true });
     expect(await store.rename("macros", 0, "git status")).toBe(true);
     expect(mocked.setName).toHaveBeenCalledWith("macros", 0, "git status");
@@ -554,7 +557,7 @@ describe("key overrides, alt-repeat keys, QMK settings and layout files", () => 
 });
 
 describe("a locked keyboard", () => {
-  const macros = { count: 1, memory: 100, used: 4, items: [] };
+  const macros = { count: 1, memory: 100, used: 4, items: [], version: 0 };
 
   it("follows the unlock state from the session and the events", async () => {
     const { store, send } = await loaded();
@@ -1705,5 +1708,48 @@ describe("arranging the layers", () => {
     sessionNow(3);
     await store.refreshSession();
     expect(heard).toEqual([0, 2]);
+  });
+});
+
+describe("a write in another tab", () => {
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  it("reads the model again shortly after a \"changed\" event from another tab, several close together once", async () => {
+    const { store, send } = await loaded();
+    const loads = mocked.keyboard.mock.calls.length;
+    mocked.keyboard.mockResolvedValue(model("KC_B"));
+    send({ type: "changed", what: "keymap", tab: "other-tab" });
+    send({ type: "changed", what: "lighting", tab: null });
+    expect(store.stale).toBe(true);
+    expect(mocked.keyboard.mock.calls.length).toBe(loads); // not yet
+    await wait(250);
+    expect(mocked.keyboard.mock.calls.length).toBe(loads + 1);
+    expect(store.model?.layers[0].keys[0].code).toBe("KC_B");
+    expect(store.stale).toBe(false);
+  });
+
+  it("skips its own writes", async () => {
+    const { store, send } = await loaded();
+    const loads = mocked.keyboard.mock.calls.length;
+    send({ type: "changed", what: "keymap", tab: "this-tab" });
+    await wait(250);
+    expect(mocked.keyboard.mock.calls.length).toBe(loads);
+    expect(store.stale).toBe(false);
+  });
+
+  it("saves the macros with the version it read, and a refusal (macros changed since) reads again and says so", async () => {
+    const { store } = await loaded();
+    mocked.setMacros.mockResolvedValueOnce({ count: 0, memory: 0, used: 0, items: [], version: 4 });
+    expect(await store.setMacros([])).toBe(true);
+    expect(mocked.setMacros).toHaveBeenLastCalledWith([], 3);
+    expect(store.model?.macros.version).toBe(4);
+
+    const loads = mocked.keyboard.mock.calls.length;
+    mocked.setMacros.mockRejectedValueOnce(new ApiError(409, "The macros changed since this tab read them.", "macrosChanged"));
+    expect(await store.setMacros([])).toBe(false);
+    expect(mocked.setMacros).toHaveBeenLastCalledWith([], 4);
+    await settle();
+    expect(mocked.keyboard.mock.calls.length).toBe(loads + 1);
+    expect(toasts.items.at(-1)?.message).toContain("The macros changed since this tab read them.");
   });
 });

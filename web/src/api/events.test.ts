@@ -102,8 +102,9 @@ describe("connectEvents", () => {
     }
     const unlock = { state: "unlocking", keys: [{ row: 0, col: 0 }], remaining: 3, total: 50 };
     FakeSocket.latest.deliver(JSON.stringify({ type: "unlock", unlock }));
+    FakeSocket.latest.deliver(JSON.stringify({ type: "changed", what: "keymap", tab: "other-tab" }));
     expect(events).toEqual([{ type: "connected" }, { type: "disconnected" }, { type: "reloaded" },
-      { type: "keyboards" }, { type: "unlock", unlock }]);
+      { type: "keyboards" }, { type: "unlock", unlock }, { type: "changed", what: "keymap", tab: "other-tab" }]);
   });
 
   it("ignores events of unknown type", () => {

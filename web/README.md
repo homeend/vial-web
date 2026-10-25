@@ -138,6 +138,7 @@ in the page.
 | `bootloader-focus` | The focus going to the page heading when the bootloader banner goes |
 | `p5b-pages` | The Lighting, Layout, Matrix tester and Keyboard pages at five window sizes, in both themes |
 | `keyboards` | The keyboard selector (`PUT /api/simulator/second-keyboard`): none with one keyboard; switching to the second and back, the selector going when it is unplugged; work not saved asked about first (Cancel keeps the keyboard); the chosen keyboard unplugged, unreadable and back; another keyboard opened in place of one unplugged, without the page shown (the Keymap's heading takes the focus); the empty page's error appearing and clearing (in a live region, pointing to get.vial.today for a newer protocol); the top bar at 1920 and 375 px; the About card's USB device (Qt's About keyboard), following the keyboard shown, and a long device path cut short, over lines at 375 px |
+| `tab-sync` | Two tabs of one Vial: a key changed in one tab shows in the other at once; macros saved by hand show on the other tab's Macros page; a save from a stale copy of the macros is refused (409 `macrosChanged`) and writes nothing |
 | `version` | The Version page, from the sidebar and by its address: the product and version, the checkout from source or the build record against an executable, the simulated keyboard, the data folder and log file |
 
 The tests run in parallel: half the cores by default, or `E2E_WORKERS=<n> npx playwright test`

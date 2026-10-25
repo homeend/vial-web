@@ -20,7 +20,8 @@ from starlette.requests import HTTPConnection
 
 import buildinfo
 from protocol.qmk_settings_codec import QmkSettingsCodec
-from server import arranger, device, edits, languages, learning_generator, learning_layout, model, schemas
+from server import arranger, device, edits, languages, learning_generator, learning_layout, model, schemas, \
+    versions
 from server.describe import keyboard_language, parse
 from server.learning import FINGERS_FORMAT, LessonSetInvalid, NotFound as LearningNotFound
 from server.device import JumpUnanswered, KeyboardChanged, NotConnected, KeyboardLocked, KeyboardRefused, \
@@ -45,6 +46,24 @@ MATRIX_FAILURE_PAUSE = 0.5
 STOPPED_CLOSE_CODE = 1001
 """ the close code of a tab's events link once Vial has stopped (WebSocket "going away") """
 KEYBOARD_HEADER = "x-vial-keyboard"
+TAB_HEADER = "x-vial-tab"
+""" the tab a change comes from (a random id per page load), told back in the "changed" event so that it alone skips
+the re-read """
+CHANGE_ROUTES = frozenset(("keymap", "encoders", "layout-options", "tap-dance", "combos", "key-overrides", "alt-repeat",
+                           "macros", "qmk-settings", "lighting", "names"))
+""" the routes under /api/ whose PUT and POST write the keyboard (or its names): a success is told to every tab as a
+"changed" event. The layout file, an arrange and a reload tell "reloaded" themselves. """
+NO_CHANGE_PATHS = frozenset(("/api/macros/parse",))
+""" POSTs under those routes that write nothing """
+
+
+def changed_what(path):
+    """ What a successful PUT or POST to path wrote (the route's name, for the "changed" event), or None when it is no
+    write of the keyboard """
+    parts = path.split("/")
+    if len(parts) < 3 or parts[1] != "api" or path in NO_CHANGE_PATHS:
+        return None
+    return parts[2] if parts[2] in CHANGE_ROUTES else None
 """ the keyboard a change is meant for (see create_app's keyboard_meant) """
 SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
@@ -363,6 +382,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     allowed_hosts = {"127.0.0.1:{}".format(port), "localhost:{}".format(port)}
     allowed_origins = {"http://" + h for h in allowed_hosts}
     hub = EventHub(on_all_clients_gone, close_grace)
+    macro_versions = versions.Versions()
     instance_id = instance_id or secrets.token_hex(8)
     cookie = cookie_name(port)
 
@@ -475,6 +495,12 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     async def security(request: Request, call_next):
         response = await check_request(request, call_next)
         response.headers.update(SECURITY_HEADERS)
+        # a write that succeeded: every tab is told, so that the others show it at once (the writing tab, named by its
+        # header, has the reply already)
+        if request.method in ("PUT", "POST") and 200 <= response.status_code < 300:
+            what = changed_what(request.url.path)
+            if what:
+                await hub.broadcast({"type": "changed", "what": what, "tab": request.headers.get(TAB_HEADER)})
         return response
 
     async def check_request(request, call_next):
@@ -519,6 +545,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
     @app.exception_handler(arranger.ArrangeRefused)
     async def arrange_refused(request, exc):
         return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.exception_handler(edits.MacrosChanged)
+    async def macros_changed(request, exc):
+        # a code of its own, as layoutChanged: the page re-reads the macros and asks to save again
+        return JSONResponse({"detail": str(exc), "code": "macrosChanged"}, status_code=409)
 
     @app.exception_handler(arranger.LayoutChanged)
     async def layout_changed(request, exc):
@@ -614,6 +645,15 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         return schemas.UnfinishedArrange(order=unfinished.order, done=unfinished.done, total=unfinished.total,
                                          namesOnly=arranger.names_only(kb, unfinished))
 
+    def kb_key(kb):
+        return arranger.key_of(kb, manager.open_id)
+
+    def build_model(kb):
+        """ model.build with the keyboard's macros version in it """
+        built = model.build(kb, names_for(kb), manager.unlocked)
+        built.macros.version = macro_versions.get(kb_key(kb))
+        return built
+
     def layout_version():
         """ The layout version of the keyboard loaded, or None; the device lock held """
         kb = manager.keyboard
@@ -677,7 +717,7 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.get("/api/keyboard", response_model=schemas.KeyboardModel)
     def keyboard(lang: Lang = languages.DEFAULT):
-        return read(lambda kb: model.build(kb, names_for(kb), manager.unlocked), lang)
+        return read(build_model, lang)
 
     @app.post("/api/reload", response_model=schemas.KeyboardModel)
     async def reload(lang: Lang = languages.DEFAULT):
@@ -686,7 +726,11 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
         def reload_and_build():
             with manager.lock:  # one hold of the lock: the reply shows exactly what was read
                 manager.reload()
-                return run(lambda kb: model.build(kb, names_for(kb), manager.unlocked), lang)
+
+                def reread(kb):
+                    macro_versions.bump(kb_key(kb))  # the macros may be other than every tab's copy
+                    return build_model(kb)
+                return run(reread, lang)
         # device access waits for the device lock: keep it off the event loop
         result = await asyncio.to_thread(reload_and_build)
         await hub.broadcast({"type": "reloaded"})
@@ -731,7 +775,18 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
 
     @app.put("/api/macros", response_model=schemas.Macros)
     def set_macros(body: schemas.MacrosIn, lang: Lang = languages.DEFAULT):
-        return run(lambda kb: edits.set_macros(kb, body, names_for(kb)), lang)
+        """ Write the macros (those that differ); 409 with code "macrosChanged" (nothing written) when `expect` isn't
+        the keyboard's macros version (Macros.version): they were written since the tab read them. The reply carries
+        the version after the write. """
+        def write(kb):
+            key = kb_key(kb)
+            before = bytes(kb.macro)
+            result = edits.set_macros(kb, body, names_for(kb), macro_versions.get(key))
+            if bytes(kb.macro) != before:
+                macro_versions.bump(key)
+            result.version = macro_versions.get(key)
+            return result
+        return run(write, lang)
 
     @app.post("/api/macros/parse", response_model=list[schemas.MacroAction])
     def parse_macro_text(body: schemas.MacroTextIn, lang: Lang = languages.DEFAULT):
@@ -815,8 +870,9 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
             try:
                 apply()
             finally:
-                arrangements.changed(arranger.key_of(kb, manager.open_id))
-            return model.build(kb, names_for(kb), manager.unlocked)
+                arrangements.changed(kb_key(kb))
+                macro_versions.bump(kb_key(kb))  # the file's macros, as far as they were written
+            return build_model(kb)
 
         try:
             result = await asyncio.to_thread(run, restore, lang)
@@ -859,7 +915,8 @@ def create_app(manager, names, token, port, static_dir=None, on_all_clients_gone
                 job.run()
             finally:
                 version = arrangements.changed(job.key)
-            built = model.build(kb, names_for(kb), manager.unlocked)
+                macro_versions.bump(job.key)  # macros that reach a moved layer were rewritten, as far as it got
+            built = build_model(kb)
             # its fields as they are (not dict(built): KeyboardModel has a field named keys)
             return schemas.ArrangedModel(**built.__dict__, layoutVersion=version, kept=job.todo.kept)
         try:

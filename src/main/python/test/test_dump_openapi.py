@@ -40,7 +40,7 @@ def test_dump_openapi_writes_the_schema_without_qt_hidapi_or_a_server(tmp_path):
     # what /api/events sends (WebSockets have no place in OpenAPI's paths)
     event = schema["components"]["schemas"]["Event"]
     assert set(event["properties"]["type"]["enum"]) == {"connected", "disconnected", "reloaded", "unlock", "matrix",
-                                                        "keyboards", "stopped"}
+                                                        "keyboards", "stopped", "changed"}
     assert "UnlockState" in schema["components"]["schemas"] and "MatrixState" in schema["components"]["schemas"]
     options = schema["paths"]["/api/layout-options"]["put"]["responses"]["200"]["content"]["application/json"]
     assert options["schema"] == {"$ref": "#/components/schemas/LayoutOptionsValue"}

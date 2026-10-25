@@ -55,6 +55,14 @@ releases, see [get.vial.today](https://get.vial.today/).
   [`docs/learning/examples/`](docs/learning/examples/ansi-60/README.md)
   ([design](docs/superpowers/specs/2026-10-21-learning-design.md), [file formats](docs/learning/lesson-format.md)).
   Nothing is written to the keyboard.
+- **Several tabs:** open Vial in as many tabs as you like. A change made in one tab (a key, a tap dance, a
+  combo, a macro, a key override, a QMK setting, lighting, a name) shows in every other tab at once, with
+  no reload: the server tells every tab what was written, and each one reads the keyboard again. A macro save
+  carries the version of the macros it was edited from; if another tab saved macros meanwhile, the save is refused
+  with nothing written, the macros are read again, your draft stays, and a message asks you to save it again, so
+  that a stale copy never overwrites another tab's work (Arrange layers and layout files were guarded the same way
+  already). Two copies of Vial never run at once: the second one opens the running one in the browser. Another
+  configurator open next to Vial (Qt Vial, VIA) can't be fenced off: close it first.
 - **Version** (new in 1.2.0; `#version`, last in the list of sections, under a line, there with or without a
   keyboard): what this Vial is. Its
   version; whether it runs as the executable or from source, and from which commit; how the executable was built

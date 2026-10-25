@@ -29,7 +29,10 @@ export const api = {
   setAltRepeatKey: (index: number, body: AltRepeatKeyIn) =>
     request("put", "/api/alt-repeat/{index}", { params: { index }, body }),
   /** every macro: they share the keyboard's macro memory */
-  setMacros: (items: MacroActionIn[][]) => request("put", "/api/macros", { body: { items } }),
+  /** writes the macros; expect: the macros version (Macros.version) they were edited from, refused (409, code
+   * "macrosChanged", nothing written) when they were written since; null: whatever it is */
+  setMacros: (items: MacroActionIn[][], expect: number | null = null) =>
+    request("put", "/api/macros", { body: { items, expect } }),
   /** a macro as Qt's text editor has it, read as steps for this keyboard (422: what is wrong); nothing is written */
   parseMacroText: (text: string) => request("post", "/api/macros/parse", { body: { text } }),
   settingDefinitions: () => request("get", "/api/qmk-settings/definitions"),

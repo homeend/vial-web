@@ -2,7 +2,7 @@
 // keyboard confirmed (the server's reply), never a guess.
 import { untrack } from "svelte";
 import { api } from "../api/api";
-import { DEFAULT_LANGUAGE, setRequestKeyboard, setRequestLanguage } from "../api/client";
+import { DEFAULT_LANGUAGE, setRequestKeyboard, setRequestLanguage, TAB_ID } from "../api/client";
 import { ApiError, causeMessage, failureMessage } from "../api/errors";
 import { connectEvents, type EventsLink, type LinkState, type ServerEvent } from "../api/events";
 import type {
@@ -78,6 +78,10 @@ function mayHaveWritten(error: unknown): boolean {
 /** An edit of several writes stopped as another keyboard was plugged in meanwhile: the page's own failure, not the
  * server's refusal of a change meant for another keyboard (409), so nothing more is read for it */
 class PluggedMeanwhile extends Error {}
+
+/** how long after another tab's write (the "changed" event) the model is read again: writes that follow
+ * closely (a slider dragged in that tab) are read once */
+const CHANGED_DELAY_MS = 150;
 
 export class KeyboardStore {
   model = $state<KeyboardModel | null>(null);
@@ -244,6 +248,12 @@ export class KeyboardStore {
     // the list of keyboards, the one chosen or open, or why none could be read changed: no plug of the keyboard loaded
     if (event.type === "keyboards") {
       void this.#readKeyboards();
+      return;
+    }
+    // another tab wrote to the keyboard (that tab has the reply; it names itself and skips this): the model is read
+    // again, shortly, so that several writes close together (a slider) are read once
+    if (event.type === "changed") {
+      if (event.tab !== TAB_ID) this.#changedElsewhere();
       return;
     }
     // the server's first event on a link (re)opened says how the keyboard is: a "connected" there, when it was
@@ -726,12 +736,27 @@ export class KeyboardStore {
   }
 
   /** Set every macro: they share the macro memory (the keyboard keeps the bytes of those that didn't change) */
+  /** Write the macros, as edited from the macros this tab has (their version goes along: written in another tab since,
+   * the server refuses with 409 "macrosChanged" and nothing is written; the 409 path reads the keyboard again, the
+   * page keeps its draft, and the toast says to save again) */
   setMacros(items: MacroActionIn[][], action = "Saving the macro"): Promise<boolean> {
     const model = this.model;
     if (!model || !this.canEdit) return Promise.resolve(false);
     return this.#edit(action, model, async () => {
-      model.macros = await api.setMacros(items);
+      model.macros = await api.setMacros(items, model.macros.version);
     });
+  }
+
+  #changedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Another tab wrote to the keyboard: read the model again once things are quiet for a moment (CHANGED_DELAY_MS) */
+  #changedElsewhere(): void {
+    this.stale = true;
+    clearTimeout(this.#changedTimer);
+    this.#changedTimer = setTimeout(() => {
+      this.#changedTimer = undefined;
+      if (this.connected) void this.load();
+    }, CHANGED_DELAY_MS);
   }
 
   /** Move the layers to `order` (order[position] = layer now): the server renumbers every layer reference and moves

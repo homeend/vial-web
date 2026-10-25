@@ -171,7 +171,15 @@ def _macros_data(kb, macros):
     return data
 
 
-def set_macros(kb, body, names):
+class MacrosChanged(Exception):
+    """ The macros were written since the tab read them (MacrosIn.expect isn't their version): nothing written """
+
+
+def set_macros(kb, body, names, version=None):
+    """ Write the macros that differ; version: the keyboard's macros version now, checked against body.expect """
+    if body.expect is not None and version is not None and body.expect != version:
+        raise MacrosChanged("The macros changed since this tab read them (saved in another tab, a layout file or an "
+                            "arrange): they were read again, nothing was written. Check the macro and save it again.")
     if len(body.items) != kb.macro_count:
         raise ValueError("expected {} macros, got {}".format(kb.macro_count, len(body.items)))
     current = [[model.macro_action(a) for a in actions] for actions in kb.macros_deserialize(kb.macro)]
